@@ -5,7 +5,7 @@ Mini-SaaS de démonstration : une assistante vocale IA passe des appels de prosp
 ## Language
 
 **Numéro autorisé** :
-Numéro de téléphone qu'une personne consentante a enregistré pour recevoir les appels de l'assistante. Tout appel vers un autre numéro est refusé.
+Numéro d'une personne qui a accepté d'être appelée par une IA et enregistrée. Tout appel vers un autre numéro est refusé.
 _Avoid_ : whitelist, numéro de test
 
 **Opérateur** :
@@ -29,7 +29,7 @@ Une conversation téléphonique entre l'assistante et un prospect, lancée par l
 _Avoid_ : call, conversation, session
 
 **Assistante** :
-L'agent vocal IA unique qui passe tous les appels, avec une personnalité et une voix fixes ; elle se présente toujours comme l'assistante IA de l'entreprise représentée.
+L'agent vocal IA unique qui passe tous les appels, nommé Mina, avec une personnalité et une voix fixes ; elle se présente comme l'assistante de l'entreprise représentée et parle comme une humaine.
 _Avoid_ : agent, bot, IA, voicebot
 
 **Objection** :
