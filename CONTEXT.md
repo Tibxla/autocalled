@@ -24,6 +24,14 @@ _Avoid_ : démo publique, mode invité
 Personne démarchée pour le compte d'une entreprise, décrite par une fiche durable (nom, société, rôle, contexte) qui accumule l'historique de ses appels. Appartient à une seule entreprise et sonne sur un numéro autorisé, que plusieurs prospects peuvent partager.
 _Avoid_ : client, contact, lead, cible
 
+**Fiche prospect** :
+Fichier Markdown d'un prospect : un en-tête (nom, société, rôle, numéro) et un contexte libre. Le nom du fichier identifie le prospect dans son entreprise ; le réimporter met la fiche à jour.
+_Avoid_ : CSV, profil, contact
+
+**Campagne** :
+Une liste de prospects d'une même entreprise, appelés l'un après l'autre avec une même version de script ; un seul appel à la fois, chaque appel repartant du seul contexte de son prospect.
+_Avoid_ : batch, séquence, vague, liste d'appels
+
 **Appel** :
 Une conversation téléphonique entre l'assistante et un prospect, lancée par l'opérateur.
 _Avoid_ : call, conversation, session
@@ -33,8 +41,16 @@ L'agent vocal IA unique qui passe tous les appels, nommé Mina, avec une personn
 _Avoid_ : agent, bot, IA, voicebot
 
 **Objection** :
-Réticence type d'un prospect envers une entreprise (« on a déjà un site », « c'est combien ? »), accompagnée de la réponse préparée. Appartient à une entreprise et garde une identité stable d'un appel à l'autre, pour qu'on puisse suivre si elle est levée.
-_Avoid_ : blocage, frein, refus
+Réticence type d'un prospect envers une entreprise (« on a déjà un site », « c'est combien ? », « ça ne m'intéresse pas »), accompagnée de sa réponse CRAC. Appartient à une entreprise et garde une identité stable d'un appel à l'autre, pour qu'on puisse suivre si elle est levée.
+_Avoid_ : blocage, frein
+
+**CRAC** :
+La méthode de traitement d'une objection en quatre temps : Creuser, Reformuler, Argumenter, Contrôler. Le bilan indique à quel temps une objection non levée a coincé.
+_Avoid_ : traitement d'objection, rebond
+
+**Refus ferme** :
+Demande explicite du prospect d'arrêter (« au revoir », « ne me rappelez plus ») ; contrairement à une objection, elle n'est pas traitée : l'assistante conclut poliment et raccroche.
+_Avoid_ : refus, non, rejet
 
 **Script** :
 La stratégie d'appel d'une entreprise, découpée en étapes ordonnées ; l'assistante s'en sert comme d'un plan, pas comme d'un texte à réciter. Il est versionné : le modifier crée une nouvelle version.
