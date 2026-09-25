@@ -8,6 +8,7 @@
   },
   "scripts": {
     "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "agent": "node --env-file=.env scripts/agent.ts"
   }
 }

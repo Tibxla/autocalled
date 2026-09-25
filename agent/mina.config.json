@@ -1,0 +1,94 @@
+{
+  "name": "Mina",
+  "conversation_config": {
+    "agent": {
+      "first_message": "",
+      "language": "fr",
+      "prompt": {
+        "llm": "gemini-3.7-flash",
+        "temperature": 0.7,
+        "built_in_tools": {
+          "transfer_to_agent": null,
+          "update_state": null,
+          "memory_entry_search": null,
+          "run_subagent": null,
+          "flag_issue_for_review": null,
+          "end_call": {
+            "type": "system",
+            "name": "end_call",
+            "description": "Met fin à l'appel après un refus ferme, un rendez-vous convenu ou une fin de conversation naturelle.",
+            "response_timeout_secs": 20,
+            "disable_interruptions": false,
+            "interruption_mode": "allow",
+            "force_pre_tool_speech": false,
+            "pre_tool_speech": "auto",
+            "assignments": [],
+            "tool_call_sound": null,
+            "tool_call_sound_behavior": "auto",
+            "tool_error_handling_mode": "auto",
+            "params": {
+              "system_tool_type": "end_call"
+            }
+          },
+          "language_detection": null,
+          "transfer_to_number": null,
+          "skip_turn": null,
+          "play_keypad_touch_tone": null,
+          "voicemail_detection": {
+            "type": "system",
+            "name": "voicemail_detection",
+            "description": "Détecte une messagerie ou un répondeur et raccroche sans laisser de message.",
+            "response_timeout_secs": 20,
+            "disable_interruptions": false,
+            "interruption_mode": "allow",
+            "force_pre_tool_speech": false,
+            "pre_tool_speech": "auto",
+            "assignments": [],
+            "tool_call_sound": null,
+            "tool_call_sound_behavior": "auto",
+            "tool_error_handling_mode": "auto",
+            "params": {
+              "system_tool_type": "voicemail_detection",
+              "voicemail_message": null
+            }
+          },
+          "transfer_to_genesys": null,
+          "transfer_to_genesys_chat": null,
+          "transfer_to_genesys_bot": null
+        }
+      },
+      "dynamic_variables": {
+        "dynamic_variable_placeholders": {
+          "date_du_jour": "vendredi 25 septembre 2026",
+          "entreprise_nom": "Atelier Vitrine",
+          "entreprise_offre": "des sites de réservation directe pour les loueurs saisonniers, livrés en deux semaines.",
+          "entreprise_cible": "gîtes, chambres d'hôtes et loueurs de vacances qui dépendent de Booking ou Airbnb.",
+          "entreprise_arguments": "chaque réservation directe évite de quinze à dix-huit pour cent de commission ; le loueur garde le contact de ses clients ; le site est prêt en deux semaines.",
+          "entreprise_prix_consigne": "tu ne donnes pas de chiffre au téléphone ; tu dis que c'est un petit forfait et que ça se voit au rendez-vous.",
+          "entreprise_interdits": "aucun chiffre de réservations garanti ; aucune critique des plateformes nommément.",
+          "prospect_nom": "Julie Martin",
+          "prospect_role": "gérante",
+          "prospect_societe": "Gîte des Aravis",
+          "prospect_contexte": "Gîte de quatre chambres près d'Annecy. Site ancien, pas de réservation en ligne : tout passe par Booking.",
+          "historique_appels": "Aucun échange précédent.",
+          "script_etapes": "1. Accroche : une phrase sur ce que tu as remarqué chez elle, puis tu demandes si elle a deux minutes. 2. Qualification : comment arrivent ses réservations aujourd'hui. 3. Pitch : le coût des commissions, en une phrase, relié à ce qu'elle a dit. 4. Rendez-vous : un échange de trente minutes pour lui montrer ce que ça donnerait.",
+          "objections": "« On est déjà sur Booking » : creuser ce que Booking lui coûte par an ; argument : le site ne remplace pas Booking, il récupère les clients qui reviennent. « Pas le temps » : creuser si c'est maintenant ou en général ; argument : trente minutes, au moment qui l'arrange. « Ça ne m'intéresse pas » : creuser si c'est le sujet ou le moment."
+        }
+      }
+    },
+    "tts": {
+      "voice_id": "Hy28BjVfgieDVMiyQpQe",
+      "model_id": "eleven_flash_v2_5",
+      "stability": 0.4,
+      "similarity_boost": 0.8,
+      "speed": 1
+    },
+    "turn": {
+      "turn_eagerness": "normal",
+      "turn_timeout": 7
+    },
+    "conversation": {
+      "max_duration_seconds": 600
+    }
+  }
+}
