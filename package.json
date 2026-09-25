@@ -8,7 +8,11 @@
   },
   "scripts": {
     "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r typecheck",
     "agent": "node --env-file=.env scripts/agent.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
   }
 }

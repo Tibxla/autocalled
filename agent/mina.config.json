@@ -8,11 +8,6 @@
         "llm": "gemini-3.7-flash",
         "temperature": 0.7,
         "built_in_tools": {
-          "transfer_to_agent": null,
-          "update_state": null,
-          "memory_entry_search": null,
-          "run_subagent": null,
-          "flag_issue_for_review": null,
           "end_call": {
             "type": "system",
             "name": "end_call",
@@ -23,17 +18,12 @@
             "force_pre_tool_speech": false,
             "pre_tool_speech": "auto",
             "assignments": [],
-            "tool_call_sound": null,
             "tool_call_sound_behavior": "auto",
             "tool_error_handling_mode": "auto",
             "params": {
               "system_tool_type": "end_call"
             }
           },
-          "language_detection": null,
-          "transfer_to_number": null,
-          "skip_turn": null,
-          "play_keypad_touch_tone": null,
           "voicemail_detection": {
             "type": "system",
             "name": "voicemail_detection",
@@ -44,17 +34,12 @@
             "force_pre_tool_speech": false,
             "pre_tool_speech": "auto",
             "assignments": [],
-            "tool_call_sound": null,
             "tool_call_sound_behavior": "auto",
             "tool_error_handling_mode": "auto",
             "params": {
-              "system_tool_type": "voicemail_detection",
-              "voicemail_message": null
+              "system_tool_type": "voicemail_detection"
             }
-          },
-          "transfer_to_genesys": null,
-          "transfer_to_genesys_chat": null,
-          "transfer_to_genesys_bot": null
+          }
         }
       },
       "dynamic_variables": {

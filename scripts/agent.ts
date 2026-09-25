@@ -68,10 +68,24 @@ const CHAMPS_GERES = [
   'conversation_config.conversation.max_duration_seconds',
 ];
 
+/** ElevenLabs renvoie chaque outil désactivé sous forme de `null` : on les retire pour garder un fichier lisible. */
+function sansNull(valeur: unknown): unknown {
+  if (valeur === null) return undefined;
+  if (Array.isArray(valeur)) return valeur.map(sansNull);
+  if (typeof valeur === 'object') {
+    return Object.fromEntries(
+      Object.entries(valeur as Json)
+        .map(([cle, v]) => [cle, sansNull(v)] as const)
+        .filter(([, v]) => v !== undefined),
+    );
+  }
+  return valeur;
+}
+
 function extraireGere(config: Json): Json {
   const gere: Json = {};
   for (const chemin of CHAMPS_GERES) {
-    const valeur = lire(config, chemin);
+    const valeur = sansNull(lire(config, chemin));
     if (valeur !== undefined) ecrire(gere, chemin, valeur);
   }
   return gere;
