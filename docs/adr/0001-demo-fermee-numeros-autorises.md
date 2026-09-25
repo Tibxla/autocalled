@@ -1,0 +1,3 @@
+# Démo fermée : l'assistante n'appelle que des numéros autorisés
+
+Depuis le 11 août 2026 (loi du 30 juin 2025), le démarchage téléphonique des particuliers exige un consentement préalable, et depuis le 2 août 2026 (AI Act, art. 50) une IA doit se présenter comme telle. Le projet sert à démontrer un savoir-faire, pas à prospecter : l'assistante n'appelle que des numéros autorisés, contrôlés côté serveur avant tout appel, et annonce toujours qu'elle est une IA. Ouvrir à de vrais prospects demanderait un chantier de conformité à part (Bloctel, opposition, plages horaires), volontairement hors périmètre.

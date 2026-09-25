@@ -1,0 +1,3 @@
+# Agenda : outils webhook maison plutôt que l'intégration Cal.com
+
+ElevenLabs propose une intégration Cal.com toute faite pour la prise de rendez-vous, mais elle est attachée à l'agent, et l'assistante est un agent unique qui représente plusieurs entreprises aux règles de rendez-vous différentes. L'assistante appelle donc deux outils webhook (`proposer_creneaux`, `reserver_creneau`) servis par notre backend, qui parle directement à Google Calendar : les règles viennent de l'entreprise de l'appel, le rendez-vous est rattaché à l'appel et au prospect dans notre base, et la disponibilité est revérifiée au moment de réserver.

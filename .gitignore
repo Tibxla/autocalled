@@ -1,0 +1,28 @@
+# Dépendances et builds
+node_modules/
+.next/
+dist/
+out/
+coverage/
+*.tsbuildinfo
+
+# Secrets : rien de réel ne doit jamais être commité
+.env
+.env.*
+!.env.example
+
+# Données d'exécution : enregistrements, bases, exports
+data/
+recordings/
+*.wav
+*.mp3
+*.sqlite
+*.db
+
+# Skills installés localement (restaurables via skills-lock.json)
+.agents/
+.claude/
+
+# Divers
+.DS_Store
+*.log
