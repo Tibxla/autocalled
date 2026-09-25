@@ -61,6 +61,19 @@ Chaque choix qui surprendrait un lecteur est expliqué dans un ADR :
 
 Le vocabulaire du domaine (entreprise, prospect, script, objection, issue, bilan…) est défini dans [CONTEXT.md](CONTEXT.md). Le code utilise ces mots-là et pas d'autres.
 
+## Feuille de route
+
+Chaque étape se termine sur quelque chose qui marche de bout en bout ; le plus risqué passe en premier.
+
+- [ ] **0. Spike Bluetooth** : le serveur fait composer le téléphone passerelle, le son passe dans les deux sens, le raccrochage est détecté.
+- [ ] **1. Premier appel de Mina** : une commande lance un appel ; configuration de l'agent versionnée ; latence mesurée.
+- [ ] **2. Cœur du domaine en TDD** : consentements et numéros autorisés, fiches prospect, cycle de vie d'une campagne, calcul des créneaux.
+- [ ] **3. Squelette web** : Postgres, authentification Tailscale, entreprises, import des fiches prospect, appel d'un prospect.
+- [ ] **4. Bilan** : audio et transcription rapatriés, analyse, écran d'un appel avec audio synchronisé.
+- [ ] **5. Agenda** : Google Agenda, proposition et réservation de créneaux pendant l'appel.
+- [ ] **6. Campagne en direct** : enchaînement des appels, transcription en temps réel.
+- [ ] **7. Scripts versionnés et analyse** : comparaison des versions, avec garde sur la taille de l'échantillon.
+
 ## Cadre légal
 
 Autocalled est une démo fermée : Mina n'appelle que des personnes qui ont accepté, au préalable, d'être appelées par une IA et enregistrées. C'est pour cela qu'elle ne s'annonce pas comme IA pendant l'appel. Pour démarcher de vrais prospects, ce ne serait pas permis en l'état : l'AI Act (art. 50, en vigueur depuis le 2 août 2026) impose d'informer la personne qu'elle parle à une IA, le droit français impose de la prévenir de l'enregistrement, et depuis le 11 août 2026 le démarchage téléphonique des particuliers exige leur consentement préalable. Le détail est dans l'[ADR 0001](docs/adr/0001-demo-fermee-numeros-autorises.md).
