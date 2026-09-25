@@ -2,7 +2,7 @@
 
 Une assistante vocale IA qui passe de vrais appels de prospection sur un vrai réseau mobile, propose des créneaux lus dans Google Agenda, réserve le rendez-vous, puis rédige le bilan de chaque appel.
 
-> **Statut : en conception.** Le vocabulaire du domaine et les décisions d'architecture sont écrits ; le code commence par un spike sur la ligne Bluetooth.
+> **Statut : en construction.** Le vocabulaire du domaine et les décisions d'architecture sont écrits ; le cœur du domaine est développé en TDD pendant que la ligne Bluetooth attend son matériel.
 
 ## Le parcours d'un appel
 

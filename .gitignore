@@ -26,3 +26,4 @@ recordings/
 # Divers
 .DS_Store
 *.log
+.vitest/
