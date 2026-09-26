@@ -87,19 +87,27 @@ export async function occupations(acces: string, calendriers: string[], debut: D
   return Object.values(r.calendars).flatMap((c) => c.busy.map((b) => ({ debut: new Date(b.start), fin: new Date(b.end) })));
 }
 
+/** Crée l'événement avec un lien Google Meet ; si un invité est donné, Google lui envoie l'invitation. */
 export async function creerEvenement(
   acces: string,
   calendrier: string,
-  evenement: { debut: Date; fin: Date; titre: string; description: string },
-): Promise<string> {
-  const r = await api<{ id: string }>(acces, `/calendars/${encodeURIComponent(calendrier)}/events`, {
-    method: 'POST',
-    body: JSON.stringify({
-      summary: evenement.titre,
-      description: evenement.description,
-      start: { dateTime: evenement.debut.toISOString() },
-      end: { dateTime: evenement.fin.toISOString() },
-    }),
-  });
-  return r.id;
+  evenement: { debut: Date; fin: Date; titre: string; description: string; invite?: string | null },
+): Promise<{ id: string; lienVisio: string | null }> {
+  const envoi = evenement.invite ? 'all' : 'none';
+  const r = await api<{ id: string; hangoutLink?: string }>(
+    acces,
+    `/calendars/${encodeURIComponent(calendrier)}/events?conferenceDataVersion=1&sendUpdates=${envoi}`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        summary: evenement.titre,
+        description: evenement.description,
+        start: { dateTime: evenement.debut.toISOString() },
+        end: { dateTime: evenement.fin.toISOString() },
+        attendees: evenement.invite ? [{ email: evenement.invite }] : [],
+        conferenceData: { createRequest: { requestId: crypto.randomUUID(), conferenceSolutionKey: { type: 'hangoutsMeet' } } },
+      }),
+    },
+  );
+  return { id: r.id, lienVisio: r.hangoutLink ?? null };
 }

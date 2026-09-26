@@ -10,7 +10,8 @@ const contexte: ContexteAppel = {
     prixConsigne: '',
     interdits: '',
   },
-  prospect: { nom: 'Julie Martin', role: 'Gérante', societe: 'Gîte des Aravis', contexte: 'Quatre chambres.' },
+  prospect: { nom: 'Julie Martin', role: 'Gérante', societe: 'Gîte des Aravis', contexte: 'Quatre chambres.', email: null },
+  rendezVous: { interlocuteur: 'Camille', dureeMinutes: 30 },
   etapes: [
     { intention: 'Accroche', exemples: ['Bonjour Julie', 'Vous avez deux minutes ?'] },
     { intention: 'Rendez-vous', exemples: [] },
@@ -69,6 +70,15 @@ describe('variablesDeLAppel', () => {
     expect(v.historique_appels).toBe(
       'Le dimanche 20 septembre : Non abouti. Pas de réponse.\nLe jeudi 24 septembre : Rappel convenu. Elle demande de rappeler jeudi.',
     );
+  });
+
+  it('décrit le rendez-vous : une visio avec l’interlocuteur de l’entreprise', () => {
+    expect(variablesDeLAppel(contexte).rendez_vous).toBe('une visio de 30 minutes avec Camille');
+  });
+
+  it('donne l’e-mail connu du prospect, ou dit qu’il faut le demander', () => {
+    expect(variablesDeLAppel(contexte).prospect_email).toBe('inconnu, à demander');
+    expect(variablesDeLAppel({ ...contexte, prospect: { ...contexte.prospect, email: 'julie@exemple.fr' } }).prospect_email).toBe('julie@exemple.fr');
   });
 
   it('se contente du nom quand le rôle ou la société manquent', () => {

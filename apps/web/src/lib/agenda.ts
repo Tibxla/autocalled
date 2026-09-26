@@ -2,6 +2,7 @@ import 'server-only';
 import { creerEvenement, creneauParle, listerCalendriers, occupations as occupationsApi } from '@autocalled/agenda';
 import { type Intervalle, type PlageHoraire, type ReglesRendezVous, estReservable, occupationsDepuisLibres, proposerCreneaux } from '@autocalled/domain';
 import { and, eq } from 'drizzle-orm';
+import { z } from 'zod';
 import { after } from 'next/server';
 import { db } from '@/db';
 import { appels, disponibilites, entreprises, prospects, rendezVous } from '@/db/schema';
@@ -144,7 +145,7 @@ export async function proposerPourAppel(appelId: string): Promise<unknown> {
   };
 }
 
-export async function reserverPourAppel(appelId: string, debutBrut: unknown): Promise<unknown> {
+export async function reserverPourAppel(appelId: string, debutBrut: unknown, emailBrut?: unknown): Promise<unknown> {
   const c = await contexteAppel(appelId);
   if (!c) return { reserve: false, raison: 'Appel inconnu.' };
   const [deja] = await db.select().from(rendezVous).where(eq(rendezVous.appelId, appelId));
@@ -162,9 +163,22 @@ export async function reserverPourAppel(appelId: string, debutBrut: unknown): Pr
     return { reserve: false, raison: "Ce créneau vient d'être pris ou n'est pas autorisé.", alternatives };
   }
 
-  const [rdv] = await db.insert(rendezVous).values({ appelId, debut, fin }).returning({ id: rendezVous.id });
+  const lu = z.email().safeParse(typeof emailBrut === 'string' ? emailBrut.trim().toLowerCase() : '');
+  const email = lu.success ? lu.data : null;
+  const [rdv] = await db.insert(rendezVous).values({ appelId, debut, fin, email }).returning({ id: rendezVous.id });
+  // Une adresse confirmée au téléphone complète la fiche pour les appels suivants.
+  if (email && !c.prospect.email) {
+    await db
+      .update(prospects)
+      .set({ email })
+      .where(and(eq(prospects.entrepriseId, c.appel.entrepriseId), eq(prospects.id, c.appel.prospectId)));
+  }
   if (rdv) after(() => creerEvenementDuRendezVous(rdv.id));
-  return { reserve: true, libelle: creneauParle(debut, c.regles.fuseau) };
+  return {
+    reserve: true,
+    libelle: creneauParle(debut, c.regles.fuseau),
+    invitation: email ? `envoyée à ${email}` : 'aucune adresse : pas d’invitation envoyée',
+  };
 }
 
 /** Crée l'événement Google d'un rendez-vous déjà réservé : par l'API si elle est connectée, sinon par le MCP. */
@@ -174,7 +188,7 @@ export async function creerEvenementDuRendezVous(rendezVousId: string): Promise<
   const c = await contexteAppel(rdv.appelId);
   if (!c) return;
   const p = c.prospect;
-  const titre = `Premier échange · ${p.nom}${p.societe ? ` (${p.societe})` : ''} · ${c.entreprise.nom}`;
+  const titre = `Visio · ${p.nom}${p.societe ? ` (${p.societe})` : ''} · ${c.entreprise.nom}`;
   const description = [
     `${p.nom}${p.role ? `, ${p.role}` : ''}${p.societe ? ` chez ${p.societe}` : ''}`,
     `Téléphone : ${p.telephone}`,
@@ -188,9 +202,16 @@ export async function creerEvenementDuRendezVous(rendezVousId: string): Promise<
     const google = await accesGoogle().catch(() => null);
     let evenementId: string;
     let calendrier: string;
+    let lienVisio: string | null;
     if (google) {
       calendrier = google.calendrierId;
-      evenementId = await creerEvenement(google.acces, google.calendrierId, { debut: rdv.debut, fin: rdv.fin, titre, description });
+      ({ id: evenementId, lienVisio } = await creerEvenement(google.acces, google.calendrierId, {
+        debut: rdv.debut,
+        fin: rdv.fin,
+        titre,
+        description,
+        invite: rdv.email,
+      }));
     } else {
       const r = (await claudeStructure({
         modele: 'haiku',
@@ -198,8 +219,8 @@ export async function creerEvenementDuRendezVous(rendezVousId: string): Promise<
         delaiMs: 120_000,
         schema: {
           type: 'object',
-          properties: { evenementId: { type: 'string' }, calendrier: { type: 'string' } },
-          required: ['evenementId', 'calendrier'],
+          properties: { evenementId: { type: 'string' }, calendrier: { type: 'string' }, lienVisio: { type: 'string' } },
+          required: ['evenementId', 'calendrier', 'lienVisio'],
           additionalProperties: false,
         },
         prompt: `Appelle list_calendars. Si un calendrier a pour nom (summary) exactement « Autocalled », utilise son identifiant comme calendarId ; sinon, utilise calendarId = primary, littéralement, sans choisir un autre calendrier. Appelle create_event une seule fois avec ce calendarId et exactement ces valeurs, sans rien reformuler :
@@ -209,13 +230,15 @@ endTime : ${iso(rdv.fin)}
 timeZone : Europe/Paris
 description : ${JSON.stringify(description)}
 availability : AVAILABILITY_BUSY
-notificationLevel : NONE
-Renvoie l'identifiant de l'événement créé et le calendarId utilisé.`,
-      })) as { evenementId: string; calendrier: string };
+addGoogleMeetUrl : true
+${rdv.email ? `attendees : [{ email: ${JSON.stringify(rdv.email)} }]\nnotificationLevel : ALL` : 'aucun invité (attendees vide)\nnotificationLevel : NONE'}
+Renvoie l'identifiant de l'événement créé, le calendarId utilisé et le lien Google Meet (hangoutLink ou lien de conférence ; chaîne vide s'il n'y en a pas).`,
+      })) as { evenementId: string; calendrier: string; lienVisio: string };
       evenementId = r.evenementId;
       calendrier = r.calendrier;
+      lienVisio = r.lienVisio || null;
     }
-    await db.update(rendezVous).set({ evenementId, calendrier, statut: 'cree', erreur: null }).where(eq(rendezVous.id, rendezVousId));
+    await db.update(rendezVous).set({ evenementId, calendrier, lienVisio, statut: 'cree', erreur: null }).where(eq(rendezVous.id, rendezVousId));
   } catch (erreur) {
     await db.update(rendezVous).set({ statut: 'echec', erreur: (erreur as Error).message }).where(eq(rendezVous.id, rendezVousId));
   }

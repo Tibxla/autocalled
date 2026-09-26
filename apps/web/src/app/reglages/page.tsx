@@ -64,7 +64,7 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
         </section>
 
         <section className="grid gap-3">
-          <TitreSection>Rendez-vous pris par Mina</TitreSection>
+          <TitreSection>Visios réservées par Mina</TitreSection>
           {rdvs.length === 0 ? (
             <p className="text-sm text-encre-3">Aucun pour l’instant.</p>
           ) : (
@@ -72,9 +72,16 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
               {rdvs.map(({ rdv, prospect, appelId }) => (
                 <li key={rdv.id} className="grid grid-cols-[8.5rem_minmax(0,1fr)_auto] items-baseline gap-4 border-b border-filet py-3">
                   <span className="font-mono text-sm">{date.format(rdv.debut)}</span>
-                  <Link href={`/appels/${appelId}`} className="truncate hover:underline">
-                    {prospect ?? 'Prospect'}
-                  </Link>
+                  <span className="flex min-w-0 items-baseline gap-3">
+                    <Link href={`/appels/${appelId}`} className="truncate hover:underline">
+                      {prospect ?? 'Prospect'}
+                    </Link>
+                    {rdv.lienVisio ? (
+                      <a href={rdv.lienVisio} className="text-sm text-encre-3 underline decoration-filet-fort underline-offset-4 hover:text-encre">
+                        visio
+                      </a>
+                    ) : null}
+                  </span>
                   <span className="text-sm text-encre-3">
                     {rdv.statut === 'cree' ? 'Dans l’agenda' : rdv.statut === 'a-creer' ? 'Inscription…' : <BoutonRecreer rendezVousId={rdv.id} />}
                   </span>

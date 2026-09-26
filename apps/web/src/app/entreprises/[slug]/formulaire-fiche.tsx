@@ -34,6 +34,7 @@ interface Fiche {
   prixConsigne: string;
   interdits: string;
   dureeRendezVousMinutes: number;
+  interlocuteur: string;
   plagesRendezVous: PlageHoraire[];
   delaiMinimumHeures: number;
   horizonJours: number;
@@ -92,6 +93,14 @@ export function FormulaireFiche({ fiche }: { fiche: Fiche }) {
       <section className="grid gap-6">
         <TitreSection>Règles de rendez-vous</TitreSection>
         <div className="grid max-w-[44rem] gap-6">
+          <Champ
+            libelle="Avec qui ont lieu les visios"
+            htmlFor="interlocuteur"
+            erreur={e.interlocuteur}
+            aide="Mina l’annonce au prospect : « un échange en visio avec Camille »."
+          >
+            <Saisie id="interlocuteur" name="interlocuteur" defaultValue={fiche.interlocuteur} placeholder="Prénom" />
+          </Champ>
           <div className="grid gap-6 sm:grid-cols-3">
             <Champ libelle="Durée" htmlFor="dureeRendezVousMinutes" erreur={e.dureeRendezVousMinutes}>
               <Selection id="dureeRendezVousMinutes" name="dureeRendezVousMinutes" defaultValue={fiche.dureeRendezVousMinutes}>

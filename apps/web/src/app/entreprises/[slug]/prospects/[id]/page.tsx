@@ -78,6 +78,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
       <aside className="order-first grid content-start gap-8 lg:order-none">
         <div className="grid gap-3 border-t border-filet pt-4">
           <p className="font-mono text-lg tracking-[-0.01em]">{numeroLisible(prospect.telephone)}</p>
+          {prospect.email ? <p className="font-mono text-sm text-encre-2">{prospect.email}</p> : null}
           <PastilleAutorisation autorisation={autorisation} />
           {revocation ? (
             <p className="text-sm text-encre-3">

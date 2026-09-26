@@ -45,7 +45,7 @@
           {
             "type": "client",
             "name": "proposer_creneaux",
-            "description": "Renvoie quelques créneaux libres pour un premier rendez-vous, lus dans l'agenda réel.",
+            "description": "Renvoie quelques créneaux libres pour une première visio, lus dans l'agenda réel.",
             "response_timeout_secs": 30,
             "disable_interruptions": false,
             "interruption_mode": "allow",
@@ -71,7 +71,7 @@
           {
             "type": "client",
             "name": "reserver_creneau",
-            "description": "Réserve le créneau choisi par le prospect. À appeler seulement après son accord explicite.",
+            "description": "Réserve la visio au créneau choisi et envoie l'invitation à l'adresse confirmée. À appeler seulement après l'accord explicite du prospect.",
             "response_timeout_secs": 30,
             "disable_interruptions": false,
             "interruption_mode": "allow",
@@ -92,6 +92,15 @@
                 "debut": {
                   "type": "string",
                   "description": "La valeur debut exacte du créneau choisi, telle que renvoyée par proposer_creneaux.",
+                  "is_system_provided": false,
+                  "dynamic_variable": "",
+                  "allowed_values_dynamic_variable": "",
+                  "constant_value": "",
+                  "is_omitted": false
+                },
+                "email": {
+                  "type": "string",
+                  "description": "L'adresse e-mail confirmée par le prospect pour recevoir l'invitation à la visio. Vide s'il n'en donne pas.",
                   "is_system_provided": false,
                   "dynamic_variable": "",
                   "allowed_values_dynamic_variable": "",

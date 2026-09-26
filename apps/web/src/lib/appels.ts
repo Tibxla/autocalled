@@ -63,6 +63,7 @@ export async function preparerAppel(entrepriseId: string, prospectId: string, ve
   const variables = variablesDeLAppel({
     entreprise,
     prospect,
+    rendezVous: { interlocuteur: entreprise.interlocuteur, dureeMinutes: entreprise.dureeRendezVousMinutes },
     etapes: version.etapes,
     objections: listeObjections,
     historique: precedents.map((p) => ({

@@ -15,6 +15,8 @@ export const VARIABLES_DE_L_APPEL = [
   'prospect_role',
   'prospect_societe',
   'prospect_contexte',
+  'prospect_email',
+  'rendez_vous',
   'historique_appels',
   'script_etapes',
   'objections',
@@ -31,7 +33,9 @@ export interface ContexteAppel {
     prixConsigne: string;
     interdits: string;
   };
-  prospect: { nom: string; role: string | null; societe: string | null; contexte: string };
+  prospect: { nom: string; role: string | null; societe: string | null; contexte: string; email: string | null };
+  /** Avec qui le prospect aura sa visio, et combien de temps. */
+  rendezVous: { interlocuteur: string; dureeMinutes: number };
   etapes: { intention: string; exemples: string[] }[];
   objections: { libelle: string; creuser: string; reformuler: string; argumenter: string; controler: string }[];
   /** Appels précédents avec ce prospect, dans n'importe quel ordre. */
@@ -87,6 +91,8 @@ export function variablesDeLAppel(c: ContexteAppel): VariablesDeLAppel {
     prospect_role: c.prospect.role ?? 'responsable',
     prospect_societe: c.prospect.societe ?? 'son entreprise',
     prospect_contexte: ou(c.prospect.contexte, 'Rien de plus.'),
+    prospect_email: c.prospect.email ?? 'inconnu, à demander',
+    rendez_vous: `une visio de ${c.rendezVous.dureeMinutes} minutes avec ${ou(c.rendezVous.interlocuteur, 'un membre de l’équipe')}`,
     historique_appels: historique || 'Aucun échange précédent.',
     script_etapes: etapes || '1. Obtenir un premier rendez-vous.',
     objections: objections || 'Aucune objection préparée : applique la méthode CRAC.',

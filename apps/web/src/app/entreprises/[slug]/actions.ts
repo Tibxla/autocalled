@@ -22,6 +22,7 @@ const ficheSchema = z.object({
   prixConsigne: texte(400),
   interdits: texte(600),
   dureeRendezVousMinutes: z.coerce.number().int().min(15).max(120),
+  interlocuteur: z.string().trim().max(60, 'Soixante caractères au plus.'),
   delaiMinimumHeures: z.coerce.number().int().min(0, 'Zéro au moins.').max(168, 'Une semaine au plus.'),
   horizonJours: z.coerce.number().int().min(1, 'Un jour au moins.').max(60, 'Soixante jours au plus.'),
 });

@@ -43,6 +43,13 @@
       "when": 1790436367103,
       "tag": "0005_calendrier-rdv",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790442725231,
+      "tag": "0006_visio",
+      "breakpoints": true
     }
   ]
 }

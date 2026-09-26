@@ -13,6 +13,8 @@ export interface FicheProspect {
   societe: string | null;
   role: string | null;
   telephone: NumeroE164;
+  /** Adresse où envoyer l'invitation à la visio, si on la connaît. */
+  email: string | null;
   /** Injecté tel quel dans le prompt de l'assistante. */
   contexte: string;
 }
@@ -30,11 +32,12 @@ const enTeteSchema = z.strictObject({
   telephone: z.string(),
   societe: z.string().trim().min(1).optional(),
   role: z.string().trim().min(1).optional(),
+  email: z.email().optional(),
 });
 
 function messageErreur(issue: z.core.$ZodIssue): string {
   if (issue.code === 'unrecognized_keys') {
-    return `champ inconnu : ${issue.keys.join(', ')} (champs permis : nom, telephone, societe, role)`;
+    return `champ inconnu : ${issue.keys.join(', ')} (champs permis : nom, telephone, societe, role, email)`;
   }
   const champ = issue.path.join('.');
   return issue.code === 'invalid_type' && issue.input === undefined
@@ -86,6 +89,7 @@ export function lireFiche(nomFichier: string, contenu: string): LectureFiche {
       societe: enTete.data.societe ?? null,
       role: enTete.data.role ?? null,
       telephone,
+      email: enTete.data.email ?? null,
       contexte,
     },
   };
@@ -131,6 +135,7 @@ function identiques(a: FicheProspect, b: FicheProspect): boolean {
     a.societe === b.societe &&
     a.role === b.role &&
     a.telephone === b.telephone &&
+    a.email === b.email &&
     a.contexte === b.contexte
   );
 }

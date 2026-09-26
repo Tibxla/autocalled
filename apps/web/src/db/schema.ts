@@ -25,6 +25,8 @@ export const entreprises = pgTable('entreprises', {
   prixConsigne: text().notNull().default(''),
   interdits: text().notNull().default(''),
   dureeRendezVousMinutes: integer().notNull().default(30),
+  /** La personne avec qui le prospect aura sa visio (« Camille »). */
+  interlocuteur: text().notNull().default(''),
   plagesRendezVous: jsonb().$type<PlageHoraire[]>().notNull().default([]),
   delaiMinimumHeures: integer().notNull().default(24),
   horizonJours: integer().notNull().default(14),
@@ -133,6 +135,7 @@ export const prospects = pgTable(
     societe: text(),
     role: text(),
     telephone: text().notNull(),
+    email: text(),
     contexte: text().notNull(),
     importId: uuid().references(() => imports.id),
     majLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
@@ -214,6 +217,9 @@ export const rendezVous = pgTable('rendez_vous', {
   evenementId: text(),
   /** Le calendrier Google où l'événement a été créé. */
   calendrier: text(),
+  /** Adresse confirmée par le prospect : Google lui envoie l'invitation. */
+  email: text(),
+  lienVisio: text(),
   statut: text().$type<'a-creer' | 'cree' | 'echec'>().notNull().default('a-creer'),
   erreur: text(),
   creeLe: timestamp({ withTimezone: true }).notNull().defaultNow(),

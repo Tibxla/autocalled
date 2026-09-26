@@ -12,7 +12,7 @@ export async function outilProposerCreneaux(appelId: string): Promise<string> {
   return JSON.stringify(await proposerPourAppel(appelId));
 }
 
-export async function outilReserverCreneau(appelId: string, debut: unknown): Promise<string> {
+export async function outilReserverCreneau(appelId: string, debut: unknown, email?: unknown): Promise<string> {
   await exigerOperateur();
-  return JSON.stringify(await reserverPourAppel(appelId, debut));
+  return JSON.stringify(await reserverPourAppel(appelId, debut, email));
 }
