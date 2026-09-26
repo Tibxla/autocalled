@@ -5,7 +5,7 @@
       "first_message": "",
       "language": "fr",
       "prompt": {
-        "llm": "glm-45-air-fp8",
+        "llm": "qwen36-35b-a3b",
         "temperature": 0.7,
         "built_in_tools": {
           "end_call": {
@@ -161,7 +161,7 @@
     },
     "tts": {
       "voice_id": "ebRwkdEFVZIx2A6YucFh",
-      "model_id": "eleven_turbo_v2_5",
+      "model_id": "eleven_v3_conversational",
       "stability": 0.45,
       "similarity_boost": 0.8,
       "speed": 1
