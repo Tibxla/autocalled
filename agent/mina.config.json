@@ -169,7 +169,30 @@
     "turn": {
       "turn_eagerness": "normal",
       "turn_timeout": 7,
-      "speculative_turn": true,
+      "speculative_turn": false,
+      "interruption_ignore_terms": [
+        "oui",
+        "ouais",
+        "ouai",
+        "mmh",
+        "hmm",
+        "hum",
+        "euh",
+        "bah",
+        "ah",
+        "ok",
+        "okay",
+        "d'accord",
+        "ouais ouais",
+        "oui oui",
+        "voilà",
+        "exactement",
+        "je vois"
+      ],
+      "interruption_ignore_term_languages": [
+        "fr"
+      ],
+      "merge_with_default_ignore_terms": true,
       "soft_timeout_config": {
         "timeout_seconds": 1.2,
         "message": "Hmm…",

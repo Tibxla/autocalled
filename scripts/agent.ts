@@ -70,6 +70,9 @@ const CHAMPS_GERES = [
   'conversation_config.turn.turn_eagerness',
   'conversation_config.turn.turn_timeout',
   'conversation_config.turn.speculative_turn',
+  'conversation_config.turn.interruption_ignore_terms',
+  'conversation_config.turn.interruption_ignore_term_languages',
+  'conversation_config.turn.merge_with_default_ignore_terms',
   'conversation_config.turn.soft_timeout_config',
   'conversation_config.conversation.max_duration_seconds',
 ];
