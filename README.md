@@ -1,4 +1,9 @@
-# Autocalled
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo/autocalled-sombre.svg">
+    <img src="docs/logo/autocalled.svg" alt="Autocalled" height="56">
+  </picture>
+</h1>
 
 Une assistante vocale IA qui passe de vrais appels de prospection sur un vrai réseau mobile, propose des créneaux lus dans Google Agenda, réserve le rendez-vous, puis rédige le bilan de chaque appel.
 
