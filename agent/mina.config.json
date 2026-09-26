@@ -160,7 +160,7 @@
       }
     },
     "tts": {
-      "voice_id": "Crnn8UaAugljbB6XhAKo",
+      "voice_id": "ebRwkdEFVZIx2A6YucFh",
       "model_id": "eleven_turbo_v2_5",
       "stability": 0.45,
       "similarity_boost": 0.8,
