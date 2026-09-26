@@ -5,7 +5,7 @@
       "first_message": "",
       "language": "fr",
       "prompt": {
-        "llm": "gemini-3.7-flash",
+        "llm": "glm-45-air-fp8",
         "temperature": 0.7,
         "built_in_tools": {
           "end_call": {
@@ -98,13 +98,28 @@
     "tts": {
       "voice_id": "Hy28BjVfgieDVMiyQpQe",
       "model_id": "eleven_flash_v2_5",
-      "stability": 0.4,
+      "stability": 0.3,
       "similarity_boost": 0.8,
       "speed": 1
     },
     "turn": {
       "turn_eagerness": "normal",
-      "turn_timeout": 7
+      "turn_timeout": 7,
+      "speculative_turn": true,
+      "soft_timeout_config": {
+        "timeout_seconds": 1.2,
+        "message": "Hmm…",
+        "additional_soft_timeout_messages": [
+          "Alors…",
+          "Euh, attendez…",
+          "Voyons voir…",
+          "Oui, oui…"
+        ],
+        "use_llm_generated_message": false,
+        "randomize_fillers": true,
+        "max_soft_timeouts_per_generation": 5,
+        "disable_until_first_user_message": true
+      }
     },
     "conversation": {
       "max_duration_seconds": 300

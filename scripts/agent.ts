@@ -2,7 +2,8 @@
  * Synchronise la configuration de Mina entre le dépôt et ElevenLabs.
  *
  *   node --env-file=.env scripts/agent.ts create   crée l'agent et affiche son identifiant
- *   node --env-file=.env scripts/agent.ts pull     rapatrie la configuration distante dans agent/
+ *   node --env-file=.env scripts/agent.ts pull     rapatrie la configuration distante dans agent/ (refuse d'écraser
+ *                                                   des modifications locales non poussées, sauf --force)
  *   node --env-file=.env scripts/agent.ts push     envoie agent/ vers ElevenLabs
  *   node --env-file=.env scripts/agent.ts status   dit si le dépôt et ElevenLabs divergent
  *
@@ -67,6 +68,8 @@ const CHAMPS_GERES = [
   'conversation_config.tts.speed',
   'conversation_config.turn.turn_eagerness',
   'conversation_config.turn.turn_timeout',
+  'conversation_config.turn.speculative_turn',
+  'conversation_config.turn.soft_timeout_config',
   'conversation_config.conversation.max_duration_seconds',
 ];
 
@@ -146,6 +149,11 @@ const commandes: Record<string, () => Promise<void>> = {
   },
 
   async pull() {
+    // Ne jamais écraser en silence des modifications locales pas encore poussées.
+    const connu = await verrou();
+    if (connu && !process.argv.includes('--force') && empreinte(await configLocale()) !== connu.empreinte) {
+      throw new Error('agent/ contient des modifications non poussées : pousse-les, ou relance avec --force pour les écraser.');
+    }
     await enregistrerLocal(await distante());
     console.log('Configuration distante rapatriée dans agent/. Relis le diff, puis commite.');
   },
