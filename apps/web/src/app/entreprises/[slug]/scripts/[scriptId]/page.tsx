@@ -10,7 +10,7 @@ import { EditeurVersion } from './editeur-version';
 
 export const metadata: Metadata = { title: 'Script' };
 
-const dateCourte = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' });
+const dateCourte = new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' });
 
 export default async function PageScript({
   params,
@@ -48,6 +48,11 @@ export default async function PageScript({
         </div>
 
         {affichee.numero === derniere.numero ? (
+          <>
+          <p className="text-sm text-encre-2">
+            La <span className="font-mono">v{derniere.numero}</span> est figée : tes modifications créeront la{' '}
+            <span className="font-mono">v{derniere.numero + 1}</span>.
+          </p>
           <EditeurVersion
             key={derniere.id}
             entrepriseId={entreprise.id}
@@ -55,6 +60,7 @@ export default async function PageScript({
             etapes={derniere.etapes}
             prochainNumero={derniere.numero + 1}
           />
+          </>
         ) : (
           <section className="grid gap-4">
             <p className="text-sm text-encre-2">Version figée, en lecture seule.</p>
@@ -88,7 +94,7 @@ export default async function PageScript({
                 className="flex items-baseline justify-between gap-3 rounded-md px-2.5 py-1.5 text-sm text-encre-2 hover:bg-survol aria-[current=page]:bg-survol aria-[current=page]:text-encre"
               >
                 <span className="font-mono">v{v.numero}</span>
-                <span className="text-xs text-encre-3">{dateCourte.format(v.creeLe)}</span>
+                <span className="font-mono text-xs text-encre-3">{dateCourte.format(v.creeLe)}</span>
               </Link>
             </li>
           ))}

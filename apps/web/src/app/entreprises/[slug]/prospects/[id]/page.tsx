@@ -1,10 +1,10 @@
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { PastilleAutorisation } from '@/components/pastille-autorisation';
 import { Bouton, EtatVide, TitreSection } from '@/components/ui';
 import { db } from '@/db';
-import { prospects } from '@/db/schema';
+import { consentements, prospects } from '@/db/schema';
 import { autorisationsDe } from '@/lib/autorisations';
 import { entrepriseParSlug, prospectParId } from '@/lib/donnees';
 import { numeroLisible } from '@/lib/format';
@@ -12,7 +12,7 @@ import { BoutonRevoquer } from './bouton-revoquer';
 
 export const metadata: Metadata = { title: 'Prospect' };
 
-const dateLongue = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'long', timeStyle: 'short', timeZone: 'Europe/Paris' });
+const dateLongue = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Paris' });
 
 export default async function PageProspect({ params }: { params: Promise<{ slug: string; id: string }> }) {
   const { slug, id } = await params;
@@ -23,23 +23,32 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
     db.$count(prospects, and(eq(prospects.entrepriseId, entreprise.id), eq(prospects.telephone, prospect.telephone))),
   ]);
   const autorisation = autorisations.get(prospect.telephone);
+  const [derniereRevocation] = await db
+    .select({ le: consentements.revoqueLe })
+    .from(consentements)
+    .where(and(eq(consentements.numero, prospect.telephone), isNotNull(consentements.revoqueLe)))
+    .orderBy(desc(consentements.revoqueLe))
+    .limit(1);
+  const revocation = autorisation?.autorise ? null : (derniereRevocation?.le ?? null);
 
   return (
-    <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_18rem]">
-      <div className="grid content-start gap-10">
-        <div className="grid gap-1">
+    <div className="grid gap-10">
+      <div className="grid gap-1">
           <Link href={`/entreprises/${slug}/prospects`} className="text-sm text-encre-3 hover:text-encre">
             Prospects
           </Link>
           <h2 className="text-lg font-semibold">{prospect.nom}</h2>
           <p className="text-encre-2">{[prospect.role, prospect.societe].filter(Boolean).join(', ')}</p>
         </div>
+      <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_18rem]">
+      <div className="grid content-start gap-10">
 
         <section className="grid gap-4">
           <TitreSection>Ce que Mina sait</TitreSection>
           <p className="max-w-[68ch] leading-relaxed whitespace-pre-line">{prospect.contexte || 'Pas de contexte dans la fiche.'}</p>
           <p className="text-sm text-encre-3">
-            Fiche <span className="font-mono">{prospect.id}.md</span>, mise à jour le {dateLongue.format(prospect.majLe)}.
+            Fiche <span className="font-mono">{prospect.id}.md</span>, mise à jour le{' '}
+            <span className="font-mono">{dateLongue.format(prospect.majLe)}</span>.
           </p>
         </section>
 
@@ -51,14 +60,19 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
         </section>
       </div>
 
-      <aside className="grid content-start gap-6">
+      <aside className="order-first grid content-start gap-6 lg:order-none">
         <div className="grid gap-3 border-t border-filet pt-4">
           <p className="font-mono text-lg tracking-[-0.01em]">{numeroLisible(prospect.telephone)}</p>
           <PastilleAutorisation autorisation={autorisation} />
+          {revocation ? (
+            <p className="text-sm text-encre-3">
+              Révoqué le <span className="font-mono">{dateLongue.format(revocation)}</span>.
+            </p>
+          ) : null}
           {partages > 1 ? <p className="text-sm text-encre-3">Numéro partagé par {partages} prospects.</p> : null}
         </div>
         <div className="grid gap-2">
-          <Bouton type="button" disabled aria-describedby="appel-indisponible">
+          <Bouton type="button" variante="secondaire" disabled aria-describedby="appel-indisponible">
             Appeler {prospect.nom.split(' ')[0]}
           </Bouton>
           <p id="appel-indisponible" className="text-sm text-encre-3">
@@ -67,6 +81,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
         </div>
         {autorisation?.autorise ? <BoutonRevoquer numero={prospect.telephone} partages={partages} /> : null}
       </aside>
+      </div>
     </div>
   );
 }

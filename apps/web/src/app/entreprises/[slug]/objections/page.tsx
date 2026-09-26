@@ -56,10 +56,15 @@ export default async function PageObjections({ params }: { params: Promise<{ slu
         )}
       </section>
 
-      <section className="grid">
-        <TitreSection>Nouvelle objection</TitreSection>
-        <FormulaireObjection key={actives.length} entrepriseId={entreprise.id} />
-      </section>
+      <details className="group" open={actives.length === 0}>
+        <summary className="inline-flex h-9 cursor-pointer list-none items-center rounded-md bg-surface px-3.5 text-sm font-medium shadow-[inset_0_0_0_1px_var(--filet-fort)] transition-colors duration-150 group-open:hidden hover:bg-survol [&::-webkit-details-marker]:hidden">
+          Ajouter une objection
+        </summary>
+        <section className="grid">
+          <TitreSection>Nouvelle objection</TitreSection>
+          <FormulaireObjection key={actives.length} entrepriseId={entreprise.id} />
+        </section>
+      </details>
 
       {archivees.length > 0 ? (
         <section className="grid">

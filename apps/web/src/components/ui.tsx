@@ -37,7 +37,18 @@ export function ZoneTexte({ className = '', ...props }: ComponentProps<'textarea
 }
 
 export function Selection({ className = '', ...props }: ComponentProps<'select'>) {
-  return <select className={`${BASE_SAISIE} h-9 ${className}`} {...props} />;
+  return (
+    <div className={`relative ${className}`}>
+      <select className={`${BASE_SAISIE} h-9 appearance-none pr-8 disabled:cursor-not-allowed disabled:opacity-40`} {...props} />
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 10 6"
+        className="pointer-events-none absolute top-1/2 right-3 w-2.5 -translate-y-1/2 fill-none stroke-encre-3"
+      >
+        <path d="M1 1l4 4 4-4" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </div>
+  );
 }
 
 export function Champ({

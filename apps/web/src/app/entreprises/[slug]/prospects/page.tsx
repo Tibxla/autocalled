@@ -43,7 +43,7 @@ export default async function PageProspects({ params }: { params: Promise<{ slug
             <tbody>
               {liste.map((p) => (
                 <tr key={p.id} className="group border-b border-filet">
-                  <td className="py-4 pr-4">
+                  <td className="py-4 pr-4 align-baseline">
                     <Link href={`/entreprises/${slug}/prospects/${p.id}`} className="grid gap-0.5">
                       <span className="font-medium group-hover:underline group-hover:decoration-filet-fort group-hover:underline-offset-4">
                         {p.nom}
@@ -51,8 +51,8 @@ export default async function PageProspects({ params }: { params: Promise<{ slug
                       <span className="text-sm text-encre-2">{[p.role, p.societe].filter(Boolean).join(', ') || '—'}</span>
                     </Link>
                   </td>
-                  <td className="hidden py-4 pr-4 font-mono text-sm whitespace-nowrap text-encre-2 sm:table-cell">{numeroLisible(p.telephone)}</td>
-                  <td className="py-4 text-right whitespace-nowrap">
+                  <td className="hidden w-40 py-4 pr-8 text-right align-baseline font-mono text-sm whitespace-nowrap text-encre-2 sm:table-cell">{numeroLisible(p.telephone)}</td>
+                  <td className="w-40 py-4 text-right align-baseline whitespace-nowrap">
                     <PastilleAutorisation autorisation={autorisations.get(p.telephone)} />
                   </td>
                 </tr>

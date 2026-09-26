@@ -70,6 +70,12 @@ export function FormulaireImport({ entrepriseId, texteConsentement }: { entrepri
               {rapport.numerosAutorises} numéro{rapport.numerosAutorises > 1 ? 's' : ''} autorisé{rapport.numerosAutorises > 1 ? 's' : ''} par cet import.
             </p>
           ) : null}
+          {rapport.numerosRevoques.length > 0 ? (
+            <p className="text-sm text-encre-2">
+              Numéro{rapport.numerosRevoques.length > 1 ? 's' : ''} révoqué{rapport.numerosRevoques.length > 1 ? 's' : ''}, non réautorisé
+              {rapport.numerosRevoques.length > 1 ? 's' : ''} : <span className="font-mono">{rapport.numerosRevoques.join(', ')}</span>
+            </p>
+          ) : null}
           {rapport.refus.map((r) => (
             <div key={r.nomFichier} className="text-sm text-alerte">
               <span className="font-mono">{r.nomFichier}</span> refusé : {r.erreurs.join(' ; ')}

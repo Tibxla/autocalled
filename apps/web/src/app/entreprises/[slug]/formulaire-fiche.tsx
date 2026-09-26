@@ -1,7 +1,7 @@
 'use client';
 
 import type { PlageHoraire } from '@autocalled/domain';
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { Bouton, Champ, Message, Saisie, Selection, TitreSection, ZoneTexte } from '@/components/ui';
 import { enregistrerFiche } from './actions';
 
@@ -13,9 +13,9 @@ const HEURES = Array.from({ length: 31 }, (_, i) => {
   return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 });
 
-function ChoixHeure({ name, defaut, libelle }: { name: string; defaut: string; libelle: string }) {
+function ChoixHeure({ name, defaut, libelle, actif }: { name: string; defaut: string; libelle: string; actif: boolean }) {
   return (
-    <Selection name={name} defaultValue={defaut} aria-label={libelle} className="max-w-28 font-mono">
+    <Selection name={name} defaultValue={defaut} aria-label={libelle} disabled={!actif} className="w-24 font-mono sm:w-28">
       {HEURES.map((h) => (
         <option key={h} value={h}>
           {h}
@@ -44,6 +44,14 @@ export function FormulaireFiche({ fiche }: { fiche: Fiche }) {
   const [etat, action, enCours] = useActionState(enregistrerFiche.bind(null, fiche.id), null);
   const e = etat?.erreurs ?? {};
   const plageDu = (jour: number) => fiche.plagesRendezVous.find((p) => p.jour === jour);
+  const [joursActifs, setJoursActifs] = useState(() => new Set<number>(fiche.plagesRendezVous.map((p) => p.jour)));
+  const basculerJour = (jour: number, actif: boolean) =>
+    setJoursActifs((s) => {
+      const suivant = new Set(s);
+      if (actif) suivant.add(jour);
+      else suivant.delete(jour);
+      return suivant;
+    });
 
   return (
     <form action={action} className="grid gap-14">
@@ -109,15 +117,21 @@ export function FormulaireFiche({ fiche }: { fiche: Fiche }) {
                 const jour = i + 1;
                 const plage = plageDu(jour);
                 return (
-                  <div key={jour} className="grid grid-cols-[8rem_1fr] items-center gap-4 py-2.5 has-[input[type=checkbox]:not(:checked)]:text-encre-3">
+                  <div key={jour} className={`grid grid-cols-[6.5rem_1fr] items-center gap-3 py-2.5 sm:grid-cols-[8rem_1fr] sm:gap-4 ${joursActifs.has(jour) ? '' : 'text-encre-3'}`}>
                     <label className="flex items-center gap-2.5 text-sm">
-                      <input type="checkbox" name={`jour-${jour}`} defaultChecked={Boolean(plage)} className="size-4 accent-[var(--encre)]" />
+                      <input
+                        type="checkbox"
+                        name={`jour-${jour}`}
+                        checked={joursActifs.has(jour)}
+                        onChange={(ev) => basculerJour(jour, ev.target.checked)}
+                        className="size-4 accent-[var(--encre)]"
+                      />
                       {nomJour}
                     </label>
                     <div className="flex items-center gap-2 text-sm">
-                      <ChoixHeure name={`debut-${jour}`} defaut={plage?.debut ?? '14:00'} libelle={`${nomJour}, début`} />
+                      <ChoixHeure name={`debut-${jour}`} defaut={plage?.debut ?? '14:00'} libelle={`${nomJour}, début`} actif={joursActifs.has(jour)} />
                       <span aria-hidden="true">–</span>
-                      <ChoixHeure name={`fin-${jour}`} defaut={plage?.fin ?? '18:00'} libelle={`${nomJour}, fin`} />
+                      <ChoixHeure name={`fin-${jour}`} defaut={plage?.fin ?? '18:00'} libelle={`${nomJour}, fin`} actif={joursActifs.has(jour)} />
                     </div>
                   </div>
                 );
@@ -129,7 +143,7 @@ export function FormulaireFiche({ fiche }: { fiche: Fiche }) {
         </div>
       </section>
 
-      <div className="sticky bottom-0 -mx-5 flex items-center gap-4 border-t border-filet bg-fond/92 px-5 py-4 backdrop-blur-sm sm:-mx-8 sm:px-8">
+      <div className="sticky bottom-0 -mx-5 flex items-center gap-4 border-t border-filet bg-fond px-5 py-4 sm:-mx-8 sm:px-8">
         <Bouton type="submit" disabled={enCours}>
           {enCours ? 'Enregistrement…' : 'Enregistrer la fiche'}
         </Bouton>

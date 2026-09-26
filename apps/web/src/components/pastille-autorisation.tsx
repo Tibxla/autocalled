@@ -11,8 +11,8 @@ export function PastilleAutorisation({ autorisation }: { autorisation: Autorisat
   const cle = !autorisation ? 'aucun-consentement' : autorisation.autorise ? 'autorise' : autorisation.raison;
   const ok = cle === 'autorise';
   return (
-    <span className={`inline-flex items-center gap-1.5 text-sm ${ok ? 'text-autorise' : 'text-encre-3'}`}>
-      <span aria-hidden="true" className={`size-1.5 rounded-full ${ok ? 'bg-autorise' : 'bg-filet-fort'}`} />
+    <span className={`inline-flex items-center gap-2 text-sm ${ok ? 'text-encre' : 'text-encre-3'}`}>
+      <span aria-hidden="true" className={`size-2 rounded-full ${ok ? 'bg-encre' : 'shadow-[inset_0_0_0_1px_var(--encre-3)]'}`} />
       {LIBELLES[cle]}
     </span>
   );

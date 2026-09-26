@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { EnTetePage, EtatVide } from '@/components/ui';
-import { listerEntreprises } from '@/lib/donnees';
+import { listerEntreprises, prospectsAutorisesParEntreprise } from '@/lib/donnees';
 import { FormulaireCreation } from './formulaire-creation';
 
 export const metadata: Metadata = { title: 'Entreprises' };
@@ -11,7 +11,7 @@ function compte(nombre: number, singulier: string, pluriel: string) {
 }
 
 export default async function PageEntreprises() {
-  const liste = await listerEntreprises();
+  const [liste, autorises] = await Promise.all([listerEntreprises(), prospectsAutorisesParEntreprise()]);
 
   return (
     <>
@@ -42,7 +42,8 @@ export default async function PageEntreprises() {
                   </span>
                 </div>
                 <span className="text-sm text-encre-3">
-                  {compte(e.nombreProspects, 'prospect', 'prospects')} · {compte(e.nombreObjections, 'objection', 'objections')} ·{' '}
+                  {compte(e.nombreProspects, 'prospect', 'prospects')}
+                  {e.nombreProspects > 0 ? `, dont ${autorises.get(e.id) ?? 0} appelable${(autorises.get(e.id) ?? 0) > 1 ? 's' : ''}` : ''} · {compte(e.nombreObjections, 'objection', 'objections')} ·{' '}
                   {compte(e.nombreScripts, 'script', 'scripts')}
                 </span>
               </Link>

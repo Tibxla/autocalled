@@ -70,7 +70,7 @@ Chaque étape se termine sur quelque chose qui marche de bout en bout ; le plus 
 - [ ] **0. Spike Bluetooth** : le serveur fait composer le téléphone passerelle, le son passe dans les deux sens, le raccrochage est détecté.
 - [ ] **1. Premier appel de Mina** : une commande lance un appel ; configuration de l'agent versionnée ; latence mesurée.
 - [x] **2. Cœur du domaine en TDD** : consentements et numéros autorisés, fiches prospect, cycle de vie d'une campagne, calcul des créneaux.
-- [ ] **3. Squelette web** : Postgres, authentification Tailscale, entreprises, import des fiches prospect, appel d'un prospect.
+- [x] **3. Squelette web** : Postgres, authentification Tailscale, entreprises (fiche, objections CRAC, issues, scripts versionnés), import des fiches prospect avec consentement. Le bouton d'appel attend la ligne.
 - [ ] **4. Bilan** : audio et transcription rapatriés, analyse, écran d'un appel avec audio synchronisé.
 - [ ] **5. Agenda** : Google Agenda, proposition et réservation de créneaux pendant l'appel.
 - [ ] **6. Campagne en direct** : enchaînement des appels, transcription en temps réel.

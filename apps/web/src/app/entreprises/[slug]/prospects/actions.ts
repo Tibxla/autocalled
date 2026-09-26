@@ -5,6 +5,7 @@ import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/db';
 import { consentements, imports, prospects, textesConsentement } from '@/db/schema';
+import { numeroLisible } from '@/lib/format';
 import { exigerOperateur } from '@/lib/garde';
 
 const FICHIERS_MAX = 100;
@@ -20,6 +21,7 @@ export type RapportImport =
       inchanges: string[];
       refus: { nomFichier: string; erreurs: string[] }[];
       numerosAutorises: number;
+      numerosRevoques: string[];
     };
 
 export async function importerFiches(entrepriseId: string, _: RapportImport, donnees: FormData): Promise<RapportImport> {
@@ -35,7 +37,7 @@ export async function importerFiches(entrepriseId: string, _: RapportImport, don
   if (trop) return { etat: 'erreur', message: `« ${trop.name} » dépasse 32 Ko : une fiche tient en quelques paragraphes.` };
 
   const lecture = lireFiches(await Promise.all(fichiers.map(async (f) => ({ nomFichier: f.name, contenu: await f.text() }))));
-  if (lecture.fiches.length === 0) return { etat: 'fait', crees: [], misAJour: [], inchanges: [], refus: lecture.refus, numerosAutorises: 0 };
+  if (lecture.fiches.length === 0) return { etat: 'fait', crees: [], misAJour: [], inchanges: [], refus: lecture.refus, numerosAutorises: 0, numerosRevoques: [] };
 
   const [texte] = await db.select().from(textesConsentement).orderBy(desc(textesConsentement.version)).limit(1);
   if (!texte) return { etat: 'erreur', message: 'Aucun texte de consentement en base : lance les migrations.' };
@@ -45,7 +47,7 @@ export async function importerFiches(entrepriseId: string, _: RapportImport, don
   ).map((p) => ({ ...p, telephone: p.telephone as NumeroE164 }));
   const fusion = fusionnerFiches(existantes, lecture.fiches);
 
-  const numerosAutorises = await db.transaction(async (tx) => {
+  const { autorises: numerosAutorises, revoques: numerosRevoques } = await db.transaction(async (tx) => {
     const [imp] = await tx
       .insert(imports)
       .values({ entrepriseId, texteConsentementVersion: texte.version, nombreFiches: lecture.fiches.length })
@@ -57,17 +59,19 @@ export async function importerFiches(entrepriseId: string, _: RapportImport, don
       await tx.insert(prospects).values(valeurs).onConflictDoUpdate({ target: [prospects.entrepriseId, prospects.id], set: valeurs });
     }
 
-    // Un numéro qui a déjà un consentement actif le garde ; les autres reçoivent celui de cet import.
+    // Un numéro qui a déjà un consentement le garde. Un numéro révoqué ne l'est jamais à nouveau : le
+    // texte de consentement promet qu'il ne sera « plus jamais appelé ». Les autres reçoivent celui de cet import.
     const numeros = [...new Set(lecture.fiches.map((f) => f.telephone))];
-    const actifs = await tx
-      .select({ numero: consentements.numero })
+    const connus = await tx
+      .select({ numero: consentements.numero, revoqueLe: consentements.revoqueLe })
       .from(consentements)
-      .where(and(inArray(consentements.numero, numeros), isNull(consentements.revoqueLe)));
-    const aAutoriser = numeros.filter((n) => !actifs.some((a) => a.numero === n));
+      .where(inArray(consentements.numero, numeros));
+    const revoques = numeros.filter((n) => connus.some((c) => c.numero === n && c.revoqueLe !== null));
+    const aAutoriser = numeros.filter((n) => !connus.some((c) => c.numero === n));
     if (aAutoriser.length > 0) {
       await tx.insert(consentements).values(aAutoriser.map((numero) => ({ numero, texteVersion: texte.version, importId: imp.id })));
     }
-    return aAutoriser.length;
+    return { autorises: aAutoriser.length, revoques };
   });
 
   revalidatePath('/entreprises', 'layout');
@@ -78,6 +82,7 @@ export async function importerFiches(entrepriseId: string, _: RapportImport, don
     inchanges: fusion.inchanges,
     refus: lecture.refus,
     numerosAutorises,
+    numerosRevoques: numerosRevoques.map(numeroLisible),
   };
 }
 

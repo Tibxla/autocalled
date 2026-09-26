@@ -10,7 +10,7 @@ export function BoutonRevoquer({ numero, partages }: { numero: string; partages:
 
   if (!confirmer) {
     return (
-      <Bouton type="button" variante="danger" onClick={() => setConfirmer(true)}>
+      <Bouton type="button" variante="discret" className="-ml-3.5 justify-self-start" onClick={() => setConfirmer(true)}>
         Révoquer ce numéro
       </Bouton>
     );
@@ -19,7 +19,7 @@ export function BoutonRevoquer({ numero, partages }: { numero: string; partages:
     <div className="grid gap-3 rounded-md bg-alerte-fond p-3.5 text-sm">
       <p className="text-alerte">
         Ce numéro ne sera plus jamais appelé
-        {partages > 1 ? `, pour les ${partages} prospects qui le partagent` : ''}. Un nouvel import le réautorisera.
+        {partages > 1 ? `, pour les ${partages} prospects qui le partagent` : ''}. Aucun import ne pourra le réautoriser.
       </p>
       <div className="flex gap-2">
         <Bouton type="button" variante="principal" disabled={enCours} onClick={() => demarrer(() => revoquerNumero(numero))}>

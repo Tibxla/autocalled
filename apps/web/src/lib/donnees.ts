@@ -2,6 +2,7 @@ import 'server-only';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import { db } from '@/db';
+import { autorisationsDe } from './autorisations';
 import { entreprises, prospects } from '@/db/schema';
 
 export async function listerEntreprises() {
@@ -17,6 +18,17 @@ export async function listerEntreprises() {
     })
     .from(entreprises)
     .orderBy(asc(entreprises.nom));
+}
+
+/** Nombre de prospects appelables par entreprise, selon la même règle que le contrôle avant composition. */
+export async function prospectsAutorisesParEntreprise(): Promise<Map<string, number>> {
+  const lignes = await db.select({ entrepriseId: prospects.entrepriseId, telephone: prospects.telephone }).from(prospects);
+  const autorisations = await autorisationsDe(lignes.map((l) => l.telephone));
+  const comptes = new Map<string, number>();
+  for (const l of lignes) {
+    if (autorisations.get(l.telephone)?.autorise) comptes.set(l.entrepriseId, (comptes.get(l.entrepriseId) ?? 0) + 1);
+  }
+  return comptes;
 }
 
 export async function entrepriseParSlug(slug: string) {

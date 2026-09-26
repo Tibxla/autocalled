@@ -23,7 +23,6 @@
   --filet-fort: #cbc8c1;
   --survol: #eeede9;
   --antenne: #d23f26;
-  --autorise: #2e6b4a;
   --alerte: #a1321f;
   --alerte-fond: #fbeeeb;
   --focus: #1d1c1a;
@@ -40,7 +39,6 @@
     --filet-fort: #3d3b37;
     --survol: #22211f;
     --antenne: #ff6a4d;
-    --autorise: #7cc49b;
     --alerte: #ff8a73;
     --alerte-fond: #2a1714;
     --focus: #ebe9e4;
@@ -57,7 +55,6 @@
   --color-filet-fort: var(--filet-fort);
   --color-survol: var(--survol);
   --color-antenne: var(--antenne);
-  --color-autorise: var(--autorise);
   --color-alerte: var(--alerte);
   --color-alerte-fond: var(--alerte-fond);
   --font-sans: var(--police-texte), ui-sans-serif, system-ui, sans-serif;
