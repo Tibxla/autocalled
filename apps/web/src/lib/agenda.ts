@@ -189,7 +189,9 @@ export async function creerEvenementDuRendezVous(rendezVousId: string): Promise<
   if (!c) return;
   const p = c.prospect;
   const titre = `Visio · ${p.nom}${p.societe ? ` (${p.societe})` : ''} · ${c.entreprise.nom}`;
-  const description = [
+  // Avec un invité, la description lui est visible : rien d'interne (notes, numéro, lien de l'appel).
+  const descriptionInvite = `Premier échange en visio de ${c.regles.dureeMinutes} minutes${c.entreprise.interlocuteur ? ` avec ${c.entreprise.interlocuteur}` : ''}, ${c.entreprise.nom}.`;
+  const descriptionInterne = [
     `${p.nom}${p.role ? `, ${p.role}` : ''}${p.societe ? ` chez ${p.societe}` : ''}`,
     `Téléphone : ${p.telephone}`,
     '',
@@ -197,6 +199,7 @@ export async function creerEvenementDuRendezVous(rendezVousId: string): Promise<
     '',
     `Appel : ${process.env.ORIGINE_APP ?? ''}/appels/${rdv.appelId}`,
   ].join('\n');
+  const description = rdv.email ? descriptionInvite : descriptionInterne;
 
   try {
     const google = await accesGoogle().catch(() => null);
