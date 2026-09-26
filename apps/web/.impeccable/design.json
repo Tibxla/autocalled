@@ -1,0 +1,396 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-26T00:46:17+00:00",
+  "title": "Design System: Autocalled",
+  "extensions": {
+    "colorMeta": {
+      "fond": {
+        "role": "neutral",
+        "displayName": "Papier chaud",
+        "canonical": "oklch(97.0% 0.004 91)",
+        "sombre": "#131312",
+        "tonalRamp": [
+          "oklch(15% 0.004 91)",
+          "oklch(27% 0.004 91)",
+          "oklch(39% 0.004 91)",
+          "oklch(51% 0.004 91)",
+          "oklch(63% 0.004 91)",
+          "oklch(75% 0.004 91)",
+          "oklch(85% 0.004 91)",
+          "oklch(95% 0.004 91)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Surface claire",
+        "canonical": "oklch(99.4% 0.001 106)",
+        "sombre": "#1a1a18",
+        "tonalRamp": [
+          "oklch(15% 0.001 106)",
+          "oklch(27% 0.001 106)",
+          "oklch(39% 0.001 106)",
+          "oklch(51% 0.001 106)",
+          "oklch(63% 0.001 106)",
+          "oklch(75% 0.001 106)",
+          "oklch(85% 0.001 106)",
+          "oklch(95% 0.001 106)"
+        ]
+      },
+      "encre": {
+        "role": "primary",
+        "displayName": "Graphite d’encre",
+        "canonical": "oklch(22.7% 0.004 85)",
+        "sombre": "#ebe9e4",
+        "tonalRamp": [
+          "oklch(15% 0.004 85)",
+          "oklch(27% 0.004 85)",
+          "oklch(39% 0.004 85)",
+          "oklch(51% 0.004 85)",
+          "oklch(63% 0.004 85)",
+          "oklch(75% 0.004 85)",
+          "oklch(85% 0.004 85)",
+          "oklch(95% 0.004 85)"
+        ]
+      },
+      "encre-2": {
+        "role": "neutral",
+        "displayName": "Graphite doux",
+        "canonical": "oklch(43.9% 0.010 85)",
+        "sombre": "#aeaaa2",
+        "tonalRamp": [
+          "oklch(15% 0.01 85)",
+          "oklch(27% 0.01 85)",
+          "oklch(39% 0.01 85)",
+          "oklch(51% 0.01 85)",
+          "oklch(63% 0.01 85)",
+          "oklch(75% 0.01 85)",
+          "oklch(85% 0.01 85)",
+          "oklch(95% 0.01 85)"
+        ]
+      },
+      "encre-3": {
+        "role": "neutral",
+        "displayName": "Gris taupe",
+        "canonical": "oklch(52.9% 0.012 82)",
+        "sombre": "#918d85",
+        "tonalRamp": [
+          "oklch(15% 0.012 82)",
+          "oklch(27% 0.012 82)",
+          "oklch(39% 0.012 82)",
+          "oklch(51% 0.012 82)",
+          "oklch(63% 0.012 82)",
+          "oklch(75% 0.012 82)",
+          "oklch(85% 0.012 82)",
+          "oklch(95% 0.012 82)"
+        ]
+      },
+      "filet": {
+        "role": "neutral",
+        "displayName": "Filet",
+        "canonical": "oklch(91.0% 0.007 89)",
+        "sombre": "#2b2a27",
+        "tonalRamp": [
+          "oklch(15% 0.007 89)",
+          "oklch(27% 0.007 89)",
+          "oklch(39% 0.007 89)",
+          "oklch(51% 0.007 89)",
+          "oklch(63% 0.007 89)",
+          "oklch(75% 0.007 89)",
+          "oklch(85% 0.007 89)",
+          "oklch(95% 0.007 89)"
+        ]
+      },
+      "filet-fort": {
+        "role": "neutral",
+        "displayName": "Filet fort",
+        "canonical": "oklch(83.3% 0.010 87)",
+        "sombre": "#3d3b37",
+        "tonalRamp": [
+          "oklch(15% 0.01 87)",
+          "oklch(27% 0.01 87)",
+          "oklch(39% 0.01 87)",
+          "oklch(51% 0.01 87)",
+          "oklch(63% 0.01 87)",
+          "oklch(75% 0.01 87)",
+          "oklch(85% 0.01 87)",
+          "oklch(95% 0.01 87)"
+        ]
+      },
+      "survol": {
+        "role": "neutral",
+        "displayName": "Voile de survol",
+        "canonical": "oklch(94.6% 0.005 95)",
+        "sombre": "#22211f",
+        "tonalRamp": [
+          "oklch(15% 0.005 95)",
+          "oklch(27% 0.005 95)",
+          "oklch(39% 0.005 95)",
+          "oklch(51% 0.005 95)",
+          "oklch(63% 0.005 95)",
+          "oklch(75% 0.005 95)",
+          "oklch(85% 0.005 95)",
+          "oklch(95% 0.005 95)"
+        ]
+      },
+      "antenne": {
+        "role": "secondary",
+        "displayName": "Rouge antenne",
+        "canonical": "oklch(58.0% 0.188 32)",
+        "sombre": "#ff6a4d",
+        "tonalRamp": [
+          "oklch(15% 0.188 32)",
+          "oklch(27% 0.188 32)",
+          "oklch(39% 0.188 32)",
+          "oklch(51% 0.188 32)",
+          "oklch(63% 0.188 32)",
+          "oklch(75% 0.188 32)",
+          "oklch(85% 0.188 32)",
+          "oklch(95% 0.188 32)"
+        ]
+      },
+      "alerte": {
+        "role": "tertiary",
+        "displayName": "Rouge brique d’alerte",
+        "canonical": "oklch(48.1% 0.150 32)",
+        "sombre": "#ff8a73",
+        "tonalRamp": [
+          "oklch(15% 0.15 32)",
+          "oklch(27% 0.15 32)",
+          "oklch(39% 0.15 32)",
+          "oklch(51% 0.15 32)",
+          "oklch(63% 0.15 32)",
+          "oklch(75% 0.15 32)",
+          "oklch(85% 0.15 32)",
+          "oklch(95% 0.15 32)"
+        ]
+      },
+      "alerte-fond": {
+        "role": "tertiary",
+        "displayName": "Voile d’alerte",
+        "canonical": "oklch(95.9% 0.015 33)",
+        "sombre": "#2a1714",
+        "tonalRamp": [
+          "oklch(15% 0.015 33)",
+          "oklch(27% 0.015 33)",
+          "oklch(39% 0.015 33)",
+          "oklch(51% 0.015 33)",
+          "oklch(63% 0.015 33)",
+          "oklch(75% 0.015 33)",
+          "oklch(85% 0.015 33)",
+          "oklch(95% 0.015 33)"
+        ]
+      },
+      "focus": {
+        "role": "primary",
+        "displayName": "Anneau de focus",
+        "canonical": "oklch(22.7% 0.004 85)",
+        "sombre": "#ebe9e4",
+        "tonalRamp": [
+          "oklch(15% 0.004 85)",
+          "oklch(27% 0.004 85)",
+          "oklch(39% 0.004 85)",
+          "oklch(51% 0.004 85)",
+          "oklch(63% 0.004 85)",
+          "oklch(75% 0.004 85)",
+          "oklch(85% 0.004 85)",
+          "oklch(95% 0.004 85)"
+        ]
+      }
+    },
+    "modeSombre": {
+      "mecanisme": "@media (prefers-color-scheme: dark) redéfinit les douze variables de :root ; aucune classe, aucun jeton propre au sombre."
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Titre de page",
+        "purpose": "EnTetePage et nom de l’entreprise."
+      },
+      "title": {
+        "displayName": "Titre de section",
+        "purpose": "TitreSection posé sur un filet ; variante 1,125 rem pour le nom d’un prospect."
+      },
+      "body": {
+        "displayName": "Texte",
+        "purpose": "Texte courant et valeurs de champ ; ss01 actif, chiffres tabulaires coupés."
+      },
+      "label": {
+        "displayName": "Libellé",
+        "purpose": "Libellés, boutons, navigation (500) ; textes secondaires et aides (400)."
+      },
+      "meta": {
+        "displayName": "Méta",
+        "purpose": "Libellé de la ligne d’état, dates courtes."
+      },
+      "donnees": {
+        "displayName": "Données",
+        "purpose": "Numéros, heures, horodatages, versions, rangs, identifiants ; 1,125 rem pour le numéro d’un prospect."
+      }
+    },
+    "shadows": [
+      {
+        "name": "appui-action",
+        "value": "0 1px 2px rgb(0 0 0 / 0.12)",
+        "purpose": "Sous le bouton principal, et nulle part ailleurs."
+      },
+      {
+        "name": "contour-dessine",
+        "value": "inset 0 0 0 1px var(--filet-fort)",
+        "purpose": "Contour des champs, du bouton secondaire et de la zone d’import ; encre-3 au survol, 1.5px encre au focus, 1.5px alerte en erreur."
+      }
+    ],
+    "motion": [
+      {
+        "name": "transition-etat",
+        "value": "150ms, courbe par défaut, sur background-color, color, box-shadow",
+        "purpose": "Survol et focus des boutons, champs et liens."
+      },
+      {
+        "name": "mouvement-reduit",
+        "value": "prefers-reduced-motion: reduce ramène animations et transitions à 0.01ms",
+        "purpose": "Coupe-circuit global."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Bouton principal",
+      "kind": "button",
+      "refersTo": "button-principal",
+      "description": "Soumission du formulaire : créer, importer, enregistrer, confirmer.",
+      "html": "<button class=\"ds-btn-principal\">Créer l’entreprise</button>",
+      "css": ".ds-btn-principal{display:inline-flex;height:36px;align-items:center;justify-content:center;gap:8px;border:0;border-radius:6px;padding:0 14px;font:500 0.8125rem/1.25rem 'Schibsted Grotesk',ui-sans-serif,system-ui,sans-serif;cursor:pointer;transition:background-color 150ms,color 150ms,box-shadow 150ms;background:var(--encre);color:var(--fond);box-shadow:0 1px 2px rgb(0 0 0 / 0.12);} .ds-btn-principal:hover{background:color-mix(in oklab,var(--encre) 88%,transparent);} .ds-btn-principal:focus-visible{outline:2px solid var(--focus);outline-offset:2px;} .ds-btn-principal:disabled{cursor:not-allowed;opacity:0.45;}"
+    },
+    {
+      "name": "Bouton secondaire",
+      "kind": "button",
+      "refersTo": "button-secondaire",
+      "description": "Actions d’appoint et actions visibles mais indisponibles.",
+      "html": "<button class=\"ds-btn-secondaire\">Ajouter une étape</button>",
+      "css": ".ds-btn-secondaire{display:inline-flex;height:36px;align-items:center;justify-content:center;gap:8px;border:0;border-radius:6px;padding:0 14px;font:500 0.8125rem/1.25rem 'Schibsted Grotesk',ui-sans-serif,system-ui,sans-serif;cursor:pointer;transition:background-color 150ms,color 150ms,box-shadow 150ms;background:var(--surface);color:var(--encre);box-shadow:inset 0 0 0 1px var(--filet-fort);} .ds-btn-secondaire:hover{background:var(--survol);} .ds-btn-secondaire:focus-visible{outline:2px solid var(--focus);outline-offset:2px;} .ds-btn-secondaire:disabled{cursor:not-allowed;opacity:0.45;}"
+    },
+    {
+      "name": "Bouton discret",
+      "kind": "button",
+      "refersTo": "button-discret",
+      "description": "Archiver, annuler, réordonner, déclencher une révocation avant confirmation.",
+      "html": "<button class=\"ds-btn-discret\">Archiver</button>",
+      "css": ".ds-btn-discret{display:inline-flex;height:36px;align-items:center;justify-content:center;gap:8px;border:0;border-radius:6px;padding:0 14px;font:500 0.8125rem/1.25rem 'Schibsted Grotesk',ui-sans-serif,system-ui,sans-serif;cursor:pointer;transition:background-color 150ms,color 150ms,box-shadow 150ms;background:transparent;color:var(--encre-2);} .ds-btn-discret:hover{background:var(--survol);color:var(--encre);} .ds-btn-discret:focus-visible{outline:2px solid var(--focus);outline-offset:2px;} .ds-btn-discret:disabled{cursor:not-allowed;opacity:0.45;}"
+    },
+    {
+      "name": "Saisie",
+      "kind": "input",
+      "refersTo": "saisie",
+      "description": "Champ texte à contour dessiné qui s’épaissit au focus ; contour d’alerte en erreur.",
+      "html": "<div class=\"ds-champ\"><label class=\"ds-champ-libelle\" for=\"ds-nom\">Nom de l’entreprise</label><input id=\"ds-nom\" class=\"ds-saisie\" placeholder=\"Atelier Vitrine\"><p class=\"ds-champ-aide\">C’est ce que Mina dira au téléphone.</p></div>",
+      "css": ".ds-champ{display:grid;gap:6px;max-width:22rem;} .ds-champ-libelle{font:500 0.8125rem/1.25rem 'Schibsted Grotesk',ui-sans-serif,sans-serif;color:var(--encre);} .ds-champ-aide{margin:0;font:400 0.8125rem/1.25rem 'Schibsted Grotesk',ui-sans-serif,sans-serif;color:var(--encre-3);} .ds-saisie{width:100%;box-sizing:border-box;border:0;border-radius:6px;background:var(--surface);color:var(--encre);padding:8px 12px;font:400 0.9375rem/1.5rem 'Schibsted Grotesk',ui-sans-serif,system-ui,sans-serif;box-shadow:inset 0 0 0 1px var(--filet-fort);transition:box-shadow 150ms;height:36px;} .ds-saisie::placeholder{color:var(--encre-3);} .ds-saisie:hover{box-shadow:inset 0 0 0 1px var(--encre-3);} .ds-saisie:focus{outline:none;box-shadow:inset 0 0 0 1.5px var(--encre);} .ds-saisie[aria-invalid=true]{box-shadow:inset 0 0 0 1.5px var(--alerte);}"
+    },
+    {
+      "name": "Sélection",
+      "kind": "input",
+      "refersTo": "saisie",
+      "description": "Menu déroulant natif restylé, chevron de trait d’un pixel.",
+      "html": "<div class=\"ds-selection\"><select class=\"ds-selection-champ\"><option>09:00</option><option>09:30</option></select><svg aria-hidden=\"true\" viewBox=\"0 0 10 6\" class=\"ds-selection-chevron\"><path d=\"M1 1l4 4 4-4\" stroke-width=\"1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg></div>",
+      "css": ".ds-selection{position:relative;width:7rem;} .ds-selection-champ{width:100%;box-sizing:border-box;border:0;border-radius:6px;background:var(--surface);color:var(--encre);padding:8px 12px;font:400 0.9375rem/1.5rem 'Schibsted Grotesk',ui-sans-serif,system-ui,sans-serif;box-shadow:inset 0 0 0 1px var(--filet-fort);transition:box-shadow 150ms;height:36px;appearance:none;padding-right:32px;font-family:'Geist Mono',ui-monospace,monospace;font-size:0.8125rem;} .ds-selection-champ:hover{box-shadow:inset 0 0 0 1px var(--encre-3);} .ds-selection-champ:focus{outline:none;box-shadow:inset 0 0 0 1.5px var(--encre);} .ds-selection-champ:disabled{cursor:not-allowed;opacity:0.4;} .ds-selection-chevron{pointer-events:none;position:absolute;top:50%;right:12px;width:10px;transform:translateY(-50%);fill:none;stroke:var(--encre-3);}"
+    },
+    {
+      "name": "Navigation",
+      "kind": "nav",
+      "refersTo": "lien-nav",
+      "description": "Liens texte ; page courante en encre et graisse 500, sans pastille.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-lien\" href=\"#\" aria-current=\"page\">Fiche</a><a class=\"ds-nav-lien\" href=\"#\">Objections</a><a class=\"ds-nav-lien\" href=\"#\">Scripts</a><a class=\"ds-nav-lien\" href=\"#\">Prospects</a></nav>",
+      "css": ".ds-nav{display:flex;gap:4px;border-bottom:1px solid var(--filet);padding-bottom:8px;} .ds-nav-lien{border-radius:6px;padding:6px 10px;font:400 0.8125rem/1.25rem 'Schibsted Grotesk',ui-sans-serif,sans-serif;color:var(--encre-2);text-decoration:none;transition:background-color 150ms,color 150ms;} .ds-nav-lien:hover{background:var(--survol);color:var(--encre);} .ds-nav-lien[aria-current=page]{color:var(--encre);font-weight:500;} .ds-nav-lien:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:4px;}"
+    },
+    {
+      "name": "Liste en filets",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Collection en lignes séparées par des filets d’un pixel, soulignement au survol, données en mono.",
+      "html": "<ul class=\"ds-liste\"><li><a class=\"ds-ligne\" href=\"#\"><span class=\"ds-ligne-texte\"><span class=\"ds-ligne-nom\">Julie Martin</span><span class=\"ds-ligne-detail\">Gérante, Atelier Vitrine</span></span><span class=\"ds-ligne-num\">06 39 98 00 01</span><span class=\"ds-pastille\"><span class=\"ds-point ds-point-plein\"></span>Autorisé</span></a></li><li><a class=\"ds-ligne\" href=\"#\"><span class=\"ds-ligne-texte\"><span class=\"ds-ligne-nom\">Paul Leroy</span><span class=\"ds-ligne-detail\">Directeur, Hôtel du Port</span></span><span class=\"ds-ligne-num\">06 39 98 00 02</span><span class=\"ds-pastille ds-pastille-non\"><span class=\"ds-point ds-point-creux\"></span>Révoqué</span></a></li></ul>",
+      "css": ".ds-liste{list-style:none;margin:0;padding:0;border-top:1px solid var(--filet);} .ds-liste li{border-bottom:1px solid var(--filet);} .ds-ligne{display:grid;grid-template-columns:minmax(0,1fr) auto 9rem;align-items:baseline;gap:24px;padding:16px 0;color:var(--encre);text-decoration:none;font:400 0.9375rem/1.5rem 'Schibsted Grotesk',ui-sans-serif,sans-serif;} .ds-ligne-texte{display:grid;gap:2px;} .ds-ligne-nom{font-weight:500;} .ds-ligne:hover .ds-ligne-nom{text-decoration:underline;text-decoration-color:var(--filet-fort);text-underline-offset:4px;} .ds-ligne:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:4px;} .ds-ligne-detail{font-size:0.8125rem;line-height:1.25rem;color:var(--encre-2);} .ds-ligne-num{font-family:'Geist Mono',ui-monospace,monospace;font-size:0.8125rem;color:var(--encre-2);} .ds-pastille{display:inline-flex;align-items:center;gap:8px;justify-self:end;font-size:0.8125rem;color:var(--encre);} .ds-pastille-non{color:var(--encre-3);} .ds-point{width:8px;height:8px;border-radius:9999px;} .ds-point-plein{background:var(--encre);} .ds-point-creux{box-shadow:inset 0 0 0 1px var(--encre-3);}"
+    },
+    {
+      "name": "Ligne d’état",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Élément signature : trait de la ligne téléphonique, pointillé non branché, plein libre, rouge antenne en appel.",
+      "html": "<div class=\"ds-ligne-etat\" role=\"status\"><svg width=\"56\" height=\"16\" viewBox=\"0 0 56 16\" aria-hidden=\"true\"><line x1=\"0\" y1=\"8\" x2=\"56\" y2=\"8\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-dasharray=\"2 4\" class=\"ds-trait\"/></svg><span class=\"ds-ligne-etat-libelle\">Ligne non branchée</span></div><div class=\"ds-ligne-etat ds-en-appel\" role=\"status\"><svg width=\"56\" height=\"16\" viewBox=\"0 0 56 16\" aria-hidden=\"true\"><line x1=\"0\" y1=\"8\" x2=\"56\" y2=\"8\" stroke-width=\"1.5\" stroke-linecap=\"round\" class=\"ds-trait\"/></svg><span class=\"ds-ligne-etat-libelle\">En appel</span></div>",
+      "css": ".ds-ligne-etat{display:flex;align-items:center;gap:10px;margin-bottom:12px;} .ds-ligne-etat svg{overflow:visible;} .ds-trait{stroke:var(--filet-fort);} .ds-ligne-etat-libelle{font:400 0.75rem/1rem 'Schibsted Grotesk',ui-sans-serif,sans-serif;color:var(--encre-3);white-space:nowrap;} .ds-en-appel .ds-trait{stroke:var(--antenne);} .ds-en-appel .ds-ligne-etat-libelle{color:var(--antenne);}"
+    },
+    {
+      "name": "Message",
+      "kind": "custom",
+      "refersTo": "message-alerte",
+      "description": "Bloc teinté de retour : neutre en voile de survol, alerte en voile d’alerte.",
+      "html": "<div class=\"ds-message\" role=\"status\">Objection enregistrée.</div><div class=\"ds-message ds-message-alerte\" role=\"alert\">Ce numéro ne sera plus jamais appelé. Aucun import ne pourra le réautoriser.</div>",
+      "css": ".ds-message{border-radius:6px;padding:10px 14px;margin-bottom:8px;font:400 0.8125rem/1.25rem 'Schibsted Grotesk',ui-sans-serif,sans-serif;background:var(--survol);color:var(--encre-2);} .ds-message-alerte{background:var(--alerte-fond);color:var(--alerte);}"
+    }
+  ],
+  "narrative": {
+    "northStar": "La régie qui se tait",
+    "overview": "L’interface opérateur d’Autocalled est une régie d’écoute : un poste de préparation calme, où l’écran reste silencieux tant qu’aucun appel ne vit. Tout y est quasi monochrome, en neutres chauds sans crème ; le graphite porte à la fois l’encre et les actions. La hiérarchie vient de la graisse, de la taille et du vide, pas de la couleur. Une seule chose aura le droit de s’allumer : l’appel en cours, en rouge « antenne ». Tant que la ligne n’est pas branchée, ce rouge n’apparaît nulle part.\n\nLa densité est celle d’une liste en tableau aérée, pas d’un tableau de bord : une barre fine en haut (marque, navigation, état de la ligne en trait), un en-tête de page, puis des lignes séparées par des filets d’un pixel. Le soin tient aux détails de précision : filets fins, contours de champ dessinés en ombre intérieure, deux grammaires de focus, soulignement discret au survol, chasse fixe pour tout ce qui est un numéro, une heure ou un identifiant.\n\nRejets confirmés par la direction imposée (`docs/direction-visuelle.md`) : le tableau de bord SaaS (barre latérale grise, grilles de cartes à icône, rangées de chiffres géants), les dégradés violet-bleu, halos néon et verre dépoli, les emojis et étincelles « IA », les coins très arrondis et ombres lourdes, les libellés creux.",
+    "keyCharacteristics": [
+      "Neutres chauds, graphite pour l’encre et l’action ; aucun vert, aucune teinte de statut décorative.",
+      "Deux rouges aux rôles disjoints : « antenne » pour le vivant (réservé), « alerte » pour les erreurs et la révocation.",
+      "Listes en filets d’un pixel, jamais en cartes.",
+      "Une police de texte (Schibsted Grotesk) et une chasse fixe (Geist Mono) pour les données.",
+      "Plat par défaut ; une seule ombre légère, sous l’action principale.",
+      "Mode sombre complet, porté par les jetons via `prefers-color-scheme`."
+    ],
+    "rules": [
+      {
+        "name": "La règle de l’antenne",
+        "body": "Le rouge antenne ne marque qu’une chose : un appel en cours. Ni bouton, ni lien, ni badge, ni erreur ne l’emprunte ; tant que rien ne vit, il est absent de l’écran.",
+        "section": "colors"
+      },
+      {
+        "name": "La règle de l’alerte confinée",
+        "body": "Le rouge d’alerte n’apparaît que dans les erreurs et la confirmation de révocation. Une action destructive au repos reste en bouton discret graphite ; le rouge vient avec la confirmation, pas avant.",
+        "section": "colors"
+      },
+      {
+        "name": "La règle sans vert",
+        "body": "Aucun vert, nulle part. « Autorisé » est un point plein en encre, « non autorisé » un point creux cerclé de gris taupe ; la forme porte l’état, pas la teinte.",
+        "section": "colors"
+      },
+      {
+        "name": "La règle de la chasse fixe",
+        "body": "Tout ce qui se compare caractère par caractère (numéro, heure, horodatage, identifiant, numéro de version, rang) est en Geist Mono ; tout le reste est en Schibsted Grotesk. Aucune troisième police.",
+        "section": "typography"
+      },
+      {
+        "name": "La règle du plat",
+        "body": "Rien ne flotte : pas d’ombre portée hors de l’appui de l’action principale, pas de flou, pas de panneau superposé. Un état se signale par un changement de ton ou de trait.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** passer par les douze jetons de couleur, jamais par une valeur en dur, pour que le mode sombre suive sans travail.",
+      "**Do** séparer les éléments d’une liste par des filets d’un pixel en `filet`, sur toute la largeur de la colonne.",
+      "**Do** mettre en Geist Mono les numéros, heures, horodatages, numéros de version, rangs et identifiants.",
+      "**Do** dessiner les contours de contrôle en ombre intérieure (1 px en `filet-fort`, 1,5 px en `encre` au focus, 1,5 px en `alerte` en erreur).",
+      "**Do** signaler un état par la forme (point plein ou creux, trait plein ou pointillé) avant la couleur.",
+      "**Do** laisser une action indisponible visible et désactivée, avec une phrase qui dit pourquoi."
+    ],
+    "donts": [
+      "**Don't** présenter une liste en cartes, en grille de cartes ou en cartes à icône.",
+      "**Don't** utiliser de vert, ni aucune couleur de statut hors des deux rouges.",
+      "**Don't** employer le rouge antenne pour autre chose qu’un appel en cours, ni le rouge d’alerte hors des erreurs et de la confirmation de révocation.",
+      "**Don't** ajouter de flou d’arrière-plan, de verre dépoli, de dégradé ou de halo.",
+      "**Don't** arrondir au-delà de 6 px, sauf les points d’état en cercle.",
+      "**Don't** poser d’ombre portée ailleurs que sous le bouton principal.",
+      "**Don't** introduire une troisième police, ni Inter par défaut.",
+      "**Don't** mettre de rangée de chiffres-clés géants en haut de page : les comptes vivent en texte gris taupe dans les lignes.",
+      "**Don't** poser de bordure colorée sur un seul côté d’un bloc ; les filets de liste restent neutres."
+    ]
+  }
+}
