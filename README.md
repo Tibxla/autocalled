@@ -9,6 +9,17 @@ Une assistante vocale IA qui passe de vrais appels de prospection sur un vrai r�
 
 > **Statut : utilisable sur la ligne navigateur.** On parle à Mina depuis le navigateur, les appels sont enregistrés, analysés et comparés. La ligne téléphonique Bluetooth attend son matériel.
 
+![Page d'un appel : bilan, puis conversation synchronisée avec l'enregistrement, chaque objection reliée à la phrase du prospect](docs/captures/appel.png)
+
+<table>
+  <tr>
+    <td><img src="docs/captures/prospects.png" alt="Prospects importés depuis des fiches Markdown, avec l'état d'autorisation de chaque numéro"></td>
+    <td><img src="docs/captures/analyse.png" alt="Analyse des versions de script, avec la mention « échantillon insuffisant »"></td>
+  </tr>
+</table>
+
+<sub>Données fictives : entreprise et prospects inventés, numéros de la tranche que l'ARCEP réserve à la fiction.</sub>
+
 ## Le parcours d'un appel
 
 1. L'opérateur choisit une **entreprise** à représenter, un **prospect** et une **version de script**.
