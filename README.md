@@ -76,10 +76,11 @@ Chaque étape se termine sur quelque chose qui marche de bout en bout ; le plus 
 - [ ] **1. Premier appel de Mina** : une commande lance un appel ; configuration de l'agent versionnée ; latence mesurée.
 - [x] **2. Cœur du domaine en TDD** : consentements et numéros autorisés, fiches prospect, cycle de vie d'une campagne, calcul des créneaux.
 - [x] **3. Squelette web** : Postgres, authentification Tailscale, entreprises (fiche, objections CRAC, issues, scripts versionnés), import des fiches prospect avec consentement. Le bouton d'appel attend la ligne.
-- [ ] **4. Bilan** : audio et transcription rapatriés, analyse, écran d'un appel avec audio synchronisé.
+- [x] **Ligne navigateur et appels simulés** : conversations réelles avec Mina depuis le navigateur, et appels où un modèle joue le prospect (signalés comme tels).
+- [x] **4. Bilan** : audio et transcription rapatriés, analyse, écran d'un appel avec audio synchronisé.
 - [ ] **5. Agenda** : Google Agenda, proposition et réservation de créneaux pendant l'appel.
-- [ ] **6. Campagne en direct** : enchaînement des appels, transcription en temps réel.
-- [ ] **7. Scripts versionnés et analyse** : comparaison des versions, avec garde sur la taille de l'échantillon.
+- [x] **6. Campagne en direct** : enchaînement des appels, transcription en temps réel.
+- [x] **7. Scripts versionnés et analyse** : comparaison des versions, avec garde sur la taille de l'échantillon.
 
 ## Cadre légal
 
