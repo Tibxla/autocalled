@@ -12,7 +12,7 @@ import { jetonConversation } from '@/lib/elevenlabs';
 import { exigerOperateur } from '@/lib/garde';
 
 export type DemarrageAppel =
-  | { ok: true; appelId: string; jeton: string; variables: VariablesDeLAppel }
+  | { ok: true; appelId: string; jeton: string; variables: VariablesDeLAppel; motsCles: string[] }
   | { ok: false; raison: string };
 
 /** Ligne navigateur : vérifie l'autorisation, obtient un jeton de conversation et enregistre l'appel. */
@@ -33,7 +33,7 @@ export async function demarrerAppelNavigateur(
     .values({ entrepriseId, prospectId, versionScriptId, campagneId, ligne: 'navigateur', numero: preparation.numero, conversationId })
     .returning({ id: appels.id });
   if (!appel) return { ok: false, raison: 'Impossible d’enregistrer l’appel.' };
-  return { ok: true, appelId: appel.id, jeton, variables: preparation.variables };
+  return { ok: true, appelId: appel.id, jeton, variables: preparation.variables, motsCles: preparation.motsCles };
 }
 
 /** Fin de session côté navigateur : le rapatriement et l'analyse continuent après la réponse. */

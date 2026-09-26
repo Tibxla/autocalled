@@ -25,7 +25,7 @@ export function dossierDonnees(): string {
 const libelleIssue = new Map<string, string>(ISSUES_SYSTEME.map((i) => [i, LIBELLES_ISSUES[i]]));
 
 export type PreparationAppel =
-  | { ok: true; numero: NumeroAutorise; variables: VariablesDeLAppel; entrepriseId: string }
+  | { ok: true; numero: NumeroAutorise; variables: VariablesDeLAppel; entrepriseId: string; motsCles: string[] }
   | { ok: false; raison: string };
 
 /**
@@ -73,7 +73,9 @@ export async function preparerAppel(entrepriseId: string, prospectId: string, ve
     maintenant: new Date(),
     fuseau: entreprise.fuseau,
   });
-  return { ok: true, numero: autorisation.numero, variables, entrepriseId };
+  // Noms propres de l'appel, pour que la reconnaissance vocale les entende bien.
+  const motsCles = [...new Set([entreprise.nom, prospect.nom, ...prospect.nom.split(/\s+/), prospect.societe].filter((m): m is string => Boolean(m && m.length > 2)))].slice(0, 12);
+  return { ok: true, numero: autorisation.numero, variables, entrepriseId, motsCles };
 }
 
 /** Rapatrie la conversation terminée (transcription, durée, audio) puis lance l'analyse. */

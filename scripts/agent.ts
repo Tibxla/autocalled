@@ -60,6 +60,7 @@ const CHAMPS_GERES = [
   'conversation_config.agent.prompt.built_in_tools',
   'conversation_config.agent.prompt.tools',
   'platform_settings.auth.enable_auth',
+  'platform_settings.overrides.conversation_config_override.asr.keywords',
   'conversation_config.agent.dynamic_variables.dynamic_variable_placeholders',
   'conversation_config.tts.voice_id',
   'conversation_config.tts.model_id',
@@ -114,9 +115,9 @@ async function configLocale(): Promise<Json> {
   return config;
 }
 
-async function verrou(): Promise<{ empreinte: string } | null> {
+async function verrou(): Promise<{ empreinte: string; versionId?: string | null } | null> {
   try {
-    return JSON.parse(await readFile(FICHIER_VERROU, 'utf8')) as { empreinte: string };
+    return JSON.parse(await readFile(FICHIER_VERROU, 'utf8')) as { empreinte: string; versionId?: string | null };
   } catch {
     return null;
   }
@@ -161,7 +162,10 @@ const commandes: Record<string, () => Promise<void>> = {
   async push() {
     const connu = await verrou();
     const avant = await distante();
-    if (connu && connu.empreinte !== empreinte(avant)) {
+    // ElevenLabs change de version à chaque modification : c'est le signal le plus sûr, indépendant
+    // de la liste des champs suivis. L'empreinte ne sert qu'aux verrous écrits avant cette règle.
+    const distanteModifiee = connu?.versionId ? connu.versionId !== avant.version_id : connu && connu.empreinte !== empreinte(avant);
+    if (distanteModifiee) {
       throw new Error('La configuration distante a changé depuis le dernier pull : lance pull et relis le diff avant de pousser.');
     }
     await api(`/${exiger('ELEVENLABS_AGENT_ID')}`, { method: 'PATCH', body: JSON.stringify(await configLocale()) });
@@ -172,7 +176,7 @@ const commandes: Record<string, () => Promise<void>> = {
   async status() {
     const connu = await verrou();
     const actuelle = await distante();
-    const distanteModifiee = connu?.empreinte !== empreinte(actuelle);
+    const distanteModifiee = connu?.versionId ? connu.versionId !== actuelle.version_id : connu?.empreinte !== empreinte(actuelle);
     const localeModifiee = empreinte(await configLocale()) !== empreinte(actuelle);
     console.log(`distante modifiée depuis le dernier pull : ${distanteModifiee ? 'oui' : 'non'}`);
     console.log(`dépôt différent de la configuration distante : ${localeModifiee ? 'oui' : 'non'}`);

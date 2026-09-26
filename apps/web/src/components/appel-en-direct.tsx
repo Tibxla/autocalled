@@ -96,6 +96,7 @@ function Conversation({
       conversationToken: demarrage.jeton,
       connectionType: 'webrtc',
       dynamicVariables: demarrage.variables,
+      overrides: { asr: { keywords: demarrage.motsCles } },
       clientTools: {
         proposer_creneaux: () => outilProposerCreneaux(id),
         reserver_creneau: (parametres: { debut?: string }) => outilReserverCreneau(id, parametres?.debut),

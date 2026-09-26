@@ -59,7 +59,7 @@ export async function ouvrirAppelSuivant(campagneId: string): Promise<DemarrageA
   await rafraichirSiAncien();
   const suivant = await appelerSuivantNavigateur(campagneId);
   if (suivant.type === 'attente') return { ok: false, raison: 'Plus aucun prospect à appeler.' };
-  return { ok: true, appelId: suivant.appelId, jeton: suivant.jeton, variables: suivant.variables as never };
+  return { ok: true, appelId: suivant.appelId, jeton: suivant.jeton, variables: suivant.variables as never, motsCles: suivant.motsCles };
 }
 
 export async function cloreAppelDeCampagne(campagneId: string, appelId: string): Promise<void> {

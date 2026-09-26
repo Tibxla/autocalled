@@ -29,7 +29,7 @@ export async function avecCampagne<T>(
 }
 
 export type AppelSuivant =
-  | { type: 'appel'; appelId: string; prospectId: string; jeton: string; variables: Record<string, string> }
+  | { type: 'appel'; appelId: string; prospectId: string; jeton: string; variables: Record<string, string>; motsCles: string[] }
   | { type: 'attente' };
 
 /**
@@ -62,7 +62,7 @@ export async function appelerSuivantNavigateur(campagneId: string): Promise<Appe
       if (!appel) throw new Error('appel non enregistré');
       return {
         campagne: debuterAppel(campagne, action.prospectId, appel.id),
-        resultat: { type: 'appel', appelId: appel.id, prospectId: action.prospectId, jeton, variables: preparation.variables },
+        resultat: { type: 'appel', appelId: appel.id, prospectId: action.prospectId, jeton, variables: preparation.variables, motsCles: preparation.motsCles },
       };
     }
   });

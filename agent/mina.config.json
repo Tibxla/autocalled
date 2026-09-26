@@ -192,6 +192,13 @@
   "platform_settings": {
     "auth": {
       "enable_auth": true
+    },
+    "overrides": {
+      "conversation_config_override": {
+        "asr": {
+          "keywords": true
+        }
+      }
     }
   }
 }
