@@ -96,5 +96,7 @@ export function validerBilan(brut: unknown, contexte: ContexteBilan): Validation
 
 /** Schéma JSON du bilan, pour contraindre la sortie du LLM. */
 export function schemaJsonBilan(): object {
-  return z.toJSONSchema(schemaBilan, { target: 'draft-2020-12' });
+  // Sans la clé $schema : le validateur de `claude --json-schema` ne résout pas la méta-référence.
+  const { $schema: _, ...schema } = z.toJSONSchema(schemaBilan, { target: 'draft-2020-12' });
+  return schema;
 }

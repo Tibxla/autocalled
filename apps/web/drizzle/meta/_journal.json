@@ -15,6 +15,13 @@
       "when": 1790382170831,
       "tag": "0001_texte-consentement-v1",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790431423547,
+      "tag": "0002_appels-et-campagnes",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { ISSUES_SYSTEME, type IssueSysteme, LIBELLES_ISSUES } from '@autocalled/domain';
+import { ISSUES_SYSTEME, LIBELLES_ISSUES, SENS_ISSUES } from '@autocalled/domain';
 import { asc, eq } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { BoutonArchive } from '@/components/bouton-archive';
@@ -11,15 +11,6 @@ import { FormulaireIssue } from './formulaire-issue';
 
 export const metadata: Metadata = { title: 'Issues' };
 
-const SENS: Record<IssueSysteme, string> = {
-  'rendez-vous-pris': 'Un créneau est réservé dans l’agenda.',
-  'rappel-convenu': 'Le prospect demande qu’on le rappelle à un moment précis.',
-  'envoi-informations': '« Envoyez-moi un mail » : souvent un non poli.',
-  refus: 'Pas intéressé, avec la dernière objection restée sans réponse.',
-  'pas-le-bon-interlocuteur': 'La personne n’est pas celle qui décide.',
-  interrompu: 'Raccroché avant la fin ; le bilan note l’étape atteinte.',
-  'non-abouti': 'Aucune conversation : exclu des taux de conversion.',
-};
 
 export default async function PageIssues({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -46,7 +37,7 @@ export default async function PageIssues({ params }: { params: Promise<{ slug: s
               <li key={issue} className="grid gap-x-8 gap-y-1 border-b border-filet py-4 sm:grid-cols-[14rem_1fr]">
                 <span className="font-medium">{LIBELLES_ISSUES[issue]}</span>
                 <div className="grid gap-2">
-                  <span className="text-sm text-encre-2">{SENS[issue]}</span>
+                  <span className="text-sm text-encre-2">{SENS_ISSUES[issue].charAt(0).toUpperCase() + SENS_ISSUES[issue].slice(1)}.</span>
                   {enfants.length > 0 ? (
                     <ul className="grid gap-1">
                       {enfants.map((p) => (

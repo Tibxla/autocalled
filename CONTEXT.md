@@ -107,8 +107,16 @@ _Avoid_ : paramètres agenda, config calendrier
 ## Téléphonie
 
 **Ligne** :
-Le moyen par lequel un appel atteint le réseau téléphonique ; le reste du produit ignore laquelle est utilisée. Première ligne : un téléphone passerelle en Bluetooth ; en repli, un numéro Twilio.
+Le chemin par lequel une conversation avec l'assistante a lieu ; le reste du produit ignore laquelle est utilisée. Chaque appel enregistre la sienne. Lignes : téléphone passerelle (Bluetooth), ligne navigateur, simulation ; Twilio en repli.
 _Avoid_ : provider, trunk, canal
+
+**Ligne navigateur** :
+Ligne de test où l'opérateur parle à l'assistante depuis son navigateur, en jouant le prospect. Vraie conversation, vrai enregistrement, mais aucun téléphone ne sonne ; sert aussi de secours en démo.
+_Avoid_ : widget, mode démo
+
+**Appel simulé** :
+Appel où un modèle de langage joue le prospect face à l'assistante, sans audio. Sert à produire du volume pour l'analyse ; toujours signalé comme tel et exclu des chiffres par défaut.
+_Avoid_ : faux appel, test automatique
 
 **Téléphone passerelle** :
 Téléphone dédié, posé à côté du serveur et appairé en Bluetooth, qui compose les appels de l'assistante avec sa propre carte SIM.

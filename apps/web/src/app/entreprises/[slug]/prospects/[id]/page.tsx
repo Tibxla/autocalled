@@ -1,14 +1,17 @@
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { ListeAppels } from '@/components/liste-appels';
 import { PastilleAutorisation } from '@/components/pastille-autorisation';
-import { Bouton, EtatVide, TitreSection } from '@/components/ui';
+import { EtatVide, TitreSection } from '@/components/ui';
 import { db } from '@/db';
-import { consentements, prospects } from '@/db/schema';
+import { appels, consentements, prospects } from '@/db/schema';
 import { autorisationsDe } from '@/lib/autorisations';
 import { entrepriseParSlug, prospectParId } from '@/lib/donnees';
 import { numeroLisible } from '@/lib/format';
+import { versionsDeLEntreprise } from '@/lib/versions';
 import { BoutonRevoquer } from './bouton-revoquer';
+import { PanneauAppel } from './panneau-appel';
 
 export const metadata: Metadata = { title: 'Prospect' };
 
@@ -23,6 +26,14 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
     db.$count(prospects, and(eq(prospects.entrepriseId, entreprise.id), eq(prospects.telephone, prospect.telephone))),
   ]);
   const autorisation = autorisations.get(prospect.telephone);
+  const [versions, historique] = await Promise.all([
+    versionsDeLEntreprise(entreprise.id),
+    db
+      .select()
+      .from(appels)
+      .where(and(eq(appels.entrepriseId, entreprise.id), eq(appels.prospectId, prospect.id)))
+      .orderBy(desc(appels.debutLe)),
+  ]);
   const [derniereRevocation] = await db
     .select({ le: consentements.revoqueLe })
     .from(consentements)
@@ -40,7 +51,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
           <h2 className="text-lg font-semibold">{prospect.nom}</h2>
           <p className="text-encre-2">{[prospect.role, prospect.societe].filter(Boolean).join(', ')}</p>
         </div>
-      <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_18rem]">
+      <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_22rem]">
       <div className="grid content-start gap-10">
 
         <section className="grid gap-4">
@@ -54,13 +65,17 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
 
         <section className="grid">
           <TitreSection>Appels</TitreSection>
-          <EtatVide titre="Aucun appel pour l’instant">
-            Chaque appel s’affichera ici avec son issue et son bilan, et Mina s’en souviendra au prochain appel.
-          </EtatVide>
+          {historique.length === 0 ? (
+            <EtatVide titre="Aucun appel pour l’instant">
+              Chaque appel s’affichera ici avec son issue et son bilan, et Mina s’en souviendra au prochain appel.
+            </EtatVide>
+          ) : (
+            <ListeAppels appels={historique.map((a) => ({ ...a, resume: a.bilan?.resume ?? null }))} />
+          )}
         </section>
       </div>
 
-      <aside className="order-first grid content-start gap-6 lg:order-none">
+      <aside className="order-first grid content-start gap-8 lg:order-none">
         <div className="grid gap-3 border-t border-filet pt-4">
           <p className="font-mono text-lg tracking-[-0.01em]">{numeroLisible(prospect.telephone)}</p>
           <PastilleAutorisation autorisation={autorisation} />
@@ -71,14 +86,13 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
           ) : null}
           {partages > 1 ? <p className="text-sm text-encre-3">Numéro partagé par {partages} prospects.</p> : null}
         </div>
-        <div className="grid gap-2">
-          <Bouton type="button" variante="secondaire" disabled aria-describedby="appel-indisponible">
-            Appeler {prospect.nom.split(' ')[0]}
-          </Bouton>
-          <p id="appel-indisponible" className="text-sm text-encre-3">
-            La ligne n’est pas encore branchée.
-          </p>
-        </div>
+        <PanneauAppel
+          entrepriseId={entreprise.id}
+          prospectId={prospect.id}
+          prospectNom={prospect.nom}
+          versions={versions.map((v) => ({ id: v.id, libelle: v.libelle }))}
+          autorise={Boolean(autorisation?.autorise)}
+        />
         {autorisation?.autorise ? <BoutonRevoquer numero={prospect.telephone} partages={partages} /> : null}
       </aside>
       </div>

@@ -106,5 +106,6 @@ describe('schemaJsonBilan', () => {
     expect(schema.type).toBe('object');
     expect(schema.additionalProperties).toBe(false);
     expect(schema.required).toContain('issue');
+    expect(schema).not.toHaveProperty('$schema');
   });
 });

@@ -57,6 +57,8 @@ const CHAMPS_GERES = [
   'conversation_config.agent.prompt.llm',
   'conversation_config.agent.prompt.temperature',
   'conversation_config.agent.prompt.built_in_tools',
+  'conversation_config.agent.prompt.tools',
+  'platform_settings.auth.enable_auth',
   'conversation_config.agent.dynamic_variables.dynamic_variable_placeholders',
   'conversation_config.tts.voice_id',
   'conversation_config.tts.model_id',

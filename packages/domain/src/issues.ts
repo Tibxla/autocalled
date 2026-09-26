@@ -23,3 +23,14 @@ export const LIBELLES_ISSUES: Record<IssueSysteme, string> = {
   interrompu: 'Interrompu',
   'non-abouti': 'Non abouti',
 };
+
+/** Ce que recouvre chaque issue système : affiché à l'opérateur et donné à l'analyseur. */
+export const SENS_ISSUES: Record<IssueSysteme, string> = {
+  'rendez-vous-pris': 'un créneau est réservé dans l’agenda',
+  'rappel-convenu': 'le prospect demande qu’on le rappelle à un moment précis',
+  'envoi-informations': '« envoyez-moi un mail » : souvent un non poli',
+  refus: 'pas intéressé, avec la dernière objection restée sans réponse',
+  'pas-le-bon-interlocuteur': 'la personne n’est pas celle qui décide',
+  interrompu: 'raccroché avant la fin ; le bilan note l’étape atteinte',
+  'non-abouti': 'aucune conversation : exclu des taux de conversion',
+};

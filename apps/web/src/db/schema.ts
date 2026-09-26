@@ -1,4 +1,4 @@
-import type { IssueSysteme, PlageHoraire } from '@autocalled/domain';
+import type { Bilan, EntreeCampagne, IssueSysteme, PlageHoraire, StatutCampagne, TourDeParole } from '@autocalled/domain';
 import { ISSUES_SYSTEME } from '@autocalled/domain';
 import {
   boolean,
@@ -139,3 +139,56 @@ export const prospects = pgTable(
   },
   (t) => [primaryKey({ columns: [t.entrepriseId, t.id] })],
 );
+
+export const ligne = pgEnum('ligne', ['navigateur', 'simulation', 'bluetooth', 'twilio']);
+
+/**
+ * Cycle d'un appel : `en-cours` pendant la conversation, `traitement` le temps de rapatrier la
+ * transcription et l'audio puis d'analyser, `termine` avec son bilan, `echec` si l'analyse a échoué.
+ */
+export const statutAppel = pgEnum('statut_appel', ['en-cours', 'traitement', 'termine', 'echec']);
+
+export const campagnes = pgTable('campagnes', {
+  id: uuid().primaryKey().defaultRandom(),
+  entrepriseId: uuid()
+    .notNull()
+    .references(() => entreprises.id, { onDelete: 'cascade' }),
+  versionScriptId: uuid()
+    .notNull()
+    .references(() => versionsScript.id),
+  ligne: ligne().notNull(),
+  statut: text().$type<StatutCampagne>().notNull(),
+  /** Les entrées du domaine (`EntreeCampagne`), transitions faites par @autocalled/domain. */
+  entrees: jsonb().$type<EntreeCampagne[]>().notNull(),
+  creeLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+
+export const appels = pgTable('appels', {
+  id: uuid().primaryKey().defaultRandom(),
+  entrepriseId: uuid()
+    .notNull()
+    .references(() => entreprises.id, { onDelete: 'cascade' }),
+  prospectId: text().notNull(),
+  versionScriptId: uuid()
+    .notNull()
+    .references(() => versionsScript.id),
+  campagneId: uuid().references(() => campagnes.id, { onDelete: 'set null' }),
+  ligne: ligne().notNull(),
+  /** Le numéro composé, tel qu'autorisé au moment de l'appel. */
+  numero: text().notNull(),
+  conversationId: text().unique(),
+  /** Version de l'agent ElevenLabs qui a parlé : les bilans comparent aussi cela. */
+  versionAgent: text(),
+  statut: statutAppel().notNull().default('en-cours'),
+  debutLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  finLe: timestamp({ withTimezone: true }),
+  dureeSecondes: integer(),
+  transcription: jsonb().$type<TourDeParole[]>(),
+  /** Chemin relatif de l'enregistrement dans le dossier de données, hors dépôt. */
+  audio: text(),
+  bilan: jsonb().$type<Bilan>(),
+  issue: text(),
+  issueSysteme: issueSysteme(),
+  versionAnalyseur: text(),
+  erreur: text(),
+});

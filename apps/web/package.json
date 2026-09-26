@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@autocalled/domain": "workspace:*",
+    "@elevenlabs/react": "1.15.2",
     "@next/env": "16.3.6",
     "drizzle-orm": "^0.45.3",
     "libphonenumber-js": "^1.13.14",
