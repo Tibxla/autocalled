@@ -192,3 +192,24 @@ export const appels = pgTable('appels', {
   versionAnalyseur: text(),
   erreur: text(),
 });
+
+/** La connexion Google Agenda de l'opérateur (une seule). Le jeton de rafraîchissement est chiffré. */
+export const connexionGoogle = pgTable('connexion_google', {
+  id: integer().primaryKey().default(1),
+  email: text(),
+  jetonChiffre: text().notNull(),
+  /** Le calendrier « Autocalled » créé par l'application, où vont les rendez-vous. */
+  calendrierId: text().notNull(),
+  connecteLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+
+export const rendezVous = pgTable('rendez_vous', {
+  id: uuid().primaryKey().defaultRandom(),
+  appelId: uuid()
+    .notNull()
+    .references(() => appels.id, { onDelete: 'cascade' }),
+  debut: timestamp({ withTimezone: true }).notNull(),
+  fin: timestamp({ withTimezone: true }).notNull(),
+  evenementId: text().notNull(),
+  creeLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});

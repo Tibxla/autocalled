@@ -7,7 +7,7 @@
 
 Une assistante vocale IA qui passe de vrais appels de prospection sur un vrai réseau mobile, propose des créneaux lus dans Google Agenda, réserve le rendez-vous, puis rédige le bilan de chaque appel.
 
-> **Statut : en construction.** Le vocabulaire du domaine et les décisions d'architecture sont écrits ; le cœur du domaine est développé en TDD pendant que la ligne Bluetooth attend son matériel.
+> **Statut : utilisable sur la ligne navigateur.** On parle à Mina depuis le navigateur, les appels sont enregistrés, analysés et comparés. La ligne téléphonique Bluetooth attend son matériel.
 
 ## Le parcours d'un appel
 
@@ -78,9 +78,27 @@ Chaque étape se termine sur quelque chose qui marche de bout en bout ; le plus 
 - [x] **3. Squelette web** : Postgres, authentification Tailscale, entreprises (fiche, objections CRAC, issues, scripts versionnés), import des fiches prospect avec consentement. Le bouton d'appel attend la ligne.
 - [x] **Ligne navigateur et appels simulés** : conversations réelles avec Mina depuis le navigateur, et appels où un modèle joue le prospect (signalés comme tels).
 - [x] **4. Bilan** : audio et transcription rapatriés, analyse, écran d'un appel avec audio synchronisé.
-- [ ] **5. Agenda** : Google Agenda, proposition et réservation de créneaux pendant l'appel.
+- [x] **5. Agenda** : Google Agenda (portées minimales, jeton chiffré), outils de proposition et de réservation servis à part. Reste à activer Funnel et le client OAuth.
 - [x] **6. Campagne en direct** : enchaînement des appels, transcription en temps réel.
 - [x] **7. Scripts versionnés et analyse** : comparaison des versions, avec garde sur la taille de l'échantillon.
+
+## Lancer le projet
+
+Prérequis : Node 24, pnpm, Docker, Tailscale, et Claude Code connecté (il produit les bilans).
+
+```bash
+pnpm install
+cp .env.example .env           # puis remplir les valeurs
+docker compose up -d           # Postgres, sur 127.0.0.1 seulement
+pnpm --filter @autocalled/web db:migrate
+pnpm agent create              # crée Mina chez ElevenLabs, à faire une fois
+scripts/installer-services.sh  # construit et lance l'interface et les outils (services systemd utilisateur)
+sudo tailscale serve --bg --https=8449 http://127.0.0.1:3020
+```
+
+Pour l'agenda : un client OAuth Google de type « application Web » dont l'URI de redirection est `ORIGINE_APP/google/retour`, puis « Connecter Google Agenda » dans les réglages. Les outils de Mina se déclarent avec `pnpm agent outils`, une fois le serveur d'outils exposé par `tailscale funnel --https=10000`.
+
+Tests : `pnpm test` (domaine et agenda), `pnpm typecheck`.
 
 ## Cadre légal
 

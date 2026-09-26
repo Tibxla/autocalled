@@ -5,7 +5,7 @@ import type { NextConfig } from 'next';
 loadEnvConfig(`${import.meta.dirname}/../..`, process.env.NODE_ENV !== 'production', undefined, true);
 
 const nextConfig: NextConfig = {
-  transpilePackages: ['@autocalled/domain'],
+  transpilePackages: ['@autocalled/domain', '@autocalled/agenda'],
   // Un import envoie jusqu'à cent fiches de 32 Ko.
   experimental: { serverActions: { bodySizeLimit: '4mb' } },
 };

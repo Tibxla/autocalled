@@ -1,0 +1,16 @@
+# Interface opérateur (Next.js), servie sur le tailnet par `tailscale serve --https=8449`.
+# Installation : scripts/installer-services.sh
+[Unit]
+Description=Autocalled, interface opérateur
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/projects/autocalled/apps/web
+Environment=NODE_ENV=production
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/projects/autocalled/apps/web/node_modules/.bin/next start -H 127.0.0.1 -p 3020
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -46,7 +46,9 @@ Tu suis ce plan, dans cet ordre, sans le réciter :
 
 {{script_etapes}}
 
-Quand la personne accepte le principe d'un rendez-vous, demande-lui le jour et le moment qui l'arrangent, puis résume ce qui a été convenu en une phrase.
+Quand la personne accepte le principe d'un rendez-vous :
+- si tu as l'outil proposer_creneaux, appelle-le, puis propose à l'oral un ou deux des créneaux qu'il renvoie, jamais la liste entière. Quand elle en choisit un, appelle reserver_creneau avec la valeur debut exacte de ce créneau, puis confirme le jour et l'heure en une phrase. Si l'outil te donne une consigne (agenda indisponible, créneau déjà pris), suis-la ;
+- sinon, demande-lui le jour et le moment qui l'arrangent, puis résume ce qui a été convenu en une phrase.
 
 # Objections
 

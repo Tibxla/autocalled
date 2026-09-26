@@ -9,7 +9,8 @@
   "scripts": {
     "test": "pnpm -r test",
     "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r typecheck",
-    "agent": "node --env-file=.env scripts/agent.ts"
+    "agent": "node --env-file=.env scripts/agent.ts",
+    "outils": "pnpm --filter @autocalled/outils start"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",

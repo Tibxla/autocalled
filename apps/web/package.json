@@ -11,6 +11,7 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
+    "@autocalled/agenda": "workspace:*",
     "@autocalled/domain": "workspace:*",
     "@elevenlabs/react": "1.15.2",
     "@next/env": "16.3.6",

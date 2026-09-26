@@ -6,6 +6,9 @@ import './globals.css';
 const texte = Schibsted_Grotesk({ subsets: ['latin'], variable: '--police-texte' });
 const donnees = Geist_Mono({ subsets: ['latin'], variable: '--police-donnees' });
 
+/** Tout vient de la base à chaque requête : rien n'est figé au moment de la construction. */
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: { default: 'Autocalled', template: '%s · Autocalled' },
   description: 'Régie de Mina, l’assistante vocale de prospection.',
