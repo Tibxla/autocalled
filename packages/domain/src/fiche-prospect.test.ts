@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type FicheProspect, fusionnerFiches, lireFiche, lireFiches } from './fiche-prospect.js';
+import { type FicheProspect, fusionnerFiches, lireFiche, lireFiches } from './fiche-prospect.ts';
 
 const julie = `---
 nom: Julie Martin

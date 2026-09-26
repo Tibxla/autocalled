@@ -1,0 +1,20 @@
+# Base de données locale. Le port n'écoute que sur la machine : rien n'est exposé sur le réseau.
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: autocalled
+      POSTGRES_DB: autocalled
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?définir POSTGRES_PASSWORD dans .env}
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autocalled"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  postgres:

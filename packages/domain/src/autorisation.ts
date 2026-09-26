@@ -1,4 +1,4 @@
-import { type NumeroE164, normaliserNumero } from './numero.js';
+import { type NumeroE164, normaliserNumero } from './numero.ts';
 
 /**
  * Accord d'une personne pour être appelée par une IA et enregistrée (ADR 0001).

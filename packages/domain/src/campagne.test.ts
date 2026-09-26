@@ -9,7 +9,7 @@ import {
   prochaineAction,
   sauter,
   terminerAppel,
-} from './campagne.js';
+} from './campagne.ts';
 
 function campagneDeTrois(): Campagne {
   return creerCampagne({

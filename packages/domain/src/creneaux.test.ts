@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type Intervalle, type ReglesRendezVous, estReservable, proposerCreneaux } from './creneaux.js';
+import { type Intervalle, type ReglesRendezVous, estReservable, proposerCreneaux } from './creneaux.ts';
 
 /** Vendredi 25 septembre 2026, 18 h à Paris. */
 const maintenant = new Date('2026-09-25T16:00:00Z');

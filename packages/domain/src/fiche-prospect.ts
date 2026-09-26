@@ -1,6 +1,6 @@
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
-import { type NumeroE164, normaliserNumero } from './numero.js';
+import { type NumeroE164, normaliserNumero } from './numero.ts';
 
 /**
  * Fiche d'un prospect, lue depuis un fichier Markdown : un en-tête YAML et un contexte libre.

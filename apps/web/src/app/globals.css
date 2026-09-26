@@ -1,0 +1,104 @@
+/*
+ * Contrat de direction — interface opérateur
+ * THÈSE : une régie d'écoute épurée ; l'écran se tait jusqu'à ce qu'un appel vive. Refuse le
+ *   tableau de bord SaaS (barre latérale grise, cartes à icônes, chiffres géants).
+ * MONDE : neutres chauds sans crème, graphite pour l'encre et les actions, filets d'un pixel,
+ *   un seul rouge « antenne » réservé à ce qui est vivant. Une police (Schibsted Grotesk),
+ *   chasse fixe (Geist Mono) seulement pour numéros, heures et identifiants.
+ * RÉCIT : l'opérateur prépare une entreprise, importe ses prospects, et voit d'un coup d'œil ce
+ *   qui peut être appelé.
+ * PREMIER ÉCRAN : barre fine (marque, navigation, état de la ligne en trait), puis une liste
+ *   en tableau aéré ; l'action principale en haut à droite de la liste.
+ * FORME : Operate, monde imposé par docs/direction-visuelle.md, pas de tirage.
+ */
+@import "tailwindcss";
+
+:root {
+  --fond: #f6f5f2;
+  --surface: #fdfdfc;
+  --encre: #1d1c1a;
+  --encre-2: #55524c;
+  --encre-3: #6f6b64;
+  --filet: #e3e1dc;
+  --filet-fort: #cbc8c1;
+  --survol: #eeede9;
+  --antenne: #d23f26;
+  --autorise: #2e6b4a;
+  --alerte: #a1321f;
+  --alerte-fond: #fbeeeb;
+  --focus: #1d1c1a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fond: #131312;
+    --surface: #1a1a18;
+    --encre: #ebe9e4;
+    --encre-2: #aeaaa2;
+    --encre-3: #918d85;
+    --filet: #2b2a27;
+    --filet-fort: #3d3b37;
+    --survol: #22211f;
+    --antenne: #ff6a4d;
+    --autorise: #7cc49b;
+    --alerte: #ff8a73;
+    --alerte-fond: #2a1714;
+    --focus: #ebe9e4;
+  }
+}
+
+@theme inline {
+  --color-fond: var(--fond);
+  --color-surface: var(--surface);
+  --color-encre: var(--encre);
+  --color-encre-2: var(--encre-2);
+  --color-encre-3: var(--encre-3);
+  --color-filet: var(--filet);
+  --color-filet-fort: var(--filet-fort);
+  --color-survol: var(--survol);
+  --color-antenne: var(--antenne);
+  --color-autorise: var(--autorise);
+  --color-alerte: var(--alerte);
+  --color-alerte-fond: var(--alerte-fond);
+  --font-sans: var(--police-texte), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--police-donnees), ui-monospace, monospace;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.625rem;
+  --text-xl: 1.5rem;
+  --text-xl--line-height: 2rem;
+}
+
+html {
+  background: var(--fond);
+  color: var(--encre);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-feature-settings: "ss01", "tnum" 0;
+}
+
+::selection {
+  background: var(--encre);
+  color: var(--fond);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

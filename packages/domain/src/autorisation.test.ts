@@ -3,8 +3,8 @@ import {
   type Consentement,
   type NumeroAutorise,
   verifierAutorisation,
-} from './autorisation.js';
-import { normaliserNumero } from './numero.js';
+} from './autorisation.ts';
+import { normaliserNumero } from './numero.ts';
 
 const maintenant = new Date('2026-09-25T10:00:00Z');
 
