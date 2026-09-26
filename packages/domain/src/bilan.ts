@@ -20,6 +20,8 @@ export interface ContexteBilan {
   objectionIds: string[];
   /** Issues permises pour cette entreprise : clé (issue système ou `perso:<id>`) et issue système de rattachement. */
   issues: { cle: string; systeme: IssueSysteme }[];
+  /** Un rendez-vous a-t-il été réellement réservé pendant l'appel ? Absent quand on ne peut pas le savoir. */
+  rendezVousReserve?: boolean;
 }
 
 const TEMPS_CRAC = ['creuser', 'reformuler', 'argumenter', 'controler'] as const;
@@ -85,6 +87,10 @@ export function validerBilan(brut: unknown, contexte: ContexteBilan): Validation
     if (!parolesProspect.includes(normaliser(objection.citation))) {
       erreurs.push(`citation absente des paroles du prospect : « ${objection.citation} »`);
     }
+  }
+
+  if (issue?.systeme === 'rendez-vous-pris' && contexte.rendezVousReserve === false) {
+    erreurs.push('aucun rendez-vous n’a été réservé pendant cet appel : si un moment a été convenu à l’oral, c’est un rappel convenu');
   }
 
   const estRappel = issue?.systeme === 'rappel-convenu';

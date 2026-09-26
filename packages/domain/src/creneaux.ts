@@ -104,3 +104,21 @@ export function estReservable(
     (c) => c.debut.getTime() === creneau.debut.getTime() && c.fin.getTime() === creneau.fin.getTime(),
   );
 }
+
+/**
+ * Inverse une liste de plages libres (ce que renvoie Google « suggest_time ») en plages occupées sur
+ * une fenêtre : tout ce que l'agenda ne déclare pas libre est traité comme pris.
+ */
+export function occupationsDepuisLibres(libres: readonly Intervalle[], fenetre: Intervalle): Intervalle[] {
+  const triees = [...libres].sort((a, b) => a.debut.getTime() - b.debut.getTime());
+  const occupations: Intervalle[] = [];
+  let curseur = fenetre.debut;
+  for (const libre of triees) {
+    if (libre.fin <= curseur) continue;
+    if (libre.debut >= fenetre.fin) break;
+    if (libre.debut > curseur) occupations.push({ debut: curseur, fin: libre.debut });
+    if (libre.fin > curseur) curseur = libre.fin;
+  }
+  if (curseur < fenetre.fin) occupations.push({ debut: curseur, fin: fenetre.fin });
+  return occupations;
+}

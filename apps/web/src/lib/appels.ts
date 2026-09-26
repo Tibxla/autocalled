@@ -9,9 +9,10 @@ import {
   type VariablesDeLAppel,
   variablesDeLAppel,
 } from '@autocalled/domain';
+import { creneauParle } from '@autocalled/agenda';
 import { and, asc, desc, eq, isNotNull } from 'drizzle-orm';
 import { db } from '@/db';
-import { appels, entreprises, issuesPersonnalisees, objections, prospects, versionsScript } from '@/db/schema';
+import { appels, entreprises, issuesPersonnalisees, objections, prospects, rendezVous, versionsScript } from '@/db/schema';
 import { VERSION_ANALYSEUR, analyser } from './analyseur';
 import { autorisationsDe } from './autorisations';
 import { audioConversation, lireConversation, simulerConversation } from './elevenlabs';
@@ -119,7 +120,7 @@ export async function analyserAppel(appelId: string): Promise<void> {
   if (!appel?.transcription) return;
   await db.update(appels).set({ statut: 'traitement', erreur: null }).where(eq(appels.id, appelId));
 
-  const [[entreprise], [version], listeObjections, personnalisees] = await Promise.all([
+  const [[entreprise], [version], listeObjections, personnalisees, [rdv]] = await Promise.all([
     db.select().from(entreprises).where(eq(entreprises.id, appel.entrepriseId)),
     db.select().from(versionsScript).where(eq(versionsScript.id, appel.versionScriptId)),
     db.select().from(objections).where(eq(objections.entrepriseId, appel.entrepriseId)),
@@ -127,6 +128,7 @@ export async function analyserAppel(appelId: string): Promise<void> {
       .select()
       .from(issuesPersonnalisees)
       .where(and(eq(issuesPersonnalisees.entrepriseId, appel.entrepriseId), eq(issuesPersonnalisees.archivee, false))),
+    db.select().from(rendezVous).where(eq(rendezVous.appelId, appelId)),
   ]);
   if (!entreprise || !version) return;
 
@@ -147,11 +149,13 @@ export async function analyserAppel(appelId: string): Promise<void> {
         nombreEtapes: version.etapes.length,
         objectionIds: listeObjections.map((o) => o.id),
         issues,
+        rendezVousReserve: Boolean(rdv),
       },
       entreprise: entreprise.nom,
       etapes: version.etapes.map((e) => e.intention),
       objections: listeObjections.map((o) => ({ id: o.id, libelle: o.libelle })),
       issues,
+      rendezVous: rdv ? creneauParle(rdv.debut, entreprise.fuseau) : null,
     });
     await db
       .update(appels)

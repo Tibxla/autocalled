@@ -210,6 +210,25 @@ export const rendezVous = pgTable('rendez_vous', {
     .references(() => appels.id, { onDelete: 'cascade' }),
   debut: timestamp({ withTimezone: true }).notNull(),
   fin: timestamp({ withTimezone: true }).notNull(),
-  evenementId: text().notNull(),
+  /** Nul tant que l'événement n'est pas créé dans Google Agenda (la création se fait après l'appel). */
+  evenementId: text(),
+  /** Le calendrier Google où l'événement a été créé. */
+  calendrier: text(),
+  statut: text().$type<'a-creer' | 'cree' | 'echec'>().notNull().default('a-creer'),
+  erreur: text(),
   creeLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Copie des plages occupées de l'agenda, relue avant les appels : pendant un appel, Mina propose des
+ * créneaux sans attendre Google. Une seule ligne.
+ */
+export const disponibilites = pgTable('disponibilites', {
+  id: integer().primaryKey().default(1),
+  source: text().$type<'mcp' | 'api'>().notNull(),
+  occupations: jsonb().$type<{ debut: string; fin: string }[]>().notNull(),
+  fenetreDebut: timestamp({ withTimezone: true }).notNull(),
+  fenetreFin: timestamp({ withTimezone: true }).notNull(),
+  synchroniseLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  erreur: text(),
 });

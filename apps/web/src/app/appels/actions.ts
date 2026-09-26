@@ -7,6 +7,7 @@ import { after } from 'next/server';
 import { db } from '@/db';
 import { appels } from '@/db/schema';
 import { analyserAppel, preparerAppel, simulerAppel, traiterAppel } from '@/lib/appels';
+import { rafraichirSiAncien } from '@/lib/agenda';
 import { jetonConversation } from '@/lib/elevenlabs';
 import { exigerOperateur } from '@/lib/garde';
 
@@ -25,6 +26,7 @@ export async function demarrerAppelNavigateur(
   const preparation = await preparerAppel(entrepriseId, prospectId, versionScriptId);
   if (!preparation.ok) return preparation;
 
+  await rafraichirSiAncien();
   const { jeton, conversationId } = await jetonConversation();
   const [appel] = await db
     .insert(appels)

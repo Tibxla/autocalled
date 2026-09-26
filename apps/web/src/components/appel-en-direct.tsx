@@ -4,9 +4,10 @@ import { ConversationProvider, useConversation } from '@elevenlabs/react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { type DemarrageAppel, demarrerAppelNavigateur, terminerAppelNavigateur } from '@/app/appels/actions';
+import { outilProposerCreneaux, outilReserverCreneau } from '@/app/appels/outils';
 import { definirEtatLigne } from '@/lib/etat-ligne';
 import { OndeDirect } from './onde-direct';
-import { Bouton, Message } from './ui';
+import { Bouton, Message, Saisie } from './ui';
 
 interface Proprietes {
   entrepriseId: string;
@@ -90,7 +91,16 @@ function Conversation({
       return;
     }
     appelId.current = demarrage.appelId;
-    conversation.startSession({ conversationToken: demarrage.jeton, connectionType: 'webrtc', dynamicVariables: demarrage.variables });
+    const id = demarrage.appelId;
+    conversation.startSession({
+      conversationToken: demarrage.jeton,
+      connectionType: 'webrtc',
+      dynamicVariables: demarrage.variables,
+      clientTools: {
+        proposer_creneaux: () => outilProposerCreneaux(id),
+        reserver_creneau: (parametres: { debut?: string }) => outilReserverCreneau(id, parametres?.debut),
+      },
+    });
   }, [campagneId, conversation, entrepriseId, ouvrir, prospectId, versionScriptId]);
 
   const lance = useRef(false);
@@ -128,6 +138,28 @@ function Conversation({
         </span>
       </div>
       {erreur ? <Message ton="alerte">{erreur}</Message> : null}
+      {phase === 'en-appel' ? (
+        <form
+          className="flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const champ = e.currentTarget.elements.namedItem('reponse') as HTMLInputElement;
+            const texte = champ.value.trim();
+            if (!texte) return;
+            conversation.sendUserMessage(texte);
+            setTours((t) => [...t, { role: 'prospect', texte }]);
+            champ.value = '';
+          }}
+        >
+          <label htmlFor="reponse-ecrite" className="sr-only">
+            Répondre par écrit
+          </label>
+          <Saisie id="reponse-ecrite" name="reponse" placeholder="Répondre par écrit (pièce bruyante, micro coupé…)" autoComplete="off" />
+          <Bouton type="submit" variante="secondaire">
+            Envoyer
+          </Bouton>
+        </form>
+      ) : null}
       {tours.length > 0 ? (
         <ol ref={fil} className="grid max-h-80 gap-2.5 overflow-y-auto border-t border-filet pt-4" aria-live="polite">
           {tours.map((t, i) => (

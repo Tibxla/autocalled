@@ -29,6 +29,20 @@
       "when": 1790432417883,
       "tag": "0003_agenda",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790435945284,
+      "tag": "0004_agenda-mcp",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790436367103,
+      "tag": "0005_calendrier-rdv",
+      "breakpoints": true
     }
   ]
 }

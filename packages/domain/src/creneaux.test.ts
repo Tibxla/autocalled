@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type Intervalle, type ReglesRendezVous, estReservable, proposerCreneaux } from './creneaux.ts';
+import { type Intervalle, type ReglesRendezVous, estReservable, occupationsDepuisLibres, proposerCreneaux } from './creneaux.ts';
 
 /** Vendredi 25 septembre 2026, 18 h à Paris. */
 const maintenant = new Date('2026-09-25T16:00:00Z');
@@ -113,5 +113,36 @@ describe('estReservable', () => {
     const mardiMidi = new Date('2026-09-29T10:00:00Z');
 
     expect(estReservable(mardi14h, regles, [], mardiMidi)).toBe(false);
+  });
+});
+
+describe('occupationsDepuisLibres', () => {
+  const fenetre = { debut: new Date('2026-09-28T05:00:00Z'), fin: new Date('2026-09-28T20:00:00Z') };
+
+  it('rend occupé tout ce qui n’est pas libre dans la fenêtre', () => {
+    const libres = [occupe('2026-09-28T06:00:00Z', '2026-09-28T08:00:00Z'), occupe('2026-09-28T12:00:00Z', '2026-09-28T15:00:00Z')];
+
+    expect(debuts(occupationsDepuisLibres(libres, fenetre))).toEqual([
+      '2026-09-28T05:00:00.000Z',
+      '2026-09-28T08:00:00.000Z',
+      '2026-09-28T15:00:00.000Z',
+    ]);
+    expect(occupationsDepuisLibres(libres, fenetre).at(-1)?.fin.toISOString()).toBe('2026-09-28T20:00:00.000Z');
+  });
+
+  it('accepte des plages libres dans le désordre, qui se chevauchent ou débordent', () => {
+    const libres = [
+      occupe('2026-09-28T12:00:00Z', '2026-09-28T21:00:00Z'),
+      occupe('2026-09-28T04:00:00Z', '2026-09-28T09:00:00Z'),
+      occupe('2026-09-28T08:00:00Z', '2026-09-28T10:00:00Z'),
+    ];
+
+    expect(occupationsDepuisLibres(libres, fenetre).map((o) => [o.debut.toISOString(), o.fin.toISOString()])).toEqual([
+      ['2026-09-28T10:00:00.000Z', '2026-09-28T12:00:00.000Z'],
+    ]);
+  });
+
+  it('rend toute la fenêtre occupée sans aucune plage libre', () => {
+    expect(occupationsDepuisLibres([], fenetre)).toEqual([fenetre]);
   });
 });

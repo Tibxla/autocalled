@@ -99,6 +99,23 @@ describe('validerBilan', () => {
   });
 });
 
+describe('rendez-vous réellement réservé', () => {
+  const rdv = { ...contexte, issues: [...contexte.issues, { cle: 'rendez-vous-pris', systeme: 'rendez-vous-pris' as const }] };
+  const bilanRdv = { ...valide, issue: 'rendez-vous-pris', rappel: null };
+
+  it('refuse « Rendez-vous pris » quand aucun rendez-vous n’a été réservé', () => {
+    const resultat = validerBilan(bilanRdv, { ...rdv, rendezVousReserve: false });
+
+    expect(resultat.ok).toBe(false);
+    if (!resultat.ok) expect(resultat.erreurs.join(' ')).toMatch(/aucun rendez-vous/);
+  });
+
+  it('accepte « Rendez-vous pris » quand le rendez-vous est réservé, ou quand on ne sait pas', () => {
+    expect(validerBilan(bilanRdv, { ...rdv, rendezVousReserve: true }).ok).toBe(true);
+    expect(validerBilan(bilanRdv, rdv).ok).toBe(true);
+  });
+});
+
 describe('schemaJsonBilan', () => {
   it('produit un schéma JSON objet fermé, utilisable comme sortie structurée', () => {
     const schema = schemaJsonBilan() as { type: string; additionalProperties: boolean; required: string[] };

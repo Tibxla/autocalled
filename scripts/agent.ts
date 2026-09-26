@@ -169,55 +169,6 @@ const commandes: Record<string, () => Promise<void>> = {
     console.log('Configuration envoyée.');
   },
 
-  /**
-   * Déclare à Mina les outils d'agenda servis par apps/outils et exposés par Tailscale Funnel. Le secret
-   * partagé est rangé dans les secrets de l'espace ElevenLabs : la configuration (et donc le dépôt)
-   * ne contient que sa référence.
-   */
-  async outils() {
-    const url = exiger('URL_PUBLIQUE_OUTILS');
-    const reponse = await fetch('https://api.elevenlabs.io/v1/convai/secrets', {
-      method: 'POST',
-      headers: { 'xi-api-key': exiger('ELEVENLABS_API_KEY'), 'content-type': 'application/json' },
-      body: JSON.stringify({ type: 'new', name: `autocalled_outils_${Date.now()}`, value: `Bearer ${exiger('OUTILS_WEBHOOK_SECRET')}` }),
-    });
-    if (!reponse.ok) throw new Error(`secret ElevenLabs ${reponse.status} : ${await reponse.text()}`);
-    const { secret_id } = (await reponse.json()) as { secret_id: string };
-    const entete = { Authorization: { secret_id } };
-    const conversation = { type: 'string', dynamic_variable: 'system__conversation_id' };
-    const outil = (name: string, description: string, chemin: string, proprietes: Json, requis: string[]) => ({
-      type: 'webhook',
-      name,
-      description,
-      response_timeout_secs: 20,
-      api_schema: {
-        url: `${url}${chemin}`,
-        method: 'POST',
-        request_headers: entete,
-        request_body_schema: { type: 'object', properties: proprietes, required: requis },
-      },
-    });
-    const config = await configLocale();
-    const actuels = (lire(config, 'conversation_config.agent.prompt.tools') as Json[] | undefined) ?? [];
-    const autres = actuels.filter((t) => t.name !== 'proposer_creneaux' && t.name !== 'reserver_creneau');
-    ecrire(config, 'conversation_config.agent.prompt.tools', [
-      ...autres,
-      outil('proposer_creneaux', 'Renvoie quelques créneaux libres pour un premier rendez-vous, selon l’agenda réel.', '/outils/proposer-creneaux', { conversation_id: conversation }, ['conversation_id']),
-      outil(
-        'reserver_creneau',
-        'Réserve le créneau choisi par le prospect. À appeler seulement après son accord explicite.',
-        '/outils/reserver-creneau',
-        { conversation_id: conversation, debut: { type: 'string', description: 'La valeur debut exacte du créneau choisi, telle que renvoyée par proposer_creneaux.' } },
-        ['conversation_id', 'debut'],
-      ),
-    ]);
-    const connu = await verrou();
-    if (connu && connu.empreinte !== empreinte(await distante())) throw new Error('La configuration distante a changé : lance pull avant.');
-    await api(`/${exiger('ELEVENLABS_AGENT_ID')}`, { method: 'PATCH', body: JSON.stringify(config) });
-    await enregistrerLocal(await distante());
-    console.log('Outils d’agenda déclarés. Relis agent/mina.config.json : il ne doit contenir que la référence du secret.');
-  },
-
   async status() {
     const connu = await verrou();
     const actuelle = await distante();

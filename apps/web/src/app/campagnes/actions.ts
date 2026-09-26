@@ -8,6 +8,7 @@ import { after } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/db';
 import { appels, campagnes } from '@/db/schema';
+import { rafraichirSiAncien } from '@/lib/agenda';
 import { traiterAppel } from '@/lib/appels';
 import { appelerSuivantNavigateur, avecCampagne, clore, derouleSimulation } from '@/lib/campagnes';
 import type { EtatFormulaire } from '@/lib/formulaire';
@@ -37,6 +38,7 @@ export async function nouvelleCampagne(entrepriseId: string, _: EtatFormulaire, 
 export async function lancerCampagne(campagneId: string): Promise<void> {
   await exigerOperateur();
   await avecCampagne(campagneId, async (c) => ({ campagne: demarrer(c), resultat: null }));
+  await rafraichirSiAncien();
   const [ligne] = await db.select({ ligne: campagnes.ligne }).from(campagnes).where(eq(campagnes.id, campagneId));
   if (ligne?.ligne === 'simulation') after(() => derouleSimulation(campagneId));
   revalidatePath(`/campagnes/${campagneId}`);
@@ -54,6 +56,7 @@ export async function suspendreCampagne(campagneId: string): Promise<void> {
 
 export async function ouvrirAppelSuivant(campagneId: string): Promise<DemarrageAppel> {
   await exigerOperateur();
+  await rafraichirSiAncien();
   const suivant = await appelerSuivantNavigateur(campagneId);
   if (suivant.type === 'attente') return { ok: false, raison: 'Plus aucun prospect à appeler.' };
   return { ok: true, appelId: suivant.appelId, jeton: suivant.jeton, variables: suivant.variables as never };

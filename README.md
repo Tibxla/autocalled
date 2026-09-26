@@ -40,7 +40,6 @@ flowchart LR
     subgraph Serveur["Serveur du homelab"]
         API["API + domaine<br/>TypeScript"]
         DB[("Postgres")]
-        WH["Webhooks publics<br/>port distinct"]
         Bridge["Pont Bluetooth<br/>oFono + PipeWire"]
         Analyseur["Analyseur<br/>claude -p, sans outils"]
     end
@@ -56,9 +55,8 @@ flowchart LR
     Bridge <-->|Bluetooth HFP| Phone
     Phone <-->|réseau mobile| Prospect
     Bridge <-->|audio WebSocket| EL
-    EL -->|outils d'agenda, fin d'appel| WH
-    WH --> API
-    API --> GCal
+    UI -->|outils d'agenda pendant l'appel| API
+    API -->|claude -p + connecteur Google| GCal
     API --> Analyseur
 ```
 
@@ -89,7 +87,7 @@ Chaque étape se termine sur quelque chose qui marche de bout en bout ; le plus 
 - [x] **3. Squelette web** : Postgres, authentification Tailscale, entreprises (fiche, objections CRAC, issues, scripts versionnés), import des fiches prospect avec consentement. Le bouton d'appel attend la ligne.
 - [x] **Ligne navigateur et appels simulés** : conversations réelles avec Mina depuis le navigateur, et appels où un modèle joue le prospect (signalés comme tels).
 - [x] **4. Bilan** : audio et transcription rapatriés, analyse, écran d'un appel avec audio synchronisé.
-- [x] **5. Agenda** : Google Agenda (portées minimales, jeton chiffré), outils de proposition et de réservation servis à part. Reste à activer Funnel et le client OAuth.
+- [x] **5. Agenda** : disponibilités lues par le connecteur Google Agenda de Claude et gardées en copie, créneaux proposés et réservés pendant l'appel par des outils exécutés côté client, événement créé juste après.
 - [x] **6. Campagne en direct** : enchaînement des appels, transcription en temps réel.
 - [x] **7. Scripts versionnés et analyse** : comparaison des versions, avec garde sur la taille de l'échantillon.
 
@@ -103,11 +101,11 @@ cp .env.example .env           # puis remplir les valeurs
 docker compose up -d           # Postgres, sur 127.0.0.1 seulement
 pnpm --filter @autocalled/web db:migrate
 pnpm agent create              # crée Mina chez ElevenLabs, à faire une fois
-scripts/installer-services.sh  # construit et lance l'interface et les outils (services systemd utilisateur)
+scripts/installer-services.sh  # construit et lance l'interface (service systemd utilisateur)
 sudo tailscale serve --bg --https=8449 http://127.0.0.1:3020
 ```
 
-Pour l'agenda : un client OAuth Google de type « application Web » dont l'URI de redirection est `ORIGINE_APP/google/retour`, puis « Connecter Google Agenda » dans les réglages. Les outils de Mina se déclarent avec `pnpm agent outils`, une fois le serveur d'outils exposé par `tailscale funnel --https=10000`.
+L'agenda passe par le connecteur Google Agenda de Claude : rien à configurer si Claude Code y a accès. L'API Google directe est facultative (client OAuth « application Web », redirection vers `ORIGINE_APP/google/retour`).
 
 Tests : `pnpm test` (domaine et agenda), `pnpm typecheck`.
 

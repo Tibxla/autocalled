@@ -1,9 +1,6 @@
 import 'server-only';
-import { spawn } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { type Bilan, type ContexteBilan, schemaJsonBilan, validerBilan } from '@autocalled/domain';
+import { claudeStructure } from './claude';
 
 /**
  * Analyseur de bilan (ADR 0005) : `claude -p` sans aucun outil, sans mémoire ni CLAUDE.md, dans un
@@ -18,6 +15,8 @@ export interface EntreeAnalyse {
   etapes: string[];
   objections: { id: string; libelle: string }[];
   issues: { cle: string; libelle: string; sens: string }[];
+  /** Le rendez-vous réellement réservé pendant l'appel, dit en clair, ou null. */
+  rendezVous: string | null;
 }
 
 function consignes(e: EntreeAnalyse, erreursPrecedentes: string[]): string {
@@ -35,6 +34,8 @@ ${e.objections.map((o) => `${o.id} : ${o.libelle}`).join('\n') || 'aucune'}
 Issues permises (clé : libellé, sens). Choisis la plus précise :
 ${e.issues.map((i) => `${i.cle} : ${i.libelle}, ${i.sens}`).join('\n')}
 
+Rendez-vous réservé pendant l'appel : ${e.rendezVous ?? 'aucun. L’issue « rendez-vous pris » est donc impossible, même si un moment a été évoqué à l’oral.'}
+
 Règles :
 - etapeAtteinte : numéro de la dernière étape réellement abordée, 0 si la conversation n'a pas commencé.
 - Chaque objection cite les mots exacts du prospect, recopiés de la transcription, sans rien ajouter. Une réserve qui ne correspond à aucune objection répertoriée prend objectionId null.
@@ -48,59 +49,11 @@ ${transcription}
 </transcription>`;
 }
 
-function environnementPropre(): Record<string, string | undefined> {
-  // Rien de la session parente (variables CLAUDE_CODE_*), rien de vide qui casserait l'authentification.
-  const env: Record<string, string | undefined> = {
-    HOME: process.env.HOME,
-    PATH: process.env.PATH,
-    LANG: 'fr_FR.UTF-8',
-    CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
-  };
-  if (process.env.CLAUDE_CODE_OAUTH_TOKEN) env.CLAUDE_CODE_OAUTH_TOKEN = process.env.CLAUDE_CODE_OAUTH_TOKEN;
-  return env;
-}
-
-async function executerClaude(prompt: string): Promise<unknown> {
-  const dossier = join(tmpdir(), 'autocalled-analyse');
-  await mkdir(dossier, { recursive: true });
-  const args = [
-    '-p',
-    '--model', 'sonnet',
-    '--tools', '',
-    '--strict-mcp-config',
-    '--setting-sources', 'project',
-    '--settings', '{"autoMemoryEnabled":false}',
-    '--no-session-persistence',
-    '--output-format', 'json',
-    '--json-schema', JSON.stringify(schemaJsonBilan()),
-  ];
-  return new Promise((resoudre, rejeter) => {
-    const enfant = spawn('claude', args, { cwd: dossier, env: environnementPropre() as NodeJS.ProcessEnv, stdio: ['pipe', 'pipe', 'pipe'] });
-    let sortie = '';
-    let erreur = '';
-    const minuterie = setTimeout(() => enfant.kill('SIGKILL'), 180_000);
-    enfant.stdout.on('data', (d) => (sortie += d));
-    enfant.stderr.on('data', (d) => (erreur += d));
-    enfant.on('error', rejeter);
-    enfant.on('close', (code) => {
-      clearTimeout(minuterie);
-      try {
-        const resultat = JSON.parse(sortie) as { is_error?: boolean; result?: string; structured_output?: unknown };
-        if (resultat.is_error) return rejeter(new Error(`analyseur : ${resultat.result ?? 'erreur inconnue'}`));
-        resoudre(resultat.structured_output ?? JSON.parse(resultat.result ?? 'null'));
-      } catch {
-        rejeter(new Error(`analyseur : sortie illisible (code ${code}) ${erreur.slice(0, 200)}`));
-      }
-    });
-    enfant.stdin.end(prompt);
-  });
-}
-
 /** Deux essais : le second reçoit les raisons du refus du premier. */
 export async function analyser(entree: EntreeAnalyse): Promise<Bilan> {
   let erreurs: string[] = [];
   for (let essai = 0; essai < 2; essai++) {
-    const brut = await executerClaude(consignes(entree, erreurs));
+    const brut = await claudeStructure({ prompt: consignes(entree, erreurs), schema: schemaJsonBilan(), modele: 'sonnet' });
     const validation = validerBilan(brut, entree.contexte);
     if (validation.ok) return validation.bilan;
     erreurs = validation.erreurs;

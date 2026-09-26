@@ -43,6 +43,70 @@
         },
         "tools": [
           {
+            "type": "client",
+            "name": "proposer_creneaux",
+            "description": "Renvoie quelques créneaux libres pour un premier rendez-vous, lus dans l'agenda réel.",
+            "response_timeout_secs": 30,
+            "disable_interruptions": false,
+            "interruption_mode": "allow",
+            "force_pre_tool_speech": false,
+            "pre_tool_speech": "auto",
+            "assignments": [],
+            "tool_call_sound_behavior": "auto",
+            "tool_error_handling_mode": "auto",
+            "parameters": {
+              "description": "",
+              "dynamic_variable": "",
+              "is_omitted": false,
+              "type": "object",
+              "required": [],
+              "properties": {}
+            },
+            "expects_response": true,
+            "dynamic_variables": {
+              "dynamic_variable_placeholders": {}
+            },
+            "execution_mode": "immediate"
+          },
+          {
+            "type": "client",
+            "name": "reserver_creneau",
+            "description": "Réserve le créneau choisi par le prospect. À appeler seulement après son accord explicite.",
+            "response_timeout_secs": 30,
+            "disable_interruptions": false,
+            "interruption_mode": "allow",
+            "force_pre_tool_speech": false,
+            "pre_tool_speech": "auto",
+            "assignments": [],
+            "tool_call_sound_behavior": "auto",
+            "tool_error_handling_mode": "auto",
+            "parameters": {
+              "description": "",
+              "dynamic_variable": "",
+              "is_omitted": false,
+              "type": "object",
+              "required": [
+                "debut"
+              ],
+              "properties": {
+                "debut": {
+                  "type": "string",
+                  "description": "La valeur debut exacte du créneau choisi, telle que renvoyée par proposer_creneaux.",
+                  "is_system_provided": false,
+                  "dynamic_variable": "",
+                  "allowed_values_dynamic_variable": "",
+                  "constant_value": "",
+                  "is_omitted": false
+                }
+              }
+            },
+            "expects_response": true,
+            "dynamic_variables": {
+              "dynamic_variable_placeholders": {}
+            },
+            "execution_mode": "immediate"
+          },
+          {
             "type": "system",
             "name": "end_call",
             "description": "Met fin à l'appel après un refus ferme, un rendez-vous convenu ou une fin de conversation naturelle.",

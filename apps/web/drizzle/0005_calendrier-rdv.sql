@@ -1,0 +1,1 @@
+ALTER TABLE "rendez_vous" ADD COLUMN "calendrier" text;
