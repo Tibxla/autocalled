@@ -4,3 +4,5 @@ export * from './creneaux.ts';
 export * from './fiche-prospect.ts';
 export * from './numero.ts';
 export * from './issues.ts';
+export * from './bilan.ts';
+export * from './variables.ts';
