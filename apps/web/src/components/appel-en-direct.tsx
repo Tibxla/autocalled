@@ -3,7 +3,7 @@
 import { ConversationProvider, useConversation } from '@elevenlabs/react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { demarrerAppelNavigateur, terminerAppelNavigateur } from '@/app/appels/actions';
+import { type DemarrageAppel, demarrerAppelNavigateur, terminerAppelNavigateur } from '@/app/appels/actions';
 import { definirEtatLigne } from '@/lib/etat-ligne';
 import { OndeDirect } from './onde-direct';
 import { Bouton, Message } from './ui';
@@ -18,11 +18,24 @@ interface Proprietes {
   onFin?: (appelId: string) => void;
   /** Démarre dès l'affichage (enchaînement d'une campagne). */
   demarrageAuto?: boolean;
+  /** Remplace l'ouverture et la clôture par défaut (une campagne passe par sa propre machine à états). */
+  ouvrir?: () => Promise<DemarrageAppel>;
+  clore?: (appelId: string) => Promise<void>;
 }
 
 type Phase = 'repos' | 'connexion' | 'en-appel' | 'fin';
 
-function Conversation({ entrepriseId, prospectId, prospectNom, versionScriptId, campagneId = null, onFin, demarrageAuto }: Proprietes) {
+function Conversation({
+  entrepriseId,
+  prospectId,
+  prospectNom,
+  versionScriptId,
+  campagneId = null,
+  onFin,
+  demarrageAuto,
+  ouvrir,
+  clore,
+}: Proprietes) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>('repos');
   const [erreur, setErreur] = useState<string | null>(null);
@@ -36,10 +49,10 @@ function Conversation({ entrepriseId, prospectId, prospectNom, versionScriptId, 
     if (!id) return;
     appelId.current = null;
     setPhase('fin');
-    await terminerAppelNavigateur(id);
+    await (clore ?? terminerAppelNavigateur)(id);
     if (onFin) onFin(id);
     else router.push(`/appels/${id}`);
-  }, [onFin, router]);
+  }, [clore, onFin, router]);
 
   const conversation = useConversation({
     onConnect: () => {
@@ -70,7 +83,7 @@ function Conversation({ entrepriseId, prospectId, prospectNom, versionScriptId, 
       setErreur('Le navigateur n’a pas accès au micro : autorise-le pour jouer le prospect.');
       return;
     }
-    const demarrage = await demarrerAppelNavigateur(entrepriseId, prospectId, versionScriptId, campagneId);
+    const demarrage = ouvrir ? await ouvrir() : await demarrerAppelNavigateur(entrepriseId, prospectId, versionScriptId, campagneId);
     if (!demarrage.ok) {
       setPhase('repos');
       setErreur(demarrage.raison);
@@ -78,7 +91,7 @@ function Conversation({ entrepriseId, prospectId, prospectNom, versionScriptId, 
     }
     appelId.current = demarrage.appelId;
     conversation.startSession({ conversationToken: demarrage.jeton, connectionType: 'webrtc', dynamicVariables: demarrage.variables });
-  }, [campagneId, conversation, entrepriseId, prospectId, versionScriptId]);
+  }, [campagneId, conversation, entrepriseId, ouvrir, prospectId, versionScriptId]);
 
   const lance = useRef(false);
   useEffect(() => {

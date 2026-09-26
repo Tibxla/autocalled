@@ -30,6 +30,8 @@ export default async function LayoutEntreprise({
         <LienNav href={`${base}/issues`}>Issues</LienNav>
         <LienNav href={`${base}/scripts`}>Scripts</LienNav>
         <LienNav href={`${base}/prospects`}>Prospects</LienNav>
+        <LienNav href={`${base}/campagnes`}>Campagnes</LienNav>
+        <LienNav href={`${base}/analyse`}>Analyse</LienNav>
         </div>
       </nav>
       <div className="pt-8">{children}</div>
