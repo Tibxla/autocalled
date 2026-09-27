@@ -7,7 +7,7 @@
 
 Une assistante vocale IA qui passe de vrais appels de prospection sur un vrai réseau mobile, propose des créneaux lus dans Google Agenda, réserve le rendez-vous, puis rédige le bilan de chaque appel.
 
-> **Statut : utilisable sur la ligne navigateur.** On parle à Mina depuis le navigateur, les appels sont enregistrés, analysés et comparés. La ligne téléphonique Bluetooth compose, transmet le son et détecte le raccrochage ; reste à y brancher Mina.
+> **Statut : utilisable sur la ligne navigateur.** On parle à Mina depuis le navigateur, les appels sont enregistrés, analysés et comparés. Sur la ligne téléphonique Bluetooth, Mina appelle depuis une commande du pont ; reste à la brancher sur l'application.
 
 ![Page d'un appel : bilan, puis conversation synchronisée avec l'enregistrement, chaque objection reliée à la phrase du prospect](docs/captures/appel.png)
 
@@ -82,7 +82,7 @@ Le vocabulaire du domaine (entreprise, prospect, script, objection, issue, bilan
 Chaque étape se termine sur quelque chose qui marche de bout en bout ; le plus risqué passe en premier.
 
 - [x] **0. Spike Bluetooth** : le serveur fait composer le téléphone passerelle, le son passe dans les deux sens, le raccrochage est détecté.
-- [ ] **1. Premier appel de Mina** : une commande lance un appel ; configuration de l'agent versionnée ; latence mesurée.
+- [x] **1. Premier appel de Mina** : une commande lance un appel ; configuration de l'agent versionnée ; latence mesurée.
 - [x] **2. Cœur du domaine en TDD** : consentements et numéros autorisés, fiches prospect, cycle de vie d'une campagne, calcul des créneaux.
 - [x] **3. Squelette web** : Postgres, authentification Tailscale, entreprises (fiche, objections CRAC, issues, scripts versionnés), import des fiches prospect avec consentement. Le bouton d'appel attend la ligne.
 - [x] **Ligne navigateur et appels simulés** : conversations réelles avec Mina depuis le navigateur, et appels où un modèle joue le prospect (signalés comme tels).

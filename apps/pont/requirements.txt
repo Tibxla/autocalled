@@ -1,0 +1,2 @@
+elevenlabs==2.69.0
+soxr==1.1.0

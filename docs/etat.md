@@ -18,7 +18,7 @@ Point de reprise pour la prochaine session de travail. À tenir à jour à chaqu
 
 ## À faire
 
-1. **Pont Bluetooth** (fin de l'étape 1) : le spike est validé le 27/09 (ADR 0003, scripts dans `apps/pont/spike/`). Reste à brancher le flux SCO sur le SDK ElevenLabs (`Conversation` + `AudioInterface`) : trancher le 8 kHz (agent ElevenLabs en `pcm_8000`, ou rééchantillonnage sans `audioop`, retiré de Python 3.14), ne démarrer la conversation qu'à l'état `active`, et exécuter les outils client d'agenda. Le téléphone passerelle actuel est l'iPhone personnel de l'opérateur : passer sur un téléphone dédié (refaire l'appairage avec `appairer.py`).
+1. **Pont Bluetooth branché sur l'application** : Mina appelle déjà depuis une commande (`apps/pont`, mode d'emploi en tête de `pont/__main__.py`), avec les variables de `apps/web/scripts/variables-appel.ts`. Premier appel le 27/09 : réponses en 0,4 à 1,2 s côté serveur, détection de répondeur opérationnelle, transcription dégradée par le 8 kHz. Reste le palier B : le web crée l'appel (`ligne: 'bluetooth'`) et commande le pont, qui lui renvoie le `conversation_id`, les outils d'agenda (bouchonnés pour l'instant) et la fin d'appel ; écoute en direct depuis le navigateur. Le téléphone passerelle est encore l'iPhone personnel de l'opérateur : passer sur un téléphone dédié (refaire l'appairage avec `apps/pont/spike/appairer.py`).
 2. **E-mail dicté** : vérifier sur de vrais appels que Mina s'appuie sur l'épellation et relit l'adresse lettre par lettre avant de réserver (règle ajoutée après une adresse mal transcrite).
 3. **Invitation réelle** : tester l'envoi avec sa propre adresse, puis supprimer l'événement.
 4. Voir aussi `docs/future-improvements.md`.
