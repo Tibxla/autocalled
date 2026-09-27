@@ -1,4 +1,9 @@
-"""Pont audio entre le canal SCO (CVSD : 8 kHz, 16 bits signé, mono) et la conversation ElevenLabs.
+"""Pont audio entre le canal SCO et la conversation ElevenLabs.
+
+Deux codages possibles, choisis par le téléphone à chaque appel parmi ceux que l'agent audio déclare :
+- mSBC (voix large bande) : 16 kHz, encodé et décodé ici par libsbc. C'est le cas normal.
+- CVSD : 8 kHz, codé par la clé Bluetooth. La voix de Mina y grésille (constat du 27/09) ; il ne sert
+  que si le téléphone refuse le mSBC.
 
 L'horloge est la boucle SCO : pour chaque bloc lu, on écrit un bloc de même taille, tiré du tampon
 de sortie ou complété de silence. Le SDK ne touche jamais le descripteur : `output()` remplit le
@@ -15,8 +20,14 @@ import numpy as np
 import soxr
 from elevenlabs.conversational_ai.conversation import AudioInterface
 
-TAUX_SCO = 8000
+from . import msbc
+
+CVSD, MSBC = 1, 2
 MS_PAR_ENVOI = 100  # blocs envoyés à ElevenLabs : assez courts pour ne pas retarder la fin de tour
+# La voix d'ElevenLabs arrive vers −13 dBFS, crêtes à pleine échelle. Le téléphone traite ce qui vient du
+# « micro » mains-libres en l'attendant bien plus faible : à ce niveau, il compresse et la voix sonne saturée.
+# Échelle d'écoute du 27/09 en mSBC : −19,5 dBFS sature, −29,5 et −39,5 sont nets. On vise environ −31 dBFS.
+GAIN_SORTIE = 10 ** (-18 / 20)
 
 
 def accepter(fd: int) -> None:
@@ -40,37 +51,54 @@ def taux_de(format_audio: str | None, defaut: int = 16000) -> int:
     return int(format_audio.removeprefix("pcm_"))
 
 
+class _Conversion:
+    """Rééchantillonnage en flux, ou rien si les deux taux sont égaux."""
+
+    def __init__(self, depuis: int, vers: int):
+        self._flux = soxr.ResampleStream(depuis, vers, 1, dtype="float32") if depuis != vers else None
+
+    def __call__(self, echantillons: np.ndarray) -> np.ndarray:
+        if self._flux is None:
+            return echantillons
+        return self._flux.resample_chunk(echantillons)
+
+
+def _vers_pcm(echantillons: np.ndarray) -> bytes:
+    return np.clip(echantillons, -32768, 32767).astype("<i2").tobytes()
+
+
 class Pont(AudioInterface):
     def __init__(self, enregistrement: str, journal: Callable[..., None]):
+        self._chemin_enregistrement = enregistrement
         self._journal = journal
         self._verrou = threading.Lock()
-        self._sortie = bytearray()  # à 8 kHz, prêt à écrire sur le canal
+        self._sortie = bytearray()  # PCM au taux de la ligne, en attente d'écriture
         self._envoi: Callable[[bytes], None] | None = None
         self._tampon_entree = bytearray()
-        self._taux_entree = 16000
-        self._taux_sortie = 16000
-        self._vers_elevenlabs = soxr.ResampleStream(TAUX_SCO, self._taux_entree, 1, dtype="int16")
-        self._vers_telephone = soxr.ResampleStream(self._taux_sortie, TAUX_SCO, 1, dtype="int16")
-        self._wav = wave.open(enregistrement, "wb")
-        self._wav.setnchannels(2)  # gauche : le prospect ; droite : ce que le pont envoie
-        self._wav.setsampwidth(2)
-        self._wav.setframerate(TAUX_SCO)
+        self._taux_entree = self._taux_sortie = 16000  # formats d'ElevenLabs, confirmés à l'ouverture
+        self._taux_ligne = 16000
+        self._codec = MSBC
         self._pompe: threading.Thread | None = None
         self._actif = threading.Event()  # l'appel est décroché : on transmet dans les deux sens
         self._arret = threading.Event()
         self.premier_son_de_mina: float | None = None
+        self._preparer_conversions()
 
-    # --- réglages connus au début de la conversation -------------------------------------------
+    def _preparer_conversions(self) -> None:
+        self._vers_elevenlabs = _Conversion(self._taux_ligne, self._taux_entree)
+        self._vers_telephone = _Conversion(self._taux_sortie, self._taux_ligne)
 
     def regler_formats(self, entree: str | None, sortie: str | None) -> None:
         self._taux_entree, self._taux_sortie = taux_de(entree), taux_de(sortie)
-        self._vers_elevenlabs = soxr.ResampleStream(TAUX_SCO, self._taux_entree, 1, dtype="int16")
-        self._vers_telephone = soxr.ResampleStream(self._taux_sortie, TAUX_SCO, 1, dtype="int16")
+        self._preparer_conversions()
 
     # --- canal SCO -------------------------------------------------------------------------------
 
-    def brancher(self, fd: int) -> None:
+    def brancher(self, fd: int, codec: int) -> None:
         """Appelé à l'ouverture du canal par oFono (dès la composition)."""
+        self._codec = codec
+        self._taux_ligne = 16000 if codec == MSBC else 8000
+        self._preparer_conversions()
         self._pompe = threading.Thread(target=self._pomper, args=(fd,), daemon=True, name="pompe-sco")
         self._pompe.start()
 
@@ -78,19 +106,37 @@ class Pont(AudioInterface):
         self._actif.set()
 
     def _pomper(self, fd: int) -> None:
+        wav = wave.open(self._chemin_enregistrement, "wb")
+        wav.setnchannels(2)  # gauche : le prospect ; droite : ce que le pont envoie
+        wav.setsampwidth(2)
+        wav.setframerate(self._taux_ligne)
+        decodeur, encodeur = (msbc.Decodeur(), msbc.Encodeur()) if self._codec == MSBC else (None, None)
+        a_ecrire = bytearray()  # octets prêts pour le canal (trames mSBC, ou PCM en CVSD)
+        rec_g, rec_d = bytearray(), bytearray()
         try:
             os.set_blocking(fd, True)
             accepter(fd)
-            self._journal("canal son établi")
+            self._journal("canal son établi en", "mSBC (16 kHz)" if decodeur else "CVSD (8 kHz)")
             while not self._arret.is_set():
                 bloc = os.read(fd, 1024)
                 if not bloc:
                     break
-                sortie = self._bloc_sortant(len(bloc))
-                os.write(fd, sortie)
-                self._enregistrer(bloc, sortie)
+                entrant = decodeur.decoder(bloc) if decodeur else bloc
+                while len(a_ecrire) < len(bloc):
+                    pcm = self._pcm_sortant(msbc.OCTETS_PCM if encodeur else len(bloc) - len(a_ecrire))
+                    rec_d += pcm
+                    a_ecrire += encodeur.trame(pcm) if encodeur else pcm
+                os.write(fd, bytes(a_ecrire[: len(bloc)]))
+                del a_ecrire[: len(bloc)]
+                rec_g += entrant
+                n = min(len(rec_g), len(rec_d)) // 2 * 2
+                if n:
+                    g = np.frombuffer(bytes(rec_g[:n]), dtype="<i2")
+                    d = np.frombuffer(bytes(rec_d[:n]), dtype="<i2")
+                    wav.writeframes(np.column_stack((g, d)).tobytes())
+                    del rec_g[:n], rec_d[:n]
                 if self._actif.is_set():
-                    self._entrant(bloc)
+                    self._entrant(entrant)
         except OSError as e:
             self._journal("canal son fermé :", e.strerror or e)
         finally:
@@ -98,9 +144,12 @@ class Pont(AudioInterface):
                 os.close(fd)
             except OSError:
                 pass
-            self._wav.close()
+            wav.close()
+            for c in (decodeur, encodeur):
+                if c:
+                    c.fermer()
 
-    def _bloc_sortant(self, taille: int) -> bytes:
+    def _pcm_sortant(self, taille: int) -> bytes:
         with self._verrou:
             morceau = bytes(self._sortie[:taille])
             del self._sortie[:taille]
@@ -108,20 +157,15 @@ class Pont(AudioInterface):
             self.premier_son_de_mina = time.monotonic()
         return morceau + bytes(taille - len(morceau))
 
-    def _enregistrer(self, entrant: bytes, sortant: bytes) -> None:
-        g = np.frombuffer(entrant, dtype="<i2")
-        d = np.frombuffer(sortant[: len(entrant)], dtype="<i2")
-        self._wav.writeframes(np.column_stack((g, d)).tobytes())
-
-    def _entrant(self, bloc: bytes) -> None:
-        self._tampon_entree += bloc
-        seuil = TAUX_SCO * 2 * MS_PAR_ENVOI // 1000
-        if len(self._tampon_entree) < seuil or self._envoi is None or self._vers_elevenlabs is None:
+    def _entrant(self, pcm: bytes) -> None:
+        self._tampon_entree += pcm
+        seuil = self._taux_ligne * 2 * MS_PAR_ENVOI // 1000
+        if len(self._tampon_entree) < seuil or self._envoi is None:
             return
-        echantillons = np.frombuffer(bytes(self._tampon_entree), dtype="<i2")
+        echantillons = np.frombuffer(bytes(self._tampon_entree), dtype="<i2").astype(np.float32)
         self._tampon_entree.clear()
-        converti = self._vers_elevenlabs.resample_chunk(echantillons).astype("<i2").tobytes()
-        if converti:  # le rééchantillonneur garde quelques échantillons au démarrage
+        converti = _vers_pcm(self._vers_elevenlabs(echantillons))
+        if converti:  # un rééchantillonneur garde quelques échantillons au démarrage
             self._envoi(converti)
 
     def sortie_vide(self) -> bool:
@@ -130,9 +174,7 @@ class Pont(AudioInterface):
 
     def fermer(self) -> None:
         self._arret.set()
-        if self._pompe is None:
-            self._wav.close()
-        else:
+        if self._pompe is not None:
             self._pompe.join(timeout=2)
         # Libérer les rééchantillonneurs avant la sortie de l'interpréteur (sinon nanobind signale des fuites).
         self._vers_elevenlabs = self._vers_telephone = None
@@ -146,8 +188,8 @@ class Pont(AudioInterface):
         self._envoi = None
 
     def output(self, audio: bytes) -> None:
-        echantillons = np.frombuffer(audio, dtype="<i2")
-        converti = self._vers_telephone.resample_chunk(echantillons).astype("<i2").tobytes()
+        echantillons = np.frombuffer(audio, dtype="<i2").astype(np.float32) * GAIN_SORTIE
+        converti = _vers_pcm(self._vers_telephone(echantillons))
         with self._verrou:
             self._sortie += converti
 
@@ -161,8 +203,9 @@ def temps_de_reponse(enregistrement: str, seuil: float = 300, trame_ms: int = 20
     dernière voix du prospect, lu dans l'enregistrement stéréo. Mesuré côté serveur : le réseau
     mobile ajoute sa propre latence dans chaque sens."""
     with wave.open(enregistrement) as w:
+        taux = w.getframerate()
         a = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").reshape(-1, 2).astype(float)
-    t = TAUX_SCO * trame_ms // 1000
+    t = taux * trame_ms // 1000
     n = len(a) // t
     energie = np.sqrt((a[: n * t].reshape(n, t, 2) ** 2).mean(axis=1))
     prospect, mina = energie[:, 0] > seuil, energie[:, 1] > seuil

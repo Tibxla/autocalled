@@ -3,6 +3,7 @@
     cd apps/web && node --env-file=../../.env --conditions=react-server --import ./scripts/resolution.ts \\
         scripts/variables-appel.ts <prospectId> > ../../data/variables.json
     cd apps/pont && .venv/bin/python -m pont appeler ../../data/variables.json
+    cd apps/pont && .venv/bin/python -m pont tester-son ../../data/variables.json son.wav   (diagnostic)
 
 Compose le numéro (déjà vérifié autorisé par `variables-appel.ts`), ne lance la conversation qu'au
 décroché, raccroche quand Mina termine, et journalise les étapes horodatées dans data/pont/.
@@ -22,7 +23,7 @@ from elevenlabs.client import ElevenLabs
 from elevenlabs.conversational_ai.conversation import ClientTools, Conversation, ConversationInitiationData
 from gi.repository import GLib, GLibUnix
 
-from .audio import Pont, temps_de_reponse
+from .audio import GAIN_SORTIE, Pont, temps_de_reponse
 from .ofono import AgentAudio, Telephone, premier_modem_hfp
 
 RACINE = Path(__file__).resolve().parents[3]
@@ -184,7 +185,7 @@ def appeler(fichier_variables: str) -> int:
         journal("conversation ElevenLabs :", identifiant)
         if etat["decroche"] and pont.premier_son_de_mina:
             journal(f"décroché → premier son de Mina : {pont.premier_son_de_mina - etat['decroche']:.2f} s (elle attend le « Allô »)")
-        l = sorted(temps_de_reponse(enregistrement))
+        l = sorted(temps_de_reponse(enregistrement)) if os.path.exists(enregistrement) else []
         if l:
             journal(
                 f"fin de phrase du prospect → réponse de Mina : médiane {l[len(l) // 2]:.2f} s, "
@@ -195,7 +196,8 @@ def appeler(fichier_variables: str) -> int:
 
     modem = premier_modem_hfp(bus)
     telephone = Telephone(bus, modem, etat_change, appel_termine)
-    telephone.enregistrer_agent_audio(AgentAudio(bus, lambda fd, codec: pont.brancher(fd)))
+    telephone.enregistrer_agent_audio(AgentAudio(bus, pont.brancher))
+    telephone.couper_traitement_du_telephone()
 
     numero = preparation["numero"]
     journal("composition du", numero[:4] + "…" + numero[-2:])
@@ -208,11 +210,68 @@ def appeler(fichier_variables: str) -> int:
     return 0
 
 
+def tester_son(fichier_variables: str, fichier_son: str) -> int:
+    """Diagnostic sans ElevenLabs : au décroché, joue un WAV mono 16 bits sur la ligne par le même
+    chemin que la voix de Mina, puis raccroche. Sert à séparer un défaut de la ligne d'un défaut de
+    la conversation."""
+    import wave
+
+    import numpy as np
+    import soxr
+
+    with wave.open(fichier_son) as w:
+        if (w.getnchannels(), w.getsampwidth()) != (1, 2):
+            raise SystemExit("le son de test doit être un WAV mono 16 bits")
+        taux = w.getframerate()
+        son = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(np.float32)
+    son16 = np.clip(soxr.resample(son, taux, 16000) if taux != 16000 else son, -32768, 32767).astype("<i2")
+    son16 = (son16.astype(np.float32) / GAIN_SORTIE).clip(-32768, 32767).astype("<i2").tobytes()  # le pont réapplique le gain
+
+    numero = json.loads(Path(fichier_variables).read_text())["numero"]
+    dossier = RACINE / "data" / "pont"
+    journal = Journal(dossier / "test-son.log")
+    dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+    bus = dbus.SystemBus()
+    boucle = GLib.MainLoop()
+    pont = Pont(str(dossier / "test-son-enregistrement.wav"), journal)
+
+    def etat_change(e):
+        journal("appel :", e)
+        if e == "active":
+            pont.decroche()
+            pont.output(son16)
+
+            def raccrocher_a_la_fin():
+                time.sleep(0.5)
+                while not pont.sortie_vide():
+                    time.sleep(0.05)
+                journal("son joué : on raccroche")
+                telephone.raccrocher()
+
+            threading.Thread(target=raccrocher_a_la_fin, daemon=True).start()
+
+    def termine(_raison):
+        journal("appel terminé")
+        pont.fermer()
+        boucle.quit()
+
+    telephone = Telephone(bus, premier_modem_hfp(bus), etat_change, termine)
+    telephone.enregistrer_agent_audio(AgentAudio(bus, pont.brancher))
+    telephone.couper_traitement_du_telephone()
+    journal("composition")
+    telephone.composer(numero)
+    GLib.timeout_add_seconds(90, lambda: (telephone.raccrocher(), False)[-1])
+    boucle.run()
+    return 0
+
+
 def main() -> int:
-    if len(sys.argv) != 3 or sys.argv[1] != "appeler":
-        print(__doc__, file=sys.stderr)
-        return 2
-    return appeler(sys.argv[2])
+    if len(sys.argv) == 3 and sys.argv[1] == "appeler":
+        return appeler(sys.argv[2])
+    if len(sys.argv) == 4 and sys.argv[1] == "tester-son":
+        return tester_son(sys.argv[2], sys.argv[3])
+    print(__doc__, file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":

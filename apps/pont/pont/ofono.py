@@ -9,7 +9,7 @@ import dbus
 import dbus.service
 from gi.repository import GLib
 
-CVSD = 1
+CVSD, MSBC = 1, 2
 CHEMIN_AGENT = "/autocalled/pont/audio"
 
 
@@ -64,7 +64,17 @@ class Telephone:
 
     def enregistrer_agent_audio(self, agent: AgentAudio) -> None:
         audio = dbus.Interface(self._bus.get_object("org.ofono", "/"), "org.ofono.HandsfreeAudioManager")
-        audio.Register(CHEMIN_AGENT, dbus.Array([dbus.Byte(CVSD)], signature="y"))
+        # Le téléphone choisit le codec parmi ceux-ci ; la liste compte aussi à l'établissement de la liaison
+        # mains-libres : un agent enregistré après coup n'obtient le mSBC que si la liaison l'avait déjà annoncé.
+        audio.Register(CHEMIN_AGENT, dbus.Array([dbus.Byte(MSBC), dbus.Byte(CVSD)], signature="y"))
+
+    def couper_traitement_du_telephone(self) -> None:
+        """Le téléphone traite par défaut ce qu'il reçoit du « micro » mains-libres (anti-écho, anti-bruit,
+        prévus pour un micro de voiture). Sur une voix de synthèse propre, ce traitement hache ou abîme le
+        son (constat du 27/09) ; le pont n'a pas d'écho acoustique à retirer. Réactivé à chaque reconnexion."""
+        hf = dbus.Interface(self._bus.get_object("org.ofono", self._modem), "org.ofono.Handsfree")
+        if hf.GetProperties().get("EchoCancelingNoiseReduction"):
+            hf.SetProperty("EchoCancelingNoiseReduction", dbus.Boolean(False))
 
     def composer(self, numero: str) -> None:
         self._appel = str(self._gestionnaire.Dial(numero, "default"))

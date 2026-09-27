@@ -22,3 +22,10 @@ L'opérateur veut que l'assistante appelle depuis un vrai numéro mobile frança
 - L'annulation d'écho de l'iPhone retire ce que le serveur envoie : le flux entrant ne contient que le correspondant.
 - oFono n'accepte sur D-Bus que root et la session locale ; `deploy/dbus/autocalled-ofono.conf` l'ouvre à l'utilisateur du pont, à copier dans `/etc/dbus-1/system.d/`.
 - Le profil mains-libres ne choisit pas la ligne sur un iPhone double SIM : l'appel part de la ligne vocale par défaut. Le téléphone passerelle dédié n'aura qu'une SIM.
+
+## Constat du 27 septembre 2026, soir (qualité de la voix)
+
+- En CVSD, la voix de Mina arrive saturée chez le correspondant, quel que soit son niveau : le son envoyé par le pont est propre (vérifié sur l'enregistrement et au rythme des paquets), l'écoute d'un son de test aussi. Le pont déclare donc le mSBC (16 kHz), encodé et décodé par libsbc ; l'iPhone et la clé UB500 l'acceptent. Il supprime aussi le rééchantillonnage vers ElevenLabs, qui travaille en `pcm_16000`.
+- Le téléphone traite ce qui arrive du « micro » mains-libres (anti-écho, anti-bruit, gain automatique) en l'attendant faible. Le pont coupe l'anti-écho et l'anti-bruit à chaque appel (`EchoCancelingNoiseReduction`), et envoie Mina vers −31 dBFS au lieu des −13 dBFS d'ElevenLabs : à −19,5 dBFS, l'échelle d'écoute sature encore.
+- La liste des codecs compte au moment où la liaison mains-libres s'établit : un agent audio enregistré après coup n'obtient le mSBC que si la liaison l'avait annoncé. Le pont doit donc tourner en permanence, agent enregistré avant toute reconnexion du téléphone.
+- Un modem 4G USB avec la voix (Quectel EC25, par exemple) éviterait le Bluetooth, mais les appels passent désormais en VoLTE, que les opérateurs français n'activent que sur les appareils qu'ils ont certifiés : le téléphone passerelle garde sa pile VoLTE certifiée.
