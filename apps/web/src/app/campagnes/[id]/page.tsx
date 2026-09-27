@@ -6,6 +6,7 @@ import { notFound } from 'next/navigation';
 import { TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { appels, campagnes, entreprises, prospects } from '@/db/schema';
+import { rafraichirSiAncien } from '@/lib/agenda';
 import { versionsDeLEntreprise } from '@/lib/versions';
 import { Regie } from './regie';
 
@@ -16,6 +17,7 @@ export default async function PageCampagne({ params }: { params: Promise<{ id: s
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
   const [campagne] = await db.select().from(campagnes).where(eq(campagnes.id, id));
   if (!campagne) notFound();
+  if (campagne.statut !== 'terminee') await rafraichirSiAncien();
   const [[entreprise], listeProspects, listeAppels, versions] = await Promise.all([
     db.select().from(entreprises).where(eq(entreprises.id, campagne.entrepriseId)),
     db.select().from(prospects).where(eq(prospects.entrepriseId, campagne.entrepriseId)),

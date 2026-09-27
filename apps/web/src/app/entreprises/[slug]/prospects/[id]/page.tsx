@@ -6,6 +6,7 @@ import { PastilleAutorisation } from '@/components/pastille-autorisation';
 import { EtatVide, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { appels, consentements, prospects } from '@/db/schema';
+import { rafraichirSiAncien } from '@/lib/agenda';
 import { autorisationsDe } from '@/lib/autorisations';
 import { entrepriseParSlug, prospectParId } from '@/lib/donnees';
 import { numeroLisible } from '@/lib/format';
@@ -21,6 +22,8 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
   const { slug, id } = await params;
   const entreprise = await entrepriseParSlug(slug);
   const prospect = await prospectParId(entreprise.id, id);
+  // L'agenda se relit dès l'ouverture de la fiche : il sera à jour quand Mina proposera des créneaux.
+  await rafraichirSiAncien();
   const [autorisations, partages] = await Promise.all([
     autorisationsDe([prospect.telephone]),
     db.$count(prospects, and(eq(prospects.entrepriseId, entreprise.id), eq(prospects.telephone, prospect.telephone))),

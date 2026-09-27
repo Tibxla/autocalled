@@ -4,7 +4,7 @@ Mina propose et réserve des créneaux avec deux outils maison, `proposer_crenea
 
 Ces outils sont des outils « client » : c'est la ligne qui les exécute (la page du navigateur aujourd'hui, le pont Bluetooth demain), et elle interroge le serveur sur le tailnet. Rien n'est donc exposé sur Internet, contrairement à des outils webhook qu'ElevenLabs devrait pouvoir joindre.
 
-L'agenda est lu par le connecteur Google Agenda de Claude (MCP), via `claude -p`, pour éviter de créer un client OAuth Google. Ce connecteur met une vingtaine de secondes à répondre : on garde une copie des plages occupées, relue avant les appels (au plus toutes les dix minutes), Mina propose ses créneaux à partir de cette copie, et l'événement d'un rendez-vous réservé est créé juste après, en tâche de fond. L'API Google directe reste possible et prend le relais si un client OAuth est connecté.
+L'agenda est lu par le connecteur Google Agenda de Claude (MCP), via `claude -p`, pour éviter de créer un client OAuth Google. Ce connecteur met une vingtaine de secondes à répondre : on garde une copie des plages occupées, relue dès l'ouverture d'une fiche prospect ou d'une campagne quand elle a plus de dix minutes (jamais de lecture périodique), Mina propose ses créneaux à partir de cette copie, et l'événement d'un rendez-vous réservé est créé juste après, en tâche de fond. L'API Google directe reste possible et prend le relais si un client OAuth est connecté.
 
 ## Consequences
 
