@@ -24,6 +24,10 @@ from . import msbc
 
 CVSD, MSBC = 1, 2
 MS_PAR_ENVOI = 100  # blocs envoyés à ElevenLabs : assez courts pour ne pas retarder la fin de tour
+# Détection de voix du prospect au décroché, avant l'ouverture de la conversation : trames de 20 ms au-dessus
+# du seuil, plusieurs d'affilée (le bruit de fond d'un décroché reste vers 200-300, un « allô » dépasse 1000).
+SEUIL_VOIX, TRAMES_VOIX = 600, 3
+ATTENTE_MAX_S = 5  # son du prospect gardé en attendant l'ouverture de la conversation
 # La voix d'ElevenLabs arrive vers −13 dBFS, crêtes à pleine échelle. Le téléphone traite ce qui vient du
 # « micro » mains-libres en l'attendant bien plus faible : à ce niveau, il compresse et la voix sonne saturée.
 # Échelle d'écoute du 27/09 en mSBC : −19,5 dBFS sature, −29,5 et −39,5 sont nets. On vise environ −31 dBFS.
@@ -82,6 +86,9 @@ class Pont(AudioInterface):
         self._actif = threading.Event()  # l'appel est décroché : on transmet dans les deux sens
         self._arret = threading.Event()
         self.premier_son_de_mina: float | None = None
+        self.prospect_parle = threading.Event()  # une voix a été entendue depuis le décroché
+        self._trames_voix = 0
+        self._tampon_voix = bytearray()
         self._preparer_conversions()
 
     def _preparer_conversions(self) -> None:
@@ -158,15 +165,34 @@ class Pont(AudioInterface):
         return morceau + bytes(taille - len(morceau))
 
     def _entrant(self, pcm: bytes) -> None:
+        """Après le décroché. Tant que la conversation n'est pas ouverte, le son est gardé (jusqu'à
+        ATTENTE_MAX_S) puis envoyé d'un coup : le « allô » dit avant l'ouverture n'est pas perdu."""
+        self._detecter_voix(pcm)
         self._tampon_entree += pcm
-        seuil = self._taux_ligne * 2 * MS_PAR_ENVOI // 1000
-        if len(self._tampon_entree) < seuil or self._envoi is None:
+        if self._envoi is None:
+            del self._tampon_entree[: max(0, len(self._tampon_entree) - self._taux_ligne * 2 * ATTENTE_MAX_S)]
+            return
+        if len(self._tampon_entree) < self._taux_ligne * 2 * MS_PAR_ENVOI // 1000:
             return
         echantillons = np.frombuffer(bytes(self._tampon_entree), dtype="<i2").astype(np.float32)
         self._tampon_entree.clear()
         converti = _vers_pcm(self._vers_elevenlabs(echantillons))
         if converti:  # un rééchantillonneur garde quelques échantillons au démarrage
             self._envoi(converti)
+
+    def _detecter_voix(self, pcm: bytes) -> None:
+        if self.prospect_parle.is_set():
+            return
+        self._tampon_voix += pcm
+        octets = self._taux_ligne // 50 * 2  # trames de 20 ms, quel que soit le découpage des lectures
+        while len(self._tampon_voix) >= octets:
+            x = np.frombuffer(bytes(self._tampon_voix[:octets]), dtype="<i2").astype(np.float32)
+            del self._tampon_voix[:octets]
+            fort = np.sqrt((x**2).mean()) > SEUIL_VOIX
+            self._trames_voix = self._trames_voix + 1 if fort else 0
+            if self._trames_voix >= TRAMES_VOIX:
+                self.prospect_parle.set()
+                return
 
     def sortie_vide(self) -> bool:
         with self._verrou:
@@ -198,7 +224,7 @@ class Pont(AudioInterface):
             self._sortie.clear()
 
 
-def temps_de_reponse(enregistrement: str, seuil: float = 300, trame_ms: int = 20) -> list[float]:
+def temps_de_reponse(enregistrement: str, seuil_prospect: float = 300, seuil_mina: float = 50, trame_ms: int = 20) -> list[float]:
     """Pour chaque reprise de parole de Mina (après 400 ms de silence de sa part), l'écart depuis la
     dernière voix du prospect, lu dans l'enregistrement stéréo. Mesuré côté serveur : le réseau
     mobile ajoute sa propre latence dans chaque sens."""
@@ -208,7 +234,8 @@ def temps_de_reponse(enregistrement: str, seuil: float = 300, trame_ms: int = 20
     t = taux * trame_ms // 1000
     n = len(a) // t
     energie = np.sqrt((a[: n * t].reshape(n, t, 2) ** 2).mean(axis=1))
-    prospect, mina = energie[:, 0] > seuil, energie[:, 1] > seuil
+    # Mina est envoyée bas (vers −31 dBFS) et ses silences sont numériques : seuil plus bas que pour le prospect.
+    prospect, mina = energie[:, 0] > seuil_prospect, energie[:, 1] > seuil_mina
     pause = 400 // trame_ms
     ecarts = []
     for i in range(pause, n):

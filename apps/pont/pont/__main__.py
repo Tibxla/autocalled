@@ -27,6 +27,7 @@ from .audio import GAIN_SORTIE, Pont, temps_de_reponse
 from .ofono import AgentAudio, Telephone, premier_modem_hfp
 
 RACINE = Path(__file__).resolve().parents[3]
+SILENCE_AU_DECROCHE_S = 2.0  # sans voix du prospect passé ce délai, Mina ouvre par « Allô ? »
 DUREE_MAX_S = 6 * 60  # au-delà du plafond de l'agent (300 s) : filet si la fin de session se perd
 
 
@@ -163,7 +164,17 @@ def appeler(fichier_variables: str) -> int:
             etat["decroche"] = time.monotonic()
             etat["session"] = True
             pont.decroche()
-            threading.Thread(target=conversation.start_session, daemon=True).start()
+            threading.Thread(target=ouvrir_conversation, daemon=True).start()
+
+    def ouvrir_conversation():
+        # Le prospect parle d'habitude le premier : on attend sa voix pour ouvrir (son « allô » est gardé et
+        # transmis). S'il se tait, c'est à Mina de dire « Allô ? », par le premier message de la conversation.
+        if pont.prospect_parle.wait(SILENCE_AU_DECROCHE_S):
+            journal("le prospect parle : ouverture de la conversation")
+        else:
+            journal(f"silence depuis {SILENCE_AU_DECROCHE_S:.0f} s : Mina ouvre par « Allô ? »")
+            conversation.config.conversation_config_override["agent"] = {"first_message": "Allô ?"}
+        conversation.start_session()
 
     def terminer():
         if etat["session"]:
