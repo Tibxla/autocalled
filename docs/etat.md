@@ -18,7 +18,7 @@ Point de reprise pour la prochaine session de travail. À tenir à jour à chaqu
 
 ## À faire
 
-1. **Pont Bluetooth** (étape 0 et fin de l'étape 1) : attend la clé USB à puce Realtek RTL8761BU. Piste : Python, SDK ElevenLabs `Conversation` + `AudioInterface`, oFono pour le mains-libres ; le pont exécute aussi les outils client d'agenda.
+1. **Pont Bluetooth** (fin de l'étape 1) : le spike est validé le 27/09 (ADR 0003, scripts dans `apps/pont/spike/`). Reste à brancher le flux SCO sur le SDK ElevenLabs (`Conversation` + `AudioInterface`) : trancher le 8 kHz (agent ElevenLabs en `pcm_8000`, ou rééchantillonnage sans `audioop`, retiré de Python 3.14), ne démarrer la conversation qu'à l'état `active`, et exécuter les outils client d'agenda. Le téléphone passerelle actuel est l'iPhone personnel de l'opérateur : passer sur un téléphone dédié (refaire l'appairage avec `appairer.py`).
 2. **E-mail dicté** : vérifier sur de vrais appels que Mina s'appuie sur l'épellation et relit l'adresse lettre par lettre avant de réserver (règle ajoutée après une adresse mal transcrite).
 3. **Invitation réelle** : tester l'envoi avec sa propre adresse, puis supprimer l'événement.
 4. Voir aussi `docs/future-improvements.md`.
