@@ -31,6 +31,29 @@ export async function commanderPont(chemin: string, corps?: unknown): Promise<Re
   }
 }
 
+/**
+ * Relaie un flux du pont (fil d'un appel, écoute) à l'opérateur. Ces routes restent derrière l'identité
+ * Tailscale : le navigateur ne parle jamais directement au pont.
+ */
+export async function relayerFluxPont(chemin: string, requete: Request, entetes: Record<string, string>): Promise<Response> {
+  const base = process.env.PONT_URL ?? 'http://127.0.0.1:3021';
+  try {
+    const dernier = requete.headers.get('last-event-id');
+    const r = await fetch(`${base}${chemin}`, {
+      headers: { authorization: `Bearer ${secret()}`, ...(dernier ? { 'last-event-id': dernier } : {}) },
+      signal: requete.signal,
+      cache: 'no-store',
+    });
+    if (!r.ok || !r.body) return new Response(null, { status: r.status === 404 ? 404 : 502 });
+    const taux = r.headers.get('x-taux');
+    return new Response(r.body, {
+      headers: { ...entetes, 'cache-control': 'no-store', 'x-accel-buffering': 'no', ...(taux ? { 'x-taux': taux } : {}) },
+    });
+  } catch {
+    return new Response(null, { status: 502 });
+  }
+}
+
 /** Les routes `/api/pont/…` ne passent pas par l'identité Tailscale : ce secret est leur seule garde. */
 export function requeteDuPont(requete: Request): boolean {
   const recu = Buffer.from(requete.headers.get('authorization') ?? '');

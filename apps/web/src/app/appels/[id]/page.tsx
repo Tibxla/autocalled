@@ -9,6 +9,7 @@ import { appels, entreprises, issuesPersonnalisees, objections, prospects, versi
 import { Actualisation } from './actualisation';
 import { BoutonRelancer } from './bouton-relancer';
 import { LecteurAppel } from './lecteur-appel';
+import { SuiviTelephone } from './suivi-telephone';
 
 export const metadata: Metadata = { title: 'Appel' };
 
@@ -80,9 +81,7 @@ export default async function PageAppel({ params }: { params: Promise<{ id: stri
         </p>
       </div>
 
-      {appel.statut === 'en-cours' && appel.ligne === 'bluetooth' ? (
-        <Message ton="neutre">Appel téléphone en cours. Le bilan arrivera à la fin de l’appel ; la page se mettra à jour toute seule.</Message>
-      ) : null}
+      {appel.statut === 'en-cours' && appel.ligne === 'bluetooth' ? <SuiviTelephone appelId={appel.id} /> : null}
       {appel.statut === 'en-cours' && appel.ligne !== 'bluetooth' ? (
         <div className="grid justify-items-start gap-3">
           <Message ton="neutre">Appel en cours ou interrompu sans avoir été clos.</Message>

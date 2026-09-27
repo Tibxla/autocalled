@@ -3,13 +3,20 @@
 N'écoute que sur 127.0.0.1. Chaque requête porte `Authorization: Bearer $PONT_SECRET`, et le pont
 présente le même secret à l'application quand il la rappelle (`$WEB_URL/api/pont/…`).
 
-    GET  /etat                      le téléphone passerelle et l'appel en cours
-    POST /appels                    {appelId, numero, variables, motsCles} : compose
-    POST /appels/<appelId>/raccrocher
+    GET  /etat                        le téléphone passerelle et l'appel en cours
+    POST /appels                      {appelId, numero, variables, motsCles} : compose
+    POST /appels/<id>/raccrocher
+    GET  /appels/<id>/evenements      fil de l'appel en SSE (états, tours de parole), rejoué depuis le début
+    GET  /appels/<id>/ecoute          prospect et Mina mélangés, PCM 16 bits mono (taux dans x-taux)
+    GET  /appairage                   la fenêtre d'appairage et son code
+    POST /appairage                   {adresse} : ouvre la fenêtre, filtrée sur cette adresse
+    POST /appairage/fermer
+    POST /telephone/oublier           {adresse}
 """
 import hmac
 import json
 import os
+import queue
 import re
 import threading
 import urllib.error
@@ -22,6 +29,7 @@ import dbus
 import dbus.mainloop.glib
 from gi.repository import GLib
 
+from .appairage import Appairage
 from .appel import Appel, Journal
 from .ofono import Telephone, dans_glib
 
@@ -78,6 +86,7 @@ class Service:
         self._bus = dbus.SystemBus()
         self._boucle = GLib.MainLoop()
         self._telephone = Telephone(self._bus, self.journal)
+        self._appairage = Appairage(self._bus, self.journal)
         self._appels: dict[str, Appel] = {}
         self._verrou = threading.Lock()
 
@@ -145,6 +154,21 @@ class Service:
         appel.raccrocher()
         return 202, {"ok": True}
 
+    def appairage(self, action: str, corps: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        try:
+            if action == "ouvrir":
+                return 200, dans_glib(lambda: self._appairage.ouvrir(str(corps.get("adresse", ""))))
+            if action == "fermer":
+                return 200, dans_glib(self._appairage.fermer)
+            if action == "oublier":
+                dans_glib(lambda: self._appairage.oublier(str(corps.get("adresse", ""))))
+                return 200, {"ok": True}
+            return 200, dans_glib(self._appairage.resume)
+        except ValueError as e:
+            return 400, {"erreur": str(e)}
+        except Exception as e:
+            return 503, {"erreur": str(e)}
+
     def _oublier_a_la_fin(self, appel_id: str) -> None:
         self._appels[appel_id].attendre_fin()
         self._appels.pop(appel_id, None)
@@ -176,13 +200,72 @@ class Service:
             def do_GET(self):
                 if not self._autorise():
                     return
-                if self.path == "/etat":
+                chemin, _, requete = self.path.partition("?")
+                if chemin == "/etat":
                     try:
                         self._repondre(200, service.etat())
                     except Exception as e:
                         self._repondre(503, {"erreur": str(e)})
+                elif chemin == "/appairage":
+                    self._repondre(*service.appairage("etat", {}))
+                elif m := re.fullmatch(r"/appels/([0-9a-f-]{36})/evenements", chemin):
+                    # Reprise après coupure : le navigateur renvoie le numéro du dernier événement reçu.
+                    dernier = self.headers.get("last-event-id", "")
+                    self._evenements(m.group(1), int(dernier) if dernier.isdigit() else 0)
+                elif m := re.fullmatch(r"/appels/([0-9a-f-]{36})/ecoute", chemin):
+                    self._ecoute(m.group(1))
                 else:
                     self._repondre(404, {"erreur": "inconnu"})
+
+            def _evenements(self, appel_id: str, depuis: int) -> None:
+                appel = service._appels.get(appel_id)
+                if not appel:
+                    self._repondre(404, {"erreur": "Appel inconnu du pont (terminé ?)."})
+                    return
+                self.send_response(200)
+                self.send_header("content-type", "text/event-stream; charset=utf-8")
+                self.send_header("cache-control", "no-store")
+                self.end_headers()
+                try:
+                    while True:
+                        nouveaux = appel.suivre(depuis)
+                        for i, e in enumerate(nouveaux, start=depuis + 1):
+                            self.wfile.write(f"id: {i}\ndata: {json.dumps(e, ensure_ascii=False)}\n\n".encode())
+                        depuis += len(nouveaux)
+                        if not nouveaux:
+                            self.wfile.write(b": toujours la\n\n")
+                        self.wfile.flush()
+                        if appel.fini() and depuis >= len(appel.evenements):
+                            return
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+
+            def _ecoute(self, appel_id: str) -> None:
+                appel = service._appels.get(appel_id)
+                if not appel:
+                    self._repondre(404, {"erreur": "Appel inconnu du pont (terminé ?)."})
+                    return
+                file = appel.pont.ecouter()
+                self.send_response(200)
+                self.send_header("content-type", "application/octet-stream")
+                self.send_header("x-taux", str(appel.pont.taux_ligne))
+                self.send_header("cache-control", "no-store")
+                self.end_headers()
+                try:
+                    while True:
+                        try:
+                            morceau = file.get(timeout=2)
+                        except queue.Empty:
+                            if appel.fini():
+                                return
+                            continue
+                        if morceau is None:
+                            return
+                        self.wfile.write(morceau)
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+                finally:
+                    appel.pont.arreter_ecoute(file)
 
             def do_POST(self):
                 if not self._autorise():
@@ -197,6 +280,12 @@ class Service:
                     self._repondre(*service.appeler(corps))
                 elif m := re.fullmatch(r"/appels/([0-9a-f-]{36})/raccrocher", self.path):
                     self._repondre(*service.raccrocher(m.group(1)))
+                elif self.path == "/appairage":
+                    self._repondre(*service.appairage("ouvrir", corps))
+                elif self.path == "/appairage/fermer":
+                    self._repondre(*service.appairage("fermer", corps))
+                elif self.path == "/telephone/oublier":
+                    self._repondre(*service.appairage("oublier", corps))
                 else:
                     self._repondre(404, {"erreur": "inconnu"})
 

@@ -101,6 +101,7 @@ class Telephone:
             etat: dict[str, Any] = {
                 "connecte": bool(p.get("Online")),
                 "nom": str(p.get("Name", "")),
+                "adresse": str(chemin).rsplit("dev_", 1)[-1].replace("_", ":"),
                 "appelEnCours": self._appel is not None,
             }
             objet = self._bus.get_object("org.ofono", chemin)

@@ -43,7 +43,7 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
                     <span className="font-mono text-sm text-encre-3">{date.format(c.creeLe)}</span>
                     <span className="font-medium group-hover:underline group-hover:decoration-filet-fort group-hover:underline-offset-4">
                       {libelleVersion.get(c.versionScriptId) ?? 'Version supprimée'}
-                      <span className="font-normal text-encre-3"> · {c.ligne === 'simulation' ? 'simulation' : 'navigateur'}</span>
+                      <span className="font-normal text-encre-3"> · {c.ligne === 'simulation' ? 'simulation' : c.ligne === 'bluetooth' ? 'téléphone' : 'navigateur'}</span>
                     </span>
                     <span className="text-sm text-encre-3">
                       {STATUTS[c.statut]} · <span className="font-mono">{faits}/{c.entrees.length}</span>

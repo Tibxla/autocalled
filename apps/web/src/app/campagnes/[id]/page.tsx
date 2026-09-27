@@ -41,7 +41,12 @@ export default async function PageCampagne({ params }: { params: Promise<{ id: s
           {versions.find((v) => v.id === campagne.versionScriptId)?.libelle ?? 'Campagne'}
         </h1>
         <p className="text-sm text-encre-2">
-          {campagne.ligne === 'simulation' ? 'Simulation : un modèle joue les prospects' : 'Ligne navigateur (test)'} ·{' '}
+          {campagne.ligne === 'simulation'
+            ? 'Simulation : un modèle joue les prospects'
+            : campagne.ligne === 'bluetooth'
+              ? 'Téléphone : Mina appelle les vrais numéros'
+              : 'Ligne navigateur (test)'}{' '}
+          ·{' '}
           <span className="font-mono">
             {faits}/{campagne.entrees.length}
           </span>{' '}
@@ -52,11 +57,12 @@ export default async function PageCampagne({ params }: { params: Promise<{ id: s
       <Regie
         campagneId={campagne.id}
         statut={campagne.statut}
-        ligne={campagne.ligne === 'simulation' ? 'simulation' : 'navigateur'}
+        ligne={campagne.ligne === 'simulation' || campagne.ligne === 'bluetooth' ? campagne.ligne : 'navigateur'}
         entrepriseId={campagne.entrepriseId}
         versionScriptId={campagne.versionScriptId}
         prochain={action.type === 'appeler' ? { id: action.prospectId, nom: nom(action.prospectId) } : null}
         appelOuvert={campagne.ligne === 'navigateur' && ouvert?.etat === 'en-appel' ? ouvert.appelId : null}
+        appelTelephone={campagne.ligne === 'bluetooth' && ouvert?.etat === 'en-appel' ? ouvert.appelId : null}
       />
 
       <section>

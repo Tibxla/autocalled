@@ -33,6 +33,10 @@ export function FormulaireCampagne({
             Ligne navigateur : tu joues chaque prospect
           </label>
           <label className="flex items-center gap-2.5 text-sm">
+            <input type="radio" name="ligne" value="bluetooth" className="size-4 accent-[var(--encre)]" />
+            Téléphone : Mina appelle les vrais numéros
+          </label>
+          <label className="flex items-center gap-2.5 text-sm">
             <input type="radio" name="ligne" value="simulation" className="size-4 accent-[var(--encre)]" />
             Simulation : un modèle joue les prospects
           </label>

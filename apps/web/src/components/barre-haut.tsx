@@ -13,6 +13,7 @@ export function BarreHaut() {
         <nav aria-label="Navigation principale" className="flex items-center gap-1">
           <LienNav href="/entreprises">Entreprises</LienNav>
           <LienNav href="/appels">Appels</LienNav>
+          <LienNav href="/telephone">Téléphone</LienNav>
           <LienNav href="/reglages">Réglages</LienNav>
         </nav>
         <div className="ml-auto">

@@ -5,6 +5,7 @@ import { refusPont, requeteDuPont } from '@/lib/pont';
 export async function POST(requete: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!requeteDuPont(requete)) return refusPont();
   const { id } = await params;
+  if (!/^[0-9a-f-]{36}$/.test(id)) return Response.json({ erreur: 'appel inconnu' }, { status: 404 });
   const { outil, parametres = {} } = (await requete.json()) as { outil?: string; parametres?: Record<string, unknown> };
   let resultat: unknown;
   if (outil === 'proposer_creneaux') resultat = await proposerPourAppel(id);

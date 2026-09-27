@@ -4,7 +4,7 @@ import { useEtatLigne } from '@/lib/etat-ligne';
 
 /**
  * État de la ligne, toujours visible. Trait pointillé au repos ; rouge « antenne » pendant un appel.
- * La seule ligne branchée pour l'instant est la ligne navigateur (test).
+ * Vaut pour les deux lignes : conversation dans le navigateur, ou appel téléphone suivi en direct.
  */
 export function LigneStatut() {
   const vivant = useEtatLigne() === 'en-appel';
@@ -24,7 +24,7 @@ export function LigneStatut() {
         />
       </svg>
       <span className={`text-xs whitespace-nowrap ${vivant ? 'text-antenne' : 'text-encre-3'}`}>
-        {vivant ? 'En appel' : 'Ligne navigateur'}
+        {vivant ? 'En appel' : 'Ligne libre'}
       </span>
     </div>
   );

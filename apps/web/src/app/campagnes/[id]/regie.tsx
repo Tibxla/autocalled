@@ -4,13 +4,15 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 import { AppelEnDirect } from '@/components/appel-en-direct';
 import { Bouton } from '@/components/ui';
+import { SuiviTelephone } from '../../appels/[id]/suivi-telephone';
 import { cloreAppelDeCampagne, lancerCampagne, ouvrirAppelSuivant, suspendreCampagne } from '../actions';
 
 const PAUSE_SECONDES = 5;
 
 /**
  * La régie d'une campagne. Sur la ligne navigateur, les appels s'enchaînent après un court décompte
- * qu'on peut passer ou suspendre ; en simulation, le serveur déroule seul et la page suit.
+ * qu'on peut passer ou suspendre ; en simulation et au téléphone, le serveur déroule seul et la page suit
+ * (au téléphone, avec l'appel en cours en direct).
  */
 export function Regie({
   campagneId,
@@ -20,14 +22,16 @@ export function Regie({
   versionScriptId,
   prochain,
   appelOuvert,
+  appelTelephone = null,
 }: {
   campagneId: string;
   statut: 'prete' | 'en-cours' | 'en-pause' | 'terminee';
-  ligne: 'navigateur' | 'simulation';
+  ligne: 'navigateur' | 'bluetooth' | 'simulation';
   entrepriseId: string;
   versionScriptId: string;
   prochain: { id: string; nom: string } | null;
   appelOuvert: string | null;
+  appelTelephone?: string | null;
 }) {
   const router = useRouter();
   const [enCours, demarrer] = useTransition();
@@ -37,7 +41,7 @@ export function Regie({
   const auto = ligne === 'navigateur' && statut === 'en-cours' && prochain !== null && appelOuvert === null;
 
   useEffect(() => {
-    if (ligne !== 'simulation' || statut !== 'en-cours') return;
+    if (ligne === 'navigateur' || statut !== 'en-cours') return;
     const minuterie = setInterval(() => router.refresh(), 3000);
     return () => clearInterval(minuterie);
   }, [ligne, statut, router]);
@@ -83,6 +87,10 @@ export function Regie({
       {ligne === 'simulation' && statut === 'en-cours' ? (
         <p className="text-sm text-encre-2">Le serveur enchaîne les appels simulés ; la liste se met à jour toute seule.</p>
       ) : null}
+      {ligne === 'bluetooth' && statut === 'en-cours' && !appelTelephone ? (
+        <p className="text-sm text-encre-2">Le serveur enchaîne les appels sur le téléphone passerelle ; la liste se met à jour toute seule.</p>
+      ) : null}
+      {ligne === 'bluetooth' && appelTelephone ? <SuiviTelephone key={appelTelephone} appelId={appelTelephone} /> : null}
       {auto && prochain ? (
         enAppel !== null || lance === prochain.id ? (
           <AppelEnDirect

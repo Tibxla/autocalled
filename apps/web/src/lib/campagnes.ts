@@ -1,10 +1,11 @@
 import 'server-only';
-import { type Campagne, type VariablesDeLAppel, debuterAppel, prochaineAction, sauter, terminerAppel, TransitionInvalide } from '@autocalled/domain';
+import { type Campagne, type VariablesDeLAppel, debuterAppel, mettreEnPause, prochaineAction, sauter, terminerAppel, TransitionInvalide } from '@autocalled/domain';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { appels, campagnes } from '@/db/schema';
 import { preparerAppel, simulerAppel } from './appels';
 import { jetonConversation } from './elevenlabs';
+import { commanderPont } from './pont';
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -105,6 +106,64 @@ export async function derouleSimulation(campagneId: string): Promise<void> {
     if (!suivant) return;
     await simulerAppel(suivant.appelId, suivant.variables as VariablesDeLAppel);
     await clore(campagneId, suivant.appelId);
+  }
+}
+
+/** Pause entre deux appels téléphone d'une campagne, comme le décompte de la ligne navigateur. */
+export const PAUSE_ENTRE_APPELS_MS = 5000;
+
+/**
+ * Ligne téléphone : le serveur enchaîne, un appel à la fois. Le pont compose ; la fin de l'appel
+ * (route /api/pont/…/fin) clôt l'entrée et rappelle cette fonction, qui relit l'état (pause possible).
+ */
+export async function appelerSuivantTelephone(campagneId: string): Promise<void> {
+  const suivant = await avecCampagne<{ appelId: string; numero: string; variables: VariablesDeLAppel; motsCles: string[] } | null>(
+    campagneId,
+    async (campagne, tx) => {
+      for (;;) {
+        const action = prochaineAction(campagne);
+        if (action.type !== 'appeler') return { campagne, resultat: null };
+        const preparation = await preparerAppel(campagne.entrepriseId, action.prospectId, campagne.versionScriptId);
+        if (!preparation.ok) {
+          campagne = sauter(campagne, action.prospectId, 'numero-non-autorise');
+          continue;
+        }
+        const [appel] = await tx
+          .insert(appels)
+          .values({
+            entrepriseId: campagne.entrepriseId,
+            prospectId: action.prospectId,
+            versionScriptId: campagne.versionScriptId,
+            campagneId,
+            ligne: 'bluetooth',
+            numero: preparation.numero,
+          })
+          .returning({ id: appels.id });
+        if (!appel) throw new Error('appel non enregistré');
+        return {
+          campagne: debuterAppel(campagne, action.prospectId, appel.id),
+          resultat: { appelId: appel.id, numero: preparation.numero, variables: preparation.variables, motsCles: preparation.motsCles },
+        };
+      }
+    },
+  );
+  if (!suivant) return;
+
+  const reponse = await commanderPont('/appels', {
+    appelId: suivant.appelId,
+    numero: suivant.numero,
+    variables: suivant.variables,
+    motsCles: suivant.motsCles,
+  });
+  if (reponse.ok) return;
+  // Pont injoignable ou téléphone absent : l'appel échoue et la campagne se met en pause, plutôt que de
+  // vider toute la file en échecs.
+  await db.update(appels).set({ statut: 'echec', erreur: reponse.raison, finLe: new Date() }).where(eq(appels.id, suivant.appelId));
+  await clore(campagneId, suivant.appelId);
+  try {
+    await avecCampagne(campagneId, async (c) => ({ campagne: mettreEnPause(c), resultat: null }));
+  } catch (erreur) {
+    if (!(erreur instanceof TransitionInvalide)) throw erreur;
   }
 }
 

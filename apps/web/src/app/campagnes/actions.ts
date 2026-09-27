@@ -10,14 +10,14 @@ import { db } from '@/db';
 import { appels, campagnes } from '@/db/schema';
 import { rafraichirSiAncien } from '@/lib/agenda';
 import { traiterAppel } from '@/lib/appels';
-import { appelerSuivantNavigateur, avecCampagne, clore, derouleSimulation } from '@/lib/campagnes';
+import { appelerSuivantNavigateur, appelerSuivantTelephone, avecCampagne, clore, derouleSimulation } from '@/lib/campagnes';
 import type { EtatFormulaire } from '@/lib/formulaire';
 import { exigerOperateur } from '@/lib/garde';
 import type { DemarrageAppel } from '../appels/actions';
 
 const schema = z.object({
   versionScriptId: z.uuid('Choisis une version de script.'),
-  ligne: z.enum(['navigateur', 'simulation']),
+  ligne: z.enum(['navigateur', 'bluetooth', 'simulation']),
   prospects: z.array(z.string().min(1)).min(1, 'Choisis au moins un prospect.'),
 });
 
@@ -41,6 +41,7 @@ export async function lancerCampagne(campagneId: string): Promise<void> {
   await rafraichirSiAncien();
   const [ligne] = await db.select({ ligne: campagnes.ligne }).from(campagnes).where(eq(campagnes.id, campagneId));
   if (ligne?.ligne === 'simulation') after(() => derouleSimulation(campagneId));
+  if (ligne?.ligne === 'bluetooth') after(() => appelerSuivantTelephone(campagneId));
   revalidatePath(`/campagnes/${campagneId}`);
 }
 

@@ -10,6 +10,7 @@ de sortie ou complété de silence. Le SDK ne touche jamais le descripteur : `ou
 tampon, `interrupt()` le vide (sinon Mina continuerait de parler par-dessus le prospect).
 """
 import os
+import queue
 import select
 import threading
 import time
@@ -87,6 +88,7 @@ class Pont(AudioInterface):
         self._arret = threading.Event()
         self.premier_son_de_mina: float | None = None
         self.prospect_parle = threading.Event()  # une voix a été entendue depuis le décroché
+        self._auditeurs: set[queue.Queue] = set()  # écoutes en direct : prospect et Mina mélangés
         self._trames_voix = 0
         self._tampon_voix = bytearray()
         self._preparer_conversions()
@@ -142,6 +144,8 @@ class Pont(AudioInterface):
                     d = np.frombuffer(bytes(rec_d[:n]), dtype="<i2")
                     wav.writeframes(np.column_stack((g, d)).tobytes())
                     del rec_g[:n], rec_d[:n]
+                    if self._auditeurs:
+                        self._diffuser(((g.astype(np.int32) + d) // 2).astype("<i2").tobytes())
                 if self._actif.is_set():
                     self._entrant(entrant)
         except OSError as e:
@@ -152,9 +156,32 @@ class Pont(AudioInterface):
             except OSError:
                 pass
             wav.close()
+            self._diffuser(None)
             for c in (decodeur, encodeur):
                 if c:
                     c.fermer()
+
+    # --- écoute en direct --------------------------------------------------------------------------
+
+    @property
+    def taux_ligne(self) -> int:
+        return self._taux_ligne
+
+    def ecouter(self) -> "queue.Queue[bytes | None]":
+        """Une file de PCM 16 bits mono au taux de la ligne ; `None` marque la fin de l'appel."""
+        file: queue.Queue = queue.Queue(maxsize=200)
+        self._auditeurs.add(file)
+        return file
+
+    def arreter_ecoute(self, file: queue.Queue) -> None:
+        self._auditeurs.discard(file)
+
+    def _diffuser(self, pcm: bytes | None) -> None:
+        for file in list(self._auditeurs):
+            try:
+                file.put_nowait(pcm)
+            except queue.Full:  # auditeur trop lent : il perd ce morceau plutôt que de ralentir l'appel
+                pass
 
     def _pcm_sortant(self, taille: int) -> bytes:
         with self._verrou:

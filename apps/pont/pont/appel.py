@@ -108,6 +108,9 @@ class Appel:
         self._termine = threading.Event()
         self._pings: list[int] = []
         self._codec: int | None = None
+        # Fil de l'appel pour la page en direct : états du téléphone et tours de parole, rejoués à qui arrive tard.
+        self.evenements: list[dict[str, Any]] = []
+        self._nouveau = threading.Condition()
 
         outils = ClientTools()
         for nom_outil in ("proposer_creneaux", "reserver_creneau"):
@@ -131,6 +134,27 @@ class Appel:
             ouverte=rappels.conversation_ouverte,
         )
 
+    # --- suivi en direct -------------------------------------------------------------------------
+
+    def _evenement(self, type_: str, donnees: dict[str, Any]) -> None:
+        with self._nouveau:
+            self.evenements.append({"type": type_, **donnees})
+            self._nouveau.notify_all()
+        self._rappels.evenement(type_, donnees)
+
+    def suivre(self, depuis: int, delai: float = 15) -> list[dict[str, Any]]:
+        """Les événements à partir de l'indice `depuis`, en attendant qu'il y en ait (jusqu'à `delai`)."""
+        with self._nouveau:
+            self._nouveau.wait_for(lambda: len(self.evenements) > depuis or self._termine.is_set(), delai)
+            return self.evenements[depuis:]
+
+    def fini(self) -> bool:
+        return self._termine.is_set()
+
+    @property
+    def pont(self) -> Pont:
+        return self._pont
+
     # --- commandes -------------------------------------------------------------------------------
 
     def lancer(self) -> None:
@@ -140,7 +164,7 @@ class Appel:
         self._telephone.composer(self._numero, self)
         self._en_ligne = True
         self._conversation.precharger_url()
-        self._rappels.evenement("etat", {"etat": "composition"})
+        self._evenement("etat", {"etat": "composition"})
         GLib.timeout_add(int(DELAI_CANAL_SON_S * 1000), self._verifier_canal)
         GLib.timeout_add_seconds(DUREE_MAX_S, self._duree_max)
 
@@ -160,7 +184,7 @@ class Appel:
 
     def etat_change(self, etat: str) -> None:
         self.journal("appel :", etat)
-        self._rappels.evenement("etat", {"etat": etat})
+        self._evenement("etat", {"etat": etat})
         if etat == "active" and not self._session:
             self._decroche = time.monotonic()
             self._session = True
@@ -190,7 +214,7 @@ class Appel:
         return False
 
     def _reconnecter_et_relancer(self) -> None:
-        self._rappels.evenement("etat", {"etat": "reconnexion"})
+        self._evenement("etat", {"etat": "reconnexion"})
         try:
             self._telephone.reconnecter()
             GLib.idle_add(lambda: (self.lancer(), False)[1])
@@ -216,7 +240,7 @@ class Appel:
 
     def _tour(self, role: str, texte: str) -> None:
         self.journal("Mina :" if role == "agent" else "prospect :", texte)
-        self._rappels.evenement("tour", {"role": role, "texte": texte})
+        self._evenement("tour", {"role": role, "texte": texte})
 
     def _outil(self, nom: str) -> Callable[[dict[str, Any]], str]:
         def executer(parametres: dict[str, Any]) -> str:
@@ -265,8 +289,10 @@ class Appel:
         if self._pings:
             bilan["pingMedianMs"] = sorted(self._pings)[len(self._pings) // 2]
         self.journal("bilan :", bilan)
-        self._rappels.evenement("etat", {"etat": "termine"})
+        self._evenement("etat", {"etat": "termine"})
         try:
             self._rappels.fin(bilan)
         finally:
-            self._termine.set()
+            with self._nouveau:
+                self._termine.set()
+                self._nouveau.notify_all()

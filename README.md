@@ -7,7 +7,7 @@
 
 Une assistante vocale IA qui passe de vrais appels de prospection sur un vrai réseau mobile, propose des créneaux lus dans Google Agenda, réserve le rendez-vous, puis rédige le bilan de chaque appel.
 
-> **Statut : utilisable sur la ligne navigateur.** On parle à Mina depuis le navigateur, les appels sont enregistrés, analysés et comparés. Sur la ligne téléphonique Bluetooth, Mina appelle depuis une commande du pont ; reste à la brancher sur l'application.
+> **Statut : utilisable sur la ligne navigateur.** On parle à Mina depuis le navigateur, les appels sont enregistrés, analysés et comparés. La ligne téléphone (Bluetooth) est branchée sur l'application et reste à valider sur de vrais appels.
 
 ![Page d'un appel : bilan, puis conversation synchronisée avec l'enregistrement, chaque objection reliée à la phrase du prospect](docs/captures/appel.png)
 
@@ -91,6 +91,7 @@ Chaque étape se termine sur quelque chose qui marche de bout en bout ; le plus 
 - [x] **5. Agenda** : disponibilités lues par le connecteur Google Agenda de Claude et gardées en copie, créneaux proposés et réservés pendant l'appel par des outils exécutés côté client, événement créé juste après.
 - [x] **6. Campagne en direct** : enchaînement des appels, transcription en temps réel.
 - [x] **7. Scripts versionnés et analyse** : comparaison des versions, avec garde sur la taille de l'échantillon.
+- [ ] **8. Ligne téléphone dans l'application** : appel depuis une fiche ou une campagne, suivi et écoute en direct, agenda réel, bilan, appairage depuis l'interface. Écrite ; à valider sur de vrais appels.
 
 ## Lancer le projet
 
@@ -105,6 +106,17 @@ pnpm agent create              # crée Mina chez ElevenLabs, à faire une fois
 scripts/installer-services.sh  # construit et lance l'interface (service systemd utilisateur)
 sudo tailscale serve --bg --https=8449 http://127.0.0.1:3020
 ```
+
+### Ligne téléphonique (facultative)
+
+Sans elle, Mina se teste par la ligne navigateur. Pour qu'elle appelle de vrais numéros, il faut du matériel : un serveur Linux, une clé Bluetooth reconnue par le noyau (la TP-Link UB500 l'est depuis Linux 5.16) et un téléphone avec sa carte SIM, posé à côté du serveur. Un téléphone dédié est préférable : tant qu'il est connecté, le serveur voit ses appels.
+
+```bash
+scripts/installer-pont.sh      # BlueZ, oFono, libsbc, environnement Python, règle D-Bus, secret, service autocalled-pont
+scripts/installer-services.sh  # relance l'interface, qui lit le secret du pont au démarrage
+```
+
+Puis, dans l'interface, page **Téléphone** : saisir l'adresse Bluetooth du téléphone, ouvrir l'appairage, comparer le code, accepter sur le téléphone. Le bouton « Appeler par téléphone » apparaît sur chaque fiche prospect, et les campagnes peuvent choisir la ligne téléphone. Si PipeWire tourne sur le serveur, son module mains-libres doit laisser le profil à oFono (le script prévient). Le fonctionnement et ses limites sont dans les [ADR 0003](docs/adr/0003-ligne-bluetooth-via-telephone-passerelle.md) et [0007](docs/adr/0007-pont-bluetooth-service-pilote-par-le-web.md).
 
 L'agenda passe par le connecteur Google Agenda de Claude : rien à configurer si Claude Code y a accès. L'API Google directe est facultative (client OAuth « application Web », redirection vers `ORIGINE_APP/google/retour`).
 
