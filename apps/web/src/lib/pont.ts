@@ -47,7 +47,7 @@ export async function relayerFluxPont(chemin: string, requete: Request, entetes:
     if (!r.ok || !r.body) return new Response(null, { status: r.status === 404 ? 404 : 502 });
     const taux = r.headers.get('x-taux');
     return new Response(r.body, {
-      headers: { ...entetes, 'cache-control': 'no-store', 'x-accel-buffering': 'no', ...(taux ? { 'x-taux': taux } : {}) },
+      headers: { ...entetes, 'cache-control': 'no-store, no-transform', 'x-accel-buffering': 'no', ...(taux ? { 'x-taux': taux } : {}) },
     });
   } catch {
     return new Response(null, { status: 502 });

@@ -19,6 +19,7 @@ import os
 import queue
 import re
 import threading
+import time
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -42,6 +43,18 @@ class RappelsWeb:
         self._secret = secret
         self.journal = journal
 
+    def _poster_avec_relances(self, chemin: str, corps: dict[str, Any]) -> None:
+        """Pour ce qui ne doit pas se perdre (conversation, fin) : l'application peut redémarrer à ce moment-là."""
+        for attente in (2, 5, 10, None):
+            try:
+                self._poster(chemin, corps)
+                return
+            except (urllib.error.URLError, TimeoutError) as e:
+                if attente is None:
+                    raise
+                self.journal(f"l'application ne répond pas ({e}) : nouvel essai dans {attente} s")
+                time.sleep(attente)
+
     def _poster(self, chemin: str, corps: dict[str, Any], delai: float = 30) -> dict[str, Any]:
         requete = urllib.request.Request(
             f"{self._base}/{chemin}",
@@ -54,7 +67,7 @@ class RappelsWeb:
 
     def conversation_ouverte(self, conversation_id: str) -> None:
         try:
-            self._poster("conversation", {"conversationId": conversation_id})
+            self._poster_avec_relances("conversation", {"conversationId": conversation_id})
         except (urllib.error.URLError, TimeoutError) as e:
             self.journal("l'application n'a pas reçu l'identifiant de conversation :", e)
 
@@ -70,7 +83,7 @@ class RappelsWeb:
 
     def fin(self, bilan: dict[str, Any]) -> None:
         try:
-            self._poster("fin", bilan)
+            self._poster_avec_relances("fin", bilan)
         except (urllib.error.URLError, TimeoutError) as e:
             self.journal("l'application n'a pas reçu la fin de l'appel :", e)
 

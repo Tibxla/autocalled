@@ -15,7 +15,7 @@ from elevenlabs.conversational_ai.conversation import ClientTools, Conversation,
 from gi.repository import GLib
 
 from .audio import Pont, temps_de_reponse
-from .ofono import Telephone
+from .ofono import Telephone, dans_glib
 
 SILENCE_AU_DECROCHE_S = 2.0  # sans voix du prospect passé ce délai, Mina ouvre par « Allô ? »
 DELAI_CANAL_SON_S = 3.0  # le canal son s'ouvre normalement moins d'une seconde après la composition
@@ -104,6 +104,7 @@ class Appel:
         self._en_ligne = False
         self._canal = False
         self._relance = False
+        self._canal_absent = False  # abandon après reconnexion : l'appel finira en échec explicite
         self._tentatives = 0
         self._termine = threading.Event()
         self._pings: list[int] = []
@@ -210,6 +211,7 @@ class Appel:
                 self._relance = True
             else:
                 self.journal("canal son toujours absent : abandon")
+                self._canal_absent = True
             self._telephone.raccrocher()
         return False
 
@@ -217,9 +219,20 @@ class Appel:
         self._evenement("etat", {"etat": "reconnexion"})
         try:
             self._telephone.reconnecter()
-            GLib.idle_add(lambda: (self.lancer(), False)[1])
+            # La liaison mains-libres met quelques secondes à revenir après la reconnexion.
+            limite = time.monotonic() + 12
+            while True:
+                try:
+                    dans_glib(self._telephone.modem)
+                    break
+                except RuntimeError:
+                    if time.monotonic() > limite:
+                        raise
+                    time.sleep(1)
+            dans_glib(self.lancer)
         except Exception as e:
-            self.journal("reconnexion impossible :", e)
+            self.journal("relance impossible :", e)
+            self._canal_absent = True
             self._terminer("canal son absent")
 
     def _duree_max(self) -> bool:
@@ -276,6 +289,8 @@ class Appel:
                 self._conversation.end_session()
             conversation_id = self._conversation.wait_for_session_end()
         self._pont.fermer()
+        if self._canal_absent:
+            raison = "canal son absent"
         bilan: dict[str, Any] = {
             "raison": {"remote": "prospect", "local": "pont"}.get(raison, raison),
             "conversationId": conversation_id,

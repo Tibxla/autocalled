@@ -89,7 +89,10 @@ class Telephone:
         for chemin, proprietes in manager.GetModems():
             if proprietes.get("Type") == "hfp" and proprietes.get("Online"):
                 return str(chemin)
-        raise RuntimeError("aucun téléphone passerelle en ligne : est-il connecté en Bluetooth ?")
+        raise RuntimeError(
+            "aucun téléphone passerelle en ligne : est-il connecté en Bluetooth ? (le pont le reconnecte "
+            "pendant une dizaine de secondes après son démarrage)"
+        )
 
     def etat(self) -> dict[str, Any]:
         """Pour l'application : le téléphone, son réseau, l'appel en cours. Depuis le thread GLib."""
