@@ -10,6 +10,7 @@ import { analyserAppel, preparerAppel, simulerAppel, traiterAppel } from '@/lib/
 import { rafraichirSiAncien } from '@/lib/agenda';
 import { jetonConversation } from '@/lib/elevenlabs';
 import { exigerOperateur } from '@/lib/garde';
+import { commanderPont } from '@/lib/pont';
 
 export type DemarrageAppel =
   | { ok: true; appelId: string; jeton: string; variables: VariablesDeLAppel; motsCles: string[] }
@@ -41,6 +42,46 @@ export async function terminerAppelNavigateur(appelId: string): Promise<void> {
   await exigerOperateur();
   await db.update(appels).set({ finLe: new Date() }).where(eq(appels.id, appelId));
   after(() => traiterAppel(appelId));
+}
+
+/**
+ * Ligne téléphone (ADR 0007) : vérifie l'autorisation, enregistre l'appel, puis demande au pont de composer.
+ * La suite arrive par les routes /api/pont/… (conversation, outils d'agenda, fin).
+ */
+export async function demarrerAppelTelephone(
+  entrepriseId: string,
+  prospectId: string,
+  versionScriptId: string,
+  campagneId: string | null = null,
+): Promise<{ ok: true; appelId: string } | { ok: false; raison: string }> {
+  await exigerOperateur();
+  const preparation = await preparerAppel(entrepriseId, prospectId, versionScriptId);
+  if (!preparation.ok) return preparation;
+
+  await rafraichirSiAncien();
+  const [appel] = await db
+    .insert(appels)
+    .values({ entrepriseId, prospectId, versionScriptId, campagneId, ligne: 'bluetooth', numero: preparation.numero })
+    .returning({ id: appels.id });
+  if (!appel) return { ok: false, raison: 'Impossible d’enregistrer l’appel.' };
+
+  const reponse = await commanderPont('/appels', {
+    appelId: appel.id,
+    numero: preparation.numero,
+    variables: preparation.variables,
+    motsCles: preparation.motsCles,
+  });
+  if (!reponse.ok) {
+    await db.update(appels).set({ statut: 'echec', erreur: reponse.raison, finLe: new Date() }).where(eq(appels.id, appel.id));
+    return { ok: false, raison: reponse.raison };
+  }
+  return { ok: true, appelId: appel.id };
+}
+
+export async function raccrocherAppelTelephone(appelId: string): Promise<{ ok: true } | { ok: false; raison: string }> {
+  await exigerOperateur();
+  const reponse = await commanderPont(`/appels/${appelId}/raccrocher`, {});
+  return reponse.ok ? { ok: true } : reponse;
 }
 
 export async function lancerSimulation(

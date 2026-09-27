@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import { lancerSimulation } from '@/app/appels/actions';
+import { demarrerAppelTelephone, lancerSimulation } from '@/app/appels/actions';
 import { AppelEnDirect } from '@/components/appel-en-direct';
 import { Bouton, Message, Selection } from '@/components/ui';
 
@@ -42,6 +42,25 @@ export function PanneauAppel({
         </Selection>
       </div>
       <AppelEnDirect key={versionId} entrepriseId={entrepriseId} prospectId={prospectId} prospectNom={prospectNom} versionScriptId={versionId} />
+      <div className="grid gap-2 border-t border-filet pt-4">
+        <Bouton
+          type="button"
+          variante="secondaire"
+          className="justify-self-start"
+          disabled={enCours}
+          onClick={() =>
+            demarrer(async () => {
+              setErreur(null);
+              const r = await demarrerAppelTelephone(entrepriseId, prospectId, versionId);
+              if (r.ok) router.push(`/appels/${r.appelId}`);
+              else setErreur(r.raison);
+            })
+          }
+        >
+          {enCours ? 'Composition…' : 'Appeler par téléphone'}
+        </Bouton>
+        <p className="text-sm text-encre-3">Mina appelle le vrai numéro depuis le téléphone passerelle.</p>
+      </div>
       <div className="grid gap-2 border-t border-filet pt-4">
         <Bouton
           type="button"

@@ -1,0 +1,14 @@
+# Pont Bluetooth (ADR 0007) : compose sur le téléphone passerelle pour l'application.
+# Installation : scripts/installer-pont.sh (remplace @RACINE@).
+[Unit]
+Description=Autocalled, pont Bluetooth vers le téléphone passerelle
+After=network-online.target
+
+[Service]
+WorkingDirectory=@RACINE@/apps/pont
+ExecStart=@RACINE@/apps/pont/.venv/bin/python -u -m pont servir
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

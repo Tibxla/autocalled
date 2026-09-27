@@ -1,0 +1,42 @@
+#!/bin/bash
+# Ligne téléphonique (ADR 0003 et 0007) : paquets système, environnement Python du pont, règle D-Bus
+# d'oFono, secret partagé avec l'application, service utilisateur. Peut être relancé sans risque.
+# Matériel : une clé Bluetooth reconnue par Linux et un téléphone avec sa carte SIM (appairage depuis
+# la page « Ligne téléphonique » de l'application).
+set -euo pipefail
+racine="$(cd "$(dirname "$0")/.." && pwd)"
+utilisateur="$(id -un)"
+
+echo "→ paquets système (BlueZ, oFono, Python, libsbc pour le mSBC)"
+sudo apt-get install -y -q bluez ofono python3-dbus python3-gi python3-venv python3-numpy libsbc1 >/dev/null
+sudo systemctl enable --now bluetooth ofono
+
+# oFono et le mains-libres de PipeWire (WirePlumber) se disputent le même profil : un seul doit le tenir.
+if systemctl --user is-active --quiet wireplumber 2>/dev/null; then
+  echo "⚠ WirePlumber tourne : il peut prendre le profil mains-libres à oFono. Désactive son module bluez (hfp) ou arrête-le."
+fi
+
+echo "→ règle D-Bus : $utilisateur peut piloter oFono"
+sed "s/@UTILISATEUR@/$utilisateur/" "$racine/deploy/dbus/autocalled-ofono.conf" | sudo tee /etc/dbus-1/system.d/autocalled-ofono.conf >/dev/null
+sudo systemctl reload dbus
+
+echo "→ environnement Python du pont"
+python3 -m venv --system-site-packages "$racine/apps/pont/.venv"
+"$racine/apps/pont/.venv/bin/pip" install -q -r "$racine/apps/pont/requirements.txt"
+
+echo "→ secret partagé (PONT_SECRET dans .env)"
+touch "$racine/.env"
+if ! grep -q '^PONT_SECRET=.\+' "$racine/.env"; then
+  sed -i '/^PONT_SECRET=/d' "$racine/.env"
+  echo "PONT_SECRET=$(openssl rand -hex 32)" >> "$racine/.env"
+fi
+
+echo "→ service utilisateur autocalled-pont"
+mkdir -p ~/.config/systemd/user
+sed "s|@RACINE@|$racine|g" "$racine/deploy/systemd/autocalled-pont.service.modele" > ~/.config/systemd/user/autocalled-pont.service
+loginctl show-user "$utilisateur" -p Linger | grep -q yes || sudo loginctl enable-linger "$utilisateur"
+systemctl --user daemon-reload
+systemctl --user enable --now autocalled-pont.service
+systemctl --user restart autocalled-pont.service
+systemctl --user --no-pager status autocalled-pont.service | grep -E "●|Active"
+echo "L'application lit PONT_SECRET au démarrage : relance scripts/installer-services.sh si elle tournait déjà."

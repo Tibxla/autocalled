@@ -1,0 +1,272 @@
+"""Un appel de Mina sur la ligne Bluetooth, de la composition au bilan de fin.
+
+Ce que l'appel doit faire savoir au reste du produit passe par des `Rappels` : l'application web pour le
+service, des bouchons pour la commande de diagnostic.
+"""
+import os
+import threading
+import time
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any, Protocol
+
+from elevenlabs.client import ElevenLabs
+from elevenlabs.conversational_ai.conversation import ClientTools, Conversation, ConversationInitiationData
+from gi.repository import GLib
+
+from .audio import Pont, temps_de_reponse
+from .ofono import Telephone
+
+SILENCE_AU_DECROCHE_S = 2.0  # sans voix du prospect passé ce délai, Mina ouvre par « Allô ? »
+DELAI_CANAL_SON_S = 3.0  # le canal son s'ouvre normalement moins d'une seconde après la composition
+DUREE_MAX_S = 6 * 60  # au-delà du plafond de l'agent (300 s) : filet si la fin de session se perd
+
+
+class Rappels(Protocol):
+    def conversation_ouverte(self, conversation_id: str) -> None: ...
+    def outil(self, nom: str, parametres: dict[str, Any]) -> str: ...
+    def evenement(self, type_: str, donnees: dict[str, Any]) -> None: ...
+    def fin(self, bilan: dict[str, Any]) -> None: ...
+
+
+class Journal:
+    def __init__(self, fichier: Path | None = None):
+        self._fichier = fichier.open("a", encoding="utf-8") if fichier else None
+        self.t0 = time.monotonic()
+
+    def __call__(self, *morceaux) -> None:
+        ligne = f"{time.strftime('%H:%M:%S')} +{time.monotonic() - self.t0:6.2f}s " + " ".join(map(str, morceaux))
+        print(ligne, flush=True)
+        if self._fichier:
+            self._fichier.write(ligne + "\n")
+            self._fichier.flush()
+
+
+class ConversationPont(Conversation):
+    """Récupère l'URL signée pendant la sonnerie, et lit les formats audio que le SDK ignore."""
+
+    def __init__(self, *args, pont: Pont, journal: Journal, ouverte: Callable[[str], None], **kwargs):
+        super().__init__(*args, **kwargs)
+        self._pont = pont
+        self._journal = journal
+        self._ouverte = ouverte
+        self._url: str | None = None
+        self._url_prete = threading.Event()
+
+    def precharger_url(self) -> None:
+        def _charger():
+            try:
+                self._url = super(ConversationPont, self)._get_signed_url()
+            except Exception as e:  # la session la redemandera
+                self._journal("URL signée indisponible :", e)
+            self._url_prete.set()
+
+        threading.Thread(target=_charger, daemon=True).start()
+
+    def _get_signed_url(self):
+        self._url_prete.wait(timeout=10)
+        url, self._url = self._url, None  # une URL signée ne sert qu'une fois
+        return url or super()._get_signed_url()
+
+    def _handle_message(self, message, ws):
+        if message.get("type") == "conversation_initiation_metadata":
+            ev = message["conversation_initiation_metadata_event"]
+            entree, sortie = ev.get("user_input_audio_format"), ev.get("agent_output_audio_format")
+            self._journal("conversation ouverte | entrée", entree, "| sortie", sortie)
+            self._pont.regler_formats(entree, sortie)
+            threading.Thread(target=self._ouverte, args=(ev.get("conversation_id"),), daemon=True).start()
+        super()._handle_message(message, ws)
+
+
+class Appel:
+    def __init__(
+        self,
+        telephone: Telephone,
+        numero: str,
+        variables: dict[str, str],
+        mots_cles: list[str],
+        cles: dict[str, str],
+        dossier: Path,
+        nom: str,
+        rappels: Rappels,
+    ):
+        self._telephone = telephone
+        self._numero = numero
+        self._rappels = rappels
+        dossier.mkdir(parents=True, exist_ok=True)
+        self.journal = Journal(dossier / f"{nom}.log")
+        self._enregistrement = str(dossier / f"{nom}.wav")
+        self._pont = Pont(self._enregistrement, self.journal)
+        self._verrou = threading.Lock()
+        self._decroche: float | None = None
+        self._session = False
+        self._fin_session = False
+        self._en_ligne = False
+        self._canal = False
+        self._relance = False
+        self._tentatives = 0
+        self._termine = threading.Event()
+        self._pings: list[int] = []
+        self._codec: int | None = None
+
+        outils = ClientTools()
+        for nom_outil in ("proposer_creneaux", "reserver_creneau"):
+            outils.register(nom_outil, self._outil(nom_outil))
+        self._conversation = ConversationPont(
+            ElevenLabs(api_key=cles["ELEVENLABS_API_KEY"]),
+            cles["ELEVENLABS_AGENT_ID"],
+            requires_auth=True,
+            audio_interface=self._pont,
+            config=ConversationInitiationData(
+                dynamic_variables=variables,
+                conversation_config_override={"asr": {"keywords": mots_cles}},
+            ),
+            client_tools=outils,
+            callback_agent_response=lambda t: self._tour("agent", t),
+            callback_user_transcript=lambda t: self._tour("prospect", t),
+            callback_latency_measurement=self._pings.append,
+            callback_end_session=self._fin_de_session,
+            pont=self._pont,
+            journal=self.journal,
+            ouverte=rappels.conversation_ouverte,
+        )
+
+    # --- commandes -------------------------------------------------------------------------------
+
+    def lancer(self) -> None:
+        """Depuis le thread GLib."""
+        self._tentatives += 1
+        self.journal("composition du", self._numero[:4] + "…" + self._numero[-2:])
+        self._telephone.composer(self._numero, self)
+        self._en_ligne = True
+        self._conversation.precharger_url()
+        self._rappels.evenement("etat", {"etat": "composition"})
+        GLib.timeout_add(int(DELAI_CANAL_SON_S * 1000), self._verifier_canal)
+        GLib.timeout_add_seconds(DUREE_MAX_S, self._duree_max)
+
+    def raccrocher(self) -> None:
+        self.journal("raccrochage demandé")
+        self._telephone.raccrocher()
+
+    def attendre_fin(self, delai: float | None = None) -> bool:
+        return self._termine.wait(delai)
+
+    # --- signaux du téléphone ----------------------------------------------------------------------
+
+    def nouvelle_connexion(self, fd: int, codec: int) -> None:
+        self._canal = True
+        self._codec = codec
+        self._pont.brancher(fd, codec)
+
+    def etat_change(self, etat: str) -> None:
+        self.journal("appel :", etat)
+        self._rappels.evenement("etat", {"etat": etat})
+        if etat == "active" and not self._session:
+            self._decroche = time.monotonic()
+            self._session = True
+            self._pont.decroche()
+            threading.Thread(target=self._ouvrir_conversation, daemon=True).start()
+
+    def termine(self, raison: str) -> None:
+        self._en_ligne = False
+        if self._relance:
+            self._relance = False
+            threading.Thread(target=self._reconnecter_et_relancer, daemon=True).start()
+            return
+        qui = {"remote": "le prospect", "local": "nous"}.get(raison, raison)
+        self.journal("appel terminé, raccroché par :", qui)
+        threading.Thread(target=self._terminer, args=(raison,), daemon=True).start()
+
+    # --- déroulé ---------------------------------------------------------------------------------
+
+    def _verifier_canal(self) -> bool:
+        if self._en_ligne and not self._canal and not self._session:
+            if self._tentatives < 2:
+                self.journal("canal son absent : on raccroche, on reconnecte le téléphone et on recompose")
+                self._relance = True
+            else:
+                self.journal("canal son toujours absent : abandon")
+            self._telephone.raccrocher()
+        return False
+
+    def _reconnecter_et_relancer(self) -> None:
+        self._rappels.evenement("etat", {"etat": "reconnexion"})
+        try:
+            self._telephone.reconnecter()
+            GLib.idle_add(lambda: (self.lancer(), False)[1])
+        except Exception as e:
+            self.journal("reconnexion impossible :", e)
+            self._terminer("canal son absent")
+
+    def _duree_max(self) -> bool:
+        if self._en_ligne:
+            self.journal("durée maximale atteinte")
+            self._telephone.raccrocher()
+        return False
+
+    def _ouvrir_conversation(self) -> None:
+        # Le prospect parle d'habitude le premier : on attend sa voix pour ouvrir (son « allô » est gardé et
+        # transmis). S'il se tait, c'est à Mina de dire « Allô ? », par le premier message de la conversation.
+        if self._pont.prospect_parle.wait(SILENCE_AU_DECROCHE_S):
+            self.journal("le prospect parle : ouverture de la conversation")
+        else:
+            self.journal(f"silence depuis {SILENCE_AU_DECROCHE_S:.0f} s : Mina ouvre par « Allô ? »")
+            self._conversation.config.conversation_config_override["agent"] = {"first_message": "Allô ?"}
+        self._conversation.start_session()
+
+    def _tour(self, role: str, texte: str) -> None:
+        self.journal("Mina :" if role == "agent" else "prospect :", texte)
+        self._rappels.evenement("tour", {"role": role, "texte": texte})
+
+    def _outil(self, nom: str) -> Callable[[dict[str, Any]], str]:
+        def executer(parametres: dict[str, Any]) -> str:
+            utiles = {k: v for k, v in parametres.items() if k != "tool_call_id"}
+            self.journal("outil", nom, utiles)
+            return self._rappels.outil(nom, utiles)
+
+        return executer
+
+    def _fin_de_session(self) -> None:
+        # Mina a terminé (end_call ou plafond de durée) : laisser partir la fin de sa phrase, puis raccrocher.
+        with self._verrou:
+            if self._fin_session:  # le SDK peut signaler la fin deux fois
+                return
+            self._fin_session = True
+        if not self._en_ligne:
+            return
+
+        def _raccrocher_apres_vidage():
+            limite = time.monotonic() + 8
+            while not self._pont.sortie_vide() and time.monotonic() < limite:
+                time.sleep(0.05)
+            time.sleep(0.4)
+            self.journal("Mina a terminé : on raccroche")
+            self._telephone.raccrocher()
+
+        threading.Thread(target=_raccrocher_apres_vidage, daemon=True).start()
+
+    def _terminer(self, raison: str) -> None:
+        conversation_id = None
+        if self._session:
+            if not self._fin_session:
+                self._conversation.end_session()
+            conversation_id = self._conversation.wait_for_session_end()
+        self._pont.fermer()
+        bilan: dict[str, Any] = {
+            "raison": {"remote": "prospect", "local": "pont"}.get(raison, raison),
+            "conversationId": conversation_id,
+            "codec": {1: "CVSD", 2: "mSBC"}.get(self._codec or 0),
+        }
+        if self._decroche and self._pont.premier_son_de_mina:
+            bilan["decrocheVersPremierSonS"] = round(self._pont.premier_son_de_mina - self._decroche, 2)
+        if os.path.exists(self._enregistrement):
+            bilan["enregistrement"] = self._enregistrement
+            bilan["tempsDeReponseS"] = [round(x, 2) for x in temps_de_reponse(self._enregistrement)]
+        if self._pings:
+            bilan["pingMedianMs"] = sorted(self._pings)[len(self._pings) // 2]
+        self.journal("bilan :", bilan)
+        self._rappels.evenement("etat", {"etat": "termine"})
+        try:
+            self._rappels.fin(bilan)
+        finally:
+            self._termine.set()

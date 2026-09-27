@@ -72,6 +72,7 @@ Chaque choix qui surprendrait un lecteur est expliqué dans un ADR :
 | [0004](docs/adr/0004-heberge-sur-le-homelab.md) | Hébergé sur le homelab, pas dans le cloud |
 | [0005](docs/adr/0005-bilan-par-claude-code-en-mode-headless.md) | Bilan produit par Claude Code en mode headless |
 | [0006](docs/adr/0006-authentification-par-identite-tailscale.md) | Authentification par l'identité Tailscale |
+| [0007](docs/adr/0007-pont-bluetooth-service-pilote-par-le-web.md) | Le pont Bluetooth est un service permanent, piloté par l'application |
 
 La personnalité de Mina est du code : son prompt ([agent/prompt.md](agent/prompt.md)) et sa configuration sont versionnés ici, et `pnpm agent pull` / `pnpm agent push` les synchronisent avec ElevenLabs sans jamais écraser une modification distante non rapatriée.
 
