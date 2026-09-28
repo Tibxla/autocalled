@@ -18,14 +18,12 @@ Point de reprise pour la prochaine session de travail. À tenir à jour à chaqu
 
 ## À faire
 
-1. **Valider la ligne téléphone sur de vrais appels** (écrite le 27/09, ADR 0007, vérifiée sans appel : routes, pages, pont, tests) :
-   - appel depuis une fiche prospect : suivi en direct (états, transcription), bouton Raccrocher, écoute (retard, coupures) ;
-   - agenda réel : Mina propose et réserve (supprimer ensuite l'événement de test) ;
-   - bilan après l'appel, y compris quand le prospect ne décroche pas ;
-   - campagne sur la ligne téléphone : enchaînement, pause, reprise ;
+1. **Ligne téléphone** : validée sur de vrais appels le 28/09 (appel depuis la fiche, suivi en direct, écoute, rendez-vous réel et invitation depuis l'agenda `AGENDA_CALENDRIER`, bilan, appairage et oubli d'un téléphone). Reste à valider :
+   - prise de main (ADR 0008) : casque, latence, voix de l'opérateur côté prospect, reconnexion si l'onglet se ferme ;
+   - campagne sur la ligne téléphone : enchaînement, pause, reprise, plafond ;
    - interruption : couper la parole à Mina en pleine phrase, elle doit s'arrêter ;
-   - page Téléphone : appairage du téléphone dédié (et oubli de l'iPhone personnel) ;
-   - enregistrement : la page d'appel prend celui d'ElevenLabs ; s'il manque, brancher le WAV stéréo du pont (`data/pont/<appelId>.wav`, converti en `enregistrements/<id>.mp3`), comme le promet l'ADR 0003.
+   - relecture de l'adresse imposée par `reserver_creneau` ;
+   - indicateur de ligne cliquable pendant un appel.
    Diagnostic hors application, service arrêté : `apps/pont`, `python -m pont appeler | tester-son`.
 2. **E-mail dicté** : depuis le 28/09, c'est `reserver_creneau` qui impose la relecture (il renvoie l'adresse épelée, et ne réserve qu'avec `adresse_confirmee`), et une correction après réservation est notée sur le rendez-vous (Réglages) au lieu d'être ignorée. À revérifier sur un appel : Mina relit bien l'épellation renvoyée avant de réserver.
 3. **Invitation réelle** : tester l'envoi avec sa propre adresse, puis supprimer l'événement.

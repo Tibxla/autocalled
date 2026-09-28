@@ -33,6 +33,7 @@ ATTENTE_MAX_S = 5  # son du prospect gardé en attendant l'ouverture de la conve
 # « micro » mains-libres en l'attendant bien plus faible : à ce niveau, il compresse et la voix sonne saturée.
 # Échelle d'écoute du 27/09 en mSBC : −19,5 dBFS sature, −29,5 et −39,5 sont nets. On vise environ −31 dBFS.
 GAIN_SORTIE = 10 ** (-18 / 20)
+PRISE_TAMPON_MS = 120  # avance accumulée avant de lire la voix de l'opérateur
 
 
 def accepter(fd: int) -> None:
@@ -89,6 +90,12 @@ class Pont(AudioInterface):
         self.premier_son_de_mina: float | None = None
         self.prospect_parle = threading.Event()  # une voix a été entendue depuis le décroché
         self._auditeurs: set[queue.Queue] = set()  # écoutes en direct : prospect et Mina mélangés
+        # Prise de main (ADR 0008) : la voix de l'opérateur remplace celle de Mina, le prospect seul part vers lui.
+        self._mode_operateur = False
+        self._operateur = bytearray()  # PCM de l'opérateur au taux de la ligne
+        self._operateur_lance = False  # lecture entamée : le tampon a atteint son seuil depuis le dernier vide
+        self._depuis_operateur: _Conversion | None = None
+        self._prospect_seul: set[queue.Queue] = set()
         self._trames_voix = 0
         self._tampon_voix = bytearray()
         self._preparer_conversions()
@@ -164,6 +171,8 @@ class Pont(AudioInterface):
                     if self._auditeurs:
                         self._diffuser(((g.astype(np.int32) + d) // 2).astype("<i2").tobytes())
                 if self._actif.is_set():
+                    if self._prospect_seul:
+                        self._diffuser(entrant, self._prospect_seul)
                     self._entrant(entrant)
         except OSError as e:
             self._journal("canal son fermé :", e.strerror or e)
@@ -174,9 +183,25 @@ class Pont(AudioInterface):
                 pass
             wav.close()
             self._diffuser(None)
+            self._diffuser(None, self._prospect_seul)
             for c in (decodeur, encodeur):
                 if c:
                     c.fermer()
+
+    def _pcm_operateur(self, taille: int) -> bytes:
+        """Tampon de gigue : la lecture ne reprend qu'avec PRISE_TAMPON_MS d'avance, sinon la voix hacherait
+        (le micro arrive au rythme du temps réel, pas en avance comme la voix de synthèse)."""
+        seuil = self._taux_ligne * 2 * PRISE_TAMPON_MS // 1000
+        with self._verrou:
+            if not self._operateur_lance and len(self._operateur) >= seuil:
+                self._operateur_lance = True
+            if not self._operateur_lance:
+                return bytes(taille)
+            morceau = bytes(self._operateur[:taille])
+            del self._operateur[:taille]
+            if len(morceau) < taille:
+                self._operateur_lance = False
+        return morceau + bytes(taille - len(morceau))
 
     # --- écoute en direct --------------------------------------------------------------------------
 
@@ -193,14 +218,49 @@ class Pont(AudioInterface):
     def arreter_ecoute(self, file: queue.Queue) -> None:
         self._auditeurs.discard(file)
 
-    def _diffuser(self, pcm: bytes | None) -> None:
-        for file in list(self._auditeurs):
+    def _diffuser(self, pcm: bytes | None, auditeurs: set[queue.Queue] | None = None) -> None:
+        for file in list(self._auditeurs if auditeurs is None else auditeurs):
             try:
                 file.put_nowait(pcm)
             except queue.Full:  # auditeur trop lent : il perd ce morceau plutôt que de ralentir l'appel
                 pass
 
+    # --- prise de main -------------------------------------------------------------------------------
+
+    def prendre_la_main(self) -> None:
+        """Mina se tait (ce qu'elle n'avait pas encore dit est jeté) ; la voix de l'opérateur prend sa place."""
+        with self._verrou:
+            self._sortie.clear()
+            self._operateur.clear()
+            self._operateur_lance = False
+            self._mode_operateur = True
+        self._depuis_operateur = _Conversion(16000, self._taux_ligne)
+
+    def ecouter_prospect(self) -> "queue.Queue[bytes | None]":
+        """Le prospect seul, PCM 16 bits mono au taux de la ligne ; `None` marque la fin de l'appel."""
+        file: queue.Queue = queue.Queue(maxsize=400)
+        self._prospect_seul.add(file)
+        return file
+
+    def arreter_prospect(self, file: queue.Queue) -> None:
+        self._prospect_seul.discard(file)
+
+    def voix_operateur(self, pcm16k: bytes) -> None:
+        """PCM 16 bits mono à 16 kHz venu du navigateur. Pas de GAIN_SORTIE : il est calé sur la voix de synthèse."""
+        if not self._mode_operateur or self._depuis_operateur is None:
+            return
+        echantillons = np.frombuffer(pcm16k[: len(pcm16k) // 2 * 2], dtype="<i2").astype(np.float32)
+        converti = _vers_pcm(self._depuis_operateur(echantillons))
+        with self._verrou:
+            self._operateur += converti
+            # Au-delà d'une seconde de retard, on jette le plus ancien : mieux vaut un mot perdu qu'un décalage.
+            excedent = len(self._operateur) - self._taux_ligne * 2
+            if excedent > 0:
+                del self._operateur[:excedent]
+
     def _pcm_sortant(self, taille: int) -> bytes:
+        if self._mode_operateur:
+            return self._pcm_operateur(taille)
         with self._verrou:
             morceau = bytes(self._sortie[:taille])
             del self._sortie[:taille]
@@ -258,6 +318,8 @@ class Pont(AudioInterface):
         self._envoi = None
 
     def output(self, audio: bytes) -> None:
+        if self._mode_operateur:
+            return
         echantillons = np.frombuffer(audio, dtype="<i2").astype(np.float32) * GAIN_SORTIE
         converti = _vers_pcm(self._vers_telephone(echantillons))
         with self._verrou:

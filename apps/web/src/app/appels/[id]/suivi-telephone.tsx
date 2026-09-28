@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { raccrocherAppelTelephone } from '@/app/appels/actions';
 import { Bouton, Message } from '@/components/ui';
 import { BoutonRelancer } from './bouton-relancer';
+import { usePriseDeMain } from './prise-de-main';
 
 type Tour = { role: 'agent' | 'prospect'; texte: string };
 
@@ -15,6 +16,7 @@ const LIBELLES: Record<string, string> = {
   active: 'En ligne',
   reconnexion: 'Canal son absent : reconnexion du téléphone et nouvelle tentative',
   disconnected: 'Raccroché',
+  'prise-en-main': 'Main reprise : Mina s’est tue',
   termine: 'Appel terminé, rapatriement et analyse…',
 };
 
@@ -94,6 +96,8 @@ export function SuiviTelephone({ appelId }: { appelId: string }) {
   const [perdu, setPerdu] = useState(false);
   const fil = useRef<HTMLOListElement>(null);
   const ecoute = useEcoute(appelId);
+  const prise = usePriseDeMain(appelId);
+  const [confirmerPrise, setConfirmerPrise] = useState(false);
 
   useEffect(() => {
     const source = new EventSource(`/appels/${appelId}/direct`);
@@ -162,12 +166,53 @@ export function SuiviTelephone({ appelId }: { appelId: string }) {
             >
               {raccrochage ? 'Raccrochage…' : 'Raccrocher'}
             </Bouton>
-            <Bouton type="button" variante="discret" onClick={() => (ecoute.active ? ecoute.arreter() : void ecoute.demarrer())}>
-              {ecoute.active ? 'Arrêter l’écoute' : 'Écouter'}
-            </Bouton>
+            {prise.etat === 'active' ? (
+              <Bouton type="button" variante="discret" onClick={prise.basculerMuet}>
+                {prise.muet ? 'Réactiver mon micro' : 'Couper mon micro'}
+              </Bouton>
+            ) : (
+              <Bouton type="button" variante="discret" onClick={() => (ecoute.active ? ecoute.arreter() : void ecoute.demarrer())}>
+                {ecoute.active ? 'Arrêter l’écoute' : 'Écouter'}
+              </Bouton>
+            )}
+            {etat === 'active' || etat === 'prise-en-main' ? (
+              prise.etat === 'active' || prise.etat === 'connexion' ? null : (
+                <Bouton type="button" variante="discret" onClick={() => setConfirmerPrise(true)}>
+                  Prendre la main
+                </Bouton>
+              )
+            ) : null}
           </>
         ) : null}
       </div>
+      {confirmerPrise && prise.etat !== 'active' && prise.etat !== 'connexion' && enLigne ? (
+        <div className="grid justify-items-start gap-3 rounded-md p-4 shadow-[inset_0_0_0_1px_var(--filet-fort)]">
+          <p className="max-w-[62ch] text-sm text-encre-2">
+            Mina se tait tout de suite et tu parles au prospect avec ton micro. Annonce-toi (« Thibaud à l’appareil, je prends le relais »).
+            Mets un casque : sans lui, ton micro reprend la voix du prospect. La transcription et le bilan s’arrêtent au relais.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <Bouton
+              type="button"
+              onClick={() => {
+                ecoute.arreter();
+                setConfirmerPrise(false);
+                void prise.demarrer();
+              }}
+            >
+              Prendre la main
+            </Bouton>
+            <Bouton type="button" variante="discret" onClick={() => setConfirmerPrise(false)}>
+              Annuler
+            </Bouton>
+          </div>
+        </div>
+      ) : null}
+      {prise.etat === 'connexion' ? <p className="text-sm text-encre-3">Connexion au téléphone…</p> : null}
+      {prise.etat === 'active' ? (
+        <p className="text-sm text-antenne">{prise.muet ? 'Tu as la main, micro coupé.' : 'Tu as la main : le prospect t’entend.'}</p>
+      ) : null}
+      {prise.erreur ? <Message ton="alerte">{prise.erreur}</Message> : null}
       {ecoute.active ? <p className="text-sm text-encre-3">Écoute en direct, une à deux secondes de retard. Personne ne t’entend.</p> : null}
       {erreur ? <Message ton="alerte">{erreur}</Message> : null}
       {tours.length > 0 ? (

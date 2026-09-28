@@ -102,8 +102,10 @@ class Appel:
         self._pont = Pont(self._enregistrement, self.journal)
         self._verrou = threading.Lock()
         self._decroche: float | None = None
-        self._session = False
+        self._session = False  # décroché : la conversation va s'ouvrir (ou l'opérateur a pris la main avant)
+        self._session_ouverte = False  # start_session a vraiment été appelé
         self._fin_session = False
+        self._prise_en_main: float | None = None
         self._en_ligne = False
         self._canal = False
         self._relance = False
@@ -171,6 +173,25 @@ class Appel:
         self._evenement("etat", {"etat": "composition"})
         GLib.timeout_add(int(DELAI_CANAL_SON_S * 1000), self._verifier_canal)
         GLib.timeout_add_seconds(DUREE_MAX_S, self._duree_max)
+
+    def prendre_la_main(self) -> None:
+        """L'opérateur remplace Mina (ADR 0008) : la conversation ElevenLabs se ferme sans raccrocher."""
+        if not self._en_ligne or self._decroche is None:
+            raise ValueError("l'appel n'est pas décroché")
+        with self._verrou:
+            if self._prise_en_main is not None:
+                return  # reconnexion de l'opérateur : il a déjà la main
+            self._prise_en_main = time.monotonic()
+            fermer = self._session_ouverte and not self._fin_session
+        self._pont.prendre_la_main()
+        self.journal("l'opérateur prend la main")
+        self._evenement("etat", {"etat": "prise-en-main"})
+        if fermer:
+            self._conversation.end_session()  # hors du verrou : il rappelle _fin_de_session, qui le prend
+
+    @property
+    def main_prise(self) -> bool:
+        return self._prise_en_main is not None
 
     def raccrocher(self) -> None:
         self.journal("raccrochage demandé")
@@ -254,6 +275,10 @@ class Appel:
         else:
             self.journal(f"silence depuis {SILENCE_AU_DECROCHE_S:.0f} s : Mina ouvre par « Allô ? »")
             self._conversation.config.conversation_config_override["agent"] = {"first_message": "Allô ?"}
+        with self._verrou:
+            if self._prise_en_main is not None:
+                return  # l'opérateur a pris la main avant que Mina ne parle
+            self._session_ouverte = True
         self._conversation.start_session()
 
     def _tour(self, role: str, texte: str) -> None:
@@ -274,8 +299,8 @@ class Appel:
             if self._fin_session:  # le SDK peut signaler la fin deux fois
                 return
             self._fin_session = True
-        if not self._en_ligne:
-            return
+        if not self._en_ligne or self._prise_en_main is not None:
+            return  # fin voulue par la prise de main : l'appel continue avec l'opérateur
 
         def _raccrocher_apres_vidage():
             limite = time.monotonic() + 8
@@ -289,7 +314,7 @@ class Appel:
 
     def _terminer(self, raison: str) -> None:
         conversation_id = None
-        if self._session:
+        if self._session_ouverte:
             if not self._fin_session:
                 self._conversation.end_session()
             conversation_id = self._conversation.wait_for_session_end()
@@ -303,6 +328,8 @@ class Appel:
         }
         if self._decroche and self._pont.premier_son_de_mina:
             bilan["decrocheVersPremierSonS"] = round(self._pont.premier_son_de_mina - self._decroche, 2)
+        if self._prise_en_main is not None and self._decroche:
+            bilan["priseEnMainApresS"] = round(self._prise_en_main - self._decroche, 1)
         if os.path.exists(self._enregistrement):
             bilan["enregistrement"] = self._enregistrement
             bilan["tempsDeReponseS"] = [round(x, 2) for x in temps_de_reponse(self._enregistrement)]

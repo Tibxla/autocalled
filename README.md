@@ -73,6 +73,7 @@ Chaque choix qui surprendrait un lecteur est expliqué dans un ADR :
 | [0005](docs/adr/0005-bilan-par-claude-code-en-mode-headless.md) | Bilan produit par Claude Code en mode headless |
 | [0006](docs/adr/0006-authentification-par-identite-tailscale.md) | Authentification par l'identité Tailscale |
 | [0007](docs/adr/0007-pont-bluetooth-service-pilote-par-le-web.md) | Le pont Bluetooth est un service permanent, piloté par l'application |
+| [0008](docs/adr/0008-prise-de-main-par-websocket-direct.md) | Prendre la main : la voix de l'opérateur passe par un WebSocket direct vers le pont |
 
 La personnalité de Mina est du code : son prompt ([agent/prompt.md](agent/prompt.md)) et sa configuration sont versionnés ici, et `pnpm agent pull` / `pnpm agent push` les synchronisent avec ElevenLabs sans jamais écraser une modification distante non rapatriée.
 
@@ -91,7 +92,7 @@ Chaque étape se termine sur quelque chose qui marche de bout en bout ; le plus 
 - [x] **5. Agenda** : disponibilités lues par le connecteur Google Agenda de Claude et gardées en copie, créneaux proposés et réservés pendant l'appel par des outils exécutés côté client, événement créé juste après.
 - [x] **6. Campagne en direct** : enchaînement des appels, transcription en temps réel.
 - [x] **7. Scripts versionnés et analyse** : comparaison des versions, avec garde sur la taille de l'échantillon.
-- [ ] **8. Ligne téléphone dans l'application** : appel depuis une fiche ou une campagne, suivi et écoute en direct, agenda réel, bilan, appairage depuis l'interface. Écrite ; à valider sur de vrais appels.
+- [ ] **8. Ligne téléphone dans l'application** : appel depuis une fiche ou une campagne, suivi et écoute en direct, prise de main, agenda réel, bilan, appairage depuis l'interface. Appels, écoute, agenda et bilan validés sur de vrais appels ; campagne et prise de main à valider.
 
 ## Lancer le projet
 
@@ -112,11 +113,11 @@ sudo tailscale serve --bg --https=8449 http://127.0.0.1:3020
 Sans elle, Mina se teste par la ligne navigateur. Pour qu'elle appelle de vrais numéros, il faut du matériel : un serveur Linux, une clé Bluetooth reconnue par le noyau (la TP-Link UB500 l'est depuis Linux 5.16) et un téléphone avec sa carte SIM, posé à côté du serveur. Un téléphone dédié est préférable : tant qu'il est connecté, le serveur voit ses appels.
 
 ```bash
-scripts/installer-pont.sh      # BlueZ, oFono, libsbc, environnement Python, règle D-Bus, secret, service autocalled-pont
+scripts/installer-pont.sh      # BlueZ, oFono, libsbc, environnement Python, règle D-Bus, secret, chemin /prise-en-main, service autocalled-pont
 scripts/installer-services.sh  # relance l'interface, qui lit le secret du pont au démarrage
 ```
 
-Puis, dans l'interface, page **Téléphone** : saisir l'adresse Bluetooth du téléphone, ouvrir l'appairage, comparer le code, accepter sur le téléphone. Le bouton « Appeler par téléphone » apparaît sur chaque fiche prospect, et les campagnes peuvent choisir la ligne téléphone. Si PipeWire tourne sur le serveur, son module mains-libres doit laisser le profil à oFono (le script prévient). Le fonctionnement et ses limites sont dans les [ADR 0003](docs/adr/0003-ligne-bluetooth-via-telephone-passerelle.md) et [0007](docs/adr/0007-pont-bluetooth-service-pilote-par-le-web.md).
+Puis, dans l'interface, page **Téléphone** : saisir l'adresse Bluetooth du téléphone, ouvrir l'appairage, comparer le code, accepter sur le téléphone. Sur chaque fiche prospect, la ligne « Téléphone » fait appeler le vrai numéro, et les campagnes peuvent la choisir. Pendant l'appel, on suit la conversation, on l'écoute, et on peut prendre la main : Mina se tait et l'opérateur parle au prospect depuis son navigateur (casque recommandé). Si PipeWire tourne sur le serveur, son module mains-libres doit laisser le profil à oFono (le script prévient). Le fonctionnement et ses limites sont dans les [ADR 0003](docs/adr/0003-ligne-bluetooth-via-telephone-passerelle.md) et [0007](docs/adr/0007-pont-bluetooth-service-pilote-par-le-web.md).
 
 L'agenda passe par le connecteur Google Agenda de Claude : rien à configurer si Claude Code y a accès. L'API Google directe est facultative (client OAuth « application Web », redirection vers `ORIGINE_APP/google/retour`).
 

@@ -14,7 +14,12 @@ présente le même secret à l'application quand il la rappelle (`$WEB_URL/api/p
     POST /appairage/fermer
     POST /telephone/oublier           {adresse}
     POST /reglages                    {appelsParHeure, appelsParJour, pauseEntreAppelsS}
+
+Prise de main (ADR 0008), WebSocket sur 127.0.0.1:PONT_PORT_WS, joint par `tailscale serve` sous /prise-en-main :
+    /appels/<id>   le navigateur de l'opérateur envoie sa voix (PCM 16 kHz) et reçoit le prospect ;
+                   accepté seulement si l'en-tête Tailscale-User-Login est celui de l'opérateur (ADR 0006).
 """
+import asyncio
 import hmac
 import json
 import os
@@ -31,6 +36,9 @@ from typing import Any
 import dbus
 import dbus.mainloop.glib
 from gi.repository import GLib
+
+from websockets.asyncio.server import ServerConnection, serve
+from websockets.exceptions import ConnectionClosed
 
 from .appairage import Appairage
 from .appel import Appel, Journal
@@ -121,7 +129,9 @@ class Service:
         serveur = ThreadingHTTPServer(("127.0.0.1", port), self._gestionnaire())
         serveur.daemon_threads = True
         threading.Thread(target=serveur.serve_forever, daemon=True, name="http").start()
-        self.journal(f"pont prêt sur 127.0.0.1:{port}")
+        port_ws = int(self._cles.get("PONT_PORT_WS", "3022"))
+        threading.Thread(target=lambda: asyncio.run(self._prise_de_main(port_ws)), daemon=True, name="ws").start()
+        self.journal(f"pont prêt sur 127.0.0.1:{port} (prise de main sur {port_ws})")
         self._boucle.run()
 
     def _annoncer_msbc(self) -> None:
@@ -210,6 +220,71 @@ class Service:
             return 400, {"erreur": str(e)}
         except Exception as e:
             return 503, {"erreur": str(e)}
+
+    # --- prise de main (WebSocket) ---------------------------------------------------------------------
+
+    async def _prise_de_main(self, port: int) -> None:
+        operateur = self._cles.get("OPERATEUR_TAILSCALE_LOGIN", "").strip().lower()
+
+        def verifier(connexion: ServerConnection, requete):
+            # Identité posée par `tailscale serve` ; sans elle (ou si ce n'est pas l'opérateur), refus.
+            login = (requete.headers.get("Tailscale-User-Login") or "").strip().lower()
+            if not operateur or login != operateur:
+                return connexion.respond(403, "Prise de main réservée à l'opérateur.\n")
+            return None
+
+        async with serve(self._relier, "127.0.0.1", port, process_request=verifier, max_size=2**16):
+            await asyncio.Future()
+
+    async def _relier(self, ws: ServerConnection) -> None:
+        m = re.fullmatch(r"(?:/prise-en-main)?/appels/([0-9a-f-]{36})/?", ws.request.path)
+        appel = self._appels.get(m.group(1)) if m else None
+        if not appel or appel.fini():
+            await ws.close(4404, "appel inconnu ou terminé")
+            return
+        boucle = asyncio.get_running_loop()
+        try:
+            await boucle.run_in_executor(None, appel.prendre_la_main)
+        except ValueError as e:
+            await ws.close(4409, str(e))
+            return
+        await ws.send(json.dumps({"taux": appel.pont.taux_ligne}))
+        file = appel.pont.ecouter_prospect()
+
+        def attendre_morceau() -> bytes | None:
+            """Regroupe le prospect par 20 ms ; None à la fin de l'appel."""
+            paquet, cible = bytearray(), appel.pont.taux_ligne * 2 // 50
+            while len(paquet) < cible:
+                try:
+                    morceau = file.get(timeout=1)
+                except queue.Empty:
+                    if appel.fini():
+                        return None
+                    continue
+                if morceau is None:
+                    return None
+                paquet += morceau
+            return bytes(paquet)
+
+        async def descendre():
+            while (morceau := await boucle.run_in_executor(None, attendre_morceau)) is not None:
+                await ws.send(morceau)
+
+        async def monter():
+            async for message in ws:
+                if isinstance(message, bytes):
+                    appel.pont.voix_operateur(message)
+
+        taches = [asyncio.create_task(descendre()), asyncio.create_task(monter())]
+        try:
+            await asyncio.wait(taches, return_when=asyncio.FIRST_COMPLETED)
+        except ConnectionClosed:
+            pass
+        finally:
+            for t in taches:
+                t.cancel()
+            appel.pont.arreter_prospect(file)
+            await ws.close()
 
     def _oublier_a_la_fin(self, appel_id: str) -> None:
         self._appels[appel_id].attendre_fin()

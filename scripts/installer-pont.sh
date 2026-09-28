@@ -38,6 +38,11 @@ if curl -s -m 3 -H "Authorization: Bearer $secret" http://127.0.0.1:3021/etat 2>
   exit 1
 fi
 
+echo "→ chemin de prise de main sur tailscale serve (ADR 0008)"
+port_https="${PORT_HTTPS:-8449}"
+port_ws="$(grep '^PONT_PORT_WS=' "$racine/.env" | cut -d= -f2-)"
+sudo tailscale serve --bg --https="$port_https" --set-path=/prise-en-main "http://127.0.0.1:${port_ws:-3022}" >/dev/null
+
 echo "→ service utilisateur autocalled-pont"
 mkdir -p ~/.config/systemd/user
 sed "s|@RACINE@|$racine|g" "$racine/deploy/systemd/autocalled-pont.service.modele" > ~/.config/systemd/user/autocalled-pont.service
