@@ -81,6 +81,7 @@ class Appairage:
         self.journal = journal
         self._agent: _Agent | None = None
         self._minuteur: int | None = None
+        self._retrait: int | None = None  # retrait différé de l'agent après une réussite
         self.etat = "ferme"  # ferme, ouvert, reussi, expire
         self.adresse: str | None = None
         self.suffixe = ""
@@ -136,6 +137,13 @@ class Appairage:
         return self.resume()
 
     def fermer(self, etat: str = "ferme") -> dict[str, Any]:
+        self._fermer_fenetre()
+        self._retirer_agent()
+        if self.etat == "ouvert":
+            self.etat = etat
+        return self.resume()
+
+    def _fermer_fenetre(self) -> None:
         if self._minuteur:
             GLib.source_remove(self._minuteur)
             self._minuteur = None
@@ -143,6 +151,11 @@ class Appairage:
             self._regler(Discoverable=dbus.Boolean(False), Pairable=dbus.Boolean(False))
         except (dbus.DBusException, RuntimeError):
             pass
+
+    def _retirer_agent(self) -> bool:
+        if self._retrait:
+            GLib.source_remove(self._retrait)
+            self._retrait = None
         if self._agent:
             try:
                 dbus.Interface(
@@ -152,9 +165,11 @@ class Appairage:
                 pass
             self._agent.remove_from_connection()
             self._agent = None
-        if self.etat == "ouvert":
-            self.etat = etat
-        return self.resume()
+        return False
+
+    def _retrait_differe(self) -> bool:
+        self._retrait = None  # la source se termine d'elle-même en rendant False
+        return self._retirer_agent()
 
     def oublier(self, adresse: str) -> None:
         adresse = adresse.strip().upper()
@@ -182,7 +197,12 @@ class Appairage:
                 "org.bluez.Device1", "Trusted", dbus.Boolean(True)
             )
             self.journal("téléphone appairé et marqué de confiance :", self.adresse)
-            self.fermer("reussi")
+            # Le serveur cesse d'être visible tout de suite, mais l'agent reste encore un moment : dans la même
+            # seconde, le téléphone ouvre ses profils (mains-libres) et BlueZ demande l'autorisation à l'agent.
+            # Retiré trop tôt, le profil mains-libres est refusé (constat du 28/09).
+            self._fermer_fenetre()
+            self.etat = "reussi"
+            self._retrait = GLib.timeout_add_seconds(15, self._retrait_differe)
             if self._remplace:
                 try:
                     self.oublier(self._remplace)
