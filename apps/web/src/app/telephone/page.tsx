@@ -58,6 +58,14 @@ export default async function PageTelephone() {
               ) : null}
               {telephone.adresse && !telephone.appelEnCours ? <BoutonOublier adresse={telephone.adresse} /> : null}
             </>
+          ) : telephone?.adresse ? (
+            <>
+              <p className="text-encre-2">
+                {telephone.nom} <span className="font-mono text-sm text-encre-3">{telephone.adresse}</span> est connu mais pas connecté : hors de
+                portée, ou Bluetooth coupé.
+              </p>
+              <BoutonOublier adresse={telephone.adresse} />
+            </>
           ) : (
             <p className="text-encre-2">Aucun téléphone connecté. Allume le Bluetooth du téléphone passerelle, ou appaire-en un ci-dessous.</p>
           )}
