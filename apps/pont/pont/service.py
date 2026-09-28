@@ -140,7 +140,13 @@ class Service:
     # --- opérations ------------------------------------------------------------------------------
 
     def etat(self) -> dict[str, Any]:
-        return {**dans_glib(self._telephone.etat), "plafond": self._plafond.refus(), "reglages": self._reglages.valeurs}
+        en_cours = next((i for i, a in self._appels.items() if not a.fini()), None)
+        return {
+            **dans_glib(self._telephone.etat),
+            "appelId": en_cours,
+            "plafond": self._plafond.refus(),
+            "reglages": self._reglages.valeurs,
+        }
 
     def regler(self, corps: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         try:

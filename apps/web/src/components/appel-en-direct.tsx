@@ -118,7 +118,7 @@ function Conversation({
 
   return (
     <div className="grid gap-4">
-      <OndeDirect entree={entree} sortie={sortie} actif={phase === 'en-appel'} />
+      {phase === 'repos' ? null : <OndeDirect entree={entree} sortie={sortie} actif={phase === 'en-appel'} />}
       <div className="flex flex-wrap items-center gap-3">
         {phase === 'en-appel' ? (
           <Bouton type="button" variante="secondaire" onClick={() => conversation.endSession()}>
@@ -136,7 +136,7 @@ function Conversation({
               : 'Mina écoute'
             : phase === 'fin'
               ? 'Rapatriement de l’enregistrement et analyse…'
-              : 'Ligne navigateur : tu joues le prospect au micro.'}
+              : null}
         </span>
       </div>
       {erreur ? <Message ton="alerte">{erreur}</Message> : null}

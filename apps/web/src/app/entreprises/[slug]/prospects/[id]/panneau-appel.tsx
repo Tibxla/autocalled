@@ -6,6 +6,15 @@ import { demarrerAppelTelephone, lancerSimulation } from '@/app/appels/actions';
 import { AppelEnDirect } from '@/components/appel-en-direct';
 import { Bouton, Message, Selection } from '@/components/ui';
 
+type Ligne = 'telephone' | 'navigateur' | 'simulation';
+
+const LIGNES: { valeur: Ligne; libelle: string; aide: string }[] = [
+  { valeur: 'telephone', libelle: 'Téléphone', aide: 'Mina appelle le vrai numéro depuis le téléphone passerelle.' },
+  { valeur: 'navigateur', libelle: 'Navigateur', aide: 'Test : tu joues le prospect au micro, rien n’est composé.' },
+  { valeur: 'simulation', libelle: 'Simulation', aide: 'Un modèle joue le prospect, sans audio. Signalé comme simulé partout.' },
+];
+
+/** Un choix de ligne et un seul bouton d'appel, comme au lancement d'une campagne. */
 export function PanneauAppel({
   entrepriseId,
   prospectId,
@@ -21,11 +30,21 @@ export function PanneauAppel({
 }) {
   const router = useRouter();
   const [versionId, setVersionId] = useState(versions[0]?.id ?? '');
+  const [ligne, setLigne] = useState<Ligne>('telephone');
   const [enCours, demarrer] = useTransition();
   const [erreur, setErreur] = useState<string | null>(null);
 
   if (!autorise) return <p className="text-sm text-encre-3">Ce numéro n’est pas autorisé : aucun appel possible.</p>;
   if (versions.length === 0) return <p className="text-sm text-encre-3">Crée d’abord un script pour cette entreprise.</p>;
+
+  const prenom = prospectNom.split(' ')[0];
+  const lancer = (action: () => Promise<{ ok: true; appelId: string } | { ok: false; raison: string }>) =>
+    demarrer(async () => {
+      setErreur(null);
+      const r = await action();
+      if (r.ok) router.push(`/appels/${r.appelId}`);
+      else setErreur(r.raison);
+    });
 
   return (
     <div className="grid gap-5">
@@ -41,46 +60,40 @@ export function PanneauAppel({
           ))}
         </Selection>
       </div>
-      <AppelEnDirect key={versionId} entrepriseId={entrepriseId} prospectId={prospectId} prospectNom={prospectNom} versionScriptId={versionId} />
-      <div className="grid gap-2 border-t border-filet pt-4">
+
+      <fieldset className="grid gap-2">
+        <legend className="mb-1.5 text-sm font-medium">Ligne</legend>
+        <div className="grid grid-cols-3 rounded-md p-0.5 shadow-[inset_0_0_0_1px_var(--filet-fort)]">
+          {LIGNES.map((l) => (
+            <label
+              key={l.valeur}
+              className="cursor-pointer rounded-[5px] px-2 py-1.5 text-center text-sm text-encre-2 transition-colors duration-150 hover:text-encre has-[:checked]:bg-survol has-[:checked]:font-medium has-[:checked]:text-encre has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2"
+            >
+              <input type="radio" name="ligne-appel" value={l.valeur} checked={ligne === l.valeur} onChange={() => setLigne(l.valeur)} className="sr-only" />
+              {l.libelle}
+            </label>
+          ))}
+        </div>
+        <p className="text-sm text-encre-3">{LIGNES.find((l) => l.valeur === ligne)?.aide}</p>
+      </fieldset>
+
+      {ligne === 'navigateur' ? (
+        <AppelEnDirect key={versionId} entrepriseId={entrepriseId} prospectId={prospectId} prospectNom={prospectNom} versionScriptId={versionId} />
+      ) : (
         <Bouton
           type="button"
-          variante="secondaire"
           className="justify-self-start"
           disabled={enCours}
           onClick={() =>
-            demarrer(async () => {
-              setErreur(null);
-              const r = await demarrerAppelTelephone(entrepriseId, prospectId, versionId);
-              if (r.ok) router.push(`/appels/${r.appelId}`);
-              else setErreur(r.raison);
-            })
+            lancer(() =>
+              ligne === 'telephone' ? demarrerAppelTelephone(entrepriseId, prospectId, versionId) : lancerSimulation(entrepriseId, prospectId, versionId),
+            )
           }
         >
-          {enCours ? 'Composition…' : 'Appeler par téléphone'}
+          {enCours ? (ligne === 'telephone' ? 'Composition…' : 'Simulation…') : ligne === 'telephone' ? `Appeler ${prenom}` : 'Simuler l’appel'}
         </Bouton>
-        <p className="text-sm text-encre-3">Mina appelle le vrai numéro depuis le téléphone passerelle.</p>
-      </div>
-      <div className="grid gap-2 border-t border-filet pt-4">
-        <Bouton
-          type="button"
-          variante="discret"
-          className="-ml-3.5 justify-self-start"
-          disabled={enCours}
-          onClick={() =>
-            demarrer(async () => {
-              setErreur(null);
-              const r = await lancerSimulation(entrepriseId, prospectId, versionId);
-              if (r.ok) router.push(`/appels/${r.appelId}`);
-              else setErreur(r.raison);
-            })
-          }
-        >
-          {enCours ? 'Simulation…' : 'Simuler un appel'}
-        </Bouton>
-        <p className="text-sm text-encre-3">Un modèle joue le prospect, sans audio. Signalé comme simulé partout.</p>
-        {erreur ? <Message ton="alerte">{erreur}</Message> : null}
-      </div>
+      )}
+      {erreur ? <Message ton="alerte">{erreur}</Message> : null}
     </div>
   );
 }

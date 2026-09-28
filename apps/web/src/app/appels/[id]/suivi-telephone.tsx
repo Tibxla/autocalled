@@ -5,7 +5,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { raccrocherAppelTelephone } from '@/app/appels/actions';
 import { Bouton, Message } from '@/components/ui';
 import { BoutonRelancer } from './bouton-relancer';
-import { definirEtatLigne } from '@/lib/etat-ligne';
 
 type Tour = { role: 'agent' | 'prospect'; texte: string };
 
@@ -102,7 +101,6 @@ export function SuiviTelephone({ appelId }: { appelId: string }) {
       const e = JSON.parse(m.data) as { type: string; etat?: string; role?: Tour['role']; texte?: string };
       if (e.type === 'etat' && e.etat) {
         setEtat(e.etat);
-        definirEtatLigne(e.etat === 'termine' || e.etat === 'disconnected' ? 'libre' : 'en-appel');
         if (e.etat === 'termine') {
           source.close();
           router.refresh();
@@ -115,14 +113,10 @@ export function SuiviTelephone({ appelId }: { appelId: string }) {
     // Refus définitif (le pont ne connaît plus l'appel, terminé entre-temps) : la page affichera le bilan.
     source.onerror = () => {
       if (source.readyState !== EventSource.CLOSED) return;
-      definirEtatLigne('libre');
       setPerdu(true);
       router.refresh();
     };
-    return () => {
-      source.close();
-      definirEtatLigne('libre');
-    };
+    return () => source.close();
   }, [appelId, router]);
 
   useEffect(() => {
