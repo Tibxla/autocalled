@@ -85,6 +85,8 @@ export function PanneauTelephone({ telephone, initial }: { telephone: EtatTeleph
             <dd>
               {telephone.operateur || 'inconnu'}
               {telephone.signal !== undefined ? <span className="text-encre-3"> · signal {telephone.signal} %</span> : null}
+              {/* Le téléphone n'envoie le nom du réseau qu'à la connexion ; le signal, lui, suit en continu. */}
+              <span className="block text-sm text-encre-3">Nom lu à la connexion du téléphone (« Appels WiFi » : il appelle par le Wi-Fi).</span>
             </dd>
             {telephone.batterie !== undefined ? (
               <>
