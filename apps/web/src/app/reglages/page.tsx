@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { EnTetePage, Message, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { appels, prospects, rendezVous } from '@/db/schema';
-import { etatAgenda } from '@/lib/agenda';
+import { calendrierConfigure, etatAgenda } from '@/lib/agenda';
 import { clientGoogle, connexion } from '@/lib/google';
 import { BoutonDeconnecter } from './bouton-deconnecter';
 import { BoutonRecreer, BoutonRelire } from './boutons-agenda';
@@ -47,6 +47,19 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
           <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-[12rem_1fr]">
             <dt className="text-sm text-encre-3">Source</dt>
             <dd>{api ? 'API Google Agenda' : 'Connecteur Google Agenda de Claude (MCP)'}</dd>
+            <dt className="text-sm text-encre-3">Rendez-vous créés dans</dt>
+            <dd>
+              {api ? (
+                'le calendrier choisi à la connexion de l’API'
+              ) : calendrierConfigure() ? (
+                <>
+                  <span className="font-mono">{calendrierConfigure()}</span>
+                  <span className="text-encre-3"> · les invitations partent à ce nom</span>
+                </>
+              ) : (
+                <span className="text-encre-3">calendrier « Autocalled » s’il existe, sinon le principal (AGENDA_CALENDRIER dans .env pour en choisir un)</span>
+              )}
+            </dd>
             <dt className="text-sm text-encre-3">Dernière lecture</dt>
             <dd>
               {etat ? (

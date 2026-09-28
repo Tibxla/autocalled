@@ -21,6 +21,22 @@ const HORIZON_MAX_JOURS = 21;
 const OUTILS_LECTURE = ['mcp__claude_ai_Google_Calendar__list_calendars', 'mcp__claude_ai_Google_Calendar__suggest_time'];
 const OUTILS_ECRITURE = ['mcp__claude_ai_Google_Calendar__list_calendars', 'mcp__claude_ai_Google_Calendar__create_event'];
 
+/**
+ * Calendrier des rendez-vous. Google envoie les invitations au nom du propriétaire du calendrier où l'événement
+ * est créé : `AGENDA_CALENDRIER` permet d'écrire dans un calendrier partagé (par exemple celui d'un compte à son
+ * domaine, partagé en modification avec le compte du connecteur) pour que l'invitation vienne de cette adresse.
+ */
+export function calendrierConfigure(): string | null {
+  return process.env.AGENDA_CALENDRIER?.trim() || null;
+}
+
+function consigneCalendrier(): string {
+  const configure = calendrierConfigure();
+  return configure
+    ? `Utilise calendarId = ${JSON.stringify(configure)}, littéralement.`
+    : "Appelle list_calendars. Si un calendrier a pour nom (summary) exactement « Autocalled », utilise son identifiant comme calendarId ; sinon, utilise calendarId = primary, littéralement, sans choisir un autre calendrier.";
+}
+
 const iso = (d: Date) => d.toISOString();
 
 async function lireParMcp(debut: Date, fin: Date): Promise<Intervalle[]> {
@@ -261,7 +277,7 @@ export async function creerEvenementDuRendezVous(rendezVousId: string): Promise<
           required: ['evenementId', 'calendrier', 'lienVisio'],
           additionalProperties: false,
         },
-        prompt: `Appelle list_calendars. Si un calendrier a pour nom (summary) exactement « Autocalled », utilise son identifiant comme calendarId ; sinon, utilise calendarId = primary, littéralement, sans choisir un autre calendrier. Appelle create_event une seule fois avec ce calendarId et exactement ces valeurs, sans rien reformuler :
+        prompt: `${consigneCalendrier()} Appelle create_event une seule fois avec ce calendarId et exactement ces valeurs, sans rien reformuler :
 summary : ${JSON.stringify(titre)}
 startTime : ${iso(rdv.debut)}
 endTime : ${iso(rdv.fin)}
