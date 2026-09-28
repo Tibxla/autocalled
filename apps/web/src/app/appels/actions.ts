@@ -10,7 +10,7 @@ import { analyserAppel, preparerAppel, simulerAppel, traiterAppel } from '@/lib/
 import { rafraichirSiAncien } from '@/lib/agenda';
 import { jetonConversation } from '@/lib/elevenlabs';
 import { exigerOperateur } from '@/lib/garde';
-import { commanderPont } from '@/lib/pont';
+import { commanderPont, refusDuPont } from '@/lib/pont';
 
 export type DemarrageAppel =
   | { ok: true; appelId: string; jeton: string; variables: VariablesDeLAppel; motsCles: string[] }
@@ -57,6 +57,8 @@ export async function demarrerAppelTelephone(
   await exigerOperateur();
   const preparation = await preparerAppel(entrepriseId, prospectId, versionScriptId);
   if (!preparation.ok) return preparation;
+  const refus = await refusDuPont();
+  if (refus) return { ok: false, raison: refus };
 
   await rafraichirSiAncien();
   const [appel] = await db

@@ -31,6 +31,13 @@ export async function commanderPont(chemin: string, corps?: unknown): Promise<Re
   }
 }
 
+/** La raison si le plafond d'appels du pont est atteint (ou si le pont ne répond pas), sinon null. */
+export async function refusDuPont(): Promise<string | null> {
+  const etat = await commanderPont('/etat');
+  if (!etat.ok) return etat.raison;
+  return typeof etat.corps.plafond === 'string' ? etat.corps.plafond : null;
+}
+
 /**
  * Relaie un flux du pont (fil d'un appel, écoute) à l'opérateur. Ces routes restent derrière l'identité
  * Tailscale : le navigateur ne parle jamais directement au pont.

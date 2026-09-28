@@ -33,6 +33,7 @@ from gi.repository import GLib
 from .appairage import Appairage
 from .appel import Appel, Journal
 from .ofono import Telephone, dans_glib
+from .plafond import Plafond
 
 
 class RappelsWeb:
@@ -94,6 +95,11 @@ class Service:
         self._secret = cles["PONT_SECRET"]
         self._web = cles.get("WEB_URL", "http://127.0.0.1:3020")
         self._dossier = racine / "data" / "pont"
+        self._plafond = Plafond(
+            self._dossier / "historique-appels.json",
+            int(cles.get("PONT_APPELS_PAR_HEURE", "15")),
+            int(cles.get("PONT_APPELS_PAR_JOUR", "50")),
+        )
         self.journal = Journal()
         dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
         self._bus = dbus.SystemBus()
@@ -130,7 +136,7 @@ class Service:
     # --- opérations ------------------------------------------------------------------------------
 
     def etat(self) -> dict[str, Any]:
-        return dans_glib(self._telephone.etat)
+        return {**dans_glib(self._telephone.etat), "plafond": self._plafond.refus()}
 
     def appeler(self, corps: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         appel_id = str(corps.get("appelId", ""))
@@ -139,6 +145,8 @@ class Service:
         with self._verrou:
             if not self._telephone.libre():
                 return 409, {"erreur": "Un appel est déjà en cours sur le téléphone."}
+            if raison := self._plafond.refus():
+                return 429, {"erreur": raison}
             rappels = RappelsWeb(self._web, self._secret, appel_id, self.journal)
             appel = Appel(
                 self._telephone,
@@ -156,6 +164,7 @@ class Service:
             except Exception as e:
                 appel.journal("composition impossible :", e)
                 return 503, {"erreur": f"Composition impossible : {e}"}
+            self._plafond.compter()
             self._appels[appel_id] = appel
             threading.Thread(target=self._oublier_a_la_fin, args=(appel_id,), daemon=True).start()
         return 202, {"ok": True}

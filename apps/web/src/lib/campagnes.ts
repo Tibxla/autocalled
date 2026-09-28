@@ -5,7 +5,7 @@ import { db } from '@/db';
 import { appels, campagnes } from '@/db/schema';
 import { preparerAppel, simulerAppel } from './appels';
 import { jetonConversation } from './elevenlabs';
-import { commanderPont } from './pont';
+import { commanderPont, refusDuPont } from './pont';
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -117,6 +117,11 @@ export const PAUSE_ENTRE_APPELS_MS = 5000;
  * (route /api/pont/…/fin) clôt l'entrée et rappelle cette fonction, qui relit l'état (pause possible).
  */
 export async function appelerSuivantTelephone(campagneId: string): Promise<void> {
+  // Plafond atteint ou pont absent : pause, sans consommer le prospect suivant.
+  if (await refusDuPont()) {
+    await suspendreSiEnCours(campagneId);
+    return;
+  }
   const suivant = await avecCampagne<{ appelId: string; numero: string; variables: VariablesDeLAppel; motsCles: string[] } | null>(
     campagneId,
     async (campagne, tx) => {
@@ -160,6 +165,10 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
   // vider toute la file en échecs.
   await db.update(appels).set({ statut: 'echec', erreur: reponse.raison, finLe: new Date() }).where(eq(appels.id, suivant.appelId));
   await clore(campagneId, suivant.appelId);
+  await suspendreSiEnCours(campagneId);
+}
+
+async function suspendreSiEnCours(campagneId: string): Promise<void> {
   try {
     await avecCampagne(campagneId, async (c) => ({ campagne: mettreEnPause(c), resultat: null }));
   } catch (erreur) {

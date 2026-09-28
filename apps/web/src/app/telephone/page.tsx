@@ -14,6 +14,7 @@ type EtatTelephone = {
   signal?: number;
   batterie?: number;
   appelEnCours: boolean;
+  plafond: string | null;
 };
 
 export default async function PageTelephone() {
@@ -49,6 +50,7 @@ export default async function PageTelephone() {
                 <dt className="text-sm text-encre-3">Ligne</dt>
                 <dd>{telephone.appelEnCours ? <span className="text-antenne">Appel en cours</span> : 'Libre'}</dd>
               </dl>
+              {telephone.plafond ? <Message ton="alerte">{telephone.plafond}</Message> : null}
               {telephone.signal !== undefined && telephone.signal < 40 ? (
                 <Message ton="neutre">Signal faible : la voix risque de se dégrader. Rapproche le téléphone d’une fenêtre.</Message>
               ) : null}
