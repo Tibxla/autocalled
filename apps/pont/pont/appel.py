@@ -18,7 +18,10 @@ from .audio import Pont, temps_de_reponse
 from .ofono import Telephone, dans_glib
 
 SILENCE_AU_DECROCHE_S = 2.0  # sans voix du prospect passé ce délai, Mina ouvre par « Allô ? »
-DELAI_CANAL_SON_S = 3.0  # le canal son s'ouvre normalement moins d'une seconde après la composition
+# Le canal son s'ouvre entre 0,5 s (réseau mobile) et 3,5 s (appels Wi-Fi) après la composition : on ne conclut à
+# une panne qu'après 10 s, ou 3 s après le décroché (constat du 28/09).
+DELAI_CANAL_SON_S = 10.0
+DELAI_CANAL_APRES_DECROCHE_S = 3.0
 DUREE_MAX_S = 6 * 60  # au-delà du plafond de l'agent (300 s) : filet si la fin de session se perd
 
 
@@ -186,6 +189,8 @@ class Appel:
     def etat_change(self, etat: str) -> None:
         self.journal("appel :", etat)
         self._evenement("etat", {"etat": etat})
+        if etat == "active" and not self._canal:
+            GLib.timeout_add(int(DELAI_CANAL_APRES_DECROCHE_S * 1000), self._verifier_canal)
         if etat == "active" and not self._session:
             self._decroche = time.monotonic()
             self._session = True
@@ -205,7 +210,7 @@ class Appel:
     # --- déroulé ---------------------------------------------------------------------------------
 
     def _verifier_canal(self) -> bool:
-        if self._en_ligne and not self._canal and not self._session:
+        if self._en_ligne and not self._canal and not self._relance and not self._canal_absent:
             if self._tentatives < 2:
                 self.journal("canal son absent : on raccroche, on reconnecte le téléphone et on recompose")
                 self._relance = True

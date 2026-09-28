@@ -31,6 +31,13 @@ if ! grep -q '^PONT_SECRET=.\+' "$racine/.env"; then
   echo "PONT_SECRET=$(openssl rand -hex 32)" >> "$racine/.env"
 fi
 
+# Redémarrer le pont coupe l'appel en cours, dont la fin n'atteindrait jamais l'application.
+secret="$(grep '^PONT_SECRET=' "$racine/.env" | cut -d= -f2-)"
+if curl -s -m 3 -H "Authorization: Bearer $secret" http://127.0.0.1:3021/etat 2>/dev/null | grep -q '"appelEnCours": true'; then
+  echo "✗ Un appel est en cours sur le téléphone passerelle : relance ce script une fois la ligne libre."
+  exit 1
+fi
+
 echo "→ service utilisateur autocalled-pont"
 mkdir -p ~/.config/systemd/user
 sed "s|@RACINE@|$racine|g" "$racine/deploy/systemd/autocalled-pont.service.modele" > ~/.config/systemd/user/autocalled-pont.service

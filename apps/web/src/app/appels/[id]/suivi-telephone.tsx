@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { raccrocherAppelTelephone } from '@/app/appels/actions';
 import { Bouton, Message } from '@/components/ui';
+import { BoutonRelancer } from './bouton-relancer';
 import { definirEtatLigne } from '@/lib/etat-ligne';
 
 type Tour = { role: 'agent' | 'prospect'; texte: string };
@@ -91,6 +92,7 @@ export function SuiviTelephone({ appelId }: { appelId: string }) {
   const [tours, setTours] = useState<Tour[]>([]);
   const [erreur, setErreur] = useState<string | null>(null);
   const [raccrochage, setRaccrochage] = useState(false);
+  const [perdu, setPerdu] = useState(false);
   const fil = useRef<HTMLOListElement>(null);
   const ecoute = useEcoute(appelId);
 
@@ -114,6 +116,7 @@ export function SuiviTelephone({ appelId }: { appelId: string }) {
     source.onerror = () => {
       if (source.readyState !== EventSource.CLOSED) return;
       definirEtatLigne('libre');
+      setPerdu(true);
       router.refresh();
     };
     return () => {
@@ -127,6 +130,20 @@ export function SuiviTelephone({ appelId }: { appelId: string }) {
   }, [tours]);
 
   const enLigne = etat !== 'termine' && etat !== 'disconnected';
+
+  // Le pont ne connaît pas (ou plus) cet appel alors qu'il est toujours « en cours » ici : la fin ne nous est
+  // jamais parvenue (pont redémarré pendant l'appel, par exemple). On propose de rapatrier la conversation.
+  if (perdu) {
+    return (
+      <div className="grid justify-items-start gap-3">
+        <Message ton="neutre">
+          Le pont ne suit plus cet appel : il a sans doute été coupé (pont redémarré pendant l’appel). Tu peux rapatrier ce qu’ElevenLabs
+          en a gardé.
+        </Message>
+        <BoutonRelancer appelId={appelId} libelle="Récupérer l’appel" />
+      </div>
+    );
+  }
 
   return (
     <div className="grid gap-5">

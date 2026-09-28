@@ -81,13 +81,7 @@ export default async function PageAppel({ params }: { params: Promise<{ id: stri
         </p>
       </div>
 
-      {appel.statut === 'en-cours' && appel.ligne === 'bluetooth' ? (
-        <div className="grid justify-items-start gap-6">
-          <SuiviTelephone appelId={appel.id} />
-          {/* Filet si la fin de l'appel n'est jamais arrivée à l'application (redémarrage pendant l'appel). */}
-          <BoutonRelancer appelId={appel.id} libelle="Récupérer l’appel" />
-        </div>
-      ) : null}
+      {appel.statut === 'en-cours' && appel.ligne === 'bluetooth' ? <SuiviTelephone appelId={appel.id} /> : null}
       {appel.statut === 'en-cours' && appel.ligne !== 'bluetooth' ? (
         <div className="grid justify-items-start gap-3">
           <Message ton="neutre">Appel en cours ou interrompu sans avoir été clos.</Message>

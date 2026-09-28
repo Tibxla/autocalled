@@ -36,5 +36,5 @@ Point de reprise pour la prochaine session de travail. À tenir à jour à chaqu
 - Les imports du domaine sont en `.ts` : Turbopack ne remappe pas `.js`.
 - En simulation, ElevenLabs invente la réponse des outils client ; les transcriptions simulées en voix v3 contiennent des mots coupés. Ce n'est pas le comportement des vrais appels.
 - `playwright-cli` dans une boucle shell avale l'entrée standard : passer par un script ou `</dev/null`.
-- Chaque redémarrage du pont reconnecte le téléphone (pour annoncer le mSBC) : l'éviter pendant qu'il sert.
+- Chaque redémarrage du pont reconnecte le téléphone (pour annoncer le mSBC) et coupe l'appel en cours, dont la fin n'atteint jamais l'application : vérifier `appelEnCours` (GET /etat) avant, comme le fait `scripts/installer-pont.sh`.
 - `pkill -f <motif>` dans une commande dont le texte contient ce motif se tue lui-même : viser le PID.
