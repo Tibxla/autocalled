@@ -4,7 +4,7 @@ import { after } from 'next/server';
 import { db } from '@/db';
 import { appels } from '@/db/schema';
 import { traiterAppel } from '@/lib/appels';
-import { appelerSuivantTelephone, clore, PAUSE_ENTRE_APPELS_MS } from '@/lib/campagnes';
+import { appelerSuivantTelephone, clore, pauseEntreAppelsMs } from '@/lib/campagnes';
 import { refusPont, requeteDuPont } from '@/lib/pont';
 
 /**
@@ -40,7 +40,8 @@ export async function POST(requete: Request, { params }: { params: Promise<{ id:
       } catch (erreur) {
         if (!(erreur instanceof TransitionInvalide)) throw erreur; // déjà close (entrée reprise à la main)
       }
-      await new Promise((r) => setTimeout(r, PAUSE_ENTRE_APPELS_MS));
+      const pause = await pauseEntreAppelsMs();
+      await new Promise((r) => setTimeout(r, pause));
       await appelerSuivantTelephone(campagneId);
     });
   }

@@ -31,6 +31,14 @@ export async function commanderPont(chemin: string, corps?: unknown): Promise<Re
   }
 }
 
+export type ReglagesLigne = { appelsParHeure: number; appelsParJour: number; pauseEntreAppelsS: number };
+
+/** Réglages de la ligne téléphone, gardés par le pont ; null s'il ne répond pas. */
+export async function reglagesDuPont(): Promise<ReglagesLigne | null> {
+  const etat = await commanderPont('/etat');
+  return etat.ok ? ((etat.corps.reglages as ReglagesLigne | undefined) ?? null) : null;
+}
+
 /** La raison si le plafond d'appels du pont est atteint (ou si le pont ne répond pas), sinon null. */
 export async function refusDuPont(): Promise<string | null> {
   const etat = await commanderPont('/etat');

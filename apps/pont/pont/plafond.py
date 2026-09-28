@@ -13,12 +13,15 @@ from pathlib import Path
 class Plafond:
     def __init__(self, fichier: Path, par_heure: int, par_jour: int):
         self._fichier = fichier
-        self._limites = ((3600, par_heure, "par heure"), (86400, par_jour, "par jour"))
         self._verrou = threading.Lock()
+        self.regler(par_heure, par_jour)
         try:
             self._appels: list[float] = json.loads(fichier.read_text())
         except (OSError, ValueError):
             self._appels = []
+
+    def regler(self, par_heure: int, par_jour: int) -> None:
+        self._limites = ((3600, par_heure, "par heure"), (86400, par_jour, "par jour"))
 
     def refus(self, maintenant: float | None = None) -> str | None:
         """La raison du refus si un appel de plus dépasserait le plafond, sinon None."""

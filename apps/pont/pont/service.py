@@ -12,6 +12,7 @@ présente le même secret à l'application quand il la rappelle (`$WEB_URL/api/p
     POST /appairage                   {adresse} : ouvre la fenêtre, filtrée sur cette adresse
     POST /appairage/fermer
     POST /telephone/oublier           {adresse}
+    POST /reglages                    {appelsParHeure, appelsParJour, pauseEntreAppelsS}
 """
 import hmac
 import json
@@ -34,6 +35,7 @@ from .appairage import Appairage
 from .appel import Appel, Journal
 from .ofono import Telephone, dans_glib
 from .plafond import Plafond
+from .reglages import Reglages
 
 
 class RappelsWeb:
@@ -95,10 +97,11 @@ class Service:
         self._secret = cles["PONT_SECRET"]
         self._web = cles.get("WEB_URL", "http://127.0.0.1:3020")
         self._dossier = racine / "data" / "pont"
+        self._reglages = Reglages(self._dossier / "reglages.json", cles)
         self._plafond = Plafond(
             self._dossier / "historique-appels.json",
-            int(cles.get("PONT_APPELS_PAR_HEURE", "15")),
-            int(cles.get("PONT_APPELS_PAR_JOUR", "50")),
+            self._reglages.valeurs["appelsParHeure"],
+            self._reglages.valeurs["appelsParJour"],
         )
         self.journal = Journal()
         dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
@@ -136,7 +139,16 @@ class Service:
     # --- opérations ------------------------------------------------------------------------------
 
     def etat(self) -> dict[str, Any]:
-        return {**dans_glib(self._telephone.etat), "plafond": self._plafond.refus()}
+        return {**dans_glib(self._telephone.etat), "plafond": self._plafond.refus(), "reglages": self._reglages.valeurs}
+
+    def regler(self, corps: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        try:
+            valeurs = self._reglages.modifier(corps)
+        except ValueError as e:
+            return 400, {"erreur": str(e)}
+        self._plafond.regler(valeurs["appelsParHeure"], valeurs["appelsParJour"])
+        self.journal("réglages modifiés :", valeurs)
+        return 200, valeurs
 
     def appeler(self, corps: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         appel_id = str(corps.get("appelId", ""))
@@ -306,6 +318,8 @@ class Service:
                     self._repondre(*service.appairage("ouvrir", corps))
                 elif self.path == "/appairage/fermer":
                     self._repondre(*service.appairage("fermer", corps))
+                elif self.path == "/reglages":
+                    self._repondre(*service.regler(corps))
                 elif self.path == "/telephone/oublier":
                     self._repondre(*service.appairage("oublier", corps))
                 else:

@@ -33,3 +33,18 @@ export async function oublierTelephone(adresse: string): Promise<{ ok: true } | 
   revalidatePath('/telephone');
   return r.ok ? { ok: true } : r;
 }
+
+/** Garde-fous de la ligne : plafonds d'appels et pause entre deux appels de campagne, validés par le pont. */
+export async function enregistrerReglages(
+  _: { message: string | null; ok: boolean },
+  donnees: FormData,
+): Promise<{ message: string | null; ok: boolean }> {
+  await exigerOperateur();
+  const r = await commanderPont('/reglages', {
+    appelsParHeure: donnees.get('appelsParHeure'),
+    appelsParJour: donnees.get('appelsParJour'),
+    pauseEntreAppelsS: donnees.get('pauseEntreAppelsS'),
+  });
+  revalidatePath('/telephone');
+  return r.ok ? { message: 'Réglages enregistrés.', ok: true } : { message: r.raison, ok: false };
+}

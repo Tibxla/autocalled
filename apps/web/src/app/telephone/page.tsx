@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { EnTetePage, Message, TitreSection } from '@/components/ui';
-import { commanderPont } from '@/lib/pont';
+import { commanderPont, type ReglagesLigne } from '@/lib/pont';
 import type { Appairage } from './actions';
+import { FormulaireReglages } from './formulaire-reglages';
 import { BoutonOublier, PanneauAppairage } from './panneau-appairage';
 
 export const metadata: Metadata = { title: 'Téléphone' };
@@ -15,6 +16,7 @@ type EtatTelephone = {
   batterie?: number;
   appelEnCours: boolean;
   plafond: string | null;
+  reglages: ReglagesLigne;
 };
 
 export default async function PageTelephone() {
@@ -60,6 +62,17 @@ export default async function PageTelephone() {
             <p className="text-encre-2">Aucun téléphone connecté. Allume le Bluetooth du téléphone passerelle, ou appaire-en un ci-dessous.</p>
           )}
         </section>
+
+        {telephone ? (
+          <section className="grid gap-5">
+            <TitreSection>Garde-fous</TitreSection>
+            <p className="max-w-[62ch] text-encre-2">
+              Des rafales d’appels courts ou sans réponse font signaler un numéro comme démarchage. Le pont refuse de composer au-delà de ces
+              plafonds ; une campagne se met alors en pause sans sauter de prospect.
+            </p>
+            <FormulaireReglages reglages={telephone.reglages} />
+          </section>
+        ) : null}
 
         {etat.ok ? (
           <section className="grid gap-5">

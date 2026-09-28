@@ -5,7 +5,7 @@ import { db } from '@/db';
 import { appels, campagnes } from '@/db/schema';
 import { preparerAppel, simulerAppel } from './appels';
 import { jetonConversation } from './elevenlabs';
-import { commanderPont, refusDuPont } from './pont';
+import { commanderPont, reglagesDuPont, refusDuPont } from './pont';
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -109,8 +109,10 @@ export async function derouleSimulation(campagneId: string): Promise<void> {
   }
 }
 
-/** Pause entre deux appels téléphone d'une campagne, comme le décompte de la ligne navigateur. */
-export const PAUSE_ENTRE_APPELS_MS = 5000;
+/** Pause entre deux appels téléphone d'une campagne, réglée sur la page Téléphone (5 s par défaut). */
+export async function pauseEntreAppelsMs(): Promise<number> {
+  return ((await reglagesDuPont())?.pauseEntreAppelsS ?? 5) * 1000;
+}
 
 /**
  * Ligne téléphone : le serveur enchaîne, un appel à la fois. Le pont compose ; la fin de l'appel
