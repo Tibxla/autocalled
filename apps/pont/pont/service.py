@@ -9,7 +9,8 @@ présente le même secret à l'application quand il la rappelle (`$WEB_URL/api/p
     GET  /appels/<id>/evenements      fil de l'appel en SSE (états, tours de parole), rejoué depuis le début
     GET  /appels/<id>/ecoute          prospect et Mina mélangés, PCM 16 bits mono (taux dans x-taux)
     GET  /appairage                   la fenêtre d'appairage et son code
-    POST /appairage                   {adresse} : ouvre la fenêtre, filtrée sur cette adresse
+    POST /appairage                   {adresse, remplacer?} : ouvre la fenêtre, filtrée sur cette adresse ;
+                                      le téléphone `remplacer` est oublié dès que le nouveau est appairé
     POST /appairage/fermer
     POST /telephone/oublier           {adresse}
     POST /reglages                    {appelsParHeure, appelsParJour, pauseEntreAppelsS}
@@ -191,7 +192,8 @@ class Service:
     def appairage(self, action: str, corps: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         try:
             if action == "ouvrir":
-                return 200, dans_glib(lambda: self._appairage.ouvrir(str(corps.get("adresse", ""))))
+                remplacer = corps.get("remplacer")
+                return 200, dans_glib(lambda: self._appairage.ouvrir(str(corps.get("adresse", "")), remplacer and str(remplacer)))
             if action == "fermer":
                 return 200, dans_glib(self._appairage.fermer)
             if action == "oublier":

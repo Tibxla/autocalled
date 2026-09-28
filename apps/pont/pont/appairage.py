@@ -85,6 +85,7 @@ class Appairage:
         self.adresse: str | None = None
         self.suffixe = ""
         self.code: str | None = None
+        self._remplace: str | None = None  # téléphone à oublier dès que le nouveau est appairé
         self._fin = 0.0
         bus.add_signal_receiver(
             self._proprietes, "PropertiesChanged", "org.freedesktop.DBus.Properties", "org.bluez", path_keyword="chemin"
@@ -108,11 +109,15 @@ class Appairage:
             resume["restantS"] = max(0, round(self._fin - time.monotonic()))
         return resume
 
-    def ouvrir(self, adresse: str) -> dict[str, Any]:
+    def ouvrir(self, adresse: str, remplacer: str | None = None) -> dict[str, Any]:
         adresse = adresse.strip().upper()
         if not ADRESSE.match(adresse):
             raise ValueError("adresse Bluetooth attendue sous la forme 12:34:56:78:9A:BC")
+        remplacer = (remplacer or "").strip().upper() or None
+        if remplacer and not ADRESSE.match(remplacer):
+            raise ValueError("adresse du téléphone à remplacer invalide")
         self.fermer()
+        self._remplace = remplacer if remplacer != adresse else None
         self.adresse, self.suffixe, self.code = adresse, "dev_" + adresse.replace(":", "_"), None
         self._agent = _Agent(self._bus, self)
         gestionnaire = dbus.Interface(self._bus.get_object("org.bluez", "/org/bluez"), "org.bluez.AgentManager1")
@@ -178,3 +183,9 @@ class Appairage:
             )
             self.journal("téléphone appairé et marqué de confiance :", self.adresse)
             self.fermer("reussi")
+            if self._remplace:
+                try:
+                    self.oublier(self._remplace)
+                except (dbus.DBusException, RuntimeError, ValueError) as e:
+                    self.journal("ancien téléphone non oublié :", e)
+                self._remplace = None

@@ -2,7 +2,19 @@
 
 import { revalidatePath } from 'next/cache';
 import { exigerOperateur } from '@/lib/garde';
-import { commanderPont } from '@/lib/pont';
+import { commanderPont, type ReglagesLigne } from '@/lib/pont';
+
+export type EtatTelephone = {
+  connecte: boolean;
+  nom?: string;
+  adresse?: string;
+  operateur?: string;
+  signal?: number;
+  batterie?: number;
+  appelEnCours: boolean;
+  plafond: string | null;
+  reglages: ReglagesLigne;
+};
 
 export type Appairage = { etat: 'ferme' | 'ouvert' | 'reussi' | 'expire'; adresse: string | null; code: string | null; restantS?: number };
 type Resultat<T> = { ok: true; valeur: T } | { ok: false; raison: string };
@@ -13,9 +25,12 @@ async function appairage(chemin: string, corps?: unknown): Promise<Resultat<Appa
   return r.ok ? { ok: true, valeur: r.corps as unknown as Appairage } : r;
 }
 
-/** Ouvre la fenêtre d'appairage (trois minutes), filtrée sur l'adresse Bluetooth du téléphone. */
-export async function ouvrirAppairage(adresse: string) {
-  return appairage('/appairage', { adresse });
+/**
+ * Ouvre la fenêtre d'appairage (trois minutes), filtrée sur l'adresse Bluetooth du téléphone. Pour changer
+ * de téléphone, `remplacer` est l'adresse de l'ancien : le pont l'oublie dès que le nouveau est appairé.
+ */
+export async function ouvrirAppairage(adresse: string, remplacer: string | null = null) {
+  return appairage('/appairage', { adresse, remplacer });
 }
 
 export async function lireAppairage() {
