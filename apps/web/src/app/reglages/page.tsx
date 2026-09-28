@@ -85,6 +85,8 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
                   <span className="text-sm text-encre-3">
                     {rdv.statut === 'cree' ? 'Dans l’agenda' : rdv.statut === 'a-creer' ? 'Inscription…' : <BoutonRecreer rendezVousId={rdv.id} />}
                   </span>
+                  {rdv.email ? <span className="col-span-3 -mt-2 font-mono text-sm text-encre-3">{rdv.email}</span> : null}
+                  {rdv.erreur ? <span className="col-span-3 text-sm text-antenne">{rdv.erreur}</span> : null}
                 </li>
               ))}
             </ul>

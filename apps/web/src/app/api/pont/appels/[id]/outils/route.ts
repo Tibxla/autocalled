@@ -9,7 +9,7 @@ export async function POST(requete: Request, { params }: { params: Promise<{ id:
   const { outil, parametres = {} } = (await requete.json()) as { outil?: string; parametres?: Record<string, unknown> };
   let resultat: unknown;
   if (outil === 'proposer_creneaux') resultat = await proposerPourAppel(id);
-  else if (outil === 'reserver_creneau') resultat = await reserverPourAppel(id, parametres.debut, parametres.email);
+  else if (outil === 'reserver_creneau') resultat = await reserverPourAppel(id, parametres.debut, parametres.email, parametres.adresse_confirmee);
   else return Response.json({ erreur: 'outil inconnu' }, { status: 400 });
   return Response.json({ resultat: JSON.stringify(resultat) });
 }

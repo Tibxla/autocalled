@@ -1,6 +1,6 @@
 import 'server-only';
 import { creerEvenement, creneauParle, listerCalendriers, occupations as occupationsApi } from '@autocalled/agenda';
-import { type Intervalle, type PlageHoraire, type ReglesRendezVous, estReservable, occupationsDepuisLibres, proposerCreneaux } from '@autocalled/domain';
+import { type Intervalle, type PlageHoraire, type ReglesRendezVous, epelerAdresse, estReservable, occupationsDepuisLibres, proposerCreneaux } from '@autocalled/domain';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { after } from 'next/server';
@@ -145,11 +145,48 @@ export async function proposerPourAppel(appelId: string): Promise<unknown> {
   };
 }
 
-export async function reserverPourAppel(appelId: string, debutBrut: unknown, emailBrut?: unknown): Promise<unknown> {
+/**
+ * Réservation d'un créneau par Mina. L'adresse de l'invitation passe par deux appels : le premier renvoie son
+ * épellation, produite ici à partir de l'adresse qui sera utilisée, que Mina relit au prospect ; le second,
+ * avec `adresseConfirmee`, réserve. Une consigne du prompt ne suffisait pas (appel du 28/09 : adresse mal
+ * entendue, réservée sans relecture, puis correction du prospect ignorée).
+ */
+export async function reserverPourAppel(appelId: string, debutBrut: unknown, emailBrut?: unknown, confirmeeBrut?: unknown): Promise<unknown> {
   const c = await contexteAppel(appelId);
   if (!c) return { reserve: false, raison: 'Appel inconnu.' };
+
+  const saisie = typeof emailBrut === 'string' ? emailBrut.trim().toLowerCase() : '';
+  const lu = z.email().safeParse(saisie);
+  const email = lu.success ? lu.data : null;
+  const confirmee = confirmeeBrut === true || confirmeeBrut === 'true';
+  if (saisie && !email) {
+    return { reserve: false, raison: 'Adresse incomplète ou illisible : redemande-la au prospect, en lui faisant épeler la partie avant l’arobase.' };
+  }
+
   const [deja] = await db.select().from(rendezVous).where(eq(rendezVous.appelId, appelId));
-  if (deja) return { reserve: true, libelle: creneauParle(deja.debut, c.regles.fuseau), note: 'Déjà réservé pendant cet appel.' };
+  if (deja) {
+    if (email && email !== deja.email) {
+      // L'invitation est déjà partie à l'ancienne adresse : on ne la change pas en silence, l'opérateur la renvoie.
+      await db
+        .update(rendezVous)
+        .set({ erreur: `Adresse corrigée par le prospect après la réservation : ${email}. Invitation à renvoyer à cette adresse.` })
+        .where(eq(rendezVous.id, deja.id));
+      return {
+        reserve: true,
+        libelle: creneauParle(deja.debut, c.regles.fuseau),
+        invitation: `déjà envoyée à ${deja.email ?? 'aucune adresse'} ; la correction est notée`,
+        a_dire: 'Dis au prospect que la correction est bien notée et qu’on lui renverra l’invitation à la bonne adresse. Ne dis pas qu’elle est déjà corrigée.',
+      };
+    }
+    return { reserve: true, libelle: creneauParle(deja.debut, c.regles.fuseau), note: 'Déjà réservé pendant cet appel.' };
+  }
+
+  if (email && !confirmee) {
+    return {
+      reserve: false,
+      a_faire: `Relis l'adresse au prospect telle qu'elle sera utilisée, lettre par lettre : « ${epelerAdresse(email)} ». S'il dit oui, rappelle reserver_creneau avec la même adresse et adresse_confirmee à true. S'il corrige, rappelle avec l'adresse corrigée, sans adresse_confirmee.`,
+    };
+  }
 
   const debut = new Date(String(debutBrut ?? ''));
   if (Number.isNaN(debut.getTime())) return { reserve: false, raison: 'Créneau illisible : utilise la valeur debut renvoyée par proposer_creneaux.' };
@@ -163,8 +200,6 @@ export async function reserverPourAppel(appelId: string, debutBrut: unknown, ema
     return { reserve: false, raison: "Ce créneau vient d'être pris ou n'est pas autorisé.", alternatives };
   }
 
-  const lu = z.email().safeParse(typeof emailBrut === 'string' ? emailBrut.trim().toLowerCase() : '');
-  const email = lu.success ? lu.data : null;
   const [rdv] = await db.insert(rendezVous).values({ appelId, debut, fin, email }).returning({ id: rendezVous.id });
   // Une adresse confirmée au téléphone complète la fiche pour les appels suivants.
   if (email && !c.prospect.email) {

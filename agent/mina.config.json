@@ -71,7 +71,7 @@
           {
             "type": "client",
             "name": "reserver_creneau",
-            "description": "Réserve la visio au créneau choisi et envoie l'invitation à l'adresse confirmée. À appeler seulement après l'accord explicite du prospect.",
+            "description": "Réserve la visio au créneau choisi. Avec une adresse e-mail non confirmée, ne réserve pas : renvoie l'adresse épelée à relire au prospect. Réserve et envoie l'invitation quand adresse_confirmee est true, ou sans adresse. À appeler seulement après l'accord explicite du prospect sur le créneau.",
             "response_timeout_secs": 30,
             "disable_interruptions": false,
             "interruption_mode": "allow",
@@ -101,6 +101,15 @@
                 "email": {
                   "type": "string",
                   "description": "L'adresse e-mail confirmée par le prospect pour recevoir l'invitation à la visio. Vide s'il n'en donne pas.",
+                  "is_system_provided": false,
+                  "dynamic_variable": "",
+                  "allowed_values_dynamic_variable": "",
+                  "constant_value": "",
+                  "is_omitted": false
+                },
+                "adresse_confirmee": {
+                  "type": "boolean",
+                  "description": "true seulement quand le prospect a dit oui à la relecture lettre par lettre de cette adresse, renvoyée par un appel précédent de reserver_creneau.",
                   "is_system_provided": false,
                   "dynamic_variable": "",
                   "allowed_values_dynamic_variable": "",

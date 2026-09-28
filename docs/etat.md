@@ -27,7 +27,7 @@ Point de reprise pour la prochaine session de travail. À tenir à jour à chaqu
    - page Téléphone : appairage du téléphone dédié (et oubli de l'iPhone personnel) ;
    - enregistrement : la page d'appel prend celui d'ElevenLabs ; s'il manque, brancher le WAV stéréo du pont (`data/pont/<appelId>.wav`, converti en `enregistrements/<id>.mp3`), comme le promet l'ADR 0003.
    Diagnostic hors application, service arrêté : `apps/pont`, `python -m pont appeler | tester-son`.
-2. **E-mail dicté** : vérifier sur de vrais appels que Mina s'appuie sur l'épellation et relit l'adresse lettre par lettre avant de réserver (règle ajoutée après une adresse mal transcrite).
+2. **E-mail dicté** : depuis le 28/09, c'est `reserver_creneau` qui impose la relecture (il renvoie l'adresse épelée, et ne réserve qu'avec `adresse_confirmee`), et une correction après réservation est notée sur le rendez-vous (Réglages) au lieu d'être ignorée. À revérifier sur un appel : Mina relit bien l'épellation renvoyée avant de réserver.
 3. **Invitation réelle** : tester l'envoi avec sa propre adresse, puis supprimer l'événement.
 4. Voir aussi `docs/future-improvements.md`.
 

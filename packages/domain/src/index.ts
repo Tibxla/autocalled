@@ -7,3 +7,4 @@ export * from './issues.ts';
 export * from './bilan.ts';
 export * from './variables.ts';
 export * from './analyse.ts';
+export * from './epellation.ts';

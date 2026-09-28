@@ -25,6 +25,9 @@ registerHooks({
       base = fileURLToPath(new URL(specifier, context.parentURL));
     }
     const fichier = base && versFichier(base);
-    return fichier ? suivant(pathToFileURL(fichier).href, context) : suivant(specifier, context);
+    if (fichier) return suivant(pathToFileURL(fichier).href, context);
+    // Les sous-chemins de Next (`next/server`…) n'ont pas d'entrée `exports` : Node les veut avec l'extension.
+    if (/^next\/[a-z-]+$/.test(specifier)) return suivant(`${specifier}.js`, context);
+    return suivant(specifier, context);
   },
 });

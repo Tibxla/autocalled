@@ -99,7 +99,8 @@ function Conversation({
       overrides: { asr: { keywords: demarrage.motsCles } },
       clientTools: {
         proposer_creneaux: () => outilProposerCreneaux(id),
-        reserver_creneau: (parametres: { debut?: string; email?: string }) => outilReserverCreneau(id, parametres?.debut, parametres?.email),
+        reserver_creneau: (parametres: { debut?: string; email?: string; adresse_confirmee?: boolean }) =>
+          outilReserverCreneau(id, parametres?.debut, parametres?.email, parametres?.adresse_confirmee),
       },
     });
   }, [campagneId, conversation, entrepriseId, ouvrir, prospectId, versionScriptId]);
