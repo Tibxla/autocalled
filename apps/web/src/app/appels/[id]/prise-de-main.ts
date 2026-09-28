@@ -51,17 +51,26 @@ export function usePriseDeMain(appelId: string) {
       setErreur('Le navigateur n’a pas accès au micro : autorise-le pour parler au prospect.');
       return;
     }
-    const contexte = new AudioContext({ sampleRate: TAUX_MICRO });
-    const url = URL.createObjectURL(new Blob([CAPTURE], { type: 'text/javascript' }));
-    await contexte.audioWorklet.addModule(url);
-    URL.revokeObjectURL(url);
-    const source = contexte.createMediaStreamSource(micro);
-    const capture = new AudioWorkletNode(contexte, 'capture-operateur');
-    const silence = contexte.createGain();
-    silence.gain.value = 0; // le nœud doit être relié à la sortie pour tourner, sans qu'on s'entende soi-même
-    source.connect(capture).connect(silence).connect(contexte.destination);
-
-    const ws = new WebSocket(`wss://${location.host}/prise-en-main/appels/${appelId}`);
+    let contexte: AudioContext;
+    let capture: AudioWorkletNode;
+    let ws: WebSocket;
+    try {
+      contexte = new AudioContext({ sampleRate: TAUX_MICRO });
+      const url = URL.createObjectURL(new Blob([CAPTURE], { type: 'text/javascript' }));
+      await contexte.audioWorklet.addModule(url);
+      URL.revokeObjectURL(url);
+      const source = contexte.createMediaStreamSource(micro);
+      capture = new AudioWorkletNode(contexte, 'capture-operateur');
+      const silence = contexte.createGain();
+      silence.gain.value = 0; // le nœud doit être relié à la sortie pour tourner, sans qu'on s'entende soi-même
+      source.connect(capture).connect(silence).connect(contexte.destination);
+      ws = new WebSocket(`wss://${location.host}/prise-en-main/appels/${appelId}`);
+    } catch {
+      micro.getTracks().forEach((t) => t.stop());
+      setEtat('erreur');
+      setErreur('Impossible de préparer le son pour la prise de main (navigateur, ou page ouverte hors du tailnet).');
+      return;
+    }
     ws.binaryType = 'arraybuffer';
     let tauxProspect = TAUX_MICRO;
     let prochain = 0;

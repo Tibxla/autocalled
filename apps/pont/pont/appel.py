@@ -23,6 +23,7 @@ SILENCE_AU_DECROCHE_S = 2.0  # sans voix du prospect passé ce délai, Mina ouvr
 DELAI_CANAL_SON_S = 10.0
 DELAI_CANAL_APRES_DECROCHE_S = 3.0
 DUREE_MAX_S = 6 * 60  # au-delà du plafond de l'agent (300 s) : filet si la fin de session se perd
+DUREE_MAX_OPERATEUR_S = 60 * 60  # après une prise de main, l'opérateur parle aussi longtemps qu'il veut
 
 
 class Rappels(Protocol):
@@ -184,10 +185,17 @@ class Appel:
             self._prise_en_main = time.monotonic()
             fermer = self._session_ouverte and not self._fin_session
         self._pont.prendre_la_main()
+        GLib.timeout_add_seconds(DUREE_MAX_OPERATEUR_S, self._duree_max_operateur)
         self.journal("l'opérateur prend la main")
         self._evenement("etat", {"etat": "prise-en-main"})
         if fermer:
             self._conversation.end_session()  # hors du verrou : il rappelle _fin_de_session, qui le prend
+
+    def _duree_max_operateur(self) -> bool:
+        if self._en_ligne:
+            self.journal("durée maximale atteinte après la prise de main")
+            self._telephone.raccrocher()
+        return False
 
     @property
     def main_prise(self) -> bool:
@@ -262,7 +270,7 @@ class Appel:
             self._terminer("canal son absent")
 
     def _duree_max(self) -> bool:
-        if self._en_ligne:
+        if self._en_ligne and self._prise_en_main is None:
             self.journal("durée maximale atteinte")
             self._telephone.raccrocher()
         return False

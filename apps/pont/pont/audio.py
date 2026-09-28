@@ -34,6 +34,9 @@ ATTENTE_MAX_S = 5  # son du prospect gardé en attendant l'ouverture de la conve
 # Échelle d'écoute du 27/09 en mSBC : −19,5 dBFS sature, −29,5 et −39,5 sont nets. On vise environ −31 dBFS.
 GAIN_SORTIE = 10 ** (-18 / 20)
 PRISE_TAMPON_MS = 120  # avance accumulée avant de lire la voix de l'opérateur
+# Le contrôle automatique du volume de Chrome amène le micro vers −19 dBFS, le niveau qui saturait avec Mina :
+# même traitement, vers −30 dBFS. À recaler avec la mesure « voix opérateur » du relevé.
+GAIN_OPERATEUR = 10 ** (-10 / 20)
 
 
 def accepter(fd: int) -> None:
@@ -96,6 +99,7 @@ class Pont(AudioInterface):
         self._operateur_lance = False  # lecture entamée : le tampon a atteint son seuil depuis le dernier vide
         self._depuis_operateur: _Conversion | None = None
         self._prospect_seul: set[queue.Queue] = set()
+        self._energie_operateur: list[float] = []  # RMS des blocs reçus depuis le dernier relevé
         self._trames_voix = 0
         self._tampon_voix = bytearray()
         self._preparer_conversions()
@@ -158,6 +162,11 @@ class Pont(AudioInterface):
                 if time.monotonic() >= prochain_releve:
                     prochain_releve += 5
                     trames = f", trames {decodeur.trames} lues / {decodeur.perdues} perdues" if decodeur else ""
+                    if self._mode_operateur:
+                        parle = [e for e in self._energie_operateur if e > 100] or [0.0]
+                        self._energie_operateur.clear()
+                        rms = float(np.sqrt(np.mean(np.square(parle))))
+                        trames += f", voix opérateur {20 * np.log10(max(rms, 1) / 32768):.0f} dBFS"
                     self._journal(
                         f"son : {stats['lus']} o lus, {stats['ecrits']} o écrits, {stats['sautes']} écritures sautées{trames}"
                     )
@@ -249,7 +258,9 @@ class Pont(AudioInterface):
         """PCM 16 bits mono à 16 kHz venu du navigateur. Pas de GAIN_SORTIE : il est calé sur la voix de synthèse."""
         if not self._mode_operateur or self._depuis_operateur is None:
             return
-        echantillons = np.frombuffer(pcm16k[: len(pcm16k) // 2 * 2], dtype="<i2").astype(np.float32)
+        echantillons = np.frombuffer(pcm16k[: len(pcm16k) // 2 * 2], dtype="<i2").astype(np.float32) * GAIN_OPERATEUR
+        if len(echantillons):
+            self._energie_operateur.append(float(np.sqrt((echantillons**2).mean())))
         converti = _vers_pcm(self._depuis_operateur(echantillons))
         with self._verrou:
             self._operateur += converti
@@ -312,6 +323,8 @@ class Pont(AudioInterface):
     # --- interface attendue par le SDK ElevenLabs ------------------------------------------------
 
     def start(self, input_callback: Callable[[bytes], None]) -> None:
+        if self._mode_operateur:
+            return  # prise de main survenue pendant l'ouverture : plus rien ne va à ElevenLabs
         self._envoi = input_callback
 
     def stop(self) -> None:
