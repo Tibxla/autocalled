@@ -122,6 +122,11 @@ class Pont(AudioInterface):
         decodeur, encodeur = (msbc.Decodeur(), msbc.Encodeur()) if self._codec == MSBC else (None, None)
         a_ecrire = bytearray()  # octets prêts pour le canal (trames mSBC, ou PCM en CVSD)
         rec_g, rec_d = bytearray(), bytearray()
+        # Relevés toutes les 5 s : de quoi voir où le son coince (réception, décodage, écriture).
+        stats = {"lus": 0, "ecrits": 0, "sautes": 0}
+        prochain_releve = time.monotonic() + 5
+        ecriture = select.poll()
+        ecriture.register(fd, select.POLLOUT)
         try:
             os.set_blocking(fd, True)
             accepter(fd)
@@ -135,8 +140,20 @@ class Pont(AudioInterface):
                     pcm = self._pcm_sortant(msbc.OCTETS_PCM if encodeur else len(bloc) - len(a_ecrire))
                     rec_d += pcm
                     a_ecrire += encodeur.trame(pcm) if encodeur else pcm
-                os.write(fd, bytes(a_ecrire[: len(bloc)]))
+                # Une clé qui n'accepte plus les paquets ne doit pas figer la boucle : on saute l'écriture,
+                # la réception continue.
+                if ecriture.poll(20):
+                    stats["ecrits"] += os.write(fd, bytes(a_ecrire[: len(bloc)]))
+                else:
+                    stats["sautes"] += 1
                 del a_ecrire[: len(bloc)]
+                stats["lus"] += len(bloc)
+                if time.monotonic() >= prochain_releve:
+                    prochain_releve += 5
+                    trames = f", trames {decodeur.trames} lues / {decodeur.perdues} perdues" if decodeur else ""
+                    self._journal(
+                        f"son : {stats['lus']} o lus, {stats['ecrits']} o écrits, {stats['sautes']} écritures sautées{trames}"
+                    )
                 rec_g += entrant
                 n = min(len(rec_g), len(rec_d)) // 2 * 2
                 if n:

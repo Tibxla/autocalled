@@ -61,6 +61,7 @@ class Decodeur:
         self._sbc = _nouveau()
         self._tampon = bytearray()
         self._sortie = ctypes.create_string_buffer(OCTETS_PCM)
+        self.trames = self.perdues = 0  # relevés pour le journal du pont
 
     def decoder(self, octets: bytes) -> bytes:
         self._tampon += octets
@@ -68,7 +69,12 @@ class Decodeur:
         while True:
             i = self._debut_de_trame()
             if i < 0:
-                del self._tampon[: max(0, len(self._tampon) - 2)]
+                # Pas de trame lisible : chaque tranche de 60 octets reçue compte pour 7,5 ms de silence, pour
+                # que le temps continue de s'écouler (enregistrement, reconnaissance vocale).
+                while len(self._tampon) >= OCTETS_TRAME + 2:
+                    del self._tampon[:OCTETS_TRAME]
+                    pcm += bytes(OCTETS_PCM)
+                    self.perdues += 1
                 return bytes(pcm)
             if len(self._tampon) - i < 2 + OCTETS_SBC:
                 del self._tampon[:i]
@@ -79,7 +85,12 @@ class Decodeur:
             lus = _lib.sbc_decode(
                 ctypes.byref(self._sbc), trame, OCTETS_SBC, self._sortie, OCTETS_PCM, ctypes.byref(ecrits)
             )
-            pcm += self._sortie.raw[: ecrits.value] if lus > 0 and ecrits.value == OCTETS_PCM else bytes(OCTETS_PCM)
+            if lus > 0 and ecrits.value == OCTETS_PCM:
+                pcm += self._sortie.raw[: ecrits.value]
+                self.trames += 1
+            else:
+                pcm += bytes(OCTETS_PCM)
+                self.perdues += 1
 
     def _debut_de_trame(self) -> int:
         t = self._tampon
