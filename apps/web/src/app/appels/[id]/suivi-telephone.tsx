@@ -140,7 +140,7 @@ export function SuiviTelephone({ appelId }: { appelId: string }) {
           Le pont ne suit plus cet appel : il a sans doute été coupé (pont redémarré pendant l’appel). Tu peux rapatrier ce qu’ElevenLabs
           en a gardé.
         </Message>
-        <BoutonRelancer appelId={appelId} libelle="Récupérer l’appel" />
+        <BoutonRelancer appelId={appelId} libelle="Rapatrier la conversation et le bilan" />
       </div>
     );
   }
