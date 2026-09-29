@@ -11,7 +11,7 @@ import { type Issue, noterConfirmation, refus } from './outil';
 
 /**
  * Confirmation humaine des gestes irréversibles ou dits au prospect (ADR 0009, ADR 0010) : faire sonner le
- * téléphone, révoquer un numéro, supprimer une fiche ou une entreprise, renvoyer une invitation, desserrer les
+ * téléphone, révoquer un numéro, effacer une personne, supprimer une entreprise, renvoyer une invitation, desserrer les
  * plafonds de la ligne, pousser la configuration de l'assistante, changer son nom ou son premier message.
  *
  * Le modèle peut être manipulé par ce qu'il lit (une transcription d'appel est la parole d'un tiers, ADR 0005) :

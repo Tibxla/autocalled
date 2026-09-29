@@ -28,6 +28,18 @@ _Avoid_ : démo publique, mode invité
 Personne démarchée pour le compte d'une entreprise, décrite par une fiche durable (nom, société, rôle, contexte) qui accumule l'historique de ses appels. Appartient à une seule entreprise et sonne sur un numéro autorisé, que plusieurs prospects peuvent partager.
 _Avoid_ : client, contact, lead, cible
 
+**Prospect archivé** :
+Prospect retiré des listes et des choix de campagne, qui n'est plus appelé tant qu'il l'est ; s'il attendait dans une file, il en est retiré. Ses appels, ses bilans et le consentement de son numéro restent, et la réactivation le fait revenir (dans aucune file). Un réimport de sa fiche ne le réactive pas.
+_Avoid_ : supprimé, désactivé, masqué
+
+**Effacement** :
+La suppression, à la demande d'une personne, de tout ce qu'Autocalled garde d'elle : fiche, appels, transcriptions, bilans, enregistrements, rendez-vous, places en file, consentement et mentions au journal de Claude Code. Irréversible et confirmé. Seule reste l'empreinte de son numéro dans la liste d'opposition. Les autres prospects qui portent le même numéro ne sont pas effacés, mais ne sont plus appelables.
+_Avoid_ : suppression, purge, anonymisation
+
+**Liste d'opposition** :
+Les empreintes irréversibles des numéros des personnes effacées : un numéro qui s'y trouve n'est plus jamais importé, autorisé ni composé. Elle ne contient aucun numéro en clair et ne se vide pas.
+_Avoid_ : blacklist, liste noire, liste rouge
+
 **Fiche prospect** :
 Fichier Markdown d'un prospect : un en-tête (nom, société, rôle, numéro) et un contexte libre. Le nom du fichier identifie le prospect dans son entreprise ; le réimporter met la fiche à jour.
 _Avoid_ : CSV, profil, contact
@@ -153,7 +165,7 @@ _Avoid_ : takeover, transfert, reprise
 ## Pilotage par Claude Code
 
 **Confirmation** :
-L'accord que l'opérateur donne lui-même, sur une question rédigée par le serveur, avant un geste qui fait sonner un téléphone, révoque un numéro, supprime une fiche, envoie une invitation, desserre un garde-fou ou change ce que l'assistante dit au prospect. Le modèle ne peut pas y répondre à sa place. Les freins (raccrocher, suspendre, retirer de la file, terminer une campagne, resserrer un garde-fou) n'en demandent pas ; l'interface demande tout de même une confirmation en ligne avant de retirer un prospect ou de terminer une campagne, deux gestes qui ne se défont pas.
+L'accord que l'opérateur donne lui-même, sur une question rédigée par le serveur, avant un geste qui fait sonner un téléphone, révoque un numéro, efface une personne, envoie une invitation, desserre un garde-fou ou change ce que l'assistante dit au prospect. Le modèle ne peut pas y répondre à sa place. Les freins (raccrocher, suspendre, retirer de la file, terminer une campagne, resserrer un garde-fou, archiver un prospect) n'en demandent pas ; l'interface demande tout de même une confirmation en ligne avant de retirer un prospect ou de terminer une campagne, deux gestes qui ne se défont pas.
 _Avoid_ : validation, approbation, consentement
 
 **Journal de Claude Code** :

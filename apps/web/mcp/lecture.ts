@@ -274,7 +274,7 @@ export function outilsDeLecture(declarer: Declarer): void {
       let debut = 0;
       if (apres !== undefined) {
         const i = retenus.findIndex((p) => p.id === apres);
-        if (i < 0) return refus(`Curseur inconnu : « ${apres} » n’est pas dans cette liste (fiche supprimée ou filtres changés). Relis sans \`apres\`.`);
+        if (i < 0) return refus(`Curseur inconnu : « ${apres} » n’est pas dans cette liste (fiche archivée ou effacée, ou filtres changés). Relis sans \`apres\`.`);
         debut = i + 1;
       }
       const page = retenus.slice(debut, debut + limite);
@@ -388,7 +388,7 @@ export function outilsDeLecture(declarer: Declarer): void {
     'lire_consentements',
     {
       description:
-        'Les consentements enregistrés, du plus récent au plus ancien, par pages : numéro, date d’accord, révocation, version du texte, porte d’entrée (interface ou mcp) et prospects qui portent encore ce numéro (liste vide : fiche supprimée). Filtres : `numero` (tout format français), `etat` (actif, revoque). Sert à retrouver un numéro sans fiche pour le révoquer (revoquer_numero avec `numero`). Repasse `suivant` en `avant` pour la page suivante.',
+        'Les consentements enregistrés, du plus récent au plus ancien, par pages : numéro, date d’accord, révocation, version du texte, porte d’entrée (interface ou mcp) et prospects qui portent encore ce numéro (liste vide : aucune fiche ne le porte plus ; le consentement d’une personne effacée n’y est plus). Filtres : `numero` (tout format français), `etat` (actif, revoque). Sert à retrouver un numéro sans fiche pour le révoquer (revoquer_numero avec `numero`). Repasse `suivant` en `avant` pour la page suivante.',
       entree: z.strictObject({
         numero: z.string().min(1).max(30).optional(),
         etat: z.enum(['actif', 'revoque']).optional(),

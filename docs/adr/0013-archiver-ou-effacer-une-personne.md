@@ -1,0 +1,32 @@
+# Retirer un prospect : l'archiver, ou effacer la personne en gardant l'empreinte de son numéro
+
+Jusqu'ici, retirer un prospect voulait dire supprimer sa fiche (`supprimer_prospect`, MCP seulement) : ses appels, enregistrements, transcriptions et bilans restaient, rattachés à un identifiant sans fiche, et le consentement de son numéro aussi. Ce n'était ni un retrait propre ni un effacement. L'opérateur veut les deux.
+
+**Archiver** est un frein réversible, sans confirmation. Le prospect sort des listes par défaut et des choix de campagne ; il n'est plus appelé (`preparerAppel` le refuse) ni ajouté à une campagne, et ses rappels ne sont plus à faire. S'il attend dans la file d'une campagne non terminée, il en est retiré (motif « retrait », trace gardée) sous le verrou de la campagne : c'est plus sûr que de refuser l'archivage, puisqu'aucun enchaînement ne peut plus le composer ni le marquer « non autorisé » entre-temps, et que retirer de la file est lui-même un frein. Refusé pendant un appel avec lui. Ses appels, bilans et consentement restent. Réactivé, il ne revient dans aucune file ; un réimport de sa fiche ne le réactive pas.
+
+**Effacer une personne** (droit à l'effacement) supprime sa fiche, ses appels avec transcriptions et bilans, les enregistrements sur disque (celui de l'application et le son et le journal du pont), ses rendez-vous et, quand l'API Google est connectée et que l'événement est dans le calendrier créé par Autocalled, leur événement (Google prévient l'invité d'un rendez-vous à venir) ; ses places en file (une campagne qui ne contenait qu'elle est supprimée, une campagne qui n'a plus personne à appeler est terminée) ; ses rappels ; le consentement de son numéro ; ses mentions au journal MCP, remplacées par « [personne effacée] ». Confirmation obligatoire, avec la liste de ce qui sera effacé comptée par le serveur (confirmation en ligne dans l'interface, élicitation dans Claude Code). Refusé pendant un appel avec elle, pendant le rapatriement d'un de ses enregistrements (il serait écrit après l'effacement) ou l'inscription d'un de ses rendez-vous. La base est effacée d'un bloc ; fichiers et événements ensuite, chaque échec rendu pour être fini à la main.
+
+Le consentement est une donnée personnelle et part avec la personne, mais l'interdiction de la rappeler doit survivre. On garde donc l'empreinte de son numéro dans une **liste d'opposition** : HMAC-SHA256 du numéro E.164 avec `SEL_OPPOSITION`, un sel secret de l'installation, dans le `.env` et jamais en base. `autorisationsDe`, par où passe toute composition, refuse un numéro en opposition (`numero-efface`), et l'import refuse la fiche entière : rien n'est de nouveau collecté. Une ligne témoin (l'empreinte d'une constante) détecte un sel changé ou perdu : tant qu'elle ne se retrouve pas, aucun numéro n'est autorisé ni importé (`opposition-illisible`), et aucun effacement ne se fait. Sans sel et sans opposition, rien ne change pour une installation qui n'a jamais effacé personne.
+
+Plusieurs prospects peuvent partager un numéro. L'effacement ne touche que la personne demandée : effacer les autres porteurs sur une supposition effacerait peut-être quelqu'un d'autre (un standard, un associé). Mais le numéro étant en opposition, ils ne sont plus appelables ; la confirmation et le résultat les nomment, pour que l'opérateur les efface aussi si c'est la même personne.
+
+`supprimer_prospect` est retiré du MCP, remplacé par `archiver_prospect`, `reactiver_prospect` et `effacer_personne`. Son libellé reste pour les lignes passées du journal.
+
+## Considered Options
+
+- Garder `supprimer_prospect` à côté des deux gestes : un troisième état (fiche partie, historique gardé, numéro autorisé) que personne n'a demandé, et qui laisse des appels sans fiche.
+- Refuser l'archivage d'un prospect en file : deux gestes pour un seul besoin, et une fenêtre où la campagne peut encore l'appeler.
+- Garder le consentement révoqué au lieu d'une empreinte : c'est garder le numéro en clair d'une personne qui a demandé l'effacement.
+- Une empreinte sans sel (SHA-256 du numéro) : l'espace des numéros mobiles français se parcourt en quelques minutes ; l'empreinte redeviendrait le numéro.
+- Un sel dérivé de `CLE_CHIFFREMENT` : changer la clé du jeton Google rendrait silencieusement rappelables tous les numéros effacés.
+- Effacer tous les prospects qui portent le numéro : sûr pour le téléphone, pas pour les données d'autrui.
+- Supprimer aussi la conversation chez ElevenLabs : un appel d'écriture vers ElevenLabs de plus, hors de ce que l'opérateur a demandé ; le résultat rend les identifiants à supprimer dans leur tableau de bord.
+
+## Consequences
+
+- Migration 0014 : table `oppositions` (empreinte, témoin, date, origine, comptes de l'effacement, sans donnée personnelle) et colonnes `archive_le`, `archive_par` des prospects.
+- `SEL_OPPOSITION` est à poser dans le `.env` avant le premier effacement (`openssl rand -hex 32`), puis à ne jamais changer ; le perdre bloque tous les appels jusqu'à ce qu'il soit remis. Il fait partie de ce qu'on sauvegarde avec le `.env`.
+- Un numéro effacé ne sort jamais de la liste : pas de geste pour cela. Une personne effacée qui voudrait de nouveau être appelée ne peut plus l'être à ce numéro.
+- Restent hors de portée : les conversations chez ElevenLabs, les événements créés par le connecteur de Claude dans un autre calendrier, les sauvegardes Restic et journald jusqu'à leur rotation. Le résultat de l'effacement dit ce qui reste à faire à la main.
+- Les campagnes dont la personne faisait partie changent de compte : l'historique d'une campagne terminée perd son entrée.
+- Le journal MCP est réécrit là où il nommait la personne (identifiant, nom, numéro, adresse, identifiants de ses appels) ; la ligne du succès de `effacer_personne` ne garde que l'entreprise.
