@@ -7,6 +7,7 @@ import { type DemarrageAppel, demarrerAppelNavigateur, terminerAppelNavigateur }
 import { outilProposerCreneaux, outilReserverCreneau } from '@/app/appels/outils';
 import { definirEtatLigne } from '@/lib/etat-ligne';
 import { Action } from './action';
+import { useNomAssistante } from './assistante';
 import { type TourDirect, VueBandeAppel } from './bande-appel';
 import { Saisie } from './champs';
 import { prenom } from './format-appel';
@@ -33,7 +34,7 @@ interface Proprietes {
 type Phase = 'repos' | 'connexion' | 'en-appel' | 'fin';
 
 const rien = () => {};
-const ERREUR_CONNEXION = 'La connexion à Mina a échoué. Réessaie ; si ça recommence, vérifie la connexion réseau.';
+const erreurConnexion = (assistante: string) => `La connexion à ${assistante} a échoué. Réessaie ; si ça recommence, vérifie la connexion réseau.`;
 
 /**
  * Ligne navigateur : l'opérateur joue le prospect au micro. Même bande que la ligne téléphone (sous-titre de
@@ -52,6 +53,7 @@ function Conversation({
   clore,
 }: Proprietes) {
   const router = useRouter();
+  const nomAssistante = useNomAssistante();
   const [phase, setPhase] = useState<Phase>('repos');
   const [erreur, setErreur] = useState<string | null>(null);
   const [tours, setTours] = useState<TourDirect[]>([]);
@@ -107,7 +109,7 @@ function Conversation({
       setTours((t) => [...t, tour]);
     },
     onError: (message) => {
-      const texte = typeof message === 'string' && message.trim() ? `La connexion à Mina a échoué : ${message}` : ERREUR_CONNEXION;
+      const texte = typeof message === 'string' && message.trim() ? `La connexion à ${nomAssistante} a échoué : ${message}` : erreurConnexion(nomAssistante);
       if (phaseCourante.current === 'connexion') abandonner(texte);
       else setErreur(texte);
     },
@@ -188,7 +190,7 @@ function Conversation({
   const actions =
     phase === 'en-appel' ? (
       <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-        <span className="px-1.5 text-sm text-encre-3">{conversation.isSpeaking ? 'Mina parle' : 'Mina écoute'}</span>
+        <span className="px-1.5 text-sm text-encre-3">{conversation.isSpeaking ? `${nomAssistante} parle` : `${nomAssistante} écoute`}</span>
         <Action ton="alerte" onClick={() => conversation.endSession()}>
           Raccrocher
         </Action>
@@ -201,7 +203,7 @@ function Conversation({
     <div className="grid gap-4">
       <VueBandeAppel
         variante="bande"
-        etat={phase === 'connexion' ? 'Connexion à Mina…' : phase === 'fin' ? 'termine' : 'active'}
+        etat={phase === 'connexion' ? `Connexion à ${nomAssistante}…` : phase === 'fin' ? 'termine' : 'active'}
         perdu={false}
         tours={tours}
         chrono={phase === 'en-appel' && enLigneDepuis ? { libelle: 'en ligne', depuis: enLigneDepuis } : null}

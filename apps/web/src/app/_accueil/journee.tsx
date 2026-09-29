@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { memo, useMemo, useRef, useState } from 'react';
 import { Action, LienAction } from '@/components/action';
+import { useNomAssistante } from '@/components/assistante';
 import { NavigationListe } from '@/components/clavier';
 import { useLigne } from '@/components/etat-ligne-telephone';
 import { dateCourte, duree, etatAppel, heure, LIBELLE_NON_COMPOSE, LIGNES_COURTES, prenom, type EtatAppelAffiche } from '@/components/format-appel';
@@ -462,6 +463,8 @@ const LigneAppel = memo(function LigneAppel({
   maintenant: number;
   extrait: ResultatRecherche['extrait'];
 }) {
+  // L'accueil ne lit pas le nom figé sur chaque appel : les répliques de l'assistante portent son nom actuel.
+  const nomAssistante = useNomAssistante();
   // Avant le premier relevé de la ligne, un appel téléphone ouvert depuis peu n'est ni vivant ni « resté ouvert ».
   const enAttente = !vivant && !ligneRelevee && a.statut === 'en-cours' && a.ligne === 'bluetooth' && maintenant - Date.parse(a.debutLe) < DIX_MINUTES;
   const etat: EtatAppelAffiche = vivant
@@ -479,7 +482,7 @@ const LigneAppel = memo(function LigneAppel({
           : vivant
             ? 'vivant'
             : 'sans-bilan';
-  const qui = extrait ? (extrait.role === 'agent' ? 'Mina' : prenom(a.prospect)) : '';
+  const qui = extrait ? (extrait.role === 'agent' ? nomAssistante : prenom(a.prospect)) : '';
   // Un appel non composé : l'erreur de la ligne, précédée de ce qu'elle veut dire pour l'opérateur.
   const detail = etat.detail ? (etat.cle === 'pas-parti' ? `La ligne n’a pas composé : ${etat.detail}` : etat.detail) : '';
   const resume = extrait ? `${qui} : ${extrait.avant}${extrait.terme}${extrait.apres}` : (a.resume ?? detail);

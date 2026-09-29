@@ -6,6 +6,7 @@ import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, 
 import { demanderAnalyse, raccrocherAppelTelephone } from '@/app/appels/actions';
 import { usePriseDeMain, type EtatPrise } from '@/app/appels/[id]/prise-de-main';
 import { Action, LienAction } from './action';
+import { useNomAssistante } from './assistante';
 import { toucheAria, useRaccourcis } from './clavier';
 import { Confirmation, useConfirmation } from './confirmation';
 import { useLigne } from './etat-ligne-telephone';
@@ -254,14 +255,13 @@ const LIBELLES_ETAT: Record<string, string> = {
   active: 'En ligne',
   reconnexion: 'Pas de son : reconnexion du téléphone…',
   disconnected: 'Raccroché',
-  'prise-en-main': 'Main reprise : Mina s’est tue',
   termine: 'Appel terminé : rapatriement et analyse…',
 };
 
 const SONNE = new Set(['composition', 'dialing', 'alerting']);
 const EN_LIGNE = new Set(['active', 'prise-en-main']);
 
-/** La phrase de Mina en sous-titre : dernière phrase du dernier tour, jointe à la précédente si elle est courte. */
+/** La phrase de l'assistante en sous-titre : dernière phrase du dernier tour, jointe à la précédente si elle est courte. */
 export function phraseDeMina(texte: string): { phrase: string; taille: 'grande' | 'moyenne' } {
   const phrases = (texte.match(/[^.!?…]+[.!?…]*/g) ?? [texte]).map((p) => p.trim()).filter(Boolean);
   let phrase = phrases.at(-1) ?? texte.trim();
@@ -487,6 +487,7 @@ export function VueBandeAppel({
   const maintenant = useHorloge(Boolean(chrono) || prise.etat === 'active');
   const reduit = useMouvementReduit();
   const nomProspect = libelleProspect ?? (identite ? prenom(identite.prospect) : 'Prospect');
+  const nomAssistante = useNomAssistante();
 
   const confirmationPrise = useConfirmation();
   const [ouverteAuDepart, setOuverteAuDepart] = useState(confirmationInitiale);
@@ -537,14 +538,14 @@ export function VueBandeAppel({
     return () => observateur.disconnect();
   }, [condensee]);
 
-  // Sous-titre : la dernière réplique de Mina, et celle du prospect qui la précède.
+  // Sous-titre : la dernière réplique de l'assistante, et celle du prospect qui la précède.
   const iMina = tours.findLastIndex((t) => t.role === 'agent');
   const tourMina = iMina >= 0 ? tours[iMina] : undefined;
   const tourProspect = tours.slice(0, iMina >= 0 ? iMina : tours.length).findLast((t) => t.role === 'prospect');
   const sousTitre = tourMina ? phraseDeMina(tourMina.texte) : null;
   const dernierTour = tours.at(-1);
 
-  const texteEtat = LIBELLES_ETAT[etat] ?? etat;
+  const texteEtat = etat === 'prise-en-main' ? `Main reprise : ${nomAssistante} s’est tue` : (LIBELLES_ETAT[etat] ?? etat);
   const couleurEtat = vivant || prise.etat === 'active' ? 'text-antenne' : 'text-encre-3';
 
   const boutons = telephone ? (
@@ -631,7 +632,7 @@ export function VueBandeAppel({
             }}
             onAnnuler={fermerPrise}
           >
-            Mina se tait tout de suite et ne reprendra pas : tu termines l’appel toi-même, avec ton micro. Annonce-toi (« Thibaud à l’appareil, je
+            {nomAssistante} se tait tout de suite et ne reprendra pas : tu termines l’appel toi-même, avec ton micro. Annonce-toi (« Thibaud à l’appareil, je
             prends le relais »). Mets un casque : sans lui, ton micro reprend la voix du prospect. La transcription et le bilan s’arrêtent au relais.
           </Confirmation>
         ) : null}
@@ -687,7 +688,7 @@ export function VueBandeAppel({
           </div>
         ) : null}
 
-        {/* Rangée 2 : sous-titre, la dernière phrase de Mina (bande seulement). */}
+        {/* Rangée 2 : sous-titre, la dernière phrase de l'assistante (bande seulement). */}
         {variante === 'bande' && (tours.length > 0 || enLigne) ? (
           <div className="flex min-h-[84px] flex-col items-center justify-end gap-1.5 pt-1.5 pb-0.5 text-center max-sm:min-h-0">
             {tourProspect ? (
@@ -703,14 +704,14 @@ export function VueBandeAppel({
                   sousTitre.taille === 'grande' ? 'max-w-[34ch] text-3xl' : 'max-w-[48ch] text-2xl'
                 }`}
               >
-                <span className="mr-3.5 align-middle text-lg leading-none font-semibold tracking-normal text-antenne">Mina</span>
+                <span className="mr-3.5 align-middle text-lg leading-none font-semibold tracking-normal text-antenne">{nomAssistante}</span>
                 {sousTitre.phrase}
               </p>
             ) : null}
           </div>
         ) : null}
         <p aria-live="polite" className="sr-only">
-          {dernierTour ? `${dernierTour.role === 'agent' ? 'Mina' : nomProspect} : ${dernierTour.texte}` : ''}
+          {dernierTour ? `${dernierTour.role === 'agent' ? nomAssistante : nomProspect} : ${dernierTour.texte}` : ''}
         </p>
 
         {/* Rangée 3 : l'onde (ligne navigateur, ou niveaux du pont écoute fermée), sinon la piste de parole. */}
@@ -722,7 +723,7 @@ export function VueBandeAppel({
           ) : null)}
 
         {/* Fil complet : toujours sur la fiche, avec T sur la bande. */}
-        {filOuvert && tours.length > 0 ? <Fil tours={tours} nomProspect={nomProspect} /> : null}
+        {filOuvert && tours.length > 0 ? <Fil tours={tours} nomProspect={nomProspect} nomAssistante={nomAssistante} /> : null}
       </section>
 
       {condensee && horsEcran ? (
@@ -759,7 +760,7 @@ export function VueBandeAppel({
 }
 
 /** Le fil complet : défile dans son conteneur seulement, et seulement si l'opérateur était déjà en bas. */
-function Fil({ tours, nomProspect }: { tours: TourDirect[]; nomProspect: string }) {
+function Fil({ tours, nomProspect, nomAssistante }: { tours: TourDirect[]; nomProspect: string; nomAssistante: string }) {
   const conteneur = useRef<HTMLDivElement>(null);
   const [decroche, setDecroche] = useState<number | null>(null);
   const id = useId();
@@ -782,7 +783,7 @@ function Fil({ tours, nomProspect }: { tours: TourDirect[]; nomProspect: string 
         <ol className="grid gap-2.5" aria-label="Fil de l’appel">
           {tours.map((t, i) => (
             <li key={i} className="grid gap-x-3 sm:grid-cols-[5rem_1fr]">
-              <span className={`text-md font-semibold ${t.role === 'agent' ? 'text-antenne' : 'text-encre'}`}>{t.role === 'agent' ? 'Mina' : nomProspect}</span>
+              <span className={`text-md font-semibold ${t.role === 'agent' ? 'text-antenne' : 'text-encre'}`}>{t.role === 'agent' ? nomAssistante : nomProspect}</span>
               <p className="max-w-[68ch] text-base text-encre-2">{t.texte}</p>
             </li>
           ))}

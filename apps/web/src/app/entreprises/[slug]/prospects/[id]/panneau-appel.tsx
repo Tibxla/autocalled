@@ -7,6 +7,7 @@ import { demarrerAppelTelephone, lancerSimulation } from '@/app/appels/actions';
 import { phrasePlafonds } from '@/app/campagnes/[id]/recapitulatif';
 import { AjoutClaudeCode } from '@/components/ajout-claude-code';
 import { AppelEnDirect } from '@/components/appel-en-direct';
+import { useNomAssistante } from '@/components/assistante';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
 import { numeroMasque, prenom as prenomDe } from '@/components/format-appel';
 import type { ReglagesLigne } from '@/components/garde-fous';
@@ -21,10 +22,10 @@ import { Action, LienAction, Message, PointCreux, Selection } from '@/components
 type Ligne = 'navigateur' | 'simulation' | 'telephone';
 
 /** Même ordre et même défaut que la création d'une campagne. */
-const LIGNES: { valeur: Ligne; libelle: string; aide: string }[] = [
-  { valeur: 'navigateur', libelle: 'Navigateur', aide: 'Test : tu joues le prospect au micro, rien n’est composé.' },
-  { valeur: 'simulation', libelle: 'Simulation', aide: 'Un modèle joue le prospect, sans audio. Signalé comme simulé partout.' },
-  { valeur: 'telephone', libelle: 'Téléphone', aide: 'Mina appelle le vrai numéro depuis le téléphone passerelle.' },
+const LIGNES: { valeur: Ligne; libelle: string; aide: (assistante: string) => string }[] = [
+  { valeur: 'navigateur', libelle: 'Navigateur', aide: () => 'Test : tu joues le prospect au micro, rien n’est composé.' },
+  { valeur: 'simulation', libelle: 'Simulation', aide: () => 'Un modèle joue le prospect, sans audio. Signalé comme simulé partout.' },
+  { valeur: 'telephone', libelle: 'Téléphone', aide: (assistante) => `${assistante} appelle le vrai numéro depuis le téléphone passerelle.` },
 ];
 
 export type PlafondsLigne = { reglages: ReglagesLigne | null; passes24h: number | null };
@@ -119,6 +120,7 @@ export function PanneauAppel({
   const [enCours, demarrer] = useTransition();
   const [erreur, setErreur] = useState<string | null>(null);
   const confirmation = useConfirmation();
+  const nomAssistante = useNomAssistante();
 
   if (blocage || !autorise || versions.length === 0) {
     const texte = blocage?.texte ?? (versions.length === 0 ? 'Aucun script : crées-en un dans Scripts.' : 'Ce numéro n’est pas autorisé : aucun appel possible.');
@@ -136,7 +138,7 @@ export function PanneauAppel({
 
   const prenom = prenomDe(prospectNom);
   const libelleVersion = versions.find((v) => v.id === versionId)?.libelle ?? '';
-  const aide = LIGNES.find((l) => l.valeur === ligne)?.aide;
+  const aide = LIGNES.find((l) => l.valeur === ligne)?.aide(nomAssistante);
 
   const lancer = (action: () => Promise<{ ok: true; appelId: string } | { ok: false; raison: string }>, apres?: () => void) =>
     demarrer(async () => {

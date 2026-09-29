@@ -242,7 +242,7 @@ export default async function PageScript({
           entrepriseId={entreprise.id}
           prospects={listeProspects}
           versionFixe={affichee.id}
-          titre={`Ce que Mina recevra avec la v${affichee.numero}`}
+          numeroVersion={affichee.numero}
         />
       </div>
     </Page>

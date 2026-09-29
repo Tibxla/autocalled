@@ -2,6 +2,7 @@
 
 import type { TourDeParole } from '@autocalled/domain';
 import { useEffect, useId, useRef, useState } from 'react';
+import { useNomAssistante } from '@/components/assistante';
 import { Action } from '@/components/action';
 import { useRaccourcis } from '@/components/clavier';
 
@@ -71,6 +72,7 @@ export function LecteurAppel({
   transcription,
   objections,
   nomProspect = 'Prospect',
+  nomAssistante,
   recherche = '',
   bilan,
   pied,
@@ -82,6 +84,8 @@ export function LecteurAppel({
   objections: ObjectionBilan[];
   /** Prénom affiché devant les répliques du prospect. */
   nomProspect?: string;
+  /** Le nom sous lequel l'assistante s'est présentée à cet appel ; le nom actuel à défaut. */
+  nomAssistante?: string | undefined;
   /** Terme cherché depuis la liste : occurrences surlignées, lecture placée sur la première. */
   recherche?: string;
   /** Haut de la colonne du bilan (résumé, rendu serveur) ; sans bilan ni objection, une seule colonne. */
@@ -90,6 +94,8 @@ export function LecteurAppel({
   pied?: React.ReactNode;
   raccourcis?: boolean;
 }) {
+  const nomActuel = useNomAssistante();
+  const assistante = nomAssistante ?? nomActuel;
   const lecteur = useRef<HTMLAudioElement>(null);
   const repliques = useRef<(HTMLButtonElement | null)[]>([]);
   const defilementAuto = useRef(0);
@@ -403,7 +409,7 @@ export function LecteurAppel({
                       {horodatage(t.secondes)}
                     </span>
                     <span className="grid min-w-0 gap-0.5">
-                      <span className={`text-md font-semibold ${mina ? 'text-antenne' : 'text-encre'}`}>{mina ? 'Mina' : nomProspect}</span>
+                      <span className={`text-md font-semibold ${mina ? 'text-antenne' : 'text-encre'}`}>{mina ? assistante : nomProspect}</span>
                       <span className="block max-w-[68ch] text-base text-encre-2">
                         {morceaux(t.texte, recherche).map((m, j) =>
                           m.trouve ? (

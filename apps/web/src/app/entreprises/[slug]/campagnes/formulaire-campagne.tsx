@@ -3,6 +3,7 @@
 import type { Autorisation, IssueSysteme } from '@autocalled/domain';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { nouvelleCampagne } from '@/app/campagnes/actions';
+import { useNomAssistante } from '@/components/assistante';
 import { PastilleAutorisation } from '@/components/pastille-autorisation';
 import { useFormulaire } from '@/components/use-formulaire';
 import { Action, Champ, EtatVide, Filtre, Filtres, LienAction, Message, Recherche, Selection, TitreSection } from '@/components/ui';
@@ -59,9 +60,9 @@ function sansAccents(texte: string): string {
 }
 
 const LIGNES = [
-  { valeur: 'navigateur', libelle: 'Ligne navigateur', aide: 'tu joues chaque prospect' },
-  { valeur: 'simulation', libelle: 'Simulation', aide: 'un modèle joue les prospects' },
-  { valeur: 'bluetooth', libelle: 'Téléphone passerelle', aide: 'Mina appelle les vrais numéros' },
+  { valeur: 'navigateur', libelle: 'Ligne navigateur', aide: () => 'tu joues chaque prospect' },
+  { valeur: 'simulation', libelle: 'Simulation', aide: () => 'un modèle joue les prospects' },
+  { valeur: 'bluetooth', libelle: 'Téléphone passerelle', aide: (assistante: string) => `${assistante} appelle les vrais numéros` },
 ] as const;
 
 export function FormulaireCampagne({
@@ -75,6 +76,7 @@ export function FormulaireCampagne({
   prospects: ProspectCampagne[];
   focusAuMontage?: boolean;
 }) {
+  const nomAssistante = useNomAssistante();
   const { etat, enCours, proprietes } = useFormulaire<EtatFormulaire>(nouvelleCampagne.bind(null, entrepriseId), null);
   const [coches, setCoches] = useState<Set<string>>(() => new Set(prospects.filter(cocheParDefaut).map((p) => p.id)));
   const [filtre, setFiltre] = useState<CleFiltre | null>(null);
@@ -131,7 +133,7 @@ export function FormulaireCampagne({
               <input type="radio" name="ligne" value={l.valeur} defaultChecked={i === 0} className="size-4 accent-[var(--encre)]" />
               <span>
                 <span className="font-medium">{l.libelle}</span>
-                <span className="text-encre-3"> : {l.aide}</span>
+                <span className="text-encre-3"> : {l.aide(nomAssistante)}</span>
               </span>
             </label>
           ))}

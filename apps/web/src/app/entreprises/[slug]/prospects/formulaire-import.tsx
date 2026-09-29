@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { NomDeLAssistante } from '@/components/assistante';
 import { useFormulaire } from '@/components/use-formulaire';
 import { Action, Message } from '@/components/ui';
 import { type RapportImport, importerFiches } from './actions';
@@ -232,7 +233,7 @@ export function FormulaireImport({
         <p className="text-sm text-encre-3">
           <span className="font-mono">nom</span> et <span className="font-mono">telephone</span> sont obligatoires ;{' '}
           <span className="font-mono">societe</span>, <span className="font-mono">role</span> et <span className="font-mono">email</span>{' '}
-          facultatifs. Sous l’en-tête, le contexte que Mina doit connaître : 500 mots au plus. Réimporter un fichier du même nom met la fiche à
+          facultatifs. Sous l’en-tête, le contexte que <NomDeLAssistante /> doit connaître : 500 mots au plus. Réimporter un fichier du même nom met la fiche à
           jour.
         </p>
       </section>

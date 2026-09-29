@@ -14,7 +14,7 @@ import { rafraichirSiAncien } from '@/lib/agenda';
 import { preparerAppel } from '@/lib/appels';
 import { autorisationsDe } from '@/lib/autorisations';
 import { numeroLisible } from '@/lib/format';
-import { entrepriseParSlug, prospectParId } from '@/lib/pages';
+import { assistantePourLaPage, entrepriseParSlug, prospectParId } from '@/lib/pages';
 import { ajoutParMcp } from '@/lib/prospects';
 import { rappelEnAttente } from '@/lib/rappels';
 import { reglagesDuPont } from '@/lib/pont';
@@ -80,7 +80,8 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
   const { slug, id } = await params;
   const entreprise = await entrepriseParSlug(slug);
   const prospect = await prospectParId(entreprise.id, id);
-  // L'agenda se relit dès l'ouverture de la fiche : il sera à jour quand Mina proposera des créneaux.
+  const { nom: nomAssistante } = await assistantePourLaPage();
+  // L'agenda se relit dès l'ouverture de la fiche : il sera à jour quand l'assistante proposera des créneaux.
   await rafraichirSiAncien();
   const [autorisations, partages, toutesVersions, historique, [derniereRevocation], ordre, issuesPerso, ajoutMcp] = await Promise.all([
     autorisationsDe([prospect.telephone]),
@@ -117,7 +118,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
   const lisible = numeroLisible(prospect.telephone);
   const base = `/entreprises/${slug}/prospects`;
 
-  // Ce que Mina recevra au début de l'appel (lecture seule, avec la première version proposée).
+  // Ce que l'assistante recevra au début de l'appel (lecture seule, avec la première version proposée).
   const preparation = autorise && versions[0] ? await preparerAppel(entreprise.id, prospect.id, versions[0].id) : null;
 
   // Précédent et suivant, dans l'ordre alphabétique de la liste.
@@ -221,7 +222,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
       <div className="grid grid-cols-1 gap-12 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="grid min-w-0 grid-cols-1 content-start gap-10">
           <section aria-labelledby="titre-sait" className="grid gap-4">
-            <TitreSection id="titre-sait">Ce que Mina sait</TitreSection>
+            <TitreSection id="titre-sait">Ce que {nomAssistante} sait</TitreSection>
             <p className="max-w-[68ch] text-base whitespace-pre-line">{prospect.contexte || 'Pas de contexte dans la fiche.'}</p>
             <p className="text-sm text-encre-3">
               Fiche <span className="font-mono">{prospect.id}.md</span>, mise à jour le{' '}
@@ -231,7 +232,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
               <details className="group max-w-[68ch]">
                 <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-2 text-md text-encre-2 hover:text-encre pointer-coarse:h-11 [&::-webkit-details-marker]:hidden">
                   <Chevron className="stroke-encre-3 group-open:rotate-90" />
-                  <span className="decoration-souligne underline-offset-4 group-hover:underline">Ce que Mina saura en appelant</span>
+                  <span className="decoration-souligne underline-offset-4 group-hover:underline">Ce que {nomAssistante} saura en appelant</span>
                 </summary>
                 <dl className="grid gap-3 rounded-md bg-surface px-3.5 py-3 text-sm">
                   <div className="grid gap-0.5">
@@ -257,7 +258,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
             </TitreSection>
             {historique.length === 0 ? (
               <EtatVide titre="Aucun appel pour l’instant.">
-                Chaque appel s’affichera ici avec son issue et son bilan ; Mina s’en souviendra au prochain appel.
+                Chaque appel s’affichera ici avec son issue et son bilan ; {nomAssistante} s’en souviendra au prochain appel.
               </EtatVide>
             ) : (
               <ListeAppels

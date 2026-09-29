@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useRef, useState, useTransition } from 'react';
 import { lancerCampagne, suspendreCampagne } from '@/app/campagnes/actions';
+import { useNomAssistante } from '@/components/assistante';
 import { Action, LienAction } from '@/components/action';
 import { BandeAppel, type IdentiteAppel } from '@/components/bande-appel';
 import { useRaccourci } from '@/components/clavier';
@@ -646,12 +647,13 @@ function Libre({
   premiereUtilisation: boolean;
   entrepriseSlug: string | null;
 }) {
+  const nomAssistante = useNomAssistante();
   if (premiereUtilisation) {
     return (
       <Cadre
         etiquette="Ligne"
         titre="Ligne libre"
-        phrase="Aucune entreprise pour l’instant : Mina a besoin d’une fiche, d’un script et de prospects pour appeler."
+        phrase={`Aucune entreprise pour l’instant : ${nomAssistante} a besoin d’une fiche, d’un script et de prospects pour appeler.`}
         actions={
           <LienAction ton="fort" href="/entreprises">
             Crée la première entreprise

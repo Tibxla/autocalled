@@ -2,6 +2,7 @@
 
 import type { PlageHoraire } from '@autocalled/domain';
 import { useState } from 'react';
+import { NomDeLAssistante, useNomAssistante } from '@/components/assistante';
 import { useRaccourci } from '@/components/clavier';
 import { ChampConnu, MessageConflit, useRechargement } from '@/components/conflit';
 import { Action, Champ, Compteur, Message, Saisie, Selection, TitreSection, ZoneTexte } from '@/components/ui';
@@ -88,7 +89,12 @@ const LISTE_FR = new Intl.ListFormat('fr-FR', { type: 'conjunction' });
 function ResumePlages({ plages, fuseau }: { plages: Plage[]; fuseau: string }) {
   const actifs = plages.flatMap((p, i) => (p.actif ? [{ ...p, jour: i }] : []));
   const zone = fuseau === 'Europe/Paris' ? 'heure de Paris' : `heure de ${(fuseau.split('/').at(-1) ?? fuseau).replaceAll('_', ' ')}`;
-  if (actifs.length === 0) return <>Aucun jour coché : Mina ne proposera aucun créneau.</>;
+  if (actifs.length === 0)
+    return (
+      <>
+        Aucun jour coché : <NomDeLAssistante /> ne proposera aucun créneau.
+      </>
+    );
 
   const groupes = [...Map.groupBy(actifs, (p) => `${p.debut}-${p.fin}`).values()];
   const heures = (p: Plage) => (
@@ -146,8 +152,9 @@ function Formulaire({ fiche, recharger, rechargement }: { fiche: Fiche; recharge
   };
   const compteur = (cle: ChampLimite) => <Compteur valeur={longueurs[cle]} max={LIMITES[cle]} />;
 
-  // L'aide des visios cite la valeur saisie : ce que Mina annoncera vraiment.
+  // L'aide des visios cite la valeur saisie : ce que l'assistante annoncera vraiment.
   const [interlocuteur, setInterlocuteur] = useState(fiche.interlocuteur);
+  const nomAssistante = useNomAssistante();
 
   const [plages, setPlages] = useState<Plage[]>(() =>
     NOMS_JOURS.map((_, i) => {
@@ -202,7 +209,7 @@ function Formulaire({ fiche, recharger, rechargement }: { fiche: Fiche; recharge
     >
       <ChampConnu valeur={fiche.modifieLe.toISOString()} />
       <section aria-labelledby="titre-mina" className="grid max-w-[44rem] gap-6">
-        <TitreSection id="titre-mina">Ce que Mina dit de l’entreprise</TitreSection>
+        <TitreSection id="titre-mina">Ce que {nomAssistante} dit de l’entreprise</TitreSection>
         <Champ libelle="Nom" htmlFor="nom" erreur={e.nom}>
           <Saisie id="nom" name="nom" defaultValue={fiche.nom} required maxLength={80} autoComplete="off" />
         </Champ>
@@ -216,7 +223,7 @@ function Formulaire({ fiche, recharger, rechargement }: { fiche: Fiche; recharge
           libelle="Ce qui fait la différence"
           htmlFor="arguments"
           erreur={e.arguments}
-          aide="Trois ou quatre arguments. Mina en choisit un selon ce que dit le prospect."
+          aide={`Trois ou quatre arguments. ${nomAssistante} en choisit un selon ce que dit le prospect.`}
           complement={compteur('arguments')}
         >
           <ZoneTexte id="arguments" name="arguments" defaultValue={fiche.arguments} onInput={suivre('arguments')} />
@@ -225,7 +232,7 @@ function Formulaire({ fiche, recharger, rechargement }: { fiche: Fiche; recharge
           libelle="Consigne sur le prix"
           htmlFor="prixConsigne"
           erreur={e.prixConsigne}
-          aide="Ce que Mina a le droit d’en dire au téléphone."
+          aide={`Ce que ${nomAssistante} a le droit d’en dire au téléphone.`}
           complement={compteur('prixConsigne')}
         >
           <ZoneTexte id="prixConsigne" name="prixConsigne" defaultValue={fiche.prixConsigne} onInput={suivre('prixConsigne')} />
@@ -243,8 +250,8 @@ function Formulaire({ fiche, recharger, rechargement }: { fiche: Fiche; recharge
           erreur={e.interlocuteur}
           aide={
             interlocuteur.trim()
-              ? `Mina l’annonce au prospect : « une visio avec ${interlocuteur.trim()} ».`
-              : 'Champ vide : Mina parlera d’une visio avec un membre de l’équipe.'
+              ? `${nomAssistante} l’annonce au prospect : « une visio avec ${interlocuteur.trim()} ».`
+              : `Champ vide : ${nomAssistante} parlera d’une visio avec un membre de l’équipe.`
           }
         >
           <Saisie

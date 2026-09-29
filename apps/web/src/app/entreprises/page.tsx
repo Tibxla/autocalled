@@ -3,12 +3,13 @@ import { NavigationListe } from '@/components/clavier';
 import { Cellule, CelluleEnTete, EnTeteTable, EtatVide, LienLigne, LigneTable, Page, TableDense } from '@/components/ui';
 import { listerEntreprises, prospectsAutorisesParEntreprise } from '@/lib/donnees';
 import { CreationEntreprise } from './formulaire-creation';
+import { assistantePourLaPage } from '@/lib/pages';
 
 export const metadata: Metadata = { title: 'Entreprises' };
 
 const COLONNES = 'minmax(10rem,14rem) minmax(0,1fr) 7rem 6rem 5rem 11rem';
 
-/** Ce qui manque en premier pour que Mina puisse appeler, dans l'ordre du travail ; null si l'entreprise est prête. */
+/** Ce qui manque en premier pour que l'assistante puisse appeler, dans l'ordre du travail ; null si l'entreprise est prête. */
 function premierManque(e: { offre: string; nombreScripts: number; nombreProspects: number }, appelables: number): string | null {
   if (!e.offre.trim()) return 'Offre à écrire';
   if (e.nombreScripts === 0) return 'Aucun script';
@@ -18,7 +19,7 @@ function premierManque(e: { offre: string; nombreScripts: number; nombreProspect
 }
 
 export default async function PageEntreprises() {
-  const [liste, autorises] = await Promise.all([listerEntreprises(), prospectsAutorisesParEntreprise()]);
+  const [liste, autorises, { nom }] = await Promise.all([listerEntreprises(), prospectsAutorisesParEntreprise(), assistantePourLaPage()]);
 
   return (
     <Page largeur="lecture">
@@ -26,7 +27,7 @@ export default async function PageEntreprises() {
 
       {liste.length === 0 ? (
         <EtatVide titre="Aucune entreprise pour l’instant.">
-          Crée l’entreprise, décris son offre, écris un script, puis importe ses prospects : c’est ce que Mina dira au téléphone.
+          Crée l’entreprise, décris son offre, écris un script, puis importe ses prospects : c’est ce que {nom} dira au téléphone.
         </EtatVide>
       ) : (
         <NavigationListe memoriser="entreprises">

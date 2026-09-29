@@ -8,7 +8,7 @@ import { Cellule, CelluleEnTete, EnTeteTable, EtatVide, LienLigne, LigneTable, P
 import { db } from '@/db';
 import { campagnes, scripts, versionsScript } from '@/db/schema';
 import { analyseEntreprise } from '@/lib/lecture';
-import { entrepriseParSlug } from '@/lib/pages';
+import { assistantePourLaPage, entrepriseParSlug } from '@/lib/pages';
 import { basculerArchiveScript } from '../actions';
 import { CreationScript } from './formulaire-script';
 
@@ -20,6 +20,7 @@ const JOUR_MOIS = new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-d
 export default async function PageScripts({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const entreprise = await entrepriseParSlug(slug);
+  const { nom } = await assistantePourLaPage();
   const [liste, versions, actives, analyse] = await Promise.all([
     db.select({ id: scripts.id, nom: scripts.nom, archive: scripts.archive }).from(scripts).where(eq(scripts.entrepriseId, entreprise.id)).orderBy(asc(scripts.creeLe)),
     db
@@ -58,7 +59,7 @@ export default async function PageScripts({ params }: { params: Promise<{ slug: 
     <Page largeur="lecture">
       <div className="grid max-w-[60rem] grid-cols-[minmax(0,1fr)] gap-6">
         <p className="max-w-[62ch] text-sm text-encre-3">
-          Un script est un plan que Mina suit sans le réciter. Chaque modification crée une nouvelle version, pour que les bilans
+          Un script est un plan que {nom} suit sans le réciter. Chaque modification crée une nouvelle version, pour que les bilans
           comparent des choses comparables.
         </p>
         <section aria-labelledby="titre-scripts">

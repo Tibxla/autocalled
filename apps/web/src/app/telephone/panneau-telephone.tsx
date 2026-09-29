@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, useTransition, type FormEvent } from 'react';
+import { NomDeLAssistante } from '@/components/assistante';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
 import { Action, Champ, LigneDefinition, Message, Saisie } from '@/components/ui';
 import {
@@ -180,7 +181,7 @@ export function PanneauTelephone({
       <div className="grid gap-5">
         {issue}
         <p className="max-w-[62ch] text-base text-encre-2">
-          Appaire le téléphone qui passera les appels de Mina : donne son adresse Bluetooth, puis compare le code qu’il affiche avec celui
+          Appaire le téléphone qui passera les appels de <NomDeLAssistante /> : donne son adresse Bluetooth, puis compare le code qu’il affiche avec celui
           qui apparaîtra ici.
         </p>
         <FormulaireAdresse
@@ -429,7 +430,7 @@ function ActionsTelephone({
           })
         }
       >
-        Le serveur l’oubliera. Mina ne pourra plus appeler par le téléphone jusqu’au prochain appairage ; une campagne en cours se mettra en
+        Le serveur l’oubliera. <NomDeLAssistante /> ne pourra plus appeler par le téléphone jusqu’au prochain appairage ; une campagne en cours se mettra en
         pause au prochain appel.
       </Confirmation>
     </div>

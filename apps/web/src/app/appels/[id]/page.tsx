@@ -11,6 +11,7 @@ import { campagnes, scripts } from '@/db/schema';
 import { DUREE_MAX_ANALYSE_S } from '@/lib/appels';
 import { numeroLisible } from '@/lib/format';
 import { lireAppel, voisinsAppel } from '@/lib/lecture';
+import { assistantePourLaPage } from '@/lib/pages';
 import { lireFiltresAppels } from '../filtres';
 import { Actualisation, Ecoule } from './actualisation';
 import { BoutonRelancer } from './bouton-relancer';
@@ -77,6 +78,8 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
   const lu = await lire(id);
   if (!lu) notFound();
   const { appel, entreprise, prospect, version, objections: listeObjections, personnalisees, rendezVous: rdv } = lu;
+  // Le nom sous lequel l'assistante s'est présentée à cet appel, pas celui d'aujourd'hui.
+  const nomAssistante = appel.assistanteNom ?? (await assistantePourLaPage()).nom;
 
   const nomProspect = prospect?.nom ?? appel.prospectId;
   const retour = origine(sp.depuis, nomProspect);
@@ -121,8 +124,8 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
   meta.push(<span key="ligne">{LIGNES_LONGUES[appel.ligne] ?? appel.ligne}</span>);
   if (appel.versionAgent)
     meta.push(
-      <span key="mina">
-        Mina <span className="font-mono">{appel.versionAgent.slice(-6)}</span>
+      <span key="assistante">
+        {nomAssistante} <span className="font-mono">{appel.versionAgent.slice(-6)}</span>
       </span>,
     );
   if (version)
@@ -436,6 +439,7 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
             transcription={transcription}
             objections={objections}
             nomProspect={prenom(nomProspect)}
+            nomAssistante={nomAssistante}
             recherche={q}
             bilan={hautBilan}
             pied={basBilan}

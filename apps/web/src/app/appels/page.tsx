@@ -8,6 +8,7 @@ import { lienAvec } from '@/components/url';
 import { db } from '@/db';
 import { appels, entreprises, issuesPersonnalisees } from '@/db/schema';
 import { comptesAppels, comptesParJour, pageAppels, PERIODES } from '@/lib/lecture';
+import { assistantePourLaPage } from '@/lib/pages';
 import { commanderPont } from '@/lib/pont';
 import { versionsDeLEntreprise } from '@/lib/versions';
 import { LIGNES_FILTRE, lireFiltresAppels } from './filtres';
@@ -62,15 +63,18 @@ function apresCoupe(texte: string, n: number): string {
   return `${espace > 0 ? bout.slice(0, espace) : bout}…`;
 }
 
-/** Premier tour qui contient le terme, une soixantaine de caractères autour. */
-function extraitDe(transcription: TourDeParole[] | null, terme: string, nomProspect: string): ExtraitAppel | null {
+/**
+ * Premier tour qui contient le terme, une soixantaine de caractères autour. La liste ne lit pas le nom figé sur
+ * chaque appel : ses répliques sont attribuées au nom actuel de l'assistante.
+ */
+function extraitDe(transcription: TourDeParole[] | null, terme: string, nomProspect: string, nomAssistante: string): ExtraitAppel | null {
   if (!transcription || !terme) return null;
   const cherche = terme.toLocaleLowerCase('fr-FR');
   for (const tour of transcription) {
     const i = tour.texte.toLocaleLowerCase('fr-FR').indexOf(cherche);
     if (i < 0) continue;
     return {
-      qui: tour.role === 'agent' ? 'Mina' : prenom(nomProspect),
+      qui: tour.role === 'agent' ? nomAssistante : prenom(nomProspect),
       avant: avantCoupe(tour.texte.slice(0, i), 30),
       terme: tour.texte.slice(i, i + terme.length),
       apres: apresCoupe(tour.texte.slice(i + terme.length), 30),
@@ -92,7 +96,7 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
   // Les comptes par issue restent ceux de la liste sans le filtre des rappels ; celui-ci a son propre compte.
   const filtresSansRappels = { ...filtres };
   delete filtresSansRappels.rappels;
-  const [page, comptes, compteRappels, listeEntreprises, [twilio], vivantId, versions, persos] = await Promise.all([
+  const [page, comptes, compteRappels, listeEntreprises, [twilio], vivantId, versions, persos, { nom: nomAssistante }] = await Promise.all([
     pageAppels(filtres, { taille: PAS, ...(avant ? { avant } : {}) }),
     comptesAppels(filtresSansRappels),
     comptesAppels({ ...filtresSansRappels, rappels: true }).then((c) => c.total),
@@ -111,6 +115,7 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
           .where(eq(issuesPersonnalisees.entrepriseId, entreprise.id))
           .orderBy(asc(issuesPersonnalisees.libelle))
       : Promise.resolve([]),
+    assistantePourLaPage(),
   ]);
   const jours = [...new Set(page.lignes.map((l) => cleJour(l.debutLe)))];
   const [comptesJours, simules] = await Promise.all([
@@ -139,7 +144,7 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
       nombreEtapes: a.nombreEtapes,
       rendezVous: a.rendezVous,
       libellePerso: a.libellePerso,
-      extrait: q ? extraitDe(a.transcription, q, nom) : null,
+      extrait: q ? extraitDe(a.transcription, q, nom, nomAssistante) : null,
     };
   });
 

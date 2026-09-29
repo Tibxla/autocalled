@@ -1,3 +1,4 @@
+import { NomDeLAssistante } from '@/components/assistante';
 import { EnTetePage, Page } from '@/components/ui';
 
 const LARGEURS = ['38%', '22%', '14%', '10%'];
@@ -9,7 +10,14 @@ const LARGEURS = ['38%', '22%', '14%', '10%'];
 export default function ChargementTelephone() {
   return (
     <Page largeur="lecture">
-      <EnTetePage titre="Téléphone" sousTitre="Le téléphone passerelle compose les appels de Mina avec sa carte SIM." />
+      <EnTetePage
+        titre="Téléphone"
+        sousTitre={
+          <>
+            Le téléphone passerelle compose les appels de <NomDeLAssistante /> avec sa carte SIM.
+          </>
+        }
+      />
       <div className="grid max-w-[48rem] gap-12" aria-busy="true">
         <div className="grid gap-1.5">
           <p role="status" className="text-lg font-semibold text-encre-3">

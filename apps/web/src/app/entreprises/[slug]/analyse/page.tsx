@@ -21,7 +21,7 @@ import {
 import { db } from '@/db';
 import { scripts, versionsScript, type Etape } from '@/db/schema';
 import { analyseEntreprise } from '@/lib/lecture';
-import { entrepriseParSlug } from '@/lib/pages';
+import { assistantePourLaPage, entrepriseParSlug } from '@/lib/pages';
 
 export const metadata: Metadata = { title: 'Analyse' };
 
@@ -59,6 +59,7 @@ export default async function PageAnalyse({
   const { slug } = await params;
   const avecSimules = (await searchParams).simules === '1';
   const entreprise = await entrepriseParSlug(slug);
+  const { nom } = await assistantePourLaPage();
   const base = `/entreprises/${slug}`;
   const [{ simules, parVersion, parObjection, libelleObjection }, versions] = await Promise.all([
     analyseEntreprise(entreprise.id, avecSimules),
@@ -194,7 +195,7 @@ export default async function PageAnalyse({
         <section aria-labelledby="titre-objections-analyse" className="grid grid-cols-[minmax(0,1fr)] gap-4">
           <TitreSection id="titre-objections-analyse">Objections</TitreSection>
           {parObjection.length === 0 ? (
-            <EtatVide titre="Aucune objection relevée.">Les objections apparaissent ici avec la part de celles que Mina a levées.</EtatVide>
+            <EtatVide titre="Aucune objection relevée.">Les objections apparaissent ici avec la part de celles que {nom} a levées.</EtatVide>
           ) : (
             <TableDense libelle="Objections" colonnes={COLONNES_OBJECTIONS}>
               <EnTeteTable>

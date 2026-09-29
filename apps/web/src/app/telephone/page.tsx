@@ -1,8 +1,10 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { NomDeLAssistante } from '@/components/assistante';
 import { FUSEAU } from '@/components/format-appel';
 import { EnTetePage, Message, Page, PointCreux, TitreSection } from '@/components/ui';
 import { lireAppel } from '@/lib/lecture';
+import { assistantePourLaPage } from '@/lib/pages';
 import { commanderPont, type ReglagesLigne } from '@/lib/pont';
 import type { Appairage, EtatTelephone } from './actions';
 import { FormulaireReglages } from './formulaire-reglages';
@@ -11,7 +13,12 @@ import { ReleveEtat } from './releve-etat';
 
 export const metadata: Metadata = { title: 'Téléphone' };
 
-const SOUS_TITRE = 'Le téléphone passerelle compose les appels de Mina avec sa carte SIM.';
+/** Le même que l'écran de chargement (loading.tsx) : le nom vient du layout. */
+const SOUS_TITRE = (
+  <>
+    Le téléphone passerelle compose les appels de <NomDeLAssistante /> avec sa carte SIM.
+  </>
+);
 
 const HEURE_SECONDES = new Intl.DateTimeFormat('fr-FR', {
   hour: '2-digit',
@@ -74,7 +81,11 @@ async function nomDuProspect(appelId: string): Promise<string | null> {
 }
 
 export default async function PageTelephone() {
-  const [etat, appairage] = await Promise.all([commanderPont('/etat'), commanderPont('/appairage')]);
+  const [etat, appairage, { nom: nomAssistante }] = await Promise.all([
+    commanderPont('/etat'),
+    commanderPont('/appairage'),
+    assistantePourLaPage(),
+  ]);
   const luA = HEURE_SECONDES.format(new Date());
   const telephone = etat.ok && etatLisible(etat.corps) ? etat.corps : null;
   const reglages = etat.ok && reglagesLisibles(etat.corps.reglages) ? etat.corps.reglages : null;
@@ -103,7 +114,7 @@ export default async function PageTelephone() {
     verdict = {
       ton: 'encre-2',
       texte: 'Aucun téléphone passerelle appairé',
-      detail: 'Mina ne peut pas appeler par le téléphone ; la ligne navigateur reste disponible.',
+      detail: `${nomAssistante} ne peut pas appeler par le téléphone ; la ligne navigateur reste disponible.`,
     };
   else if (!telephone.connecte)
     verdict = {
@@ -141,7 +152,7 @@ export default async function PageTelephone() {
         <section aria-labelledby="titre-passerelle" className="grid gap-5">
           <TitreSection id="titre-passerelle">Téléphone passerelle</TitreSection>
           {!etat.ok ? (
-            <Injoignable />
+            <Injoignable nomAssistante={nomAssistante} />
           ) : telephone ? (
             <PanneauTelephone telephone={telephone} initial={appairage.ok ? (appairage.corps as unknown as Appairage) : null} />
           ) : (
@@ -169,11 +180,11 @@ export default async function PageTelephone() {
 }
 
 /** La ligne ne répond pas : ce qu'on ne peut plus faire, et où regarder sur le serveur. */
-function Injoignable() {
+function Injoignable({ nomAssistante }: { nomAssistante: string }) {
   return (
     <div className="grid gap-4">
       <p className="max-w-[62ch] text-base text-encre-2">
-        Mina ne peut pas appeler par le téléphone : le service de la ligne ne répond pas.
+        {nomAssistante} ne peut pas appeler par le téléphone : le service de la ligne ne répond pas.
       </p>
       <div className="grid gap-1.5">
         <p className="text-sm text-encre-3">Pour vérifier sur le serveur :</p>
