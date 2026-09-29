@@ -18,6 +18,8 @@ export const metadata: Metadata = { title: 'Appels' };
 
 /** Appels par page ; « Appels plus anciens » (N) passe à la suivante par curseur, filtres gardés. */
 const PAS = 100;
+/** Sous 640 px : une rangée de filtres qui défile seule, dans la gouttière, sans barre visible. */
+const RANGEE_MOBILE = 'max-sm:flex-nowrap max-sm:overflow-x-auto max-sm:-mx-(--gouttiere) max-sm:px-(--gouttiere) max-sm:[scrollbar-width:none]';
 /** Au-delà, la liste s'affiche sans savoir quel appel la ligne porte : un pont qui pend ne la bloque pas. */
 const ATTENTE_PONT_MS = 1500;
 
@@ -90,14 +92,14 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
   const { q = '', issue, ligne, periode, avant } = parametres;
 
   const [entreprise] = parametres.entreprise
-    ? await db.select({ id: entreprises.id }).from(entreprises).where(eq(entreprises.slug, parametres.entreprise))
+    ? await db.select({ id: entreprises.id, nom: entreprises.nom }).from(entreprises).where(eq(entreprises.slug, parametres.entreprise))
     : [];
   const rappels = parametres.rappels === '1';
   // Les comptes par issue restent ceux de la liste sans le filtre des rappels ; celui-ci a son propre compte.
   const filtresSansRappels = { ...filtres };
   delete filtresSansRappels.rappels;
   const [page, comptes, compteRappels, listeEntreprises, [twilio], vivantId, versions, persos, { nom: nomAssistante }] = await Promise.all([
-    pageAppels(filtres, { taille: PAS, ...(avant ? { avant } : {}) }),
+    pageAppels(filtres, { taille: PAS, ...(avant ? { avant } : {}), ...(parametres.rappels === '1' ? { ordre: 'rappel' as const } : {}) }),
     comptesAppels(filtresSansRappels),
     comptesAppels({ ...filtresSansRappels, rappels: true }).then((c) => c.total),
     db.select({ slug: entreprises.slug, nom: entreprises.nom }).from(entreprises).orderBy(asc(entreprises.nom)),
@@ -145,6 +147,7 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
       rendezVous: a.rendezVous,
       libellePerso: a.libellePerso,
       extrait: q ? extraitDe(a.transcription, q, nom, nomAssistante) : null,
+      rappel: { le: a.rappelLe, quand: a.rappelQuand, texte: a.rappelTexte },
     };
   });
 
@@ -174,15 +177,18 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
       <EnTetePage
         titre="Appels"
         compte={compteFiltre}
+        {...(entreprise && parametres.entreprise ? { retour: { href: `/entreprises/${parametres.entreprise}`, libelle: entreprise.nom } } : {})}
         sousTitre={
-          ligne === 'simulation'
-            ? 'Appels simulés, du plus récent au plus ancien ; ils ne comptent dans aucun chiffre.'
-            : 'Appels réels, du plus récent au plus ancien ; les simulés sont à part.'
+          rappels
+            ? 'Rappels convenus encore à faire, du plus ancien au plus tardif ; les rappels sans date à la fin.'
+            : ligne === 'simulation'
+              ? 'Appels simulés, du plus récent au plus ancien ; ils ne comptent dans aucun chiffre.'
+              : 'Appels réels, du plus récent au plus ancien ; les simulés sont à part.'
         }
       />
 
       <div className="grid gap-2.5 border-b border-filet pb-3">
-        <Filtres libelle={`Issue, ${population}`}>
+        <Filtres libelle={`Issue, ${population}`} className={RANGEE_MOBILE}>
           <Filtre actif={!issue && !rappels} compte={comptes.total} href={lien({ issue: null, rappels: null })}>
             Tous
           </Filtre>
@@ -191,10 +197,6 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
               {f.libelle}
             </Filtre>
           ))}
-          {/* Un rappel convenu reste à faire tant qu'aucun appel plus récent n'est parti vers le prospect. */}
-          <Filtre actif={rappels} compte={compteRappels} href={lien({ rappels: rappels ? null : '1', issue: null })}>
-            Rappels à faire
-          </Filtre>
         </Filtres>
         {persosProposees.length > 0 ? (
           <div className="flex flex-wrap items-baseline gap-x-[22px] gap-y-1 text-sm">
@@ -218,8 +220,14 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
             </Filtres>
           </div>
         ) : null}
-        <div className="flex flex-wrap items-center gap-x-10 gap-y-2 text-sm">
-          <Filtres libelle="Ligne" className="text-sm!">
+        <div className={`flex flex-wrap items-center gap-x-10 gap-y-2 text-sm ${RANGEE_MOBILE}`}>
+          {/* Un rappel convenu reste à faire tant qu'aucun appel plus récent n'est parti vers le prospect. Ce n'est pas une issue. */}
+          <Filtres libelle="Rappels" className="text-sm! max-sm:shrink-0">
+            <Filtre actif={rappels} compte={compteRappels} href={lien({ rappels: rappels ? null : '1', issue: null })}>
+              Rappels à faire
+            </Filtre>
+          </Filtres>
+          <Filtres libelle="Ligne" className="text-sm! max-sm:shrink-0 max-sm:flex-nowrap">
             <Filtre actif={!ligne} href={lien({ ligne: null })}>
               Réels
             </Filtre>
@@ -229,8 +237,8 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
               </Filtre>
             ))}
           </Filtres>
-          <div className="flex flex-wrap items-center gap-x-[22px] gap-y-1">
-            <Filtres libelle="Période" className="text-sm!">
+          <div className="flex flex-wrap items-center gap-x-[22px] gap-y-1 max-sm:shrink-0 max-sm:flex-nowrap">
+            <Filtres libelle="Période" className="text-sm! max-sm:flex-nowrap">
               {PERIODES.map((cle) => (
                 <Filtre key={cle} actif={cle === 'tout' ? !periode : periode === cle} href={lien({ periode: cle === 'tout' ? null : cle })}>
                   {LIBELLES_PERIODES[cle]}
@@ -240,7 +248,8 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
             <FiltreJour valeur={jourPrecis} parametres={sansCurseur} />
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-x-10 gap-y-2 text-sm">
+        {/* Sous 640 px, la recherche remonte juste sous le titre, comme sur l'accueil ; les listes déroulantes restent en bas. */}
+        <div className="flex flex-wrap items-center gap-x-10 gap-y-2 text-sm max-sm:contents">
           {listeEntreprises.length > 1 || parametres.entreprise ? (
             <FiltreSelection
               cle="entreprise"
@@ -273,10 +282,10 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
           ) : null}
           <Recherche
             valeur={q}
-            placeholder="Chercher un prospect, une société ou une phrase dite"
+            placeholder="Prospect, société ou phrase dite"
             libelle="Chercher dans les appels"
             conserver={{ ...sansCurseur, q: undefined }}
-            className="w-full sm:ml-auto sm:w-[360px]"
+            className="w-full max-sm:order-first sm:ml-auto sm:w-[360px]"
           />
         </div>
       </div>
@@ -320,12 +329,17 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
             depuis={ici}
             vivantId={vivantId}
             navigationClavier
+            rappels={rappels}
             comptesJours={comptesJours}
             {...(q ? { recherche: q } : {})}
             libelle={libelleIssue ? `Appels : ${libelleIssue}` : 'Appels'}
           />
           <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 pt-4 text-sm">
-            {page.suivant ? (
+            {rappels ? (
+              <span className="px-1.5 text-encre-3">
+                {page.suivant ? `Les ${PAS} premiers rappels à faire ; les suivants apparaîtront une fois ceux-ci faits.` : 'Fin de la liste.'}
+              </span>
+            ) : page.suivant ? (
               <LienAction href={lien({ avant: page.suivant })} touche="N" raccourci="n" groupeRaccourci="Liste">
                 Appels plus anciens
               </LienAction>

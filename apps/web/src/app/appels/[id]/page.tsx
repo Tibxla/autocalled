@@ -124,8 +124,8 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
   meta.push(<span key="ligne">{LIGNES_LONGUES[appel.ligne] ?? appel.ligne}</span>);
   if (appel.versionAgent)
     meta.push(
-      <span key="assistante">
-        {nomAssistante} <span className="font-mono">{appel.versionAgent.slice(-6)}</span>
+      <span key="assistante" title={`Configuration ${appel.versionAgent.slice(-6)}`}>
+        {nomAssistante}
       </span>,
     );
   if (version)
@@ -256,15 +256,11 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
                 'Aucune étape du script atteinte'
               )}
             </p>
-            <ol aria-label="Étapes du script" className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
+            <ol aria-label="Étapes du script" className="grid max-w-[68ch] gap-1 text-sm">
               {etapes.map((e, i) => (
-                <li
-                  key={i}
-                  title={e.intention}
-                  className={`flex max-w-[32ch] min-w-0 items-baseline gap-1.5 ${i < bilan.etapeAtteinte ? 'text-encre' : 'text-encre-3'}`}
-                >
+                <li key={i} className={`grid grid-cols-[1.25rem_minmax(0,1fr)] items-baseline ${i < bilan.etapeAtteinte ? 'text-encre' : 'text-encre-3'}`}>
                   <span className="font-mono text-xs">{i + 1}</span>
-                  <span className="truncate">{e.intention}</span>
+                  <span className="line-clamp-2">{e.intention}</span>
                 </li>
               ))}
             </ol>
@@ -277,10 +273,10 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
               <span className="font-mono">
                 {heure(rdv.debut)} à {heure(rdv.fin)}
               </span>
+              {rdv.statut === 'cree' ? <span className="text-sm text-encre-3"> · Événement créé dans l’agenda</span> : null}
+              {rdv.statut === 'a-creer' ? <span className="text-sm text-encre-3"> · Événement à créer</span> : null}
             </p>
             <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-              {rdv.statut === 'cree' ? <span className="px-1.5 text-encre-2">Dans l’agenda</span> : null}
-              {rdv.statut === 'a-creer' ? <span className="px-1.5 text-encre-3">Événement à créer</span> : null}
               {rdv.statut === 'echec' ? (
                 <>
                   <span className="px-1.5 text-alerte">Création échouée : {rdv.erreur ?? 'raison inconnue.'}</span>

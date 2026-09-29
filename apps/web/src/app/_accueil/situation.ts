@@ -54,6 +54,11 @@ export function raisonSuspension(campagne: CampagneJour, ligne: EtatLigneServeur
   return null;
 }
 
+/** La campagne téléphone en cours (la plus récente), que l'accueil garde à portée pendant et après un appel. */
+export function campagneTelephoneEnCours(campagnes: readonly CampagneJour[]): CampagneJour | null {
+  return campagnes.find((c) => TELEPHONE.has(c.ligne) && c.statut === 'en-cours') ?? null;
+}
+
 /** Vrai quand la ligne ne laisse partir aucun appel téléphone (Reprendre et Lancer au téléphone sont alors désactivés). */
 export function ligneBloquee(ligne: EtatLigneServeur): string | null {
   if (!ligne.joignable) return 'La ligne est injoignable.';

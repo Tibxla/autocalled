@@ -15,6 +15,7 @@ import { chrono as formatChrono, heure, numeroMasque, prenom } from './format-ap
 import { useHorloge } from './horloge';
 import { lotDeNiveaux, TamponNiveaux } from './niveaux-direct';
 import { OndeDirect } from './onde-direct';
+import { AxePiste } from '@/app/_accueil/squelette-bande';
 
 /**
  * Bande d'un appel téléphone en cours, commune à l'accueil, à la fiche d'appel et à la régie de campagne.
@@ -559,7 +560,20 @@ export function VueBandeAppel({
   const sousTitre = tourMina ? phraseDeMina(tourMina.texte) : null;
   const dernierTour = tours.at(-1);
 
-  const texteEtat = etat === 'prise-en-main' ? `Main reprise : ${nomAssistante} s’est tue` : (LIBELLES_ETAT[etat] ?? etat);
+  // Appel téléphone fini sans réplique à rejouer (page rechargée pendant l'analyse) : le centre de la bande dit
+  // l'analyse et son chrono, le haut seulement l'heure de fin.
+  const analyseCentree = variante === 'bande' && Boolean(termine) && tours.length === 0 && telephone && !onde;
+  const finAppel = termine && termine.le > 0 ? termine.le : null;
+  const texteEtat =
+    etat === 'prise-en-main'
+      ? `Main reprise : ${nomAssistante} s’est tue`
+      : etat === 'termine' && analyseCentree
+        ? finAppel
+          ? `Appel terminé à ${heure(new Date(finAppel))}`
+          : 'Appel terminé'
+        : etat === 'termine' && chrono
+          ? 'Appel terminé'
+          : (LIBELLES_ETAT[etat] ?? etat);
   const couleurEtat = vivant || prise.etat === 'active' ? 'text-antenne' : 'text-encre-3';
   // Indicatif et discret : le bilan dira l'étape atteinte. Rien après une prise de main (l'assistante s'est tue).
   const etapeEnCours = enLigne && prise.etat !== 'active' && etat !== 'prise-en-main' ? etapeAffichee(etape, etapes) : null;
@@ -595,7 +609,7 @@ export function VueBandeAppel({
         </Action>
       ) : null}
       {voirRaccrocher ? (
-        <Action ton="alerte" className="sm:ml-6" onClick={raccrocher} enCours={raccrochage.enCours} libelleEnCours="Raccrochage…" disabled={raccrochage.enCours}>
+        <Action ton="alerte" className="sm:ml-6 max-sm:col-span-2 max-sm:mt-2" onClick={raccrocher} enCours={raccrochage.enCours} libelleEnCours="Raccrochage…" disabled={raccrochage.enCours}>
           Raccrocher
         </Action>
       ) : null}
@@ -631,7 +645,7 @@ export function VueBandeAppel({
           ) : null}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 max-sm:w-full">
             <span className={`text-sm ${couleurEtat}`}>{texteEtat}</span>
-            <Chrono chrono={chrono} maintenant={maintenant} enLigne={vivant} etat={etat} />
+            {analyseCentree ? null : <Chrono chrono={chrono} maintenant={maintenant} enLigne={vivant} etat={etat} />}
             {etapeEnCours ? <EtapeEnCours etape={etapeEnCours} /> : null}
             {termine ? null : boutons}
           </div>
@@ -649,8 +663,8 @@ export function VueBandeAppel({
             }}
             onAnnuler={fermerPrise}
           >
-            {nomAssistante} se tait tout de suite et ne reprendra pas : tu termines l’appel toi-même, avec ton micro. Annonce-toi (« Thibaud à l’appareil, je
-            prends le relais »). Mets un casque : sans lui, ton micro reprend la voix du prospect. La transcription et le bilan s’arrêtent au relais.
+            {nomAssistante} se tait tout de suite et ne reprendra pas : tu termines l’appel toi-même, avec ton micro. Annonce-toi par ton prénom (« … à l’appareil,
+            je prends le relais »). Mets un casque : sans lui, ton micro reprend la voix du prospect. La transcription et le bilan s’arrêtent au relais.
           </Confirmation>
         ) : null}
         {prise.etat === 'connexion' ? <p className="text-sm text-encre-3">Connexion au téléphone…</p> : null}
@@ -706,10 +720,17 @@ export function VueBandeAppel({
         ) : null}
 
         {/* Rangée 2 : sous-titre, la dernière phrase de l'assistante (bande seulement). */}
+        {analyseCentree ? (
+          <div className="flex min-h-[84px] flex-col items-center justify-end gap-1.5 pt-1.5 pb-0.5 text-center max-sm:min-h-0">
+            <p className="max-w-[48ch] text-2xl font-medium tracking-[-0.01em] text-balance max-sm:text-xl">
+              {finAppel ? <ChronoAnalyse depuis={finAppel} /> : 'Rapatriement et analyse du bilan…'}
+            </p>
+          </div>
+        ) : null}
         {variante === 'bande' && (tours.length > 0 || enLigne) ? (
           <div className="flex min-h-[84px] flex-col items-center justify-end gap-1.5 pt-1.5 pb-0.5 text-center max-sm:min-h-0">
             {tourProspect ? (
-              <p aria-hidden="true" className="max-w-full truncate text-lg text-encre-2">
+              <p aria-hidden="true" className="max-w-full truncate text-lg text-encre-2 max-sm:line-clamp-2 max-sm:whitespace-normal">
                 <span className="mr-2.5 text-md font-semibold text-encre-3">{nomProspect}</span>
                 {fin(tourProspect.texte, 90)}
               </p>
@@ -737,6 +758,8 @@ export function VueBandeAppel({
             <OndeDirect niveaux={niveaux} actif />
           ) : tours.length > 0 || enLigne ? (
             <PisteParole tours={tours} actif={enLigne} {...(ecoute.active && ecoute.niveau ? { niveau: ecoute.niveau } : {})} />
+          ) : analyseCentree ? (
+            <AxePiste />
           ) : null)}
 
         {/* Fil complet : toujours sur la fiche, avec T sur la bande. */}
@@ -773,6 +796,18 @@ export function VueBandeAppel({
         </div>
       ) : null}
     </>
+  );
+}
+
+/** « Rapatriement et analyse du bilan… 00:23 », le chrono partant de la fin de l'appel (ms ou date ISO). */
+export function ChronoAnalyse({ depuis }: { depuis: number | string }) {
+  const maintenant = useHorloge();
+  const debut = typeof depuis === 'number' ? depuis : Date.parse(depuis);
+  return (
+    <span>
+      Rapatriement et analyse du bilan…{' '}
+      <span className="font-mono text-encre-3">{maintenant > 0 ? formatChrono(maintenant - debut) : '--:--'}</span>
+    </span>
   );
 }
 
@@ -903,7 +938,7 @@ export function BandeAppel({
   const termine = statut === 'traitement' || fil.etat === 'termine' ? { le: finConnue ?? 0 } : null;
 
   let chrono: VueBandeAppelProps['chrono'] = null;
-  if (termine && finConnue) chrono = { libelle: `terminé à ${heure(new Date(finConnue))} · analyse`, depuis: finConnue };
+  if (termine && finConnue) chrono = { libelle: `à ${heure(new Date(finConnue))} · analyse`, depuis: finConnue };
   else if (!termine && SONNE.has(fil.etat) && !decrocheLigne && debutLe) chrono = { libelle: 'sonne depuis', depuis: Date.parse(debutLe) };
   else if (!termine && enLigneDepuis) chrono = { libelle: 'en ligne', depuis: enLigneDepuis };
   else if (!termine && debutLe) chrono = { libelle: 'depuis la composition', depuis: Date.parse(debutLe) };

@@ -1,6 +1,6 @@
-import { ISSUES_SYSTEME, LIBELLES_ISSUES, type IssueSysteme } from '@autocalled/domain';
+import { ISSUES_SYSTEME, LIBELLES_ISSUES, type IssueSysteme, type RappelDate } from '@autocalled/domain';
 import { NavigationListe } from './clavier';
-import { cleJour, estNonCompose, etatAppel, LIBELLE_NON_COMPOSE, libelleJour, LIGNES_COURTES, type TonEtat } from './format-appel';
+import { cleJour, estNonCompose, etatAppel, jourCourt, LIBELLE_NON_COMPOSE, libelleJour, LIGNES_COURTES, quandRappeler, rappelEnRetard, type TonEtat } from './format-appel';
 import { Cellule, CelluleEnTete, Duree, EnTeteTable, GlypheEtape, Heure, LienLigne, LigneTable, TableDense } from './ui';
 
 /**
@@ -38,6 +38,8 @@ export interface LigneAppel {
   rendezVous?: boolean;
   libellePerso?: string | null;
   extrait?: ExtraitAppel | null;
+  /** Vue « Rappels à faire » : quand rappeler et ce que le prospect a dit. */
+  rappel?: { le: Date | null; quand: RappelDate | null; texte: string | null };
   /** Remplace /appels/{id}. */
   lien?: string;
 }
@@ -83,6 +85,7 @@ const TONS: Record<TonEtat, string> = {
 
 const COLONNES_COMPLETES = '52px 230px 130px 200px minmax(0,1fr) 44px';
 const COLONNES_PROSPECT = '52px 210px minmax(0,1fr) 84px 44px';
+const COLONNES_RAPPELS = '13rem 230px 130px minmax(0,1fr) 84px';
 
 function lienDe(a: LigneAppel, depuis: string | undefined, recherche: string | undefined): string {
   const base = a.lien ?? `/appels/${a.id}`;
@@ -227,6 +230,43 @@ function Ligne({
   );
 }
 
+/** Vue « Rappels à faire » : quand rappeler (en brique s'il est en retard), qui, ce qui a été convenu, l'appel d'origine. */
+function LigneRappel({ a, maintenant, depuis }: { a: LigneAppel; maintenant: Date; depuis: string | undefined }) {
+  const r = a.rappel;
+  const retard = r?.le ? rappelEnRetard(r.le, r.quand, maintenant) : false;
+  const lien = lienDe(a, depuis, undefined);
+  return (
+    <LigneTable>
+      <Cellule tronquee className="max-sm:order-3">
+        {r?.le ? (
+          <span className={retard ? 'text-encre' : 'text-encre-2'}>
+            {retard ? <span className="text-alerte">En retard · </span> : null}
+            {quandRappeler(r.le, r.quand, maintenant)}
+          </span>
+        ) : (
+          <span className="text-encre-3">sans date</span>
+        )}
+      </Cellule>
+      <Cellule tronquee titre={[a.prospect, a.societe].filter(Boolean).join(' · ')} className="max-sm:order-1 max-sm:flex-1">
+        <LienLigne href={lien} prefetch={false} className="font-medium decoration-souligne underline-offset-4 hover:underline">
+          {a.prospect}
+        </LienLigne>
+        {a.societe ? <span className="text-encre-3"> · {a.societe}</span> : null}
+      </Cellule>
+      <Cellule tronquee attenuee masqueeMobile titre={a.entreprise ?? undefined}>
+        {a.entreprise}
+      </Cellule>
+      <Cellule tronquee titre={r?.texte ?? undefined} className="text-encre-3 max-sm:order-5 max-sm:flex-1">
+        {r?.texte ? `« ${r.texte} »` : ''}
+      </Cellule>
+      <Cellule mono align="droite" className="text-encre-3 max-sm:order-2">
+        <span title={`Appel du ${jourCourt(a.debutLe)}`}>{jourCourt(a.debutLe).split(' ')[1]}</span>
+      </Cellule>
+      <Retour />
+    </LigneTable>
+  );
+}
+
 function Intertitre({ libelle, nombre, ici, colonnes }: { libelle: string; nombre: number; ici: number; colonnes: number }) {
   return (
     <div role="row" className="border-b border-filet-2 pt-6 pb-1.5 text-sm">
@@ -255,6 +295,7 @@ export function ListeAppels({
   recherche,
   libelle = 'Appels',
   comptesJours,
+  rappels = false,
 }: {
   appels: LigneAppel[];
   /** URL de la liste d'origine, ajoutée aux liens (?depuis=) : retour, appel suivant et précédent sur la fiche. */
@@ -268,8 +309,29 @@ export function ListeAppels({
   libelle?: string;
   /** Appels de chaque jour (`AAAA-MM-JJ`, jour de Paris) comptés en base : un jour coupé par la pagination garde son vrai total. */
   comptesJours?: Readonly<Record<string, number>>;
+  /** Vue « Rappels à faire » : une ligne par rappel, dans l'ordre reçu (du plus ancien au plus tardif), sans jours. */
+  rappels?: boolean;
 }) {
   const maintenant = new Date();
+  if (rappels) {
+    const table = (
+      <TableDense libelle={libelle} colonnes={COLONNES_RAPPELS}>
+        <EnTeteTable>
+          <CelluleEnTete>Quand</CelluleEnTete>
+          <CelluleEnTete>Prospect</CelluleEnTete>
+          <CelluleEnTete masqueeMobile>Entreprise</CelluleEnTete>
+          <CelluleEnTete>Convenu</CelluleEnTete>
+          <CelluleEnTete align="droite">Appel</CelluleEnTete>
+        </EnTeteTable>
+        <div role="rowgroup">
+          {appels.map((a) => (
+            <LigneRappel key={a.id} a={a} maintenant={maintenant} depuis={depuis} />
+          ))}
+        </div>
+      </TableDense>
+    );
+    return navigationClavier ? <NavigationListe memoriser="appels">{table}</NavigationListe> : table;
+  }
   const complete = appels.some((a) => a.prospect !== undefined);
   const vivant = vivantId ? appels.find((a) => a.id === vivantId && a.statut === 'en-cours') : undefined;
   const autres = vivant ? appels.filter((a) => a !== vivant) : appels;

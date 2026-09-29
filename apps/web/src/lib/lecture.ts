@@ -1,5 +1,5 @@
 import 'server-only';
-import { ISSUES_SYSTEME, type IssueSysteme, type TourDeParole, statistiquesObjections, statistiquesParVersion } from '@autocalled/domain';
+import { ISSUES_SYSTEME, type IssueSysteme, type RappelDate, type TourDeParole, statistiquesObjections, statistiquesParVersion } from '@autocalled/domain';
 import { type SQL, and, asc, desc, eq, gte, ilike, isNotNull, ne, or, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { appels, entreprises, issuesPersonnalisees, journalMcp, objections, prospects, rendezVous, versionsScript } from '@/db/schema';
@@ -144,10 +144,12 @@ export async function listerAppels(f: FiltresAppels, limite: number, { avant }: 
  * Une page de la liste des appels, sans les colonnes lourdes (transcription seulement pendant une recherche,
  * pour l'extrait) : société, nombre d'étapes, libellé d'issue personnalisée et rendez-vous en une requête.
  * `suivant` est le curseur de la page suivante (plus ancienne), null en fin de liste.
+ * `ordre: 'rappel'` (vue « Rappels à faire ») : du rappel le plus ancien au plus tardif, les rappels sans date à la
+ * fin, sans curseur (le curseur suit l'ordre des débuts d'appel) ; `suivant` dit alors seulement qu'il en reste.
  */
-export async function pageAppels(f: FiltresAppels, { taille, avant }: { taille: number; avant?: string }) {
+export async function pageAppels(f: FiltresAppels, { taille, avant, ordre = 'debut' }: { taille: number; avant?: string; ordre?: 'debut' | 'rappel' }) {
   const conditions = conditionsAppels(f);
-  if (avant && FORME_UUID.test(avant)) conditions.push(plusAnciensQue(avant));
+  if (ordre === 'debut' && avant && FORME_UUID.test(avant)) conditions.push(plusAnciensQue(avant));
   const avecTranscription = Boolean(f.recherche?.trim());
   const lignes = await db
     .select({
@@ -170,6 +172,8 @@ export async function pageAppels(f: FiltresAppels, { taille, avant }: { taille: 
       entreprise: entreprises.nom,
       entrepriseSlug: entreprises.slug,
       rappelLe: appels.rappelLe,
+      rappelQuand: sql<RappelDate | null>`${appels.bilan}->'rappelLe'`,
+      rappelTexte: sql<string | null>`${appels.bilan}->>'rappel'`,
       versionScriptId: appels.versionScriptId,
       campagneId: appels.campagneId,
       assistanteNom: appels.assistanteNom,
@@ -183,7 +187,7 @@ export async function pageAppels(f: FiltresAppels, { taille, avant }: { taille: 
     .leftJoin(versionsScript, eq(versionsScript.id, appels.versionScriptId))
     .leftJoin(issuesPersonnalisees, sql`${ISSUE_CHOISIE} = 'perso:' || ${issuesPersonnalisees.id}::text`)
     .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(appels.debutLe), desc(appels.id))
+    .orderBy(...(ordre === 'rappel' ? [sql`${appels.rappelLe} asc nulls last`, asc(appels.debutLe), asc(appels.id)] : [desc(appels.debutLe), desc(appels.id)]))
     .limit(taille + 1);
   const page = lignes.slice(0, taille);
   return { lignes: page, suivant: lignes.length > taille ? (page.at(-1)?.id ?? null) : null };

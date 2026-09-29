@@ -186,7 +186,7 @@ export function TitreEnAppel() {
 
 /**
  * La campagne qui tourne ou attend, vue de toute page : « Campagne Gîtes · 34/100 » ou « · suspendue », lien
- * vers sa régie. Rien sans campagne ouverte. Masquée sous 1280 px, où la barre n’a pas la place (le nom se tronque avant).
+ * vers sa régie. Rien sans campagne ouverte. Sous 1280 px, où la barre n’a pas la place du nom, seul le compte reste (« 12/14 »).
  */
 export function CampagneStatut() {
   return <VueCampagneStatut campagne={useLigne().campagne} />;
@@ -199,10 +199,10 @@ export function VueCampagneStatut({ campagne: c }: { campagne: CampagneLigne | n
     <Link
       href={`/campagnes/${c.id}`}
       aria-label={`Campagne ${c.entreprise}, ${suspendue ? 'suspendue' : 'en cours'}, ${c.traites} traités sur ${c.total} : ouvrir sa régie`}
-      className="-mx-1.5 hidden h-9 max-w-[18rem] min-w-0 items-center gap-1 rounded-[4px] px-1.5 text-sm whitespace-nowrap text-encre-3 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline xl:flex"
+      className="-mx-1.5 flex h-9 max-w-[18rem] min-w-0 items-center gap-1 rounded-[4px] px-1.5 text-sm whitespace-nowrap text-encre-3 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline"
     >
-      <span className="truncate">Campagne {c.entreprise}</span>
-      <span className="shrink-0">·</span>
+      <span className="hidden truncate xl:inline">Campagne {c.entreprise}</span>
+      <span className="hidden shrink-0 xl:inline">·</span>
       {suspendue ? (
         <span className="shrink-0">suspendue</span>
       ) : (

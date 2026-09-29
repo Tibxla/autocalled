@@ -41,7 +41,7 @@ import { BandeAccueil } from './_accueil/bande-accueil';
 import { FrontiereLigne } from './_accueil/frontiere-ligne';
 import { RappelsDuJour } from './_accueil/rappels-du-jour';
 import { Journee } from './_accueil/journee';
-import { situationAccueil } from './_accueil/situation';
+import { campagneTelephoneEnCours, situationAccueil } from './_accueil/situation';
 import { SqueletteBande } from './_accueil/squelette-bande';
 import { SuiviAccueil } from './_accueil/suivi-accueil';
 
@@ -113,5 +113,13 @@ async function BandeServeur({ appels, campagnes, maintenant }: { appels: AppelDu
     }
   }
 
-  return <BandeAccueil situation={situation} identiteFin={identiteFin} ligne={ligne} telephoneRecents={recents} />;
+  return (
+    <BandeAccueil
+      situation={situation}
+      identiteFin={identiteFin}
+      ligne={ligne}
+      telephoneRecents={recents}
+      campagneTelephone={campagneTelephoneEnCours(campagnes)}
+    />
+  );
 }

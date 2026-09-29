@@ -108,6 +108,25 @@ describe('liste des appels en base', () => {
     expect(new Set(vus).size).toBe(tous.length);
   });
 
+  it('la vue des rappels va du rappel le plus ancien au plus tardif, les rappels sans date à la fin, sans curseur', async () => {
+    const { e, v1 } = await jeu();
+    const base = { entrepriseId: e.id, versionScriptId: v1, ligne: 'bluetooth' as const, numero: '+33639980003', statut: 'termine' as const, issueSysteme: 'rappel-convenu' as const };
+    const maintenant = Date.now();
+    const [sansDate, tardif, ancien] = await db
+      .insert(appels)
+      .values([
+        { ...base, prospectId: 'fictif-a', debutLe: new Date(maintenant - 1000) },
+        { ...base, prospectId: 'fictif-b', debutLe: new Date(maintenant - 2000), rappelLe: new Date(maintenant + 2 * JOUR) },
+        { ...base, prospectId: 'fictif-c', debutLe: new Date(maintenant - 3000), rappelLe: new Date(maintenant - JOUR) },
+      ])
+      .returning();
+    await db.execute(sql`update appels set bilan = '{"rappel":"jeudi matin fictif"}'::jsonb where id = ${ancien!.id}`);
+    const { lignes } = await pageAppels({ rappels: true, reels: true, recherche: '' }, { taille: 10, ordre: 'rappel', avant: tardif!.id });
+    const nouveaux = lignes.filter((l) => [sansDate!.id, tardif!.id, ancien!.id].includes(l.id));
+    expect(nouveaux.map((l) => l.id)).toEqual([ancien!.id, tardif!.id, sansDate!.id]);
+    expect(nouveaux[0]).toMatchObject({ rappelTexte: 'jeudi matin fictif' });
+  });
+
   it('une page porte société, étapes, libellé personnalisé et rendez-vous ; la transcription seulement en recherche', async () => {
     const { perso } = await jeu();
     const { lignes } = await pageAppels({ issue: `perso:${perso.id}` }, { taille: 10 });

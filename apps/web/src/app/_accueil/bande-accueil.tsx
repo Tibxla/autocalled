@@ -6,13 +6,12 @@ import { useRef, useState, useTransition } from 'react';
 import { lancerCampagne, suspendreCampagne } from '@/app/campagnes/actions';
 import { useNomAssistante } from '@/components/assistante';
 import { Action, LienAction } from '@/components/action';
-import { BandeAppel, type IdentiteAppel } from '@/components/bande-appel';
+import { BandeAppel, ChronoAnalyse, type IdentiteAppel } from '@/components/bande-appel';
 import { useRaccourci } from '@/components/clavier';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
 import { useLigne } from '@/components/etat-ligne-telephone';
-import { chrono, dateCourte, duree, etatAppel, FUSEAU, heure, LIGNES_COURTES } from '@/components/format-appel';
+import { dateCourte, duree, etatAppel, FUSEAU, heure, LIGNES_COURTES } from '@/components/format-appel';
 import { estimation } from '@/components/garde-fous';
-import { useHorloge } from '@/components/horloge';
 import { GlypheEtape, PointCreux } from '@/components/ui';
 import { useReconnexion } from '@/app/telephone/panneau-telephone';
 import type { AppelDuJour, CampagneJour, EtatLigneServeur } from '@/lib/accueil';
@@ -41,9 +40,12 @@ export function BandeAccueil({
   identiteFin,
   ligne,
   telephoneRecents,
+  campagneTelephone = null,
   confirmationInitiale = false,
 }: {
   situation: Situation;
+  /** La campagne téléphone en cours : Suspendre reste à portée pendant un appel et à sa fin (la pause entre deux appels est trop courte pour « Entre deux appels »). */
+  campagneTelephone?: CampagneJour | null;
   /** Identité complète (version, numéro masqué) de l'appel téléphone en analyse, pour garder la bande telle quelle. */
   identiteFin: IdentiteAppel | null;
   ligne: EtatLigneServeur;
@@ -122,6 +124,7 @@ export function BandeAccueil({
           <LienEntree href={lienAppel(s.appel.id)}>Ouvrir l’appel</LienEntree>
         </div>
       ) : null}
+      {campagneTelephone && (s.type === 'appel' || s.type === 'fin-appel') ? <SuspendreEnAppel campagne={campagneTelephone} /> : null}
     </div>
   );
 }
@@ -411,22 +414,12 @@ function FinAppel({ appel: a, bloquee }: { appel: AppelDuJour; bloquee: boolean 
   );
 }
 
-/** « Rapatriement et analyse du bilan… 00:23 », le chrono partant de la fin de l'appel. */
-function ChronoAnalyse({ depuis }: { depuis: string }) {
-  const maintenant = useHorloge();
-  return (
-    <span>
-      Rapatriement et analyse du bilan…{' '}
-      <span className="font-mono text-encre-3">{maintenant > 0 ? chrono(maintenant - Date.parse(depuis)) : '--:--'}</span>
-    </span>
-  );
-}
-
 /* ------------------------------------------------------------------ campagnes */
 
 const MESSAGE_CONCURRENCE = 'La campagne a changé d’état entre-temps.';
 
-function EntreDeux({ campagne: c, ligne }: { campagne: CampagneJour; ligne: EtatLigneServeur }) {
+/** Suspendre une campagne : un frein, sans confirmation. L'appel en cours va à son terme. */
+function useSuspendre(campagneId: string) {
   const router = useRouter();
   const [enCours, demarrer] = useTransition();
   const [erreur, setErreur] = useState<string | null>(null);
@@ -434,12 +427,43 @@ function EntreDeux({ campagne: c, ligne }: { campagne: CampagneJour; ligne: Etat
     demarrer(async () => {
       setErreur(null);
       try {
-        await suspendreCampagne(c.id);
+        await suspendreCampagne(campagneId);
       } catch {
         setErreur(MESSAGE_CONCURRENCE);
       }
       router.refresh();
     });
+  return { enCours, erreur, suspendre };
+}
+
+/** Sous la bande d'un appel de campagne téléphone : où en est la campagne, Suspendre et la régie. */
+function SuspendreEnAppel({ campagne: c }: { campagne: CampagneJour }) {
+  const { enCours, erreur, suspendre } = useSuspendre(c.id);
+  return (
+    <div className="grid gap-1.5 border-t border-filet pt-3">
+      <div className="-mx-1.5 flex flex-wrap items-center justify-end gap-x-4 gap-y-1 max-sm:[&_.touche]:hidden">
+        <span className="px-1.5 text-sm text-encre-3 max-sm:basis-full">
+          Campagne {c.entreprise} · <span className="font-mono">{c.comptes.traites}</span> traités sur <span className="font-mono">{c.comptes.total}</span>
+        </span>
+        <Action onClick={suspendre} enCours={enCours} libelleEnCours="Suspension…" disabled={enCours} aria-describedby={`aide-suspendre-appel-${c.id}`}>
+          Suspendre
+        </Action>
+        <LienAction href={`/campagnes/${c.id}`}>Ouvrir la régie</LienAction>
+      </div>
+      <p id={`aide-suspendre-appel-${c.id}`} className="text-sm text-encre-3 sm:text-right">
+        Suspendre : l’appel en cours va à son terme, aucun autre ne part.
+      </p>
+      {erreur ? (
+        <p role="alert" className="rounded-md bg-alerte-fond px-3.5 py-2.5 text-sm text-alerte">
+          {erreur}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function EntreDeux({ campagne: c, ligne }: { campagne: CampagneJour; ligne: EtatLigneServeur }) {
+  const { enCours, erreur, suspendre } = useSuspendre(c.id);
   const pause = c.ligne === 'bluetooth' && ligne.joignable && ligne.reglages ? ligne.reglages.pauseEntreAppelsS : null;
   return (
     <Cadre

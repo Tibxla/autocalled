@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AppelDuJour, CampagneJour, EtatLigneServeur } from '@/lib/accueil';
-import { ANALYSE_BLOQUEE_MS, FENETRE_FIN_MS, ligneBloquee, raisonSuspension, situationAccueil } from './situation';
+import { ANALYSE_BLOQUEE_MS, campagneTelephoneEnCours, FENETRE_FIN_MS, ligneBloquee, raisonSuspension, situationAccueil } from './situation';
 
 // Données fictives.
 const MAINTENANT = Date.parse('2026-09-29T12:00:00Z');
@@ -226,5 +226,14 @@ describe('ligneBloquee', () => {
     expect(ligneBloquee(LIBRE)).toBeNull();
     expect(ligneBloquee({ joignable: false })).toMatch(/injoignable/);
     expect(ligneBloquee({ ...LIBRE, plafond: 'x' })).toMatch(/plafond/);
+  });
+});
+
+describe('campagneTelephoneEnCours', () => {
+  it('rend la campagne téléphone en cours, jamais une suspendue ni une autre ligne', () => {
+    const tel = campagne({ id: 't', ligne: 'bluetooth', statut: 'en-cours' });
+    expect(campagneTelephoneEnCours([campagne({ ligne: 'navigateur', statut: 'en-cours' }), tel])).toBe(tel);
+    expect(campagneTelephoneEnCours([campagne({ ligne: 'bluetooth', statut: 'en-pause' })])).toBeNull();
+    expect(campagneTelephoneEnCours([])).toBeNull();
   });
 });
