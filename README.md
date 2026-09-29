@@ -143,6 +143,7 @@ Sans elle, Mina se teste par la ligne navigateur. Pour qu'elle appelle de vrais 
 
 ```bash
 scripts/installer-pont.sh      # BlueZ, oFono, libsbc, environnement Python, règle D-Bus, secret, chemin /prise-en-main, service autocalled-pont
+                               # (PORT_HTTPS=… devant la commande si l'interface n'est pas servie sur 8449)
 scripts/installer-services.sh  # relance l'interface, qui lit le secret du pont au démarrage
 ```
 
