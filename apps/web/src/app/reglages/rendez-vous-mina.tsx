@@ -116,7 +116,8 @@ function Ligne({ ligne: { rdv, prospect, appelId }, maintenant }: { ligne: Ligne
         {rdv.email ? <span className="min-w-0 truncate font-mono text-xs text-encre-3">{rdv.email}</span> : null}
       </span>
       <span className="flex flex-wrap items-baseline gap-x-4 text-sm sm:justify-end">
-        {rdv.lienVisio ? (
+        {/* Une visio passée (commencée depuis plus d’une heure) ne se rejoint plus. */}
+        {rdv.lienVisio && rdv.debut.getTime() > maintenant.getTime() - 60 * 60_000 ? (
           <a
             href={rdv.lienVisio}
             target="_blank"

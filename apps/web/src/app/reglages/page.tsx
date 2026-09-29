@@ -1,9 +1,9 @@
-import { and, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { heure, jourCourt } from '@/components/format-appel';
 import { EnTetePage, LigneDefinition, Message, Page, TitreSection } from '@/components/ui';
 import { db } from '@/db';
-import { appels, rendezVous } from '@/db/schema';
+import { appels, entreprises, prospects, rendezVous } from '@/db/schema';
 import { calendrierConfigure, etatAgenda } from '@/lib/agenda';
 import { derniereVersionAssistante } from '@/lib/assistante';
 import { clientGoogle, connexion } from '@/lib/google';
@@ -11,7 +11,7 @@ import { journalMcpRecent, rendezVousRecents } from '@/lib/lecture';
 import { assistantePourLaPage } from '@/lib/pages';
 import { BoutonDeconnecter } from './bouton-deconnecter';
 import { BoutonRelire } from './boutons-agenda';
-import { JournalClaudeCode } from './journal-claude-code';
+import { JournalClaudeCode, type LigneJournal } from './journal-claude-code';
 import { MessageGoogle } from './message-google';
 import { RendezVousMina } from './rendez-vous-mina';
 
@@ -64,6 +64,33 @@ async function rendezVousSansReservation(): Promise<number> {
   return Number(ligne?.n ?? 0);
 }
 
+/** Les noms des entreprises et des prospects cités par slug ou identifiant dans les arguments du journal. */
+async function nommer(journal: Omit<LigneJournal, 'noms'>[]): Promise<LigneJournal[]> {
+  const texte = (v: unknown) => (typeof v === 'string' && v ? v : null);
+  const slugs = [...new Set(journal.map((l) => texte(l.arguments.entreprise)).filter((v): v is string => v !== null))];
+  if (slugs.length === 0) return journal;
+  const ids = [...new Set(journal.map((l) => texte(l.arguments.prospect)).filter((v): v is string => v !== null))];
+  const [listeEntreprises, listeProspects] = await Promise.all([
+    db.select({ slug: entreprises.slug, nom: entreprises.nom }).from(entreprises).where(inArray(entreprises.slug, slugs)),
+    ids.length
+      ? db
+          .select({ id: prospects.id, nom: prospects.nom, slug: entreprises.slug })
+          .from(prospects)
+          .innerJoin(entreprises, eq(entreprises.id, prospects.entrepriseId))
+          .where(and(inArray(entreprises.slug, slugs), inArray(prospects.id, ids)))
+      : Promise.resolve([]),
+  ]);
+  const entreprise = new Map(listeEntreprises.map((e) => [e.slug, e.nom]));
+  const prospect = new Map(listeProspects.map((p) => [`${p.slug}/${p.id}`, p.nom]));
+  return journal.map((l) => {
+    const slug = texte(l.arguments.entreprise);
+    const id = texte(l.arguments.prospect);
+    const nomEntreprise = slug ? entreprise.get(slug) : undefined;
+    const nomProspect = slug && id ? prospect.get(`${slug}/${id}`) : undefined;
+    return { ...l, noms: { ...(nomEntreprise ? { entreprise: nomEntreprise } : {}), ...(nomProspect ? { prospect: nomProspect } : {}) } };
+  });
+}
+
 export default async function PageReglages({ searchParams }: { searchParams: Promise<{ google?: string }> }) {
   const { google } = await searchParams;
   const [client, api, etat, rdvs, journal, sansReservation, assistante, configuration] = await Promise.all([
@@ -71,7 +98,7 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
     connexion(),
     etatAgenda(),
     rendezVousRecents(),
-    journalMcpRecent(100),
+    journalMcpRecent(100).then(nommer),
     rendezVousSansReservation(),
     assistantePourLaPage(),
     derniereVersionAssistante(),
@@ -100,8 +127,8 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
         <section id="assistante" aria-labelledby="titre-assistante" className={SECTION}>
           <TitreSection id="titre-assistante">Assistante</TitreSection>
           <p className="max-w-[62ch] text-sm text-encre-2">
-            Son nom et sa première phrase valent dès l’appel suivant. Son prompt, sa voix et son tour de parole partent chez ElevenLabs par
-            une poussée. Tout se règle depuis Claude Code, qui demande ton accord avant que rien ne change pour les prospects.
+            Son nom et son premier message valent dès l’appel suivant. Son prompt, sa voix et son tour de parole partent chez ElevenLabs par
+            une poussée. Tout se règle depuis Claude Code, qui demande ton accord avant que quoi que ce soit change pour les prospects.
           </p>
           <dl className="border-t border-filet">
             <LigneDefinition intitule="Nom">{nom}</LigneDefinition>
@@ -123,7 +150,7 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
                 <span className="text-encre-2">valeurs par défaut</span>
               )}
             </LigneDefinition>
-            <LigneDefinition intitule="Configuration ElevenLabs">
+            <LigneDefinition intitule="Configuration">
               {configuration ? (
                 <>
                   <span className="font-mono text-sm">{configuration.versionId.slice(-8)}</span>
@@ -158,8 +185,7 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
                 'API Google Agenda'
               ) : (
                 <>
-                  Connecteur Google Agenda de claude.ai, lu par <span className="font-mono text-sm">claude -p</span>{' '}
-                  <span className="text-encre-3">(environ 20 s)</span>
+                  Google Agenda, lu par Claude Code <span className="text-encre-3">(environ 20 s)</span>
                 </>
               )}
             </LigneDefinition>
@@ -257,7 +283,8 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
           <TitreSection id="titre-claude-code">Claude Code</TitreSection>
           <p className="max-w-[62ch] text-sm text-encre-2">
             Outils du serveur MCP d’Autocalled (<span className="font-mono">.mcp.json</span>) appelés par Claude Code. Les gestes qui font
-            sonner le téléphone ou écrivent à un prospect attendent ton accord dans Claude Code.
+            sonner le téléphone, révoquent un numéro, invitent un prospect, desserrent un garde-fou ou changent ce que dit l’assistante
+            attendent ton accord dans Claude Code.
           </p>
           <JournalClaudeCode lignes={journal} />
         </section>

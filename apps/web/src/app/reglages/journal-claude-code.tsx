@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { dateCourte, LIGNES_COURTES, numeroMasque } from '@/components/format-appel';
-import { Action, EtatVide, Filtre, Filtres } from '@/components/ui';
+import { Action, Chevron, EtatVide, Filtre, Filtres } from '@/components/ui';
+import { estLectureMcp, OUTILS_MCP } from '@/lib/outils-mcp';
 
 /**
  * Le journal des outils du serveur MCP d'Autocalled appelés par Claude Code (ADR 0009). Les lectures y sont
@@ -18,52 +19,14 @@ export type LigneJournal = {
   resultat: 'ok' | 'refus' | 'erreur' | 'confirmation-demandee';
   message: string | null;
   confirmation: 'acceptee' | 'refusee' | 'indisponible' | null;
+  /** Noms lus en base pour les identifiants des arguments (slug d'entreprise, identifiant de prospect). */
+  noms?: { entreprise?: string; prospect?: string };
 };
 
 type Vue = 'gestes' | 'problemes' | 'tout';
 
-const GESTES: Record<string, string> = {
-  lancer_appel: 'Appel lancé',
-  lancer_campagne: 'Campagne lancée',
-  nouvelle_campagne: 'Campagne créée',
-  suspendre_campagne: 'Campagne suspendue',
-  raccrocher_appel: 'Appel raccroché',
-  revoquer_numero: 'Numéro révoqué',
-  regler_ligne: 'Garde-fous réglés',
-  importer_fiches: 'Fiches importées',
-  creer_entreprise: 'Entreprise créée',
-  modifier_fiche_entreprise: 'Fiche modifiée',
-  enregistrer_objection: 'Objection enregistrée',
-  archiver_objection: 'Objection archivée',
-  ajouter_issue: 'Issue ajoutée',
-  archiver_issue: 'Issue archivée',
-  creer_script: 'Script créé',
-  creer_version_script: 'Version de script créée',
-  relancer_analyse: 'Analyse relancée',
-  recreer_evenement: 'Événement d’agenda recréé',
-  relire_agenda: 'Agenda relu',
-};
-
-const LECTURES: Record<string, string> = {
-  lister_entreprises: 'Entreprises listées',
-  lire_entreprise: 'Entreprise lue',
-  lire_version_script: 'Version de script lue',
-  lister_prospects: 'Prospects listés',
-  lire_prospect: 'Prospect lu',
-  lister_appels: 'Appels listés',
-  lire_appel: 'Appel lu',
-  analyser_versions: 'Versions comparées',
-  lister_campagnes: 'Campagnes listées',
-  lire_campagne: 'Campagne lue',
-  etat_ligne: 'État de la ligne lu',
-  etat_agenda: 'État de l’agenda lu',
-  apercu_variables_appel: 'Variables d’appel prévisualisées',
-};
-
-/** Une lecture ne change rien : lire_*, lister_*, etat_*, apercu_* et analyser_versions. */
-function estLecture(outil: string): boolean {
-  return /^(lire|lister|etat|apercu)_/.test(outil) || outil === 'analyser_versions';
-}
+/** Une lecture ne change rien : la nature vient de l'annotation readOnlyHint de l'outil (lib/outils-mcp.ts). */
+const estLecture = estLectureMcp;
 
 function estProbleme(l: LigneJournal): boolean {
   return l.resultat === 'refus' || l.resultat === 'erreur' || l.confirmation === 'refusee' || l.confirmation === 'indisponible';
@@ -79,7 +42,7 @@ function masquer(texte: string): string {
 const court = (id: unknown) => (typeof id === 'string' ? id.slice(0, 8) : null);
 
 /** L'argument principal, en quelques mots : prospect, entreprise, valeurs de plafond… */
-function resumer(outil: string, a: Record<string, unknown>): string {
+function resumer(outil: string, a: Record<string, unknown>, noms: LigneJournal['noms'] = {}): string {
   const parties: string[] = [];
   const texte = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
   if (outil === 'regler_ligne') {
@@ -88,7 +51,7 @@ function resumer(outil: string, a: Record<string, unknown>): string {
     if (typeof a.pauseEntreAppelsS === 'number') parties.push(`pause ${a.pauseEntreAppelsS} s`);
   }
   for (const cle of ['prospect', 'entreprise', 'nom'] as const) {
-    const v = texte(a[cle]);
+    const v = cle === 'nom' ? texte(a[cle]) : (noms[cle] ?? texte(a[cle]));
     if (v) parties.push(v);
   }
   if (Array.isArray(a.prospects)) parties.push(`${a.prospects.length} prospect${a.prospects.length > 1 ? 's' : ''}`);
@@ -126,9 +89,10 @@ const CONFIRMATIONS: Record<NonNullable<LigneJournal['confirmation']>, string> =
 
 /** Le résultat en texte, avec son ton : jamais l'antenne, réservée à ce qui vit. */
 function resultat(l: LigneJournal): { texte: string; ton: string } {
-  const texte = [RESULTATS[l.resultat] ?? l.resultat, l.confirmation ? (CONFIRMATIONS[l.confirmation] ?? l.confirmation) : null]
-    .filter(Boolean)
-    .join(' · ');
+  const texte =
+    l.confirmation === 'refusee'
+      ? 'refusé par l’opérateur'
+      : [RESULTATS[l.resultat] ?? l.resultat, l.confirmation ? (CONFIRMATIONS[l.confirmation] ?? l.confirmation) : null].filter(Boolean).join(' · ');
   const ton =
     l.confirmation === 'indisponible' || ((l.resultat === 'refus' || l.resultat === 'erreur') && l.confirmation !== 'refusee')
       ? 'text-alerte'
@@ -195,14 +159,14 @@ export function JournalClaudeCode({ lignes }: { lignes: LigneJournal[] }) {
 }
 
 function LigneDuJournal({ ligne: l }: { ligne: LigneJournal }) {
-  const libelle = GESTES[l.outil] ?? LECTURES[l.outil] ?? null;
-  const resume = resumer(l.outil, l.arguments);
+  const libelle = OUTILS_MCP[l.outil]?.libelle ?? null;
+  const resume = resumer(l.outil, l.arguments, l.noms);
   const r = resultat(l);
   const brut = masquer(JSON.stringify(l.arguments, null, 2));
   return (
     <li className="border-b border-filet">
       <details className="group">
-        <summary className="grid cursor-pointer list-none gap-x-4 gap-y-0.5 py-2 transition-colors duration-100 hover:bg-survol focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus sm:min-h-[38px] sm:grid-cols-[6.5rem_minmax(0,1fr)_auto] sm:items-baseline [&::-webkit-details-marker]:hidden">
+        <summary className="grid cursor-pointer list-none gap-x-4 gap-y-0.5 py-2 transition-colors duration-100 hover:bg-survol focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus sm:min-h-[38px] sm:grid-cols-[6.5rem_minmax(0,1fr)_auto_0.625rem] sm:items-baseline [&::-webkit-details-marker]:hidden">
           <time dateTime={l.le.toISOString()} className="font-mono text-xs text-encre-3">
             {dateCourte(l.le)}
           </time>
@@ -212,6 +176,9 @@ function LigneDuJournal({ ligne: l }: { ligne: LigneJournal }) {
             {resume ? <span className="min-w-0 truncate text-sm text-encre-3">{resume}</span> : null}
           </span>
           <span className={`text-sm ${r.ton}`}>{r.texte}</span>
+          <span className="max-sm:hidden">
+            <Chevron direction="bas" className="stroke-encre-3 group-open:rotate-180" />
+          </span>
         </summary>
         <div className="grid gap-1 pb-3 sm:pl-[calc(6.5rem+1rem)]">
           <p className="text-xs text-encre-3">
@@ -222,7 +189,8 @@ function LigneDuJournal({ ligne: l }: { ligne: LigneJournal }) {
           </pre>
         </div>
       </details>
-      {l.message && l.resultat !== 'ok' ? (
+      {/* Un refus de l'opérateur est déjà dit par le résultat : son message le répéterait. */}
+      {l.message && l.resultat !== 'ok' && l.confirmation !== 'refusee' ? (
         <p className="pb-2 text-sm text-encre-3 sm:pl-[calc(6.5rem+1rem)]">{masquer(l.message)}</p>
       ) : null}
     </li>
