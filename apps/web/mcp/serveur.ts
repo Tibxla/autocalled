@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/server';
+import { outilsDeConfiguration } from './configuration';
 import { outilsDeLecture } from './lecture';
 import { declarateur } from './outil';
 
@@ -14,5 +15,6 @@ export function creerServeur(): McpServer {
   const serveur = new McpServer({ name: 'autocalled', version: '1.0.0' }, { instructions: INSTRUCTIONS });
   const declarer = declarateur(serveur);
   outilsDeLecture(declarer);
+  outilsDeConfiguration(declarer);
   return serveur;
 }

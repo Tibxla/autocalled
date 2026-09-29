@@ -1,13 +1,21 @@
 import 'server-only';
-import { type Campagne, type VariablesDeLAppel, debuterAppel, mettreEnPause, prochaineAction, sauter, terminerAppel, TransitionInvalide } from '@autocalled/domain';
+import { type Campagne, type VariablesDeLAppel, creerCampagne, debuterAppel, mettreEnPause, prochaineAction, sauter, terminerAppel, TransitionInvalide } from '@autocalled/domain';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { appels, campagnes } from '@/db/schema';
 import { preparerAppel, simulerAppel } from './appels';
 import { jetonConversation } from './elevenlabs';
 import { commanderPont, reglagesDuPont, refusDuPont } from './pont';
+import type { SaisieCampagne } from './schemas';
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Enregistre une campagne prête : rien ne sonne avant qu'on la lance. */
+export async function enregistrerCampagne(entrepriseId: string, saisie: SaisieCampagne): Promise<string> {
+  const campagne = creerCampagne({ id: crypto.randomUUID(), entrepriseId, versionScriptId: saisie.versionScriptId, prospectIds: saisie.prospects });
+  await db.insert(campagnes).values({ ...campagne, ligne: saisie.ligne });
+  return campagne.id;
+}
 
 /**
  * Applique une transition du domaine à une campagne, sous verrou de ligne : deux actions
@@ -170,7 +178,8 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
   await suspendreSiEnCours(campagneId);
 }
 
-async function suspendreSiEnCours(campagneId: string): Promise<void> {
+/** Met la campagne en pause si elle tourne ; sans effet sur une campagne prête, en pause ou terminée. */
+export async function suspendreSiEnCours(campagneId: string): Promise<void> {
   try {
     await avecCampagne(campagneId, async (c) => ({ campagne: mettreEnPause(c), resultat: null }));
   } catch (erreur) {

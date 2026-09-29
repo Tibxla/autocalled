@@ -1,5 +1,6 @@
 import 'server-only';
-import { and, eq, max } from 'drizzle-orm';
+import { etapesIdentiques } from '@autocalled/domain';
+import { and, desc, eq, max } from 'drizzle-orm';
 import { db } from '@/db';
 import { entreprises, issuesPersonnalisees, objections, scripts, versionsScript } from '@/db/schema';
 import type { Fiche, Plages, SaisieIssue, SaisieObjection } from './schemas';
@@ -109,7 +110,10 @@ export async function creerScript(entrepriseId: string, nom: string): Promise<{ 
 
 export type Etapes = { intention: string; exemples: string[] }[];
 
-/** Une version est figée : enregistrer des modifications crée la version suivante. */
+/**
+ * Une version est figée : enregistrer des modifications crée la version suivante. Des étapes identiques à la
+ * dernière version sont refusées : deux versions pareilles couperaient l'échantillon de l'analyse en deux.
+ */
 export async function creerVersion(
   entrepriseId: string,
   scriptId: string,
@@ -122,11 +126,16 @@ export async function creerVersion(
   if (!script) return { ok: false, raison: 'Ce script n’existe plus.' };
 
   return db.transaction(async (tx) => {
-    const [dernier] = await tx
-      .select({ numero: max(versionsScript.numero) })
+    const [derniere] = await tx
+      .select({ numero: versionsScript.numero, etapes: versionsScript.etapes })
       .from(versionsScript)
-      .where(eq(versionsScript.scriptId, scriptId));
-    const numero = (dernier?.numero ?? 0) + 1;
+      .where(eq(versionsScript.scriptId, scriptId))
+      .orderBy(desc(versionsScript.numero))
+      .limit(1);
+    if (derniere && etapesIdentiques(derniere.etapes, etapes)) {
+      return { ok: false as const, raison: `Ces étapes sont celles de la version ${derniere.numero} : rien n’a été enregistré.` };
+    }
+    const numero = (derniere?.numero ?? 0) + 1;
     const [version] = await tx.insert(versionsScript).values({ scriptId, numero, etapes }).returning({ id: versionsScript.id });
     if (!version) throw new Error('création de la version impossible');
     return { ok: true as const, id: version.id, numero };
