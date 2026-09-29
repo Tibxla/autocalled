@@ -248,20 +248,22 @@ export async function purger(maintenant = new Date(), o: { mois?: number } = {})
   return r;
 }
 
-const pluriel = (n: number, un: string, plusieurs: string) => `${n} ${n > 1 ? plusieurs : un}`;
-
-/** Le compte rendu d'une purge ou d'un essai, en une ligne, sans donnée personnelle. */
+/** Le compte rendu d'une purge ou d'un essai, sans donnée personnelle : des comptes, et les fichiers en échec. */
 export function compteRendu(r: InventairePurge | ResultatPurge, essai: boolean): string {
-  const jour = r.limite.slice(0, 10);
-  const verbe = essai ? 'à purger' : 'purgés';
-  const lignes = [
-    `${essai ? 'Essai de purge (rien n’est supprimé)' : 'Purge'} : conservation ${r.dureeMois} mois, appels commencés avant le ${jour}.`,
-    `${pluriel(r.appels, 'appel', 'appels')} ${verbe} : ${pluriel(r.transcriptions, 'transcription', 'transcriptions')}, ${pluriel(r.bilans, 'bilan', 'bilans')} réduits à leurs champs structurés, ${pluriel(r.erreurs, 'texte d’erreur', 'textes d’erreur')}, ${pluriel(r.invitations, 'adresse d’invitation', 'adresses d’invitation')}, ${pluriel(r.fichiers, 'fichier', 'fichiers')} ${essai ? 'présents sur le disque' : 'supprimés'}.`,
-    `${pluriel(r.journal, 'ligne', 'lignes')} du journal MCP ${essai ? 'à supprimer' : 'supprimées'}.`,
-    ...(r.reportes ? [`${pluriel(r.reportes, 'appel en cours d’analyse reporté', 'appels en cours d’analyse reportés')} au passage suivant.`] : []),
-    ...('fichiersEnEchec' in r && r.fichiersEnEchec.length
-      ? [`${pluriel(r.fichiersEnEchec.length, 'fichier n’a', 'fichiers n’ont')} pas pu être supprimés, leurs appels restent entiers : ${r.fichiersEnEchec.join(', ')}.`]
-      : []),
+  const comptes: [string, string, number][] = [
+    ['Appels purgés', 'Appels à purger', r.appels],
+    ['transcriptions effacées', 'transcriptions à effacer', r.transcriptions],
+    ['bilans réduits à leurs champs structurés', 'bilans à réduire', r.bilans],
+    ['textes d’erreur effacés', 'textes d’erreur à effacer', r.erreurs],
+    ['adresses d’invitation effacées', 'adresses d’invitation à effacer', r.invitations],
+    ['fichiers supprimés', 'fichiers présents sur le disque', r.fichiers],
+    ['lignes du journal MCP supprimées', 'lignes du journal MCP à supprimer', r.journal],
+    ['appels en cours d’analyse reportés', 'appels en cours d’analyse reportés', r.reportes],
   ];
-  return lignes.join('\n');
+  const echecs = 'fichiersEnEchec' in r ? r.fichiersEnEchec : [];
+  return [
+    `${essai ? 'Essai de purge (rien n’est supprimé)' : 'Purge'} : conservation ${r.dureeMois} mois, appels commencés avant le ${r.limite.slice(0, 10)}.`,
+    `${comptes.map(([fait, prevu, n]) => `${essai ? prevu : fait} : ${n}`).join(' ; ')}.`,
+    ...(echecs.length ? [`Fichiers non supprimés (leurs appels restent entiers, repris au passage suivant) : ${echecs.join(', ')}.`] : []),
+  ].join('\n');
 }

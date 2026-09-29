@@ -312,7 +312,8 @@ describe('essai de purge', () => {
     const texte = [compteRendu(await inventairePurge(m.maintenant), true), compteRendu(await purger(m.maintenant), false)].join('\n');
 
     expect(texte).toContain('Essai de purge (rien n’est supprimé) : conservation 12 mois');
-    expect(texte).toContain('2 appels purgés');
+    expect(texte).toContain('Appels à purger : 2 ; transcriptions à effacer : 2 ; bilans à réduire : 1');
+    expect(texte).toContain('Appels purgés : 2 ; transcriptions effacées : 2 ; bilans réduits à leurs champs structurés : 1');
     expect(texte).not.toMatch(/Julie|Marc|39 98|39980|exemple\.test|julie|marc|conv_fictive/);
   });
 });
