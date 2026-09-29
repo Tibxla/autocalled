@@ -5,7 +5,7 @@ import { EtatVide, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { campagnes, prospects } from '@/db/schema';
 import { autorisationsDe } from '@/lib/autorisations';
-import { entrepriseParSlug } from '@/lib/donnees';
+import { entrepriseParSlug } from '@/lib/pages';
 import { versionsDeLEntreprise } from '@/lib/versions';
 import { FormulaireCampagne } from './formulaire-campagne';
 

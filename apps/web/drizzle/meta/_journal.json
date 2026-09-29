@@ -50,6 +50,13 @@
       "when": 1790442725231,
       "tag": "0006_visio",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790667281217,
+      "tag": "0007_journal-mcp",
+      "breakpoints": true
     }
   ]
 }

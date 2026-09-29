@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { EtatVide, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { scripts } from '@/db/schema';
-import { entrepriseParSlug } from '@/lib/donnees';
+import { entrepriseParSlug } from '@/lib/pages';
 import { FormulaireScript } from './formulaire-script';
 
 export const metadata: Metadata = { title: 'Scripts' };

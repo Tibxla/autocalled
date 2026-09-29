@@ -5,7 +5,7 @@ import { BoutonArchive } from '@/components/bouton-archive';
 import { TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { issuesPersonnalisees } from '@/db/schema';
-import { entrepriseParSlug } from '@/lib/donnees';
+import { entrepriseParSlug } from '@/lib/pages';
 import { basculerArchiveIssue } from '../actions';
 import { FormulaireIssue } from './formulaire-issue';
 

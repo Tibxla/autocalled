@@ -5,7 +5,7 @@ import { notFound } from 'next/navigation';
 import { TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { scripts, versionsScript } from '@/db/schema';
-import { entrepriseParSlug } from '@/lib/donnees';
+import { entrepriseParSlug } from '@/lib/pages';
 import { EditeurVersion } from './editeur-version';
 
 export const metadata: Metadata = { title: 'Script' };

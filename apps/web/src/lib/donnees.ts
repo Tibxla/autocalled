@@ -1,6 +1,5 @@
 import 'server-only';
 import { and, asc, eq, sql } from 'drizzle-orm';
-import { notFound } from 'next/navigation';
 import { db } from '@/db';
 import { autorisationsDe } from './autorisations';
 import { entreprises, prospects } from '@/db/schema';
@@ -31,7 +30,7 @@ export async function prospectsAutorisesParEntreprise(): Promise<Map<string, num
   return comptes;
 }
 
-/** L'entreprise d'un slug, ou null : pour le serveur MCP, qui ne peut pas répondre par une page 404. */
+/** L'entreprise d'un slug, ou null. Les pages passent par `entrepriseParSlug` (lib/pages.ts), qui répond 404. */
 export async function trouverEntreprise(slug: string) {
   const [entreprise] = await db.select().from(entreprises).where(eq(entreprises.slug, slug)).limit(1);
   return entreprise ?? null;
@@ -44,12 +43,4 @@ export async function trouverProspect(entrepriseId: string, id: string) {
     .where(and(eq(prospects.entrepriseId, entrepriseId), eq(prospects.id, id)))
     .limit(1);
   return prospect ?? null;
-}
-
-export async function entrepriseParSlug(slug: string) {
-  return (await trouverEntreprise(slug)) ?? notFound();
-}
-
-export async function prospectParId(entrepriseId: string, id: string) {
-  return (await trouverProspect(entrepriseId, id)) ?? notFound();
 }

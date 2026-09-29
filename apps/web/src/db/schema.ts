@@ -238,3 +238,19 @@ export const disponibilites = pgTable('disponibilites', {
   synchroniseLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
   erreur: text(),
 });
+
+/**
+ * Chaque appel d'outil du serveur MCP (ADR 0009), lectures comprises : on sait ce que Claude a lu (une
+ * transcription, par exemple) avant d'agir. L'acteur est toujours Claude Code, en session locale.
+ */
+export const journalMcp = pgTable('journal_mcp', {
+  id: uuid().primaryKey().defaultRandom(),
+  le: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  outil: text().notNull(),
+  /** Les arguments reçus, les champs volumineux résumés (une fiche importée n'y est pas recopiée). */
+  arguments: jsonb().$type<Record<string, unknown>>().notNull(),
+  resultat: text().$type<'ok' | 'refus' | 'erreur' | 'confirmation-demandee'>().notNull(),
+  message: text(),
+  /** Pour les gestes confirmés par l'opérateur : ce qu'il a répondu, ou `indisponible` sans élicitation. */
+  confirmation: text().$type<'acceptee' | 'refusee' | 'indisponible'>(),
+});

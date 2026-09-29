@@ -6,7 +6,7 @@ import { EtatVide, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { prospects, textesConsentement } from '@/db/schema';
 import { autorisationsDe } from '@/lib/autorisations';
-import { entrepriseParSlug } from '@/lib/donnees';
+import { entrepriseParSlug } from '@/lib/pages';
 import { numeroLisible } from '@/lib/format';
 import { FormulaireImport } from './formulaire-import';
 

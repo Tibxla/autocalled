@@ -1,11 +1,9 @@
-import { desc, eq } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { EnTetePage, Message, TitreSection } from '@/components/ui';
-import { db } from '@/db';
-import { appels, prospects, rendezVous } from '@/db/schema';
 import { calendrierConfigure, etatAgenda } from '@/lib/agenda';
 import { clientGoogle, connexion } from '@/lib/google';
+import { rendezVousRecents } from '@/lib/lecture';
 import { BoutonDeconnecter } from './bouton-deconnecter';
 import { BoutonRecreer, BoutonRelire } from './boutons-agenda';
 
@@ -25,13 +23,7 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
     clientGoogle(),
     connexion(),
     etatAgenda(),
-    db
-      .select({ rdv: rendezVous, prospect: prospects.nom, appelId: appels.id })
-      .from(rendezVous)
-      .innerJoin(appels, eq(appels.id, rendezVous.appelId))
-      .leftJoin(prospects, eq(prospects.id, appels.prospectId))
-      .orderBy(desc(rendezVous.debut))
-      .limit(20),
+    rendezVousRecents(),
   ]);
 
   return (

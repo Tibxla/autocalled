@@ -1,12 +1,9 @@
-import { type IssueSysteme, SEUIL_ECHANTILLON, statistiquesObjections, statistiquesParVersion } from '@autocalled/domain';
-import { and, eq, isNotNull } from 'drizzle-orm';
+import { SEUIL_ECHANTILLON } from '@autocalled/domain';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { EtatVide, TitreSection } from '@/components/ui';
-import { db } from '@/db';
-import { appels, objections } from '@/db/schema';
-import { entrepriseParSlug } from '@/lib/donnees';
-import { versionsDeLEntreprise } from '@/lib/versions';
+import { entrepriseParSlug } from '@/lib/pages';
+import { analyseEntreprise } from '@/lib/lecture';
 
 export const metadata: Metadata = { title: 'Analyse' };
 
@@ -35,31 +32,7 @@ export default async function PageAnalyse({
   const { slug } = await params;
   const avecSimules = (await searchParams).simules === '1';
   const entreprise = await entrepriseParSlug(slug);
-  const [lignes, versions, listeObjections] = await Promise.all([
-    db
-      .select({ ligne: appels.ligne, versionScriptId: appels.versionScriptId, issueSysteme: appels.issueSysteme, bilan: appels.bilan })
-      .from(appels)
-      .where(and(eq(appels.entrepriseId, entreprise.id), eq(appels.statut, 'termine'), isNotNull(appels.issueSysteme))),
-    versionsDeLEntreprise(entreprise.id),
-    db.select().from(objections).where(eq(objections.entrepriseId, entreprise.id)),
-  ]);
-
-  const simules = lignes.filter((l) => l.ligne === 'simulation').length;
-  const retenus = lignes
-    .filter((l) => avecSimules || l.ligne !== 'simulation')
-    .map((l) => ({
-      versionScriptId: l.versionScriptId,
-      issueSysteme: l.issueSysteme as IssueSysteme,
-      etapeAtteinte: l.bilan?.etapeAtteinte ?? 0,
-      objections: l.bilan?.objections ?? [],
-    }));
-  const parVersion = statistiquesParVersion(retenus).sort(
-    (a, b) => versions.findIndex((v) => v.id === a.versionScriptId) - versions.findIndex((v) => v.id === b.versionScriptId),
-  );
-  const parObjection = statistiquesObjections(retenus);
-  const libelleVersion = (id: string) => versions.find((v) => v.id === id)?.libelle ?? 'Version supprimée';
-  const libelleObjection = (id: string | null) =>
-    id === null ? 'Objections nouvelles (absentes de la fiche)' : (listeObjections.find((o) => o.id === id)?.libelle ?? 'Objection supprimée');
+  const { simules, parVersion, parObjection, libelleVersion, libelleObjection } = await analyseEntreprise(entreprise.id, avecSimules);
 
   return (
     <div className="grid gap-12">

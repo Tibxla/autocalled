@@ -8,7 +8,7 @@ import { db } from '@/db';
 import { appels, consentements, prospects } from '@/db/schema';
 import { rafraichirSiAncien } from '@/lib/agenda';
 import { autorisationsDe } from '@/lib/autorisations';
-import { entrepriseParSlug, prospectParId } from '@/lib/donnees';
+import { entrepriseParSlug, prospectParId } from '@/lib/pages';
 import { numeroLisible } from '@/lib/format';
 import { versionsDeLEntreprise } from '@/lib/versions';
 import { BoutonRevoquer } from './bouton-revoquer';

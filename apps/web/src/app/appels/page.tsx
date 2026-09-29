@@ -1,11 +1,12 @@
-import { ISSUES_SYSTEME, type IssueSysteme, LIBELLES_ISSUES } from '@autocalled/domain';
-import { type SQL, and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
+import { ISSUES_SYSTEME, LIBELLES_ISSUES } from '@autocalled/domain';
+import { asc } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ListeAppels } from '@/components/liste-appels';
 import { EnTetePage, EtatVide, Saisie, Selection } from '@/components/ui';
 import { db } from '@/db';
-import { appels, entreprises, prospects } from '@/db/schema';
+import { entreprises } from '@/db/schema';
+import { listerAppels } from '@/lib/lecture';
 
 export const metadata: Metadata = { title: 'Appels' };
 
@@ -16,31 +17,8 @@ type Filtres = { q?: string; entreprise?: string; issue?: string; ligne?: string
 export default async function PageAppels({ searchParams }: { searchParams: Promise<Filtres> }) {
   const f = await searchParams;
   const q = f.q?.trim() ?? '';
-  const conditions: SQL[] = [];
-  if (f.entreprise) conditions.push(eq(entreprises.slug, f.entreprise));
-  if (f.issue && (ISSUES_SYSTEME as readonly string[]).includes(f.issue)) conditions.push(eq(appels.issueSysteme, f.issue as IssueSysteme));
-  if (f.ligne && f.ligne in LIGNES) conditions.push(eq(appels.ligne, f.ligne as keyof typeof LIGNES));
-  if (q) {
-    // Cherche dans le nom du prospect, sa société, le résumé du bilan et toute la transcription.
-    const motif = `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
-    const recherche = or(
-      ilike(prospects.nom, motif),
-      ilike(prospects.societe, motif),
-      sql`${appels.bilan}->>'resume' ilike ${motif}`,
-      sql`${appels.transcription}::text ilike ${motif}`,
-    );
-    if (recherche) conditions.push(recherche);
-  }
-
   const [liste, listeEntreprises] = await Promise.all([
-    db
-      .select({ appel: appels, prospect: prospects.nom, entreprise: entreprises.nom })
-      .from(appels)
-      .innerJoin(entreprises, eq(entreprises.id, appels.entrepriseId))
-      .leftJoin(prospects, and(eq(prospects.entrepriseId, appels.entrepriseId), eq(prospects.id, appels.prospectId)))
-      .where(conditions.length ? and(...conditions) : undefined)
-      .orderBy(desc(appels.debutLe))
-      .limit(200),
+    listerAppels({ entreprise: f.entreprise, issue: f.issue, ligne: f.ligne, recherche: q }, 200),
     db.select({ slug: entreprises.slug, nom: entreprises.nom }).from(entreprises).orderBy(asc(entreprises.nom)),
   ]);
   const filtre = Boolean(q || f.entreprise || f.issue || f.ligne);

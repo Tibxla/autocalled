@@ -1,11 +1,9 @@
 import { type IssueSysteme, LIBELLES_ISSUES } from '@autocalled/domain';
-import { and, eq } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Message, TitreSection } from '@/components/ui';
-import { db } from '@/db';
-import { appels, entreprises, issuesPersonnalisees, objections, prospects, versionsScript } from '@/db/schema';
+import { lireAppel } from '@/lib/lecture';
 import { Actualisation } from './actualisation';
 import { BoutonRelancer } from './bouton-relancer';
 import { LecteurAppel } from './lecteur-appel';
@@ -25,20 +23,9 @@ const LIGNES: Record<string, string> = {
 export default async function PageAppel({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
-  const [appel] = await db.select().from(appels).where(eq(appels.id, id));
-  if (!appel) notFound();
-
-  const [[entreprise], [prospect], [version], listeObjections, personnalisees] = await Promise.all([
-    db.select().from(entreprises).where(eq(entreprises.id, appel.entrepriseId)),
-    db
-      .select()
-      .from(prospects)
-      .where(and(eq(prospects.entrepriseId, appel.entrepriseId), eq(prospects.id, appel.prospectId))),
-    db.select().from(versionsScript).where(eq(versionsScript.id, appel.versionScriptId)),
-    db.select().from(objections).where(eq(objections.entrepriseId, appel.entrepriseId)),
-    db.select().from(issuesPersonnalisees).where(eq(issuesPersonnalisees.entrepriseId, appel.entrepriseId)),
-  ]);
-  if (!entreprise) notFound();
+  const lu = await lireAppel(id);
+  if (!lu) notFound();
+  const { appel, entreprise, prospect, version, objections: listeObjections, personnalisees } = lu;
 
   const bilan = appel.bilan;
   const libelleIssue = (cle: string) =>

@@ -1,4 +1,4 @@
-import { entrepriseParSlug } from '@/lib/donnees';
+import { entrepriseParSlug } from '@/lib/pages';
 import { FormulaireFiche } from './formulaire-fiche';
 
 export default async function PageFiche({ params }: { params: Promise<{ slug: string }> }) {

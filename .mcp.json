@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "autocalled": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "cd apps/web && exec node --env-file=../../.env --conditions=react-server --import ./scripts/resolution.ts mcp/stdio.ts"
+      ]
+    }
+  }
+}

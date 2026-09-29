@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { EtatVide, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { objections } from '@/db/schema';
-import { entrepriseParSlug } from '@/lib/donnees';
+import { entrepriseParSlug } from '@/lib/pages';
 import { basculerArchiveObjection } from '../actions';
 import { BoutonArchive } from '@/components/bouton-archive';
 import { FormulaireObjection } from './formulaire-objection';

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { LienNav } from '@/components/lien-nav';
-import { entrepriseParSlug } from '@/lib/donnees';
+import { entrepriseParSlug } from '@/lib/pages';
 
 export default async function LayoutEntreprise({
   params,
