@@ -77,7 +77,7 @@ export const schemaBilan = z.strictObject({
     .array(
       z.strictObject({
         objectionId: z.string().nullable().describe('Identifiant de l’objection répertoriée, ou null si elle est nouvelle.'),
-        libelle: z.string().min(1),
+        libelle: z.string().min(1).max(160).describe('L’objection en une phrase courte, comme un prospect la dirait.'),
         levee: z.boolean(),
         tempsBloquant: z.enum(TEMPS_CRAC).nullable().describe('Le temps CRAC où ça a coincé, null si levée.'),
         citation: z.string().min(3).describe('Les mots exacts du prospect qui expriment l’objection.'),

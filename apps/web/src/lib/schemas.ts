@@ -12,6 +12,14 @@ const chaine = (manquant = 'Un texte est attendu.') => z.string({ error: manquan
 
 const texte = (max: number) => chaine().max(max, `${max} caractères au plus.`);
 
+/**
+ * Une seule ligne, sans caractère de contrôle ni de mise en forme invisible : un nom finit dans les questions de
+ * confirmation (ADR 0009), où un nom sur plusieurs lignes pourrait imiter une autre question.
+ */
+const SANS_CONTROLE = /^[^\p{Cc}\p{Cf}\u2028\u2029]*$/u;
+const UNE_LIGNE = 'Une seule ligne, sans caractère de contrôle.';
+const uneLigne = (max: number) => texte(max).regex(SANS_CONTROLE, UNE_LIGNE);
+
 /** Un entier saisi dans un champ de formulaire (texte converti) ou envoyé tel quel par le serveur MCP. */
 const entier = (min: number, max: number, messages: { min: string; max: string }) =>
   z.coerce
@@ -22,17 +30,18 @@ const entier = (min: number, max: number, messages: { min: string; max: string }
 
 export const nomEntrepriseSchema = chaine('Donne un nom à l’entreprise.')
   .min(2, 'Donne un nom d’au moins deux lettres.')
-  .max(80, 'Quatre-vingts caractères au plus.');
+  .max(80, 'Quatre-vingts caractères au plus.')
+  .regex(SANS_CONTROLE, UNE_LIGNE);
 
 export const ficheSchema = z.object({
-  nom: chaine('Donne un nom à l’entreprise.').min(2, 'Deux lettres au moins.').max(80, 'Quatre-vingts caractères au plus.'),
+  nom: chaine('Donne un nom à l’entreprise.').min(2, 'Deux lettres au moins.').max(80, 'Quatre-vingts caractères au plus.').regex(SANS_CONTROLE, UNE_LIGNE),
   offre: texte(400),
   cible: texte(400),
   arguments: texte(1200),
   prixConsigne: texte(400),
   interdits: texte(600),
   dureeRendezVousMinutes: entier(15, 120, { min: 'Quinze minutes au moins.', max: 'Deux heures au plus.' }),
-  interlocuteur: chaine().max(60, 'Soixante caractères au plus.'),
+  interlocuteur: chaine().max(60, 'Soixante caractères au plus.').regex(SANS_CONTROLE, UNE_LIGNE),
   delaiMinimumHeures: entier(0, 168, { min: 'Zéro au moins.', max: 'Une semaine au plus.' }),
   horizonJours: entier(1, 60, { min: 'Un jour au moins.', max: 'Soixante jours au plus.' }),
 });
@@ -60,7 +69,8 @@ export type Plages = z.infer<typeof plagesSchema>;
 export const objectionSchema = z.object({
   libelle: chaine('Écris l’objection telle qu’un prospect la dirait.')
     .min(2, 'Écris l’objection telle qu’un prospect la dirait.')
-    .max(160, 'Cent soixante caractères au plus.'),
+    .max(160, 'Cent soixante caractères au plus.')
+    .regex(SANS_CONTROLE, UNE_LIGNE),
   creuser: texte(600),
   reformuler: texte(600),
   argumenter: texte(600),
@@ -69,7 +79,7 @@ export const objectionSchema = z.object({
 export type SaisieObjection = z.infer<typeof objectionSchema>;
 
 export const issueSchema = z.object({
-  libelle: chaine('Donne un libellé à l’issue.').min(2, 'Deux lettres au moins.').max(80, 'Quatre-vingts caractères au plus.'),
+  libelle: chaine('Donne un libellé à l’issue.').min(2, 'Deux lettres au moins.').max(80, 'Quatre-vingts caractères au plus.').regex(SANS_CONTROLE, UNE_LIGNE),
   issueSysteme: z.enum(ISSUES_SYSTEME, 'Choisis l’issue système à laquelle la rattacher.'),
 });
 export type SaisieIssue = z.infer<typeof issueSchema>;
@@ -80,18 +90,21 @@ export type SaisieIssue = z.infer<typeof issueSchema>;
  */
 export const patchFicheSchema = z
   .strictObject({
-    nom: chaine('Donne le nom du prospect.').min(1, 'Donne le nom du prospect.').max(120, 'Cent vingt caractères au plus.'),
-    societe: texte(120).nullable(),
-    role: texte(120).nullable(),
-    telephone: chaine('Donne un numéro de téléphone.').min(1, 'Donne un numéro de téléphone.').max(40, 'Quarante caractères au plus.'),
-    email: texte(200).nullable(),
+    nom: chaine('Donne le nom du prospect.').min(1, 'Donne le nom du prospect.').max(120, 'Cent vingt caractères au plus.').regex(SANS_CONTROLE, UNE_LIGNE),
+    societe: uneLigne(120).nullable(),
+    role: uneLigne(120).nullable(),
+    telephone: chaine('Donne un numéro de téléphone.').min(1, 'Donne un numéro de téléphone.').max(40, 'Quarante caractères au plus.').regex(SANS_CONTROLE, UNE_LIGNE),
+    email: uneLigne(200).nullable(),
     contexte: z.string({ error: 'Un texte est attendu.' }).max(32 * 1024, 'La fiche entière tient en 32 Ko.'),
   })
   .partial()
   .refine((p) => Object.values(p).some((v) => v !== undefined), 'Donne au moins un champ à corriger.');
 export type PatchFiche = z.infer<typeof patchFicheSchema>;
 
-export const nomScriptSchema = chaine('Donne un nom au script.').min(2, 'Deux lettres au moins.').max(80, 'Quatre-vingts caractères au plus.');
+export const nomScriptSchema = chaine('Donne un nom au script.')
+  .min(2, 'Deux lettres au moins.')
+  .max(80, 'Quatre-vingts caractères au plus.')
+  .regex(SANS_CONTROLE, UNE_LIGNE);
 
 /** Limites d'une version de script. */
 const MAX_ETAPES = 10;

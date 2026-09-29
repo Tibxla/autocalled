@@ -27,11 +27,26 @@ export const MOTS_MAX_CONTEXTE = 500;
 const NOM_FICHIER = /^([a-z0-9]+(?:-[a-z0-9]+)*)\.md$/;
 const EN_TETE = /^---\n([\s\S]*?)\n---(?:\n([\s\S]*))?$/;
 
+/** Longueur maximale du nom, de la société et du rôle, comme la correction d'une fiche. */
+export const LONGUEUR_MAX_CHAMP_FICHE = 120;
+
+/**
+ * Une ligne, sans caractère de contrôle ni de mise en forme invisible : ces champs finissent dans les questions de
+ * confirmation, où un nom sur plusieurs lignes (bloc YAML `|`) pourrait imiter une autre question.
+ */
+const champCourt = () =>
+  z
+    .string()
+    .trim()
+    .min(1)
+    .max(LONGUEUR_MAX_CHAMP_FICHE)
+    .regex(/^[^\p{Cc}\p{Cf}\u2028\u2029]*$/u);
+
 const enTeteSchema = z.strictObject({
-  nom: z.string().trim().min(1),
+  nom: champCourt(),
   telephone: z.string(),
-  societe: z.string().trim().min(1).optional(),
-  role: z.string().trim().min(1).optional(),
+  societe: champCourt().optional(),
+  role: champCourt().optional(),
   email: z.email().optional(),
 });
 
@@ -40,6 +55,8 @@ function messageErreur(issue: z.core.$ZodIssue): string {
     return `champ inconnu : ${issue.keys.join(', ')} (champs permis : nom, telephone, societe, role, email)`;
   }
   const champ = issue.path.join('.');
+  if (issue.code === 'too_big') return `champ ${champ} trop long (${LONGUEUR_MAX_CHAMP_FICHE} caractères au plus)`;
+  if (issue.code === 'invalid_format' && issue.format === 'regex') return `champ ${champ} : une seule ligne, sans caractère de contrôle`;
   return issue.code === 'invalid_type' && issue.input === undefined
     ? `champ obligatoire manquant : ${champ}`
     : `champ ${champ} invalide`;
