@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useRef, useState, useTransition } from 'react';
+import { useId, useRef, useState, useTransition } from 'react';
 import { lancerCampagne, suspendreCampagne } from '@/app/campagnes/actions';
 import { useNomAssistante } from '@/components/assistante';
 import { Action, LienAction } from '@/components/action';
@@ -14,6 +14,7 @@ import { dateCourte, duree, etatAppel, FUSEAU, heure, LIGNES_COURTES } from '@/c
 import { estimation } from '@/components/garde-fous';
 import { GlypheEtape, PointCreux } from '@/components/ui';
 import { useReconnexion } from '@/app/telephone/panneau-telephone';
+import { AIDE_RECONNEXION, reconnexionAccueil } from '@/app/telephone/reconnexion';
 import type { AppelDuJour, CampagneJour, EtatLigneServeur } from '@/lib/accueil';
 import { ligneBloquee, type Situation } from './situation';
 import { AxePiste } from './squelette-bande';
@@ -175,7 +176,7 @@ function SansAppel({
         />
       );
     case 'fin-appel':
-      return <FinAppel appel={s.appel} bloquee={s.bloquee} />;
+      return <FinAppel appel={s.appel} bloquee={s.bloquee} ligne={ligne} />;
     case 'campagne-entre-deux':
       return <EntreDeux campagne={s.campagne} ligne={ligne} />;
     case 'campagne-suspendue':
@@ -201,7 +202,7 @@ function SansAppel({
         />
       );
     case 'libre':
-      return <Libre dernier={s.dernier} premiereUtilisation={s.premiereUtilisation} entrepriseSlug={s.entrepriseSlug} />;
+      return <Libre dernier={s.dernier} premiereUtilisation={s.premiereUtilisation} entrepriseSlug={s.entrepriseSlug} ligne={ligne} />;
   }
 }
 
@@ -333,10 +334,41 @@ function LienEntree({ href, children }: { href: string; children: string }) {
   );
 }
 
+/**
+ * « Reconnecter le téléphone » dans une bande « Ligne libre » : le Bluetooth du téléphone peut s'être mis en
+ * veille sans que la ligne le sache. Discrète, normale après un échec du téléphone (reconnexion.ts) ; l'aide
+ * passe aux lecteurs d'écran, l'erreur sous les gestes. Une seule par écran : la page Téléphone la porte aussi,
+ * mais c'est un autre écran.
+ */
+function useReconnexionLibre(ligne: EtatLigneServeur, echec: string | null = null) {
+  const reconnexion = useReconnexion();
+  const idAide = useId();
+  const ton = reconnexionAccueil(ligne, echec);
+  if (!ton) return { action: null, erreur: null };
+  return {
+    action: (
+      <>
+        <Action ton={ton} enCours={reconnexion.enCours} libelleEnCours="Reconnexion…" disabled={reconnexion.enCours} onClick={reconnexion.lancer} aria-describedby={idAide}>
+          Reconnecter le téléphone
+        </Action>
+        <span id={idAide} className="sr-only">
+          {AIDE_RECONNEXION}
+        </span>
+      </>
+    ),
+    erreur: reconnexion.erreur ? (
+      <p role="alert" className="rounded-md bg-alerte-fond px-3.5 py-2.5 text-sm text-alerte">
+        {reconnexion.erreur}
+      </p>
+    ) : null,
+  };
+}
+
 /* ------------------------------------------------------------------ fin d'appel */
 
-function FinAppel({ appel: a, bloquee }: { appel: AppelDuJour; bloquee: boolean }) {
+function FinAppel({ appel: a, bloquee, ligne }: { appel: AppelDuJour; bloquee: boolean; ligne: EtatLigneServeur }) {
   const qui = `${a.prospect}${a.societe ? `, ${a.societe}` : ''} · ${a.entreprise}${a.ligne === 'simulation' ? ' · simulé' : ''}`;
+  const reconnexion = useReconnexionLibre(ligne, a.statut === 'echec' ? a.erreur : null);
 
   if (a.statut === 'traitement') {
     return (
@@ -346,7 +378,13 @@ function FinAppel({ appel: a, bloquee }: { appel: AppelDuJour; bloquee: boolean 
         contexte={`Appel terminé à ${heure(a.finLe ?? a.debutLe)} · ${qui}`}
         phrase={bloquee ? 'L’analyse ne progresse plus.' : <ChronoAnalyse depuis={a.finLe ?? a.debutLe} />}
         {...(bloquee ? { detail: 'Le bilan n’est pas arrivé : ouvre l’appel pour relancer le rapatriement.', tonDetail: 'alerte' as const } : {})}
-        actions={<LienEntree href={lienAppel(a.id)}>Ouvrir l’appel</LienEntree>}
+        actions={
+          <>
+            <LienEntree href={lienAppel(a.id)}>Ouvrir l’appel</LienEntree>
+            {reconnexion.action}
+          </>
+        }
+        sousActions={reconnexion.erreur ?? undefined}
       />
     );
   }
@@ -365,7 +403,13 @@ function FinAppel({ appel: a, bloquee }: { appel: AppelDuJour; bloquee: boolean 
           </span>
         }
         {...(a.erreur ? { detail: a.erreur, tonDetail: 'alerte' as const } : {})}
-        actions={<LienEntree href={lienAppel(a.id)}>Ouvrir l’appel</LienEntree>}
+        actions={
+          <>
+            <LienEntree href={lienAppel(a.id)}>Ouvrir l’appel</LienEntree>
+            {reconnexion.action}
+          </>
+        }
+        sousActions={reconnexion.erreur ?? undefined}
       />
     );
   }
@@ -409,7 +453,13 @@ function FinAppel({ appel: a, bloquee }: { appel: AppelDuJour; bloquee: boolean 
           </div>
         ) : undefined
       }
-      actions={<LienEntree href={lienAppel(a.id)}>Ouvrir le bilan</LienEntree>}
+      actions={
+        <>
+          <LienEntree href={lienAppel(a.id)}>Ouvrir le bilan</LienEntree>
+          {reconnexion.action}
+        </>
+      }
+      sousActions={reconnexion.erreur ?? undefined}
     />
   );
 }
@@ -545,6 +595,7 @@ function CampagneArretee({
   const telephone = c.ligne === 'bluetooth';
   const simulation = c.ligne === 'simulation';
   const blocage = telephone ? ligneBloquee(ligne) : null;
+  const reconnexion = useReconnexionLibre(ligne, raison);
 
   const lancer = () =>
     demarrer(async () => {
@@ -615,10 +666,11 @@ function CampagneArretee({
           <LienAction ton={geste ? 'normal' : 'fort'} href={`/campagnes/${c.id}`}>
             Ouvrir la régie
           </LienAction>
+          {reconnexion.action}
         </>
       }
       sousActions={
-        blocage || erreur || (telephone && ouverte) ? (
+        blocage || erreur || reconnexion.erreur || (telephone && ouverte) ? (
           <>
             {blocage ? (
               <p id={`blocage-${c.id}`} className="text-sm text-encre-2 sm:text-right">
@@ -647,6 +699,7 @@ function CampagneArretee({
                 {erreur}
               </p>
             ) : null}
+            {reconnexion.erreur}
           </>
         ) : undefined
       }
@@ -669,12 +722,15 @@ function Libre({
   dernier,
   premiereUtilisation,
   entrepriseSlug,
+  ligne,
 }: {
   dernier: AppelDuJour | null;
   premiereUtilisation: boolean;
   entrepriseSlug: string | null;
+  ligne: EtatLigneServeur;
 }) {
   const nomAssistante = useNomAssistante();
+  const reconnexion = useReconnexionLibre(ligne);
   if (premiereUtilisation) {
     return (
       <Cadre
@@ -682,10 +738,14 @@ function Libre({
         titre="Ligne libre"
         phrase={`Aucune entreprise pour l’instant : ${nomAssistante} a besoin d’une fiche, d’un script et de prospects pour appeler.`}
         actions={
-          <LienAction ton="fort" href="/entreprises">
-            Crée la première entreprise
-          </LienAction>
+          <>
+            <LienAction ton="fort" href="/entreprises">
+              Crée la première entreprise
+            </LienAction>
+            {reconnexion.action}
+          </>
         }
+        sousActions={reconnexion.erreur ?? undefined}
       />
     );
   }
@@ -707,10 +767,14 @@ function Libre({
         )
       }
       actions={
-        <LienAction ton="fort" href={entrepriseSlug ? `/entreprises/${entrepriseSlug}/campagnes` : '/entreprises'}>
-          Préparer une campagne
-        </LienAction>
+        <>
+          <LienAction ton="fort" href={entrepriseSlug ? `/entreprises/${entrepriseSlug}/campagnes` : '/entreprises'}>
+            Préparer une campagne
+          </LienAction>
+          {reconnexion.action}
+        </>
       }
+      sousActions={reconnexion.erreur ?? undefined}
     />
   );
 }
