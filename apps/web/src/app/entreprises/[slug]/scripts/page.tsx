@@ -1,60 +1,111 @@
-import { asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { EtatVide, TitreSection } from '@/components/ui';
+import { NavigationListe } from '@/components/clavier';
+import { FUSEAU } from '@/components/format-appel';
+import { Cellule, CelluleEnTete, EnTeteTable, EtatVide, LienLigne, LigneTable, Page, TableDense } from '@/components/ui';
 import { db } from '@/db';
-import { scripts } from '@/db/schema';
+import { campagnes, scripts, versionsScript } from '@/db/schema';
+import { analyseEntreprise } from '@/lib/lecture';
 import { entrepriseParSlug } from '@/lib/pages';
-import { FormulaireScript } from './formulaire-script';
+import { CreationScript } from './formulaire-script';
 
 export const metadata: Metadata = { title: 'Scripts' };
+
+const COLONNES = 'minmax(0,1fr) 4rem 4rem 7rem 7rem 13rem';
+const JOUR_MOIS = new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', timeZone: FUSEAU });
 
 export default async function PageScripts({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const entreprise = await entrepriseParSlug(slug);
-  const liste = await db
-    .select({
-      id: scripts.id,
-      nom: scripts.nom,
-      version: sql<number>`(select max(v.numero) from versions_script v where v.script_id = scripts.id)`,
-      etapes: sql<number>`(select jsonb_array_length(v.etapes) from versions_script v where v.script_id = scripts.id order by v.numero desc limit 1)`,
-    })
-    .from(scripts)
-    .where(eq(scripts.entrepriseId, entreprise.id))
-    .orderBy(asc(scripts.creeLe));
+  const [liste, versions, actives, analyse] = await Promise.all([
+    db.select({ id: scripts.id, nom: scripts.nom }).from(scripts).where(eq(scripts.entrepriseId, entreprise.id)).orderBy(asc(scripts.creeLe)),
+    db
+      .select({
+        id: versionsScript.id,
+        scriptId: versionsScript.scriptId,
+        numero: versionsScript.numero,
+        creeLe: versionsScript.creeLe,
+        etapes: sql<number>`jsonb_array_length(${versionsScript.etapes})`,
+      })
+      .from(versionsScript)
+      .innerJoin(scripts, eq(scripts.id, versionsScript.scriptId))
+      .where(eq(scripts.entrepriseId, entreprise.id)),
+    db
+      .select({ versionScriptId: campagnes.versionScriptId, statut: campagnes.statut })
+      .from(campagnes)
+      .where(and(eq(campagnes.entrepriseId, entreprise.id), inArray(campagnes.statut, ['en-cours', 'en-pause']))),
+    analyseEntreprise(entreprise.id, false),
+  ]);
+
+  const lignes = liste.map((s) => {
+    const siennes = versions.filter((v) => v.scriptId === s.id);
+    const derniere = siennes.reduce<(typeof siennes)[number] | undefined>((max, v) => (!max || v.numero > max.numero ? v : max), undefined);
+    const ids = new Set(siennes.map((v) => v.id));
+    const servies = actives.filter((c) => ids.has(c.versionScriptId));
+    return {
+      ...s,
+      derniere,
+      conversations: derniere ? (analyse.parVersion.find((v) => v.versionScriptId === derniere.id)?.conversations ?? 0) : 0,
+      campagne: servies.some((c) => c.statut === 'en-cours') ? 'en-cours' : servies.length ? 'en-pause' : null,
+    };
+  });
 
   return (
-    <div className="grid max-w-[48rem] gap-8">
-      <p className="max-w-[62ch] text-encre-2">
-        Un script est un plan que Mina suit sans le réciter. Chaque modification crée une nouvelle version, pour que les bilans
-        comparent des choses comparables.
-      </p>
-      <section>
-        <TitreSection action={<FormulaireScript entrepriseId={entreprise.id} slug={slug} />}>Scripts</TitreSection>
-        {liste.length === 0 ? (
-          <EtatVide titre="Aucun script">
-            Crée un premier script : il démarre avec quatre étapes (accroche, qualification, pitch, rendez-vous) que tu adaptes.
-          </EtatVide>
-        ) : (
-          <ul>
-            {liste.map((s) => (
-              <li key={s.id} className="border-b border-filet">
-                <Link
-                  href={`/entreprises/${slug}/scripts/${s.id}`}
-                  className="group flex items-baseline justify-between gap-4 py-4"
-                >
-                  <span className="font-medium group-hover:underline group-hover:decoration-filet-fort group-hover:underline-offset-4">
-                    {s.nom}
-                  </span>
-                  <span className="text-sm text-encre-3">
-                    <span className="font-mono">v{s.version}</span> · {s.etapes} étapes
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </div>
+    <Page largeur="lecture">
+      <div className="grid max-w-[60rem] grid-cols-[minmax(0,1fr)] gap-6">
+        <p className="max-w-[62ch] text-sm text-encre-3">
+          Un script est un plan que Mina suit sans le réciter. Chaque modification crée une nouvelle version, pour que les bilans
+          comparent des choses comparables.
+        </p>
+        <section aria-labelledby="titre-scripts">
+          <CreationScript entrepriseId={entreprise.id} slug={slug} compte={liste.length} />
+          {lignes.length === 0 ? (
+            <EtatVide titre="Aucun script.">
+              Crée un premier script : il démarre avec quatre étapes (accroche, qualification, pitch, rendez-vous) que tu adaptes.
+            </EtatVide>
+          ) : (
+            <NavigationListe memoriser="scripts">
+              <TableDense libelle="Scripts" colonnes={COLONNES} className="mt-2">
+                <EnTeteTable>
+                  <CelluleEnTete>Script</CelluleEnTete>
+                  <CelluleEnTete>Version</CelluleEnTete>
+                  <CelluleEnTete align="droite">Étapes</CelluleEnTete>
+                  <CelluleEnTete align="droite">Dernière version</CelluleEnTete>
+                  <CelluleEnTete align="droite">Conversations</CelluleEnTete>
+                  <CelluleEnTete>Campagne</CelluleEnTete>
+                </EnTeteTable>
+                <div role="rowgroup">
+                  {lignes.map((s) => (
+                    <LigneTable key={s.id} etat={s.campagne === 'en-cours' ? 'vivante' : 'normale'}>
+                      <Cellule tronquee titre={s.nom} className="font-medium max-sm:order-1 max-sm:flex-1">
+                        <LienLigne href={`/entreprises/${slug}/scripts/${s.id}`}>{s.nom}</LienLigne>
+                      </Cellule>
+                      <Cellule mono className="max-sm:order-1">
+                        {s.derniere ? `v${s.derniere.numero}` : ''}
+                      </Cellule>
+                      <Cellule align="droite" mono className="max-sm:order-3">
+                        {s.derniere?.etapes ?? 0}
+                        <span className="sm:hidden"> étapes</span>
+                      </Cellule>
+                      <Cellule align="droite" mono className="max-sm:order-3">
+                        {s.derniere ? <time dateTime={s.derniere.creeLe.toISOString()}>{JOUR_MOIS.format(s.derniere.creeLe)}</time> : null}
+                      </Cellule>
+                      <Cellule align="droite" mono className="max-sm:order-3">
+                        {s.conversations}
+                        <span className="sm:hidden"> conv.</span>
+                      </Cellule>
+                      <Cellule etat tronquee className={`max-sm:order-3 ${s.campagne === 'en-pause' ? 'text-encre-2' : ''}`}>
+                        {s.campagne === 'en-cours' ? 'sert la campagne en cours' : s.campagne === 'en-pause' ? 'sert une campagne suspendue' : null}
+                      </Cellule>
+                      <span aria-hidden="true" className="h-0 basis-full max-sm:order-2 sm:hidden" />
+                    </LigneTable>
+                  ))}
+                </div>
+              </TableDense>
+            </NavigationListe>
+          )}
+        </section>
+      </div>
+    </Page>
   );
 }

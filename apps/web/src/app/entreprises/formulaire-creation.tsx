@@ -1,36 +1,49 @@
 'use client';
 
-import { useActionState } from 'react';
-import { Bouton, Saisie } from '@/components/ui';
+import { useRef, useState } from 'react';
+import { RangeeCreation } from '@/components/rangee-creation';
+import { Action, EnTetePage } from '@/components/ui';
 import { creerEntreprise } from './actions';
 
-export function FormulaireCreation() {
-  const [etat, action, enCours] = useActionState(creerEntreprise, null);
-  const erreur = etat?.erreurs?.nom;
+/** En-tête de la liste des entreprises et sa rangée de création, dépliée d'office quand la liste est vide. */
+export function CreationEntreprise({ compte }: { compte: number }) {
+  const vide = compte === 0;
+  const [ouverte, setOuverte] = useState(vide);
+  const bouton = useRef<HTMLButtonElement>(null);
+  const montree = ouverte || vide;
+
+  const ouvrir = () => {
+    setOuverte(true);
+    // Déjà ouverte : N ramène le focus dans le champ.
+    requestAnimationFrame(() => document.getElementById('nom-entreprise')?.focus());
+  };
+  const fermer = () => {
+    setOuverte(false);
+    requestAnimationFrame(() => bouton.current?.focus());
+  };
+
   return (
-    <form action={action} className="grid gap-1.5">
-      <label htmlFor="nom-entreprise" className="sr-only">
-        Nom de la nouvelle entreprise
-      </label>
-      <div className="flex gap-2">
-        <Saisie
+    <>
+      <EnTetePage
+        titre="Entreprises"
+        compte={compte}
+        sousTitre="Chaque entreprise que Mina peut représenter."
+        action={
+          <Action ref={bouton} touche="N" raccourci="n" aria-expanded={montree} onClick={ouvrir} className="-mr-1.5">
+            Nouvelle entreprise
+          </Action>
+        }
+      />
+      {montree ? (
+        <RangeeCreation
+          action={creerEntreprise}
           id="nom-entreprise"
-          name="nom"
+          libelle="Nom de la nouvelle entreprise"
           placeholder="Nom de l’entreprise"
-          required
-          aria-invalid={erreur ? true : undefined}
-          aria-describedby={erreur ? 'nom-entreprise-erreur' : undefined}
-          className="w-64"
+          annulable={!vide}
+          onAnnuler={fermer}
         />
-        <Bouton type="submit" disabled={enCours}>
-          {enCours ? 'Création…' : 'Créer'}
-        </Bouton>
-      </div>
-      {erreur ? (
-        <p id="nom-entreprise-erreur" className="text-sm text-alerte">
-          {erreur}
-        </p>
       ) : null}
-    </form>
+    </>
   );
 }

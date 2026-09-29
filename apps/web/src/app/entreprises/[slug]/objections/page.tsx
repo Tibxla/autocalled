@@ -1,84 +1,70 @@
 import { asc, eq } from 'drizzle-orm';
 import type { Metadata } from 'next';
-import { EtatVide, TitreSection } from '@/components/ui';
+import { Page } from '@/components/ui';
 import { db } from '@/db';
 import { objections } from '@/db/schema';
+import { analyseEntreprise } from '@/lib/lecture';
 import { entrepriseParSlug } from '@/lib/pages';
-import { basculerArchiveObjection } from '../actions';
-import { BoutonArchive } from '@/components/bouton-archive';
-import { FormulaireObjection } from './formulaire-objection';
+import { ListeObjections, type ChiffresObjection } from './liste-objections';
 
 export const metadata: Metadata = { title: 'Objections' };
 
-export default async function PageObjections({ params }: { params: Promise<{ slug: string }> }) {
+export default async function PageObjections({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ objection?: string }>;
+}) {
   const { slug } = await params;
+  const { objection: demandee } = await searchParams;
   const entreprise = await entrepriseParSlug(slug);
-  const liste = await db
-    .select()
-    .from(objections)
-    .where(eq(objections.entrepriseId, entreprise.id))
-    .orderBy(asc(objections.ordre));
-  const actives = liste.filter((o) => !o.archivee);
-  const archivees = liste.filter((o) => o.archivee);
+  const [liste, analyse] = await Promise.all([
+    db
+      .select({
+        id: objections.id,
+        libelle: objections.libelle,
+        creuser: objections.creuser,
+        reformuler: objections.reformuler,
+        argumenter: objections.argumenter,
+        controler: objections.controler,
+        archivee: objections.archivee,
+      })
+      .from(objections)
+      .where(eq(objections.entrepriseId, entreprise.id))
+      .orderBy(asc(objections.ordre)),
+    // Les appels réels seulement : un appel simulé ne dit pas ce qu'un vrai prospect objecte.
+    analyseEntreprise(entreprise.id, false),
+  ]);
+
+  const chiffres: Record<string, ChiffresObjection> = {};
+  for (const o of analyse.parObjection) {
+    if (o.objectionId) chiffres[o.objectionId] = { apparitions: o.apparitions, levees: o.levees, temps: o.tempsBloquantPrincipal };
+  }
+  const versClient = (o: (typeof liste)[number]) => ({
+    id: o.id,
+    libelle: o.libelle,
+    creuser: o.creuser,
+    reformuler: o.reformuler,
+    argumenter: o.argumenter,
+    controler: o.controler,
+  });
 
   return (
-    <div className="grid max-w-[48rem] gap-12">
-      <p className="max-w-[62ch] text-encre-2">
-        Mina traite chaque objection en quatre temps : creuser, reformuler, argumenter, contrôler. Les bilans diront à quel temps
-        une objection a coincé.
-      </p>
-
-      <section className="grid">
-        <TitreSection>Objections connues</TitreSection>
-        {actives.length === 0 ? (
-          <EtatVide titre="Aucune objection préparée">
-            Commence par celles que tu entends le plus : « ça ne m’intéresse pas », « c’est combien ? », « envoyez-moi un mail ».
-          </EtatVide>
-        ) : (
-          <ul>
-            {actives.map((o) => (
-              <li key={o.id} className="border-b border-filet">
-                <details className="group">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-4 [&::-webkit-details-marker]:hidden">
-                    <span className="font-medium">{o.libelle}</span>
-                    <span className="text-sm text-encre-3 group-open:hidden">
-                      {[o.creuser, o.reformuler, o.argumenter, o.controler].filter(Boolean).length} temps sur 4
-                    </span>
-                  </summary>
-                  <FormulaireObjection entrepriseId={entreprise.id} objection={o} />
-                  <div className="-mt-4 pb-6">
-                    <BoutonArchive archivee={false} action={basculerArchiveObjection.bind(null, entreprise.id, o.id, true)} />
-                  </div>
-                </details>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <details className="group" open={actives.length === 0}>
-        <summary className="inline-flex h-9 cursor-pointer list-none items-center rounded-md bg-surface px-3.5 text-sm font-medium shadow-[inset_0_0_0_1px_var(--filet-fort)] transition-colors duration-150 group-open:hidden hover:bg-survol [&::-webkit-details-marker]:hidden">
-          Ajouter une objection
-        </summary>
-        <section className="grid">
-          <TitreSection>Nouvelle objection</TitreSection>
-          <FormulaireObjection key={actives.length} entrepriseId={entreprise.id} />
-        </section>
-      </details>
-
-      {archivees.length > 0 ? (
-        <section className="grid">
-          <TitreSection>Archivées</TitreSection>
-          <ul>
-            {archivees.map((o) => (
-              <li key={o.id} className="flex items-center justify-between gap-4 border-b border-filet py-3 text-encre-3">
-                <span>{o.libelle}</span>
-                <BoutonArchive archivee action={basculerArchiveObjection.bind(null, entreprise.id, o.id, false)} />
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-    </div>
+    <Page largeur="lecture">
+      <div className="grid max-w-[52rem] grid-cols-[minmax(0,1fr)] gap-6">
+        <p className="max-w-[62ch] text-sm text-encre-3">
+          Mina traite chaque objection en quatre temps : creuser, reformuler, argumenter, contrôler (CRAC). Les bilans disent à quel
+          temps une objection a coincé.
+        </p>
+        <ListeObjections
+          entrepriseId={entreprise.id}
+          actives={liste.filter((o) => !o.archivee).map(versClient)}
+          archivees={liste.filter((o) => o.archivee).map(versClient)}
+          chiffres={chiffres}
+          ouverteInitiale={demandee ?? null}
+        />
+      </div>
+    </Page>
   );
 }
