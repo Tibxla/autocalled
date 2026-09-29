@@ -18,9 +18,10 @@ const VERBE_TEMPS: Record<string, string> = Object.fromEntries(TEMPS.map((t) => 
 /** C R A C : le temps rempli en encre, le temps vide en encre-3 ; la phrase complète pour les lecteurs d'écran. */
 function Crac({ objection }: { objection: Objection }) {
   const manquants = TEMPS.filter((t) => !objection[t.nom].trim());
+  const titre = manquants.length ? `Manque : ${manquants.map((t) => t.verbe).join(', ')}` : '4 temps sur 4 remplis';
   return (
-    <span className="font-mono text-xs">
-      <span aria-hidden="true" className="inline-flex gap-1">
+    <span className="font-mono text-xs" title={titre}>
+      <span aria-hidden="true" className="inline-flex">
         {TEMPS.map((t) => (
           <span key={t.nom} className={objection[t.nom].trim() ? 'text-encre' : 'text-encre-3'}>
             {t.lettre}
@@ -246,7 +247,7 @@ export function ListeObjections({
                         disabled={rang === 0 || deplacement}
                         onClick={() => deplacer(o, 'monter', true)}
                       >
-                        ↑
+                        <Chevron direction="bas" className="rotate-180 stroke-current" />
                       </Action>
                       <Action
                         ton="discret"
@@ -256,7 +257,7 @@ export function ListeObjections({
                         disabled={rang === actives.length - 1 || deplacement}
                         onClick={() => deplacer(o, 'descendre', true)}
                       >
-                        ↓
+                        <Chevron direction="bas" className="stroke-current" />
                       </Action>
                     </span>
                   ) : null}
@@ -276,7 +277,6 @@ export function ListeObjections({
             {archivees.map((o) => (
               <li key={o.id} className="flex min-h-[38px] flex-wrap items-center gap-x-4 border-b border-filet py-1 text-encre-3">
                 <span className="min-w-0 flex-1">{o.libelle}</span>
-                <span className="text-sm">Archivée</span>
                 <BoutonArchive
                   archivee
                   nom={o.libelle}

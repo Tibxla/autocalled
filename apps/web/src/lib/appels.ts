@@ -80,7 +80,8 @@ export async function appelerParTelephone(
 ): Promise<{ ok: true; appelId: string } | { ok: false; raison: string }> {
   const preparation = await preparerAppel(entrepriseId, prospectId, versionScriptId);
   if (!preparation.ok) return preparation;
-  const refus = await refusDuPont();
+  // Un appel de campagne attend la fin du précédent dans l'enchaînement ; un appel isolé refuse une ligne occupée.
+  const refus = await refusDuPont({ ligneLibre: campagneId === null });
   if (refus) return { ok: false, raison: refus };
 
   await rafraichirSiAncien();

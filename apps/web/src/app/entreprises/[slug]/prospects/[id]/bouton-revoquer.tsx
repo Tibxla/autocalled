@@ -37,7 +37,7 @@ export function BoutonRevoquer({
 
   return (
     <div className="grid justify-items-start gap-2">
-      <Action ton="discret" className="-mx-1.5" aria-expanded={confirmation.ouverte} onClick={(e) => confirmation.ouvrir(e.currentTarget)}>
+      <Action ton="alerte" className="-mx-1.5" aria-expanded={confirmation.ouverte} onClick={(e) => confirmation.ouvrir(e.currentTarget)}>
         Révoquer ce numéro
       </Action>
       <Confirmation

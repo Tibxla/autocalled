@@ -159,7 +159,7 @@ export function PanneauAppel({
         <label htmlFor="version-appel" className="text-sm font-medium">
           Version de script
         </label>
-        <Selection id="version-appel" value={versionId} onChange={(e) => setVersionId(e.target.value)} className="font-mono">
+        <Selection id="version-appel" value={versionId} onChange={(e) => setVersionId(e.target.value)}>
           {versions.map((v) => (
             <option key={v.id} value={v.id}>
               {v.libelle}
@@ -251,7 +251,7 @@ export function PanneauAppel({
             onConfirmer={() => lancer(() => demarrerAppelTelephone(entrepriseId, prospectId, versionId), confirmation.fermer)}
           >
             <p>
-              Le <span className="font-mono text-encre">{numero}</span> va sonner. Version : <span className="font-mono">{libelleVersion}</span>.
+              Le <span className="font-mono text-encre">{numero}</span> va sonner. Version : {libelleVersion}.
             </p>
             {ajoutMcp ? (
               <p className="mt-1">

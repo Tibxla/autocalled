@@ -189,7 +189,7 @@ export function ApercuMina({
                 ` ; aucun script : ${nom} recevrait l’étape par défaut`
               )}
               .{' '}
-              {sansProspect ? 'Sans prospect choisi, les variables du prospect viennent de sa fiche.' : null}
+              {sansProspect ? 'Sans prospect choisi, les variables du prospect sont calculées sur une fiche vide.' : null}
               {apercu.prospect?.refus ? (
                 <span className="text-encre-2">
                   Numéro {REFUS[apercu.prospect.refus] ?? 'non autorisé'} : cet appel serait refusé.

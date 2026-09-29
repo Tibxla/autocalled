@@ -9,7 +9,7 @@ import { db } from '@/db';
 import { appels, entreprises, issuesPersonnalisees } from '@/db/schema';
 import { comptesAppels, comptesParJour, pageAppels, PERIODES } from '@/lib/lecture';
 import { assistantePourLaPage } from '@/lib/pages';
-import { commanderPont } from '@/lib/pont';
+import { appelTelephoneVivant } from '@/lib/ligne-vivante';
 import { versionsDeLEntreprise } from '@/lib/versions';
 import { LIGNES_FILTRE, lireFiltresAppels } from './filtres';
 import { FiltreJour, FiltreSelection } from './filtres-client';
@@ -37,18 +37,6 @@ const FORMAT_JOUR = new Intl.DateTimeFormat('fr-FR', {
   year: 'numeric',
   timeZone: FUSEAU,
 });
-
-/** L'appel que la ligne téléphone porte en ce moment, ou null (pont muet ou trop lent). */
-async function appelVivant(): Promise<string | null> {
-  const attente = new Promise<null>((resoudre) => setTimeout(() => resoudre(null), ATTENTE_PONT_MS));
-  const etat = await Promise.race([commanderPont('/etat'), attente]);
-  if (!etat?.ok) return null;
-  const { appelEnCours, appelId } = etat.corps as {
-    appelEnCours?: boolean;
-    appelId?: string | null;
-  };
-  return appelEnCours && typeof appelId === 'string' ? appelId : null;
-}
 
 /** Couper sur un mot pour un extrait propre. */
 function avantCoupe(texte: string, n: number): string {
@@ -104,7 +92,7 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
     comptesAppels({ ...filtresSansRappels, rappels: true }).then((c) => c.total),
     db.select({ slug: entreprises.slug, nom: entreprises.nom }).from(entreprises).orderBy(asc(entreprises.nom)),
     db.select({ id: appels.id }).from(appels).where(eq(appels.ligne, 'twilio')).limit(1),
-    appelVivant(),
+    appelTelephoneVivant(ATTENTE_PONT_MS),
     entreprise ? versionsDeLEntreprise(entreprise.id) : Promise.resolve([]),
     entreprise
       ? db

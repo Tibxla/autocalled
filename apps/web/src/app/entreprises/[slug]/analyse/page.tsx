@@ -90,11 +90,11 @@ export default async function PageAnalyse({
 
   return (
     <Page largeur="lecture">
-      <div className="grid max-w-[64rem] grid-cols-[minmax(0,1fr)] gap-10">
+      <div className="grid max-w-[72rem] grid-cols-[minmax(0,1fr)] gap-10">
         <div className="grid gap-4">
           <p className="max-w-[68ch] text-sm text-encre-3">
             Chaque ligne compare une version de script. Les appels non aboutis sont comptés mais exclus des taux&nbsp;; sous{' '}
-            {SEUIL_ECHANTILLON} conversations, aucun taux n’est affiché.
+            {SEUIL_ECHANTILLON} appels aboutis, aucun taux n’est affiché.
           </p>
           <Filtres libelle="Appels comptés">
             <Filtre actif={!avecSimules} compte={reels} href={`${base}/analyse`} replace>
@@ -134,7 +134,7 @@ export default async function PageAnalyse({
                     <TableDense libelle={`Versions de ${g.nom}`} colonnes={COLONNES_VERSIONS}>
                       <EnTeteTable>
                         <CelluleEnTete>Version</CelluleEnTete>
-                        <CelluleEnTete>Conversations</CelluleEnTete>
+                        <CelluleEnTete>Aboutis</CelluleEnTete>
                         <CelluleEnTete>Rendez-vous</CelluleEnTete>
                         <CelluleEnTete>Arrêt médian sans rendez-vous</CelluleEnTete>
                       </EnTeteTable>
@@ -157,11 +157,18 @@ export default async function PageAnalyse({
                                 <span className="font-mono">{v.appels}</span>
                                 <span className="text-encre-3"> {v.appels > 1 ? 'appels' : 'appel'}</span>
                               </Cellule>
-                              <Cellule tronquee className="max-sm:basis-full">
+                              <Cellule
+                                tronquee
+                                {...(!v.echantillonSuffisant || v.tauxRendezVous === null
+                                  ? {
+                                      titre: `${pluriel(v.rendezVous, 'rendez-vous', 'rendez-vous')} sur ${pluriel(v.conversations, 'appel abouti', 'appels aboutis')} : trop peu pour un taux (${SEUIL_ECHANTILLON} au moins).`,
+                                    }
+                                  : {})}
+                                className="max-sm:basis-full"
+                              >
                                 {!v.echantillonSuffisant || v.tauxRendezVous === null ? (
                                   <span className="text-encre-3">
-                                    {pluriel(v.rendezVous, 'rendez-vous', 'rendez-vous')} sur {pluriel(v.conversations, 'conversation', 'conversations')} ·
-                                    échantillon insuffisant
+                                    <span className="font-mono">{v.rendezVous}</span> sur <span className="font-mono">{v.conversations}</span> · trop peu pour un taux
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-2.5">

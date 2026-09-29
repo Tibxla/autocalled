@@ -1,4 +1,4 @@
-import { ISSUES_SYSTEME, LIBELLES_ISSUES, SENS_ISSUES } from '@autocalled/domain';
+import { type IssueSysteme, ISSUES_SYSTEME, LIBELLES_ISSUES, SENS_ISSUES } from '@autocalled/domain';
 import { and, asc, eq, isNotNull, ne, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { BoutonArchive } from '@/components/bouton-archive';
@@ -12,6 +12,11 @@ import { AjoutPrecision } from './formulaire-issue';
 export const metadata: Metadata = { title: 'Issues' };
 
 const majuscule = (texte: string) => texte.charAt(0).toLocaleUpperCase('fr-FR') + texte.slice(1);
+
+/** Phrases propres à cet écran, quand celle du domaine (partagée avec le bilan) se lit mal en tête de ligne. */
+const SENS_AFFICHE: Partial<Record<IssueSysteme, string>> = {
+  'envoi-informations': 'Le prospect demande de la documentation par e-mail ; souvent un refus poli.',
+};
 
 export default async function PageIssues({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -50,7 +55,7 @@ export default async function PageIssues({ params }: { params: Promise<{ slug: s
                 <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-0.5">
                   <div className="grid min-w-0 flex-1 gap-0.5">
                     <span className="font-medium">{libelle}</span>
-                    <span className="text-sm text-encre-3">{majuscule(SENS_ISSUES[issue])}.</span>
+                    <span className="text-sm text-encre-3">{SENS_AFFICHE[issue] ?? `${majuscule(SENS_ISSUES[issue])}.`}</span>
                   </div>
                   <LienAction
                     ton="discret"

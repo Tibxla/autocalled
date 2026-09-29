@@ -43,6 +43,17 @@ describe('variablesDeLAppel', () => {
     expect(variablesDeLAppel(contexte).date_du_jour).toBe('samedi 26 septembre 2026');
   });
 
+  it('remplace les variables citées dans les étapes et les objections, et laisse une inconnue telle quelle', () => {
+    const v = variablesDeLAppel({
+      ...contexte,
+      assistante: { nom: 'Lina' },
+      etapes: [{ intention: 'Se présenter comme {{assistante_nom}} de {{ entreprise_nom }}', exemples: ['Bonjour, je parle bien à {{prospect_nom}}, de {{prospect_societe}} ?'] }],
+      objections: [{ libelle: 'Pas le temps', creuser: 'Qu’est-ce qui occupe {{prospect_societe}} en ce moment ?', reformuler: '', argumenter: '{{inconnue}} reste', controler: '' }],
+    });
+    expect(v.script_etapes).toBe('1. Se présenter comme Lina de Atelier Vitrine (par exemple : « Bonjour, je parle bien à Julie Martin, de Gîte des Aravis ? »)');
+    expect(v.objections).toBe('Pas le temps : creuser : Qu’est-ce qui occupe Gîte des Aravis en ce moment ? ; argumenter : {{inconnue}} reste');
+  });
+
   it('numérote les étapes et cite leurs exemples', () => {
     expect(variablesDeLAppel(contexte).script_etapes).toBe(
       '1. Accroche (par exemple : « Bonjour Julie » ; « Vous avez deux minutes ? »)\n2. Rendez-vous',

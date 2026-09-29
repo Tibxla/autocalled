@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { BoutonArchive } from '@/components/bouton-archive';
 import { NavigationListe } from '@/components/clavier';
-import { FUSEAU } from '@/components/format-appel';
+import { comptesCampagne, FUSEAU } from '@/components/format-appel';
 import { Cellule, CelluleEnTete, EnTeteTable, EtatVide, LienLigne, LigneTable, Page, TableDense, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { campagnes, scripts, versionsScript } from '@/db/schema';
@@ -35,7 +35,7 @@ export default async function PageScripts({ params }: { params: Promise<{ slug: 
       .innerJoin(scripts, eq(scripts.id, versionsScript.scriptId))
       .where(eq(scripts.entrepriseId, entreprise.id)),
     db
-      .select({ versionScriptId: campagnes.versionScriptId, statut: campagnes.statut })
+      .select({ versionScriptId: campagnes.versionScriptId, statut: campagnes.statut, entrees: campagnes.entrees })
       .from(campagnes)
       .where(and(eq(campagnes.entrepriseId, entreprise.id), inArray(campagnes.statut, ['en-cours', 'en-pause']))),
     analyseEntreprise(entreprise.id, false),
@@ -52,6 +52,8 @@ export default async function PageScripts({ params }: { params: Promise<{ slug: 
       derniere,
       conversations: derniere ? (analyse.parVersion.find((v) => v.versionScriptId === derniere.id)?.conversations ?? 0) : 0,
       campagne: servies.some((c) => c.statut === 'en-cours') ? 'en-cours' : servies.length ? 'en-pause' : null,
+      // L'antenne ne s'allume que pendant un appel, pas entre deux appels d'une campagne en cours.
+      enAppel: servies.some((c) => c.statut === 'en-cours' && comptesCampagne(c.entrees).enAppel > 0),
     };
   });
 
@@ -82,12 +84,12 @@ export default async function PageScripts({ params }: { params: Promise<{ slug: 
                   <CelluleEnTete>Version</CelluleEnTete>
                   <CelluleEnTete align="droite">Étapes</CelluleEnTete>
                   <CelluleEnTete align="droite">Dernière version</CelluleEnTete>
-                  <CelluleEnTete align="droite">Conversations</CelluleEnTete>
+                  <CelluleEnTete align="droite">Aboutis</CelluleEnTete>
                   <CelluleEnTete>Campagne</CelluleEnTete>
                 </EnTeteTable>
                 <div role="rowgroup">
                   {lignes.map((s) => (
-                    <LigneTable key={s.id} etat={s.campagne === 'en-cours' ? 'vivante' : 'normale'}>
+                    <LigneTable key={s.id} etat={s.enAppel ? 'vivante' : 'normale'}>
                       <Cellule tronquee titre={s.nom} className="font-medium max-sm:order-1 max-sm:flex-1">
                         <LienLigne href={`/entreprises/${slug}/scripts/${s.id}`}>{s.nom}</LienLigne>
                       </Cellule>
@@ -103,7 +105,7 @@ export default async function PageScripts({ params }: { params: Promise<{ slug: 
                       </Cellule>
                       <Cellule align="droite" mono className="max-sm:order-3">
                         {s.conversations}
-                        <span className="sm:hidden"> conv.</span>
+                        <span className="sm:hidden"> aboutis</span>
                       </Cellule>
                       <Cellule etat tronquee className={`max-sm:order-3 ${s.campagne === 'en-pause' ? 'text-encre-2' : ''}`}>
                         {s.campagne === 'en-cours' ? 'sert la campagne en cours' : s.campagne === 'en-pause' ? 'sert une campagne suspendue' : null}
@@ -131,7 +133,6 @@ export default async function PageScripts({ params }: { params: Promise<{ slug: 
                   >
                     {s.nom}
                   </Link>
-                  <span className="text-sm">Archivé</span>
                   <BoutonArchive archivee masculin nom={s.nom} action={basculerArchiveScript.bind(null, entreprise.id, s.id, false)} />
                 </li>
               ))}

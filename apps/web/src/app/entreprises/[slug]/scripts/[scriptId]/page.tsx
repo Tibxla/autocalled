@@ -193,7 +193,7 @@ export default async function PageScript({
                     </span>
                     <span className="grid text-xs text-encre-3">
                       <span>
-                        <span className="font-mono">{c?.conversations ?? 0}</span> {(c?.conversations ?? 0) > 1 ? 'conversations' : 'conversation'} ·{' '}
+                        <span className="font-mono">{c?.conversations ?? 0}</span> {(c?.conversations ?? 0) > 1 ? 'appels aboutis' : 'appel abouti'} ·{' '}
                         <span className="font-mono">{c?.rendezVous ?? 0}</span> rendez-vous
                       </span>
                       <time dateTime={v.creeLe.toISOString()} className="font-mono">

@@ -30,13 +30,13 @@ export function AjoutPrecision({ entrepriseId, issueSysteme, libelleIssue }: { e
           ref={bouton}
           ton="discret"
           aria-expanded={false}
-          aria-label={`Ajouter une issue personnalisée à « ${libelleIssue} »`}
+          aria-label={`Préciser « ${libelleIssue} » : ajouter une issue personnalisée`}
           onClick={() => {
             setAnnonce(null);
             setOuvert(true);
           }}
         >
-          Ajouter une issue personnalisée
+          Préciser
         </Action>
         <span role="status" className="text-sm text-encre-3">
           {annonce}

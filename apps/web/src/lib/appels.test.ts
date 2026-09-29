@@ -112,6 +112,21 @@ describe('nom et premier message de l’assistante', () => {
     }
   });
 
+  it('refuse un appel isolé quand la ligne est déjà en appel, sans rien enregistrer ni composer', async () => {
+    const pont = await fauxPont({ etat: { appelEnCours: true, appelId: '00000000-0000-4000-8000-000000000001' } });
+    try {
+      const { entrepriseId, versionScriptId } = await prospectAutorise();
+
+      const r = await appelerParTelephone(entrepriseId, 'julie', versionScriptId);
+
+      expect(r).toEqual({ ok: false, raison: 'Un appel est déjà en ligne sur le téléphone.' });
+      expect(pont.compositions()).toHaveLength(0);
+      expect(await db.$count(appels, eq(appels.entrepriseId, entrepriseId))).toBe(0);
+    } finally {
+      await pont.fermer();
+    }
+  });
+
   it('fige le nom par défaut sur un appel simulé', async () => {
     const { entrepriseId, versionScriptId } = await prospectAutorise();
 

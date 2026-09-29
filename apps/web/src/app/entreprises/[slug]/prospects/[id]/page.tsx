@@ -4,16 +4,17 @@ import Link from 'next/link';
 import { AjoutClaudeCode } from '@/components/ajout-claude-code';
 import { ListeAppels } from '@/components/liste-appels';
 import { PastilleAutorisation } from '@/components/pastille-autorisation';
-import { cleJour, dateCourte, etatAppel, quandRappeler } from '@/components/format-appel';
+import { dateCourte, etatAppel, quandRappeler, rappelEnRetard } from '@/components/format-appel';
 import { Chevron, EtatVide, LienAction, Page, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { appels, consentements, issuesPersonnalisees, prospects, rendezVous, versionsScript } from '@/db/schema';
 import { ligneBloquee } from '@/app/_accueil/situation';
-import { etatLigneServeur } from '@/lib/accueil';
+import type { EtatLigneServeur } from '@/lib/accueil';
 import { rafraichirSiAncien } from '@/lib/agenda';
 import { preparerAppel } from '@/lib/appels';
 import { autorisationsDe } from '@/lib/autorisations';
 import { numeroLisible } from '@/lib/format';
+import { appelIdVivant, etatLigneBorne } from '@/lib/ligne-vivante';
 import { assistantePourLaPage, entrepriseParSlug, prospectParId } from '@/lib/pages';
 import { ajoutParMcp } from '@/lib/prospects';
 import { rappelEnAttente } from '@/lib/rappels';
@@ -53,22 +54,13 @@ async function lirePlafonds(): Promise<PlafondsLigne> {
  * Pourquoi aucun appel ne peut partir par le téléphone passerelle, ou null (ligne prête, ou trop lente à
  * répondre : le serveur garde sa propre vérification au moment d'appeler). Lecture seule, sans bloquer la fiche.
  */
-async function lireBlocageTelephone(): Promise<BlocageTelephone | null> {
-  let minuterie: ReturnType<typeof setTimeout> | undefined;
-  const attente = new Promise<null>((resoudre) => {
-    minuterie = setTimeout(() => resoudre(null), 1500);
-  });
-  try {
-    const etat = await Promise.race([etatLigneServeur(), attente]);
-    if (!etat) return null;
-    const texte = ligneBloquee(etat);
-    if (!texte) return null;
-    return { texte, court: !etat.joignable ? 'injoignable' : !etat.connecte ? 'déconnecté' : 'plafond atteint' };
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(minuterie);
-  }
+async function lireBlocageTelephone(lecture: Promise<EtatLigneServeur | null>): Promise<BlocageTelephone | null> {
+  const etat = await lecture;
+  if (!etat) return null;
+  if (etat.joignable && (etat.appelEnCours || etat.appelId)) return { texte: 'Un appel est déjà en ligne sur le téléphone.', court: 'en appel' };
+  const texte = ligneBloquee(etat);
+  if (!texte) return null;
+  return { texte, court: !etat.joignable ? 'injoignable' : !etat.connecte ? 'déconnecté' : 'plafond atteint' };
 }
 
 /** L'heure se lit hors du rendu. */
@@ -151,11 +143,17 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
     : [[], []];
   const nombreEtapes = new Map(etapesVersions.map((e) => [e.id, Number(e.nombre)]));
   const avecRendezVous = new Set(rdvHistorique.map((r) => r.appelId));
-  const etatDernier = dernier ? etatAppel(dernier, { libellePerso: dernier.issue ? libellePerso.get(dernier.issue) : null }) : null;
+  // Une seule lecture de la ligne : l'appel vivant (attendu seulement si un appel téléphone est encore « en cours » en
+  // base) et le blocage du panneau d'appel (jamais attendu).
+  const lectureLigne = etatLigneBorne();
+  const vivantId = historique.some((a) => a.statut === 'en-cours' && a.ligne === 'bluetooth') ? appelIdVivant(await lectureLigne) : null;
+  const maintenant = lireMaintenant();
+  const etatDernier = dernier
+    ? etatAppel(dernier, { vivant: dernier.id === vivantId, libellePerso: dernier.issue ? libellePerso.get(dernier.issue) : null, maintenant })
+    : null;
   // Le rappel à faire : le dernier appel hors simulation a fini en rappel convenu (un appel plus récent le fait).
   const rappel = rappelEnAttente(historique);
-  const maintenant = lireMaintenant();
-  const rappelEnRetard = rappel?.rappelLe ? cleJour(rappel.rappelLe) < cleJour(maintenant) : false;
+  const retard = rappel?.rappelLe ? rappelEnRetard(rappel.rappelLe, rappel.quand, maintenant) : false;
 
   let blocage: { texte: string; lien?: { href: string; libelle: string } } | null = null;
   if (!autorise) {
@@ -185,13 +183,14 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
           {dernier && etatDernier ? (
             <p className="flex flex-wrap gap-x-4 gap-y-0.5 pt-1 text-sm text-encre-3">
               <Link href={`/appels/${dernier.id}?depuis=${encodeURIComponent(`${base}/${prospect.id}`)}`} className="decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline">
-                Dernier appel le <span className="font-mono">{dateCourte(dernier.debutLe).split(' ')[0]}</span> : {etatDernier.libelle}
+                Dernier appel le <span className="font-mono">{dateCourte(dernier.debutLe).split(' ')[0]}</span> :{' '}
+                <span className={etatDernier.cle === 'en-cours' && dernier.id === vivantId ? 'text-antenne' : undefined}>{etatDernier.libelle}</span>
               </Link>
               {rappel ? (
                 <span className="text-encre">
                   {rappel.rappelLe ? (
                     <>
-                      {rappelEnRetard ? 'Rappel en retard' : 'Prochain rappel'} :{' '}
+                      {retard ? <span className="text-alerte">Rappel en retard</span> : 'Prochain rappel'} :{' '}
                       {quandRappeler(rappel.rappelLe, rappel.quand, maintenant)}
                     </>
                   ) : (
@@ -263,6 +262,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
             ) : (
               <ListeAppels
                 depuis={`${base}/${prospect.id}`}
+                vivantId={vivantId}
                 appels={historique.map((a) => {
                   const cleIssue = a.issue ?? a.bilan?.issue ?? null;
                   return {
@@ -309,7 +309,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
             ajoutMcp={ajoutMcp}
             blocage={blocage}
             plafonds={lirePlafonds()}
-            telephoneBloque={lireBlocageTelephone()}
+            telephoneBloque={lireBlocageTelephone(lectureLigne)}
           />
           <BoutonRevoquer numero={prospect.telephone} lisible={lisible} partages={partages} autorise={autorise} />
         </aside>

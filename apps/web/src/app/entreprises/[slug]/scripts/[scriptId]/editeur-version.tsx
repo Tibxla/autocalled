@@ -246,7 +246,7 @@ export function EditeurVersion({
                 <Champ
                   libelle="Formulations d’exemple"
                   htmlFor={idChamp(l.cle, 'exemples')}
-                  aide="Une par ligne, entre une et quatre."
+                  aide="Une par ligne, entre une et quatre. Tu peux écrire {{assistante_nom}}, {{prospect_nom}}, {{prospect_societe}} : remplacés au début de l’appel."
                   erreur={erreurs[`${l.cle}:exemples`]}
                   complement={
                     <span className={`font-mono text-xs ${nombre > MAX_FORMULATIONS ? 'text-alerte' : 'text-encre-3'}`}>

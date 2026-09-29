@@ -38,8 +38,10 @@ export interface LigneProspect {
   /** Chiffres du numéro (national et international), pour la recherche seulement. */
   chiffres: string;
   autorisation: Autorisation | undefined;
-  dernier: { date: string; libelle: string } | null;
-  rappel: string | null;
+  /** `vivant` : l'appel que la ligne téléphone porte en ce moment. */
+  dernier: { date: string; libelle: string; vivant?: boolean } | null;
+  /** Rappel convenu à faire : quand (en clair, null s'il n'est pas daté), ce qu'a dit le prospect, s'il est en retard. */
+  rappel: { quand: string | null; texte: string | null; enRetard: boolean } | null;
 }
 
 type CleFiltre = 'autorises' | 'revoques' | 'sans-consentement' | 'invalides' | 'rappels';
@@ -197,7 +199,7 @@ export function ListeProspects({
                 </EnTeteTable>
                 <div role="rowgroup">
                   {visibles.map((p) => (
-                    <LigneTable key={p.id}>
+                    <LigneTable key={p.id} etat={p.dernier?.vivant ? 'vivante' : p.autorisation?.autorise ? 'normale' : 'attenuee'}>
                       <Cellule tronquee titre={p.detail ? `${p.nom} · ${p.detail}` : p.nom} className="max-sm:order-1 max-sm:flex-1">
                         <LienLigne href={`/entreprises/${slug}/prospects/${p.id}`}>
                           <span className="font-medium">{p.nom}</span>
@@ -207,10 +209,22 @@ export function ListeProspects({
                       <Cellule mono masqueeMobile>
                         <span title={p.numero}>{numeroMasque(p.numero)}</span>
                       </Cellule>
-                      <Cellule tronquee className="text-encre-3 max-sm:order-3 max-sm:basis-full max-sm:text-sm">
+                      <Cellule
+                        tronquee
+                        {...(p.rappel?.quand && p.rappel.texte ? { titre: `« ${p.rappel.texte} »` } : {})}
+                        className="text-encre-3 max-sm:order-3 max-sm:basis-full max-sm:text-sm"
+                      >
                         {p.detail ? <span className="sm:hidden">{p.detail}{p.dernier || p.rappel ? ' · ' : ''}</span> : null}
-                        {p.rappel ? (
-                          <span className="text-encre-2">Rappel convenu : {p.rappel}</span>
+                        {p.dernier?.vivant ? (
+                          <span className="text-antenne">En cours</span>
+                        ) : p.rappel ? (
+                          p.rappel.quand ? (
+                            <span className={p.rappel.enRetard ? 'text-encre' : 'text-encre-2'}>
+                              {p.rappel.enRetard ? <span className="text-alerte">Rappel en retard</span> : 'Rappel'} : {p.rappel.quand}
+                            </span>
+                          ) : (
+                            <span className="text-encre-2">Rappel convenu : {p.rappel.texte ? `« ${p.rappel.texte} »` : 'moment non précisé'}</span>
+                          )
                         ) : p.dernier ? (
                           <>
                             <span className="font-mono text-xs">{p.dernier.date}</span> · {p.dernier.libelle}
