@@ -1,10 +1,11 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/db';
-import { appels, campagnes, consentements, imports, journalMcp, prospects, rendezVous } from '@/db/schema';
+import { appels, campagnes, consentements, imports, journalMcp, oppositions, prospects } from '@/db/schema';
 import { enregistrerCampagne } from '@/lib/campagnes';
+import { MENTION_NEUTRE } from '@/lib/effacement';
 import { creerScript } from '@/lib/entreprises';
-import { importerFiches } from '@/lib/prospects';
+import { NUMERO_EFFACE, importerFiches } from '@/lib/prospects';
 import { clientDeTest } from '../test/client-mcp';
 import { entrepriseDeTest, fiche } from '../test/fixtures';
 import { avecBaseDeTest } from '../test/outils';
@@ -55,32 +56,85 @@ describe('modifier_prospect', () => {
   });
 });
 
-describe('supprimer_prospect', () => {
-  it('annonce les appels gardés et le numéro qui reste autorisé, supprime après l’accord', async () => {
+describe('archiver_prospect et reactiver_prospect', () => {
+  it('archive sans rien demander, le retire de la file, le cache de la liste, et le réactive', async () => {
     const { versionScriptId } = await creerScript(entrepriseId, 'Découverte');
-    await db.insert(appels).values({ entrepriseId, prospectId: 'julie', versionScriptId, ligne: 'simulation', numero: '+33639980001', statut: 'termine' });
+    const campagneId = await enregistrerCampagne(entrepriseId, { versionScriptId, ligne: 'simulation', prospects: ['julie', 'marc'] });
     const { appeler, messages } = await connecter('accepter');
 
-    const r = await appeler('supprimer_prospect', { entreprise: 'gite-fictif', prospect: 'julie' });
+    expect((await appeler('archiver_prospect', { entreprise: 'gite-fictif', prospect: 'julie' })).json).toEqual({
+      prospect: 'julie',
+      archive: true,
+      dejaArchive: false,
+      retireDesFiles: [campagneId],
+    });
+    expect(messages).toHaveLength(0);
+    const liste = async (args: Record<string, unknown> = {}) =>
+      ((await appeler('lister_prospects', { entreprise: 'gite-fictif', ...args })).json as { prospects: { prospect: string }[] }).prospects.map((p) => p.prospect);
+    expect(await liste()).toEqual(['marc']);
+    expect(await liste({ archives: true })).toEqual(['julie']);
+    expect((await appeler('lire_prospect', { entreprise: 'gite-fictif', prospect: 'julie' })).json).toMatchObject({ archiveLe: expect.any(String) });
+    expect(await appeler('nouvelle_campagne', { entreprise: 'gite-fictif', versionScriptId, ligne: 'simulation', prospects: ['julie'] })).toMatchObject({
+      erreur: true,
+      texte: expect.stringContaining('archivé'),
+    });
+    expect(await appeler('lancer_appel', { entreprise: 'gite-fictif', prospect: 'julie', versionScriptId, ligne: 'simulation' })).toMatchObject({
+      erreur: true,
+      texte: expect.stringContaining('archivé'),
+    });
 
-    expect(messages[0]).toBe(
-      'Supprimer définitivement la fiche de Julie Fictive (Société fictive) dans l’entreprise Gîte fictif. Son appel garde son bilan, sans fiche. Le numéro 06 39 98 00 01 reste autorisé : revoquer_numero pour ne plus jamais l’appeler.',
-    );
-    expect(r.json).toEqual({ prospect: 'julie', supprime: true, appelsGardes: 1 });
-    expect(await db.$count(prospects, eq(prospects.id, 'julie'))).toBe(0);
-    expect(await db.$count(consentements, eq(consentements.numero, '+33639980001'))).toBe(1);
-    const lu = (await appeler('lire_appel', { appelId: (await db.select().from(appels))[0]!.id })).json;
-    expect(lu).toMatchObject({ prospect: 'julie', nom: null, ficheSupprimee: true });
+    expect((await appeler('reactiver_prospect', { entreprise: 'gite-fictif', prospect: 'julie' })).json).toEqual({ prospect: 'julie', archive: false, dejaActif: false });
+    expect(await liste()).toEqual(['julie', 'marc']);
   });
+});
 
-  it('refuse sans rien demander un prospect en file, et ne supprime rien sans accord', async () => {
+describe('effacer_personne', () => {
+  it('pose la question rédigée depuis la base, n’efface rien sans accord', async () => {
     const { versionScriptId } = await creerScript(entrepriseId, 'Découverte');
-    await enregistrerCampagne(entrepriseId, { versionScriptId, ligne: 'simulation', prospects: ['marc'] });
+    await db.insert(appels).values({ entrepriseId, prospectId: 'julie', versionScriptId, ligne: 'simulation', numero: '+33639980001', statut: 'termine' });
     const { appeler, messages } = await connecter('refuser');
 
-    expect(await appeler('supprimer_prospect', { entreprise: 'gite-fictif', prospect: 'marc' })).toMatchObject({ erreur: true, texte: expect.stringContaining('retirer_de_la_file') });
+    expect(await appeler('effacer_personne', { entreprise: 'gite-fictif', prospect: 'julie' })).toMatchObject({ erreur: true, texte: expect.stringContaining('n’a pas confirmé') });
+
+    expect(messages[0]).toBe(
+      'Effacer définitivement Julie Fictive (Société fictive), 06 39 98 00 01, de l’entreprise Gîte fictif. Seront effacés : sa fiche (julie.md : nom, société, rôle, e-mail, contexte) ; 1 appel, avec 0 transcription et 0 bilan ; le consentement de son numéro (1 accord enregistré). Seule reste l’empreinte irréversible du numéro 06 39 98 00 01 dans la liste d’opposition : il ne sera plus jamais appelé ni importé. Irréversible : rien de tout cela ne pourra être retrouvé.',
+    );
+    expect(await db.$count(prospects, eq(prospects.id, 'julie'))).toBe(1);
+    expect(await db.$count(appels)).toBe(1);
+    expect(await db.$count(oppositions)).toBe(0);
+  });
+
+  it('efface après l’accord, ne laisse la personne nulle part dans le journal, et le numéro ne revient plus', async () => {
+    const { versionScriptId } = await creerScript(entrepriseId, 'Découverte');
+    await db.insert(appels).values({ entrepriseId, prospectId: 'julie', versionScriptId, ligne: 'simulation', numero: '+33639980001', statut: 'termine', conversationId: 'conv_fictive' });
+    const { appeler } = await connecter('accepter');
+    await appeler('lire_prospect', { entreprise: 'gite-fictif', prospect: 'julie' });
+
+    const r = await appeler('effacer_personne', { entreprise: 'gite-fictif', prospect: 'julie' });
+
+    expect(r.json).toMatchObject({
+      efface: { appels: 1, consentements: 1, mentionsJournal: 2 },
+      evenementsASupprimerALaMain: [],
+      conversationsElevenLabsASupprimer: ['conv_fictive'],
+      autresPorteursDuNumero: [],
+    });
+    const journal = JSON.stringify(await db.select().from(journalMcp));
+    for (const trace of ['"julie"', 'Julie Fictive', '06 39 98 00 01']) expect(journal).not.toContain(trace);
+    const [derniere] = await db.select().from(journalMcp).where(and(eq(journalMcp.outil, 'effacer_personne'), eq(journalMcp.resultat, 'ok')));
+    expect(derniere).toMatchObject({ arguments: { entreprise: 'gite-fictif', prospect: MENTION_NEUTRE }, confirmation: 'acceptee' });
+    expect(await appeler('importer_fiches', { entreprise: 'gite-fictif', fiches: [fiche('julie', 'Julie Fictive', '06 39 98 00 01')] })).toMatchObject({
+      json: { refus: [{ nomFichier: 'julie.md', erreurs: [NUMERO_EFFACE] }] },
+    });
+    expect((await appeler('lire_consentements', { numero: '06 39 98 00 01' })).json).toMatchObject({ consentements: [] });
+  });
+
+  it('refuse sans rien demander pendant un appel avec la personne', async () => {
+    const { versionScriptId } = await creerScript(entrepriseId, 'Découverte');
+    await db.insert(appels).values({ entrepriseId, prospectId: 'marc', versionScriptId, ligne: 'bluetooth', numero: '+33639980002' });
+    const { appeler, messages } = await connecter('accepter');
+
+    expect(await appeler('effacer_personne', { entreprise: 'gite-fictif', prospect: 'marc' })).toMatchObject({ erreur: true, texte: expect.stringContaining('en cours') });
     expect(messages).toHaveLength(0);
-    expect((await appeler('supprimer_prospect', { entreprise: 'gite-fictif', prospect: 'julie' })).erreur).toBe(true);
     expect(await db.$count(prospects)).toBe(2);
   });
 });
@@ -160,16 +214,17 @@ describe('numéro changé pendant une campagne téléphone en cours', () => {
 });
 
 describe('révoquer un numéro sans fiche', () => {
-  it('retrouve le numéro d’une fiche supprimée par lire_consentements, puis le révoque par numero après l’accord', async () => {
+  it('retrouve le numéro d’une fiche disparue par lire_consentements, puis le révoque par numero après l’accord', async () => {
     const { appeler, messages } = await connecter('accepter');
-    await appeler('supprimer_prospect', { entreprise: 'gite-fictif', prospect: 'julie' });
+    // Une fiche supprimée avant l'ADR 0013 (supprimer_prospect) : le consentement de son numéro est resté.
+    await db.delete(prospects).where(eq(prospects.id, 'julie'));
 
     const lus = (await appeler('lire_consentements', { numero: '+33 6 39 98 00 01', etat: 'actif' })).json as { consentements: { numero: string; prospects: unknown[] }[] };
     expect(lus.consentements).toEqual([expect.objectContaining({ numero: '06 39 98 00 01', canal: 'interface', texteVersion: 2, revoqueLe: null, prospects: [] })]);
 
     const r = await appeler('revoquer_numero', { numero: '06 39 98 00 01' });
 
-    expect(messages[1]).toBe('Révoquer définitivement le numéro 06 39 98 00 01 : il ne sera plus jamais appelé (aucune fiche ne le porte plus), et aucun import ne le réautorisera.');
+    expect(messages[0]).toBe('Révoquer définitivement le numéro 06 39 98 00 01 : il ne sera plus jamais appelé (aucune fiche ne le porte plus), et aucun import ne le réautorisera.');
     expect(r.json).toEqual({ numero: '06 39 98 00 01', revoque: true, consentementsClos: 1, prospectsTouches: { toutes: 0 } });
     expect((await appeler('lire_consentements', { etat: 'revoque' })).json).toMatchObject({ consentements: [{ numero: '06 39 98 00 01' }], suivant: null });
     expect(await importerFiches(entrepriseId, [fiche('julie', 'Julie Fictive', '06 39 98 00 01')])).toMatchObject({ numerosAutorises: 0, numerosRevoques: ['06 39 98 00 01'] });
@@ -191,19 +246,5 @@ describe('révoquer un numéro sans fiche', () => {
 
     expect(await appeler('revoquer_numero', { numero: '06 39 98 00 01' })).toMatchObject({ erreur: true, texte: expect.stringContaining('à faire depuis l’interface') });
     expect((await db.select().from(consentements)).every((c) => c.revoqueLe === null)).toBe(true);
-  });
-});
-
-describe('supprimer_prospect et rendez-vous', () => {
-  it('refuse sans rien demander un prospect dont le rendez-vous est en échec', async () => {
-    const { versionScriptId } = await creerScript(entrepriseId, 'Découverte');
-    const [a] = await db.insert(appels).values({ entrepriseId, prospectId: 'julie', versionScriptId, ligne: 'bluetooth', numero: '+33639980001', statut: 'termine' }).returning();
-    const debut = new Date(Date.UTC(2026, 9, 1, 9));
-    await db.insert(rendezVous).values({ appelId: a!.id, debut, fin: new Date(debut.getTime() + 1_800_000), statut: 'echec' });
-    const { appeler, messages } = await connecter('accepter');
-
-    expect(await appeler('supprimer_prospect', { entreprise: 'gite-fictif', prospect: 'julie' })).toMatchObject({ erreur: true, texte: expect.stringContaining('recreer_evenement') });
-    expect(messages).toHaveLength(0);
-    expect(await db.$count(prospects, eq(prospects.id, 'julie'))).toBe(1);
   });
 });

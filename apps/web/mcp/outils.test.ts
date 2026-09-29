@@ -15,7 +15,7 @@ import { ERREUR_INTERNE } from './outil';
 
 avecBaseDeTest();
 
-/** Les 59 outils (ADR 0010, puis lire_consentements et lister_rendez_vous), par domaine. */
+/** Les 61 outils (ADR 0010, puis lire_consentements et lister_rendez_vous, puis l'archivage et l'effacement de l'ADR 0013), par domaine. */
 const OUTILS = {
   assistante: [
     'lire_assistante',
@@ -31,7 +31,18 @@ const OUTILS = {
   objections: ['enregistrer_objection', 'archiver_objection', 'ordonner_objections'],
   issues: ['ajouter_issue', 'renommer_issue', 'archiver_issue'],
   scripts: ['creer_script', 'lire_version_script', 'creer_version_script', 'renommer_script', 'archiver_script'],
-  prospects: ['lister_prospects', 'lire_prospect', 'importer_fiches', 'modifier_prospect', 'supprimer_prospect', 'revoquer_numero', 'lire_texte_consentement', 'lire_consentements'],
+  prospects: [
+    'lister_prospects',
+    'lire_prospect',
+    'importer_fiches',
+    'modifier_prospect',
+    'archiver_prospect',
+    'reactiver_prospect',
+    'effacer_personne',
+    'revoquer_numero',
+    'lire_texte_consentement',
+    'lire_consentements',
+  ],
   campagnes: [
     'lister_campagnes',
     'lire_campagne',
@@ -65,15 +76,15 @@ async function connecter(options: Parameters<typeof clientDeTest>[0] = {}) {
 }
 
 describe('liste des outils', () => {
-  it('expose exactement les 59 outils, et annonce les lectures, les destructions et le monde extérieur', async () => {
+  it('expose exactement les 61 outils, et annonce les lectures, les destructions et le monde extérieur', async () => {
     const { client: c } = await connecter();
     const { tools } = await c.listTools();
     const attendus = Object.values(OUTILS).flat();
 
-    expect(attendus).toHaveLength(59);
+    expect(attendus).toHaveLength(61);
     expect(tools.map((t) => t.name).sort()).toEqual([...attendus].sort());
     const avec = (indice: 'readOnlyHint' | 'destructiveHint' | 'openWorldHint') => tools.filter((t) => t.annotations?.[indice]).map((t) => t.name).sort();
-    expect(avec('destructiveHint')).toEqual(['revoquer_numero', 'supprimer_entreprise', 'supprimer_prospect']);
+    expect(avec('destructiveHint')).toEqual(['effacer_personne', 'revoquer_numero', 'supprimer_entreprise']);
     expect(avec('readOnlyHint')).toEqual(
       expect.arrayContaining(['lire_assistante', 'historique_assistante', 'lister_appels', 'lire_journee', 'rappels_du_jour', 'lire_journal_mcp', 'lire_texte_consentement', 'lire_consentements', 'lister_rendez_vous', 'etat_ligne']),
     );
@@ -154,7 +165,7 @@ describe('gestes confirmés sans élicitation', () => {
 
       for (const [outil, args] of [
         ['modifier_assistante', { nom: 'Léa' }],
-        ['supprimer_prospect', { entreprise: 'gite-fictif', prospect: 'marc' }],
+        ['effacer_personne', { entreprise: 'gite-fictif', prospect: 'marc' }],
         ['supprimer_entreprise', { entreprise: 'vide-fictive' }],
         ['ajouter_a_la_campagne', { campagneId, prospects: ['marc'] }],
         ['modifier_prospect', { entreprise: 'gite-fictif', prospect: 'julie', champs: { telephone: '06 39 98 00 09' } }],

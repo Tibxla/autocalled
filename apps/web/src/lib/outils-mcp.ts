@@ -38,7 +38,9 @@ export const OUTILS_MCP: Readonly<Record<string, { libelle: string; lecture: boo
   lire_prospect: { libelle: 'Prospect lu', lecture: true },
   importer_fiches: { libelle: 'Fiches importées', lecture: false },
   modifier_prospect: { libelle: 'Prospect modifié', lecture: false },
-  supprimer_prospect: { libelle: 'Prospect supprimé', lecture: false },
+  archiver_prospect: { libelle: 'Prospect archivé', lecture: false },
+  reactiver_prospect: { libelle: 'Prospect réactivé', lecture: false },
+  effacer_personne: { libelle: 'Personne effacée', lecture: false },
   revoquer_numero: { libelle: 'Numéro révoqué', lecture: false },
   lire_texte_consentement: { libelle: 'Texte de consentement lu', lecture: true },
   lire_consentements: { libelle: 'Consentements lus', lecture: true },
@@ -76,7 +78,18 @@ export const OUTILS_MCP: Readonly<Record<string, { libelle: string; lecture: boo
   lire_journal_mcp: { libelle: 'Journal MCP lu', lecture: true },
 };
 
+/** Les outils retirés du serveur, que d'anciennes lignes du journal nomment encore. */
+export const OUTILS_MCP_RETIRES: Readonly<Record<string, { libelle: string; lecture: boolean }>> = {
+  // Remplacé par archiver_prospect et effacer_personne (ADR 0013).
+  supprimer_prospect: { libelle: 'Fiche prospect supprimée', lecture: false },
+};
+
+/** Le libellé d'un outil, actuel ou retiré ; null s'il est inconnu. */
+export function libelleOutilMcp(outil: string): string | null {
+  return (OUTILS_MCP[outil] ?? OUTILS_MCP_RETIRES[outil])?.libelle ?? null;
+}
+
 /** Un outil inconnu (ajouté depuis) compte comme un geste : mieux vaut le montrer que le noyer dans les lectures. */
 export function estLectureMcp(outil: string): boolean {
-  return OUTILS_MCP[outil]?.lecture ?? false;
+  return (OUTILS_MCP[outil] ?? OUTILS_MCP_RETIRES[outil])?.lecture ?? false;
 }

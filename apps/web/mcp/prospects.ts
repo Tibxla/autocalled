@@ -3,11 +3,12 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/db';
-import { appels, prospects } from '@/db/schema';
+import { prospects } from '@/db/schema';
 import { autorisationsDe } from '@/lib/autorisations';
 import { trouverEntreprise, trouverProspect } from '@/lib/donnees';
+import { MENTION_NEUTRE, effacerPersonne, inventaireEffacement, phrasesEffacement } from '@/lib/effacement';
 import { numeroLisible } from '@/lib/format';
-import { filesTelephoneEnCours, modifierProspect, obstacleSuppressionProspect, revoquerNumero, supprimerProspect } from '@/lib/prospects';
+import { archiverProspect, filesTelephoneEnCours, modifierProspect, reactiverProspect, revoquerNumero } from '@/lib/prospects';
 import { patchFicheSchema } from '@/lib/schemas';
 import { champEntreprise, champProspect, entrepriseInconnue, prospectInconnu } from './communs';
 import { champ, citation, confirmer, heureDeParis, refusDeConfirmation } from './confirmation';
@@ -16,7 +17,10 @@ import { type Declarer, refus, reussite } from './outil';
 /** Les champs d'une fiche que l'assistante reçoit, hors numéro. */
 const TEXTES_DITS = ['nom', 'societe', 'role', 'contexte'] as const;
 
-/** Les gestes sur la fiche d'un prospect et le consentement de son numéro. L'import est dans configuration.ts. */
+/**
+ * Les gestes sur la fiche d'un prospect et le consentement de son numéro : corriger, archiver et réactiver, effacer la
+ * personne (ADR 0013), révoquer. L'import est dans configuration.ts.
+ */
 export function outilsDeProspects(declarer: Declarer, serveur: McpServer): void {
   declarer(
     'modifier_prospect',
@@ -84,41 +88,94 @@ export function outilsDeProspects(declarer: Declarer, serveur: McpServer): void 
   );
 
   declarer(
-    'supprimer_prospect',
+    'archiver_prospect',
     {
       description:
-        'Supprime définitivement la fiche d’un prospect. Ses appels et bilans restent (un réimport du même fichier les retrouve), et le consentement de son numéro aussi : pour ne plus jamais l’appeler, revoquer_numero (avant, ou après avec `numero`). Refusé tant qu’il attend dans la file d’une campagne, qu’un appel avec lui est en cours, ou qu’un de ses rendez-vous reste à inscrire dans Google Agenda (à créer, ou en échec : recreer_evenement d’abord). Demande la confirmation de l’opérateur.',
+        'Archive un prospect : il sort de lister_prospects (sauf `archives: true`) et des choix de campagne, et ne peut plus être appelé ni ajouté à une campagne tant qu’il l’est. Ses appels, bilans et le consentement de son numéro restent ; reactiver_prospect le fait revenir. S’il attend dans la file d’une campagne non terminée, il en est retiré (motif retrait) et n’y revient pas à la réactivation. Refusé pendant un appel avec lui. C’est un frein, réversible : pas de confirmation. Pour qu’une personne ne soit plus jamais appelée : revoquer_numero ; pour l’effacer entièrement : effacer_personne.',
       entree: z.strictObject({ entreprise: champEntreprise, prospect: champProspect }),
-      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+    },
+    async ({ entreprise: slug, prospect: id }) => {
+      const e = await trouverEntreprise(slug);
+      if (!e) return refus(entrepriseInconnue(slug));
+      const r = await archiverProspect(e.id, id, 'mcp');
+      if (!r.ok) return refus(r.raison);
+      return reussite({
+        prospect: id,
+        archive: true,
+        dejaArchive: r.deja,
+        retireDesFiles: r.retireDe,
+        ...(r.terminees.length ? { campagnesTerminees: r.terminees } : {}),
+      });
+    },
+  );
+
+  declarer(
+    'reactiver_prospect',
+    {
+      description:
+        'Réactive un prospect archivé : il revient dans les listes et peut de nouveau être appelé ou ajouté à une campagne (son numéro doit toujours être autorisé). Il ne revient dans aucune file de campagne.',
+      entree: z.strictObject({ entreprise: champEntreprise, prospect: champProspect }),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+    },
+    async ({ entreprise: slug, prospect: id }) => {
+      const e = await trouverEntreprise(slug);
+      if (!e) return refus(entrepriseInconnue(slug));
+      const r = await reactiverProspect(e.id, id);
+      return r.ok ? reussite({ prospect: id, archive: false, dejaActif: r.deja }) : refus(r.raison);
+    },
+  );
+
+  declarer(
+    'effacer_personne',
+    {
+      description:
+        'Efface entièrement une personne, à sa demande (droit à l’effacement) : sa fiche, ses appels avec transcriptions et bilans, ses enregistrements sur le disque, ses rendez-vous et leurs événements Google Agenda quand l’API le permet, ses entrées de campagne, ses rappels, le consentement de son numéro et ses mentions dans le journal MCP. Seule reste l’empreinte irréversible du numéro dans la liste d’opposition : il ne sera plus jamais appelé ni importé, pour aucun prospect. Les autres prospects qui portent le même numéro ne sont pas effacés (la question les nomme) mais ne sont plus appelables. Refusé pendant un appel avec elle, pendant le rapatriement d’un de ses enregistrements ou l’inscription d’un de ses rendez-vous, et sans SEL_OPPOSITION dans le .env. Irréversible : demande la confirmation de l’opérateur, avec la liste de ce qui sera effacé. Le résultat rend ce qui reste à faire à la main (événements Google, conversations ElevenLabs, fichiers en échec).',
+      entree: z.strictObject({ entreprise: champEntreprise, prospect: champProspect }),
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+      // L'identifiant de la personne ne reste pas au journal : la ligne du succès s'écrit après l'effacement, qui
+      // neutralise les lignes précédentes (dont la question posée à l'opérateur).
+      resumer: ({ entreprise }) => ({ entreprise, prospect: MENTION_NEUTRE }),
     },
     async ({ entreprise: slug, prospect: id }, ctx) => {
       const e = await trouverEntreprise(slug);
       if (!e) return refus(entrepriseInconnue(slug));
-      const p = await trouverProspect(e.id, id);
-      if (!p) return refus(prospectInconnu(id));
-      const obstacle = await obstacleSuppressionProspect(e.id, p.id);
-      if (obstacle) return refus(obstacle);
-      const [nAppels, autorisations] = await Promise.all([
-        db.$count(appels, and(eq(appels.entrepriseId, e.id), eq(appels.prospectId, p.id))),
-        autorisationsDe([p.telephone]),
-      ]);
-      const numero = numeroLisible(p.telephone);
+      const inv = await inventaireEffacement(e.id, id);
+      if (!inv) return refus(prospectInconnu(id));
+      if (inv.obstacle) return refus(inv.obstacle);
+      const { efface, reste } = phrasesEffacement(inv, (t) => champ(t, 40));
       const garde = await confirmer(
         serveur,
         ctx,
-        `Supprimer définitivement la fiche de ${champ(p.nom)}${p.societe ? ` (${champ(p.societe)})` : ''} dans l’entreprise ${champ(e.nom)}. ${
-          nAppels > 1 ? `Ses ${nAppels} appels gardent leur bilan, sans fiche.` : nAppels === 1 ? 'Son appel garde son bilan, sans fiche.' : 'Aucun appel ne lui est rattaché.'
-        } ${
-          autorisations.get(p.telephone)?.autorise
-            ? `Le numéro ${numero} reste autorisé : revoquer_numero pour ne plus jamais l’appeler.`
-            : `Le numéro ${numero} n’est pas autorisé : il ne sera pas appelé.`
-        }`,
-        ['supprimer_prospect', e.id, p.id, p.majLe.toISOString(), nAppels],
+        `Effacer définitivement ${champ(inv.prospect.nom)}${inv.prospect.societe ? ` (${champ(inv.prospect.societe)})` : ''}, ${inv.prospect.numeroLisible}, de l’entreprise ${champ(e.nom)}. Seront effacés : ${efface.join(' ; ')}. ${reste.join(' ')}`,
+        [
+          'effacer_personne',
+          e.id,
+          inv.prospect.id,
+          inv.prospect.numero,
+          inv.appels,
+          inv.rendezVous,
+          inv.evenements,
+          inv.entreesCampagne,
+          inv.consentements,
+          inv.autresPorteurs.map((a) => `${a.entreprise}/${a.prospect}`),
+        ],
       );
       if (garde.etat === 'a-demander') return garde.issue;
       if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);
-      const r = await supprimerProspect(e.id, p.id);
-      return r.ok ? reussite({ prospect: p.id, supprime: true, appelsGardes: r.appelsGardes }) : refus(r.raison);
+      const r = await effacerPersonne(e.id, inv.prospect.id, 'mcp');
+      if (!r.ok) return refus(r.raison, 'acceptee');
+      return reussite(
+        {
+          efface: r.efface,
+          ...(r.fichiersEnEchec.length ? { fichiersEnEchec: r.fichiersEnEchec } : {}),
+          evenementsASupprimerALaMain: r.evenementsASupprimer,
+          conversationsElevenLabsASupprimer: r.conversationsElevenLabs,
+          autresPorteursDuNumero: r.autresPorteurs.map((a) => ({ entreprise: a.entreprise, prospect: a.prospect })),
+          numero: 'en opposition : plus jamais appelé ni importé',
+        },
+        { confirmation: 'acceptee' },
+      );
     },
   );
 
@@ -126,7 +183,7 @@ export function outilsDeProspects(declarer: Declarer, serveur: McpServer): void 
     'revoquer_numero',
     {
       description:
-        'Révoque définitivement le consentement d’un numéro, pour tous les prospects qui le partagent et toutes les entreprises : il ne sera plus jamais appelé, et aucun import ne le réautorisera. Soit `entreprise` et `prospect` (le numéro est lu dans la fiche), soit `numero` seul, pour un numéro dont la fiche a été supprimée (lire_consentements le retrouve). Demande la confirmation de l’opérateur.',
+        'Révoque définitivement le consentement d’un numéro, pour tous les prospects qui le partagent et toutes les entreprises : il ne sera plus jamais appelé, et aucun import ne le réautorisera. Soit `entreprise` et `prospect` (le numéro est lu dans la fiche), soit `numero` seul, pour un numéro dont aucune fiche ne porte plus (lire_consentements le retrouve). Demande la confirmation de l’opérateur.',
       entree: z
         .strictObject({
           entreprise: champEntreprise.optional(),

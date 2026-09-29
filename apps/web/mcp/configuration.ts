@@ -4,7 +4,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/db';
 import { campagnes, objections, prospects } from '@/db/schema';
-import { enregistrerCampagne, suspendreSiEnCours } from '@/lib/campagnes';
+import { PROSPECTS_ARCHIVES, enregistrerCampagne, suspendreSiEnCours } from '@/lib/campagnes';
 import { trouverEntreprise } from '@/lib/donnees';
 import * as entreprise from '@/lib/entreprises';
 import { numeroLisible } from '@/lib/format';
@@ -358,7 +358,7 @@ export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): v
   declarer(
     'importer_fiches',
     {
-      description: `Importe des fiches prospect Markdown dans une entreprise (au plus ${FICHIERS_MAX}, 32 Ko chacune) : en-tête YAML (nom, telephone, societe, role, email) puis le contexte que l’assistante doit connaître. Le nom de fichier identifie le prospect ; réimporter met la fiche à jour. Demander l’import vaut attestation du texte de consentement en vigueur (lire_texte_consentement) : les numéros nouveaux sont enregistrés comme consentants, comme l’import de l’interface case cochée ; un numéro révoqué ne l’est jamais à nouveau. Seul un import qui change le numéro ou la fiche (nom, société, rôle, contexte) d’un prospect en file d’une campagne téléphone en cours demande la confirmation de l’opérateur.`,
+      description: `Importe des fiches prospect Markdown dans une entreprise (au plus ${FICHIERS_MAX}, 32 Ko chacune) : en-tête YAML (nom, telephone, societe, role, email) puis le contexte que l’assistante doit connaître. Le nom de fichier identifie le prospect ; réimporter met la fiche à jour. Demander l’import vaut attestation du texte de consentement en vigueur (lire_texte_consentement) : les numéros nouveaux sont enregistrés comme consentants, comme l’import de l’interface case cochée ; un numéro révoqué ne l’est jamais à nouveau, et la fiche d’une personne effacée (effacer_personne) est refusée. Un prospect archivé le reste (liste archives du rapport). Seul un import qui change le numéro ou la fiche (nom, société, rôle, contexte) d’un prospect en file d’une campagne téléphone en cours demande la confirmation de l’opérateur.`,
       entree: z.strictObject({
         entreprise: champEntreprise,
         fiches: z
@@ -427,7 +427,7 @@ export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): v
     'nouvelle_campagne',
     {
       description:
-        'Prépare une campagne : une liste de prospects d’une entreprise, appelés l’un après l’autre avec une même version de script (d’un script non archivé), sur une ligne (bluetooth = le téléphone, simulation, navigateur). Elle est créée prête : rien ne sonne avant son lancement. Une campagne navigateur se prépare ici mais se lance dans l’interface.',
+        'Prépare une campagne : une liste de prospects d’une entreprise (non archivés), appelés l’un après l’autre avec une même version de script (d’un script non archivé), sur une ligne (bluetooth = le téléphone, simulation, navigateur). Elle est créée prête : rien ne sonne avant son lancement. Une campagne navigateur se prépare ici mais se lance dans l’interface.',
       entree: z.strictObject({
         entreprise: champEntreprise,
         versionScriptId: champVersion,
@@ -443,11 +443,13 @@ export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): v
       if (!version) return refus('Cette version de script n’appartient pas à cette entreprise.');
       if (version.archive) return refus(SCRIPT_ARCHIVE);
       const connus = await db
-        .select({ id: prospects.id })
+        .select({ id: prospects.id, nom: prospects.nom, archiveLe: prospects.archiveLe })
         .from(prospects)
         .where(and(eq(prospects.entrepriseId, e.id), inArray(prospects.id, ids)));
       const inconnus = ids.filter((id) => !connus.some((p) => p.id === id));
       if (inconnus.length) return refus(`Prospects inconnus dans cette entreprise : ${inconnus.join(', ')}.`);
+      const archives = connus.filter((p) => p.archiveLe);
+      if (archives.length) return refus(`${PROSPECTS_ARCHIVES} : ${archives.map((p) => p.id).join(', ')}. reactiver_prospect d’abord, ou retire-les de la liste.`);
       try {
         return reussite({ campagneId: await enregistrerCampagne(e.id, { versionScriptId, ligne, prospects: ids }), statut: 'prete' });
       } catch (erreur) {

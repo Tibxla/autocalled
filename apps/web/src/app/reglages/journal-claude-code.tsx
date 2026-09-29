@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { dateCourte, LIGNES_COURTES, numeroMasque } from '@/components/format-appel';
 import { Action, Chevron, EtatVide, Filtre, Filtres } from '@/components/ui';
-import { estLectureMcp, OUTILS_MCP } from '@/lib/outils-mcp';
+import { estLectureMcp, libelleOutilMcp } from '@/lib/outils-mcp';
 
 /**
  * Le journal des outils du serveur MCP d'Autocalled appelés par Claude Code (ADR 0009). Les lectures y sont
@@ -159,7 +159,7 @@ export function JournalClaudeCode({ lignes }: { lignes: LigneJournal[] }) {
 }
 
 function LigneDuJournal({ ligne: l }: { ligne: LigneJournal }) {
-  const libelle = OUTILS_MCP[l.outil]?.libelle ?? null;
+  const libelle = libelleOutilMcp(l.outil);
   const resume = resumer(l.outil, l.arguments, l.noms);
   const r = resultat(l);
   const brut = masquer(JSON.stringify(l.arguments, null, 2));
