@@ -90,10 +90,10 @@ Nature : **L** lecture, **É** écriture, **É !** écriture destructive ; **⇄
 | Outil | Entrées | Nature | Confirmation | Rôle |
 |---|---|---|---|---|
 | `lister_appels` | `entreprise?`, `issue?`, `ligne?`, `version?`, `periode?`, `reels?`, `rappels?`, `recherche?`, `avant?`, `limite?`, `comptes?` | L | non | appels filtrés, paginés, comptés ; un filtre inconnu est refusé ; résumés dans le bloc balisé |
-| `lire_appel` | `appelId`, `transcription?` | L | non | appel, bilan, rendez-vous ; texte du bilan, citations et transcription balisés |
+| `lire_appel` | `appelId`, `transcription?` | L | non | appel, bilan, rendez-vous ; texte du bilan, citations et transcription balisés ; un appel purgé (`purgeLe`, `bilan.purge`) n’a plus que issue, étape et objections, sans bloc balisé |
 | `lancer_appel` | `entreprise`, `prospect`, `versionScriptId`, `ligne` | É ⇄ | oui sur le téléphone | appel d’un prospect (téléphone ou simulation) |
 | `raccrocher_appel` | `appelId` | É ⇄ | non | raccroche (frein) |
-| `relancer_analyse` | `appelId` | É ⇄ | non | recalcule le bilan |
+| `relancer_analyse` | `appelId` | É ⇄ | non | recalcule le bilan ; refusé sur un appel purgé |
 | `analyser_versions` | `entreprise`, `avecSimules?` | L | non | chiffres par version de script, par configuration de l’assistante, par objection |
 | `rappels_du_jour` | aucune | L | non | rappels datés à faire aujourd’hui ou en retard ; moment dit par le prospect dans le bloc balisé |
 | `lire_journee` | aucune | L | non | appels et campagnes du jour ; résumés dans le bloc balisé |
@@ -131,6 +131,7 @@ Nature : **L** lecture, **É** écriture, **É !** écriture destructive ; **⇄
 - Modifier ou supprimer une version de script, supprimer un script ou une objection, changer le rattachement d’une issue personnalisée : on crée une version, on archive.
 - Corriger un bilan, une issue ou un rappel à la main : on relance l’analyse (ADR 0005).
 - Changer l’identifiant d’un prospect, le slug ou le fuseau d’une entreprise ; supprimer une entreprise qui a un historique, une campagne lancée ; supprimer un appel, un enregistrement ou une transcription à l’unité (seul `effacer_personne` les efface, tous ceux d’une personne).
+- La durée de conservation (ADR 0014) : chaque nuit, `autocalled-purge.timer` purge les appels de plus de `DUREE_CONSERVATION_MOIS` (12) et le journal du même âge. Le bilan purgé garde issue, étape et objections : `analyser_versions` compte ces appels comme avant, mais leur résumé, leurs citations et leur transcription n’existent plus. `pnpm purger --essai` dans un terminal, pas par le MCP.
 - Supprimer une conversation chez ElevenLabs : `effacer_personne` rend leurs identifiants, l’opérateur les supprime dans le tableau de bord d’ElevenLabs.
 - Sortir un numéro de la liste d’opposition : impossible par conception (ADR 0013).
 - Dans la configuration ElevenLabs : outils, authentification, surcharges permises, langue, `first_message`, valeurs d’exemple (`pnpm agent push`, après relecture du code) ; `pull --force` et git.
