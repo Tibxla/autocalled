@@ -17,7 +17,7 @@ export type Confirmation = 'acceptee' | 'refusee' | 'indisponible';
 export type Issue =
   | { ok: true; donnees: unknown; confirmation?: Confirmation; complement?: string; journal?: string }
   | { ok: false; raison: string; confirmation?: Confirmation }
-  | { demande: InputRequiredResult };
+  | { demande: InputRequiredResult; question?: string };
 
 export const reussite = (donnees: unknown, extra: { confirmation?: Confirmation; complement?: string; journal?: string } = {}): Issue => ({
   ok: true,
@@ -61,14 +61,21 @@ async function noter(
   resultat: 'ok' | 'refus' | 'erreur' | 'confirmation-demandee',
   message: string | null,
   confirmation: Confirmation | null,
-): Promise<void> {
+): Promise<boolean> {
   try {
     await db.insert(journalMcp).values({ outil, arguments: args, resultat, message, confirmation });
+    return true;
   } catch (erreur) {
-    // Le journal ne doit pas faire échouer l'outil ; stdout est au protocole, l'erreur part sur stderr.
+    // Une lecture ne doit pas échouer pour le journal ; stdout est au protocole, l'erreur part sur stderr.
     console.error('journal MCP indisponible :', erreur);
+    return false;
   }
 }
+
+/** Le texte d'une question gardé au journal : ce que l'opérateur a lu avant d'accepter ou de refuser. */
+export const QUESTION_MAX = 2000;
+
+export const JOURNAL_INDISPONIBLE = 'Le journal MCP est indisponible : un geste sous confirmation ne se fait pas sans trace. Rien n’a été fait.';
 
 const texte = (t: string) => ({ type: 'text' as const, text: t });
 
@@ -88,7 +95,10 @@ export function declarateur(serveur: McpServer): Declarer {
         return { isError: true, content: [texte(ERREUR_INTERNE)] };
       }
       if ('demande' in issue) {
-        await noter(nom, journal, 'confirmation-demandee', null, null);
+        // Un geste sous confirmation ne part jamais sans trace : pas de ligne au journal, pas de question, pas d'accord.
+        if (!(await noter(nom, journal, 'confirmation-demandee', issue.question?.slice(0, QUESTION_MAX) ?? null, null))) {
+          return { isError: true, content: [texte(JOURNAL_INDISPONIBLE)] };
+        }
         return issue.demande;
       }
       const confirmation = issue.confirmation ?? confirmations.get(ctx) ?? null;

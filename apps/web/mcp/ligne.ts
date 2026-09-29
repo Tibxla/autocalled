@@ -13,7 +13,8 @@ import { numeroLisible } from '@/lib/format';
 import { ajoutParMcp } from '@/lib/prospects';
 import { commanderPont, type ReglagesLigne, reconnecterTelephone, refusDuPont, reglagesDuPont } from '@/lib/pont';
 import { champEntreprise, champProspect, champVersion, entrepriseInconnue, prospectInconnu, SCRIPT_ARCHIVE, versionDeLEntreprise, vueAppel } from './communs';
-import { confirmer, heureDeParis, refusDeConfirmation } from './confirmation';
+import { champ, confirmer, heureDeParis, refusDeConfirmation } from './confirmation';
+import { attentionMcp, ecrituresDuMcp, jourEtHeure, numerosDuMcp } from './gardes-appel';
 import { type Declarer, refus, reussite } from './outil';
 import { type Detacher, detacherTache } from './tache';
 
@@ -22,7 +23,6 @@ import { type Detacher, detacherTache } from './tache';
  * ou écrit à un prospect passe par `confirmer` ; les freins (raccrocher, suspendre, baisser un plafond) jamais.
  */
 
-const jourEtHeure = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Europe/Paris' });
 
 const plafonds = (r: ReglagesLigne) => `${r.appelsParHeure} appels par heure et ${r.appelsParJour} par jour, ${r.pauseEntreAppelsS} s de pause entre deux appels de campagne`;
 
@@ -57,13 +57,14 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
 
       const plafond = await refusDuPont();
       if (plafond) return refus(plafond);
-      const [reglages, parMcp] = await Promise.all([reglagesDuPont(), ajoutParMcp(preparation.numero)]);
+      const [reglages, parMcp, ecritures] = await Promise.all([reglagesDuPont(), ajoutParMcp(preparation.numero), ecrituresDuMcp(e.id, version.id)]);
       const origine = parMcp ? ` (numéro ajouté par le MCP le ${jourEtHeure.format(parMcp)})` : '';
+      // Le numéro et son origine d'abord : ce sont eux qui portent la décision, et les noms viennent d'une fiche.
       const garde = await confirmer(
         serveur,
         ctx,
-        `Appeler maintenant ${p.nom}${p.societe ? ` (${p.societe})` : ''} au ${numeroLisible(preparation.numero)}${origine}, pour ${e.nom}, avec le script « ${version.libelle} », depuis le téléphone passerelle. Nous sommes ${heureDeParis()}.${reglages ? ` Garde-fous de la ligne : ${plafonds(reglages)}.` : ''}`,
-        ['lancer_appel', e.id, p.id, version.id, preparation.numero, parMcp?.toISOString() ?? null],
+        `Appeler maintenant le ${numeroLisible(preparation.numero)}${origine}, depuis le téléphone passerelle : ${champ(p.nom)}${p.societe ? ` (${champ(p.societe)})` : ''}, pour ${champ(e.nom)}, avec le script « ${champ(version.libelle, 90)} ».${attentionMcp(ecritures)} Nous sommes ${heureDeParis()}.${reglages ? ` Garde-fous de la ligne : ${plafonds(reglages)}.` : ''}`,
+        ['lancer_appel', e.id, p.id, version.id, preparation.numero, parMcp?.toISOString() ?? null, ecritures],
       );
       if (garde.etat === 'a-demander') return garde.issue;
       if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);
@@ -132,27 +133,29 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
       if (plafond) return refus(plafond);
       const aAppeler = campagne.entrees.filter((x) => x.etat === 'a-appeler');
       const telephones = await db
-        .select({ id: prospects.id, telephone: prospects.telephone })
+        .select({ id: prospects.id, nom: prospects.nom, telephone: prospects.telephone })
         .from(prospects)
         .where(eq(prospects.entrepriseId, campagne.entrepriseId));
-      const numeros = aAppeler.map((x) => telephones.find((p) => p.id === x.prospectId)?.telephone ?? '');
+      const fiches = aAppeler.map((x) => telephones.find((p) => p.id === x.prospectId));
+      const numeros = fiches.map((p) => p?.telephone ?? '');
       const autorisations = await autorisationsDe(numeros.filter(Boolean));
-      const aComposer = [...new Set(numeros.filter((n) => autorisations.get(n)?.autorise))];
       const autorises = numeros.filter((n) => autorisations.get(n)?.autorise).length;
-      const [reglages, parMcp] = await Promise.all([
+      const aComposer = fiches.filter((p): p is NonNullable<typeof p> => Boolean(p && autorisations.get(p.telephone)?.autorise));
+      const [reglages, parMcp, ecritures] = await Promise.all([
         reglagesDuPont(),
-        Promise.all(aComposer.map(ajoutParMcp)),
+        Promise.all(aComposer.map((p) => ajoutParMcp(p.telephone))),
+        ecrituresDuMcp(campagne.entrepriseId, campagne.versionScriptId),
       ]);
-      const ajoutsMcp = parMcp.filter((d): d is Date => d !== null).sort((a, b) => b.getTime() - a.getTime());
-      const origine = ajoutsMcp.length
-        ? ` ${ajoutsMcp.length === 1 ? 'Un de ces numéros a été ajouté' : `${ajoutsMcp.length} de ces numéros ont été ajoutés`} par le MCP (le dernier le ${jourEtHeure.format(ajoutsMcp[0]!)}).`
-        : '';
+      const ajoutsMcp = aComposer.map((p, i) => ({ nom: p.nom, telephone: p.telephone, ajout: parMcp[i] ?? null }));
+      const nommes = aComposer.slice(0, 20).map((p) => champ(p.nom, 40));
       const garde = await confirmer(
         serveur,
         ctx,
-        `${campagne.statut === 'prete' ? 'Lancer' : 'Reprendre'} la campagne de ${c.entreprise} sur le téléphone passerelle : ${aAppeler.length} prospect${aAppeler.length > 1 ? 's' : ''} à appeler l’un après l’autre, dont ${autorises} au numéro autorisé à cet instant (les autres seront sautés), avec le script « ${version?.libelle ?? '?'} ».${origine} Nous sommes ${heureDeParis()}.${reglages ? ` Garde-fous : ${plafonds(reglages)} ; plafond atteint, la campagne se met en pause.` : ''}`,
+        `${campagne.statut === 'prete' ? 'Lancer' : 'Reprendre'} la campagne de ${champ(c.entreprise)} sur le téléphone passerelle : ${aAppeler.length} prospect${aAppeler.length > 1 ? 's' : ''} à appeler l’un après l’autre, dont ${autorises} au numéro autorisé à cet instant (les autres seront sautés), avec le script « ${champ(version?.libelle ?? '?', 90)} ».${
+          nommes.length ? ` À appeler : ${nommes.join(', ')}${aComposer.length > nommes.length ? ` et ${aComposer.length - nommes.length} autres` : ''}.` : ''
+        }${numerosDuMcp(ajoutsMcp)}${attentionMcp(ecritures)} Nous sommes ${heureDeParis()}.${reglages ? ` Garde-fous : ${plafonds(reglages)} ; plafond atteint, la campagne se met en pause.` : ''}`,
         // Les numéros entrent dans la clé : un numéro changé entre la question et la réponse fait reposer la question.
-        ['lancer_campagne', campagneId, campagne.statut, aAppeler.map((x) => x.prospectId), numeros, autorises, ajoutsMcp.length],
+        ['lancer_campagne', campagneId, campagne.statut, aAppeler.map((x) => x.prospectId), numeros, autorises, parMcp.filter(Boolean).length, ecritures],
       );
       if (garde.etat === 'a-demander') return garde.issue;
       if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);
@@ -277,7 +280,7 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
       const garde = await confirmer(
         serveur,
         ctx,
-        `Créer dans Google Agenda la visio de ${r.prospect} (${r.entreprise}) du ${quand}${r.rdv.email ? `, et envoyer l’invitation à ${r.rdv.email}` : ', sans invité : aucun e-mail ne part'}.`,
+        `Créer dans Google Agenda la visio de ${champ(r.prospect)} (${champ(r.entreprise)}) du ${quand}${r.rdv.email ? `, et envoyer l’invitation à ${r.rdv.email}` : ', sans invité : aucun e-mail ne part'}.`,
         ['recreer_evenement', rendezVousId, r.rdv.debut.toISOString(), r.rdv.email],
       );
       if (garde.etat === 'a-demander') return garde.issue;

@@ -572,7 +572,14 @@ export function outilsDeLecture(declarer: Declarer): void {
       const r = await apercuVariablesAppel(e.id, { prospectId: prospect ?? null, versionScriptId: versionScriptId ?? null });
       if (!r.ok) return refus(r.raison);
       const p = prospect ? await trouverProspect(e.id, prospect) : null;
-      return reussite({ ...sansOk(r), numero: p ? numeroLisible(p.telephone) : null });
+      // Le contexte de la fiche et l'historique (résumés de bilans, tirés de la parole du prospect) sont des textes de
+      // tiers : ils vont dans le bloc balisé, pas dans le JSON.
+      const { prospect_contexte: contexte, historique_appels: historique, ...variables } = r.variables;
+      const dansLeBloc = 'dans le bloc <variables>';
+      return reussite(
+        { ...sansOk(r), variables: { ...variables, prospect_contexte: dansLeBloc, historique_appels: dansLeBloc }, numero: p ? numeroLisible(p.telephone) : null },
+        { complement: complementNonFiable([bloc('variables', [`prospect_contexte : ${contexte}`, `historique_appels : ${historique}`])]) },
+      );
     },
   );
 

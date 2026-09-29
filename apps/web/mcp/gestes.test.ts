@@ -97,7 +97,8 @@ describe('recreer_evenement', () => {
     const r = await appeler('recreer_evenement', { rendezVousId: rdv.id });
 
     expect(messages[0]).toContain('sans invité : aucun e-mail ne part');
-    expect(r).toMatchObject({ erreur: true, texte: 'L’inscription a encore échoué : claude -p est interdit dans les tests' });
+    // Le message d'un claude -p échoué (qui reprend la réponse du modèle) reste au journal du service.
+    expect(r).toMatchObject({ erreur: true, texte: expect.stringMatching(/^L’inscription a encore échoué : La création de l’événement par le connecteur Google Agenda de Claude a échoué/) });
   });
 
   it('refuse un rendez-vous déjà dans l’agenda, sans rien demander', async () => {

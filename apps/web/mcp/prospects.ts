@@ -10,8 +10,11 @@ import { numeroLisible } from '@/lib/format';
 import { filesTelephoneEnCours, modifierProspect, obstacleSuppressionProspect, revoquerNumero, supprimerProspect } from '@/lib/prospects';
 import { patchFicheSchema } from '@/lib/schemas';
 import { champEntreprise, champProspect, entrepriseInconnue, prospectInconnu } from './communs';
-import { confirmer, heureDeParis, refusDeConfirmation } from './confirmation';
+import { champ, citation, confirmer, heureDeParis, refusDeConfirmation } from './confirmation';
 import { type Declarer, refus, reussite } from './outil';
+
+/** Les champs d'une fiche que l'assistante reçoit, hors numéro. */
+const TEXTES_DITS = ['nom', 'societe', 'role', 'contexte'] as const;
 
 /** Les gestes sur la fiche d'un prospect et le consentement de son numéro. L'import est dans configuration.ts. */
 export function outilsDeProspects(declarer: Declarer, serveur: McpServer): void {
@@ -19,7 +22,7 @@ export function outilsDeProspects(declarer: Declarer, serveur: McpServer): void 
     'modifier_prospect',
     {
       description:
-        'Corrige la fiche d’un prospect, champ par champ (nom, societe, role, telephone, email, contexte ; null efface un champ facultatif). Mêmes contrôles et même régime qu’un réimport de la fiche : un nouveau numéro est enregistré comme consentant (sauf s’il a été révoqué) et sera signalé « ajouté par le MCP » à la confirmation d’un appel. Changer le numéro d’un prospect qui attend dans une campagne téléphone en cours demande la confirmation de l’opérateur. Sans `connu`, la fiche lue au début de l’outil sert de référence. L’identifiant (nom du fichier) ne change jamais. Aucun texte de tiers dans le contexte sans la demande de l’opérateur.',
+        'Corrige la fiche d’un prospect, champ par champ (nom, societe, role, telephone, email, contexte ; null efface un champ facultatif). Mêmes contrôles et même régime qu’un réimport de la fiche : un nouveau numéro est enregistré comme consentant (sauf s’il a été révoqué) et sera signalé « ajouté par le MCP » à la confirmation d’un appel. Changer le numéro, le nom, la société, le rôle ou le contexte d’un prospect qui attend dans une campagne téléphone en cours demande la confirmation de l’opérateur : l’assistante s’en servirait sans autre question. Sans `connu`, la fiche lue au début de l’outil sert de référence. L’identifiant (nom du fichier) ne change jamais. Aucun texte de tiers dans le contexte sans la demande de l’opérateur.',
       entree: z.strictObject({
         entreprise: champEntreprise,
         prospect: champProspect,
@@ -28,7 +31,14 @@ export function outilsDeProspects(declarer: Declarer, serveur: McpServer): void 
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       // La fiche est déjà dans la table prospects : le journal ne garde que les champs touchés.
-      resumer: ({ entreprise, prospect, champs, connu }) => ({ entreprise, prospect, champs: Object.keys(champs), connu }),
+      // Un numéro changé y figure aussi (le nouveau ici, l'ancien et le nouveau dans le message du succès).
+      resumer: ({ entreprise, prospect, champs, connu }) => ({
+        entreprise,
+        prospect,
+        champs: Object.keys(champs),
+        ...(champs.telephone !== undefined ? { telephone: champs.telephone } : {}),
+        connu,
+      }),
     },
     async ({ entreprise: slug, prospect: id, champs, connu }, ctx) => {
       const e = await trouverEntreprise(slug);
@@ -39,18 +49,24 @@ export function outilsDeProspects(declarer: Declarer, serveur: McpServer): void 
       const reference = connu ?? p.majLe.toISOString();
       let confirmation: 'acceptee' | undefined;
       const nouveau = champs.telephone === undefined ? null : normaliserNumero(champs.telephone);
-      if (nouveau && nouveau !== p.telephone) {
-        // Une campagne téléphone en cours compose le numéro de la fiche sans autre question : le changer fait sonner
-        // un autre téléphone, comme un ajout à la campagne.
+      const numeroChange = nouveau !== null && nouveau !== p.telephone;
+      const textesChanges = TEXTES_DITS.filter((k) => champs[k] !== undefined && (champs[k] ?? '') !== (p[k] ?? ''));
+      if (numeroChange || textesChanges.length) {
+        // Une campagne téléphone en cours compose le numéro de la fiche et donne sa fiche à l'assistante sans autre
+        // question : changer l'un ou l'autre fait sonner un autre téléphone ou change ce qui est dit au prospect.
         const files = (await filesTelephoneEnCours(e.id, [p.id])).get(p.id);
         if (files?.length) {
+          const changements = [
+            numeroChange && `numéro ${numeroLisible(p.telephone)} → ${numeroLisible(nouveau)} (le nouveau numéro sera composé à son tour)`,
+            ...textesChanges.map((k) => `${k} ${citation(p[k], 120)} → ${citation(champs[k], k === 'contexte' ? 600 : 120)}`),
+          ].filter(Boolean);
           const garde = await confirmer(
             serveur,
             ctx,
-            `Changer le numéro de ${p.nom}${p.societe ? ` (${p.societe})` : ''}, ${e.nom}, de ${numeroLisible(p.telephone)} à ${numeroLisible(nouveau)}. ${p.nom} attend dans la file de ${
+            `Corriger la fiche de ${champ(p.nom)}${p.societe ? ` (${champ(p.societe)})` : ''}, ${champ(e.nom)}, qui attend dans la file de ${
               files.length > 1 ? `${files.length} campagnes téléphone en cours` : 'la campagne téléphone en cours'
-            } (${files.join(', ')}) : le nouveau numéro sera composé à son tour, sans autre question. Nous sommes ${heureDeParis()}.`,
-            ['modifier_prospect', e.id, p.id, p.telephone, nouveau, files, reference],
+            } (${files.join(', ')}) : ${changements.join(' ; ')}. L’assistante s’en servira à son appel, sans autre question. Nous sommes ${heureDeParis()}.`,
+            ['modifier_prospect', e.id, p.id, p.telephone, nouveau, Object.fromEntries(textesChanges.map((k) => [k, champs[k]])), files, reference],
           );
           if (garde.etat === 'a-demander') return garde.issue;
           if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);
@@ -60,7 +76,10 @@ export function outilsDeProspects(declarer: Declarer, serveur: McpServer): void 
       const r = await modifierProspect(e.id, id, champs, { canal: 'mcp', connu: reference });
       if (!r.ok) return refus(r.raison, confirmation);
       const apres = await trouverProspect(e.id, id);
-      return reussite({ prospect: id, majLe: apres?.majLe ?? null, rapport: r.rapport }, { confirmation });
+      return reussite(
+        { prospect: id, majLe: apres?.majLe ?? null, rapport: r.rapport },
+        { confirmation, journal: numeroChange ? `numéro ${numeroLisible(p.telephone)} → ${numeroLisible(nouveau)}` : undefined },
+      );
     },
   );
 
@@ -87,7 +106,7 @@ export function outilsDeProspects(declarer: Declarer, serveur: McpServer): void 
       const garde = await confirmer(
         serveur,
         ctx,
-        `Supprimer définitivement la fiche de ${p.nom}${p.societe ? ` (${p.societe})` : ''} dans l’entreprise ${e.nom}. ${
+        `Supprimer définitivement la fiche de ${champ(p.nom)}${p.societe ? ` (${champ(p.societe)})` : ''} dans l’entreprise ${champ(e.nom)}. ${
           nAppels > 1 ? `Ses ${nAppels} appels gardent leur bilan, sans fiche.` : nAppels === 1 ? 'Son appel garde son bilan, sans fiche.' : 'Aucun appel ne lui est rattaché.'
         } ${
           autorisations.get(p.telephone)?.autorise
@@ -134,7 +153,7 @@ export function outilsDeProspects(declarer: Declarer, serveur: McpServer): void 
         const p = await trouverProspect(e.id, id!);
         if (!p) return refus(prospectInconnu(id!));
         numero = p.telephone;
-        de = ` de ${p.nom} (${e.nom})`;
+        de = ` de ${champ(p.nom)} (${champ(e.nom)})`;
         entrepriseId = e.id;
       }
       if (!(await autorisationsDe([numero])).get(numero)?.autorise) return refus('Ce numéro n’a aucun consentement actif : rien à révoquer.');

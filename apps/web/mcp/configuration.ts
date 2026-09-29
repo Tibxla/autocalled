@@ -9,17 +9,20 @@ import { trouverEntreprise } from '@/lib/donnees';
 import * as entreprise from '@/lib/entreprises';
 import { numeroLisible } from '@/lib/format';
 import { FICHIERS_MAX, filesTelephoneEnCours, importerFiches } from '@/lib/prospects';
-import { etapesSchema, ficheSchema, issueSchema, nomEntrepriseSchema, nomScriptSchema, objectionSchema, plagesSchema } from '@/lib/schemas';
+import { etapesSchema, type Fiche, ficheSchema, issueSchema, nomEntrepriseSchema, nomScriptSchema, objectionSchema, plagesSchema } from '@/lib/schemas';
 import { usageDuScript } from '@/lib/versions';
 import { champEntreprise, champVersion, entrepriseInconnue, SCRIPT_ARCHIVE, versionDeLEntreprise } from './communs';
-import { confirmer, heureDeParis, refusDeConfirmation } from './confirmation';
+import { champ, citation, confirmer, heureDeParis, refusDeConfirmation } from './confirmation';
+import { avertissementCampagne, campagnesTelephoneEnCours } from './gardes-appel';
 import { type Declarer, refus, reussite } from './outil';
 
 /**
  * La configuration d'une entreprise (fiche, objections, issues, scripts), l'import des fiches prospect et la
  * préparation des campagnes. Toute écriture passe l'origine `mcp` en clair. Aucune ne fait sonner un téléphone ni
  * n'écrit à un prospect, sauf un import qui change le numéro d'un prospect en file d'une campagne téléphone en
- * cours : lui demande une confirmation, comme la suppression d'une entreprise vide, irréversible.
+ * cours : lui demande une confirmation, comme la suppression d'une entreprise vide, irréversible. Ce que l'assistante
+ * dit au prospect (nom de l'entreprise, fiche, objections) demande aussi une confirmation quand le nom de l'entreprise
+ * change, ou quand une campagne téléphone de l'entreprise tourne (ADR 0010, amendement).
  */
 
 /** Écritures réversibles ou additives. */
@@ -50,7 +53,7 @@ export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): v
     'modifier_fiche_entreprise',
     {
       description:
-        'Modifie la fiche d’une entreprise : seuls les champs donnés changent, le reste est gardé. `plages` remplace toutes les plages de rendez-vous (jour 1 = lundi … 7 = dimanche, heures HH:MM). Changer `nom` ne change pas l’identifiant (slug). `connu` : le `modifieLe` de lire_entreprise, refus si la fiche a changé depuis.',
+        'Modifie la fiche d’une entreprise : seuls les champs donnés changent, le reste est gardé. `plages` remplace toutes les plages de rendez-vous (jour 1 = lundi … 7 = dimanche, heures HH:MM). Changer `nom` ne change pas l’identifiant (slug). `connu` : le `modifieLe` de lire_entreprise, refus si la fiche a changé depuis. Changer le nom (l’assistante se présente en son nom), ou tout champ de la fiche pendant une campagne téléphone en cours de l’entreprise, demande la confirmation de l’opérateur.',
       entree: z.strictObject({
         entreprise: champEntreprise,
         champs: ficheSchema.partial().strict().default({}),
@@ -59,7 +62,7 @@ export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): v
       }),
       annotations: { ...ECRITURE, idempotentHint: true },
     },
-    async ({ entreprise: slug, champs, plages, connu }) => {
+    async ({ entreprise: slug, champs, plages, connu }, ctx) => {
       const e = await trouverEntreprise(slug);
       if (!e) return refus(entrepriseInconnue(slug));
       // Le patch est fusionné avec la fiche actuelle, puis validé par le même schéma que le formulaire.
@@ -68,8 +71,29 @@ export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): v
       const lesPlages = plagesSchema.safeParse(plages ?? e.plagesRendezVous);
       if (!lesPlages.success) return refus(premiereErreur(lesPlages.error));
       // Sans `connu`, la fiche lue au début de l'outil : rien n'est écrasé entre la lecture, la fusion et l'écriture.
-      const r = await entreprise.enregistrerFiche(e.id, fiche.data, lesPlages.data, { ...PAR_MCP, connu: connu ?? e.modifieLe.toISOString() });
-      return r.ok ? reussite({ entreprise: e.slug, modifieLe: r.modifieLe, fiche: fiche.data, plagesRendezVous: lesPlages.data }) : refus(r.raison);
+      const reference = connu ?? e.modifieLe.toISOString();
+      const changes = (Object.keys(fiche.data) as (keyof Fiche)[]).filter((k) => fiche.data[k] !== e[k]);
+      const nomChange = changes.includes('nom');
+      const enCours = changes.length ? await campagnesTelephoneEnCours(e.id) : [];
+      let confirmation: 'acceptee' | undefined;
+      if (nomChange || enCours.length) {
+        const detail = changes.map((k) => `${k} ${citation(String(e[k]), 150)} → ${citation(String(fiche.data[k]), 500)}`).join(' ; ');
+        const garde = await confirmer(
+          serveur,
+          ctx,
+          `Modifier la fiche de ${champ(e.nom)} : ${detail}.${nomChange ? ' L’assistante se présente au nom de l’entreprise : le nouveau nom sera dit aux prospects dès le prochain appel.' : ''}${
+            enCours.length ? ` ${avertissementCampagne(enCours)}` : ''
+          }`,
+          ['modifier_fiche_entreprise', e.id, reference, fiche.data, enCours],
+        );
+        if (garde.etat === 'a-demander') return garde.issue;
+        if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);
+        confirmation = 'acceptee';
+      }
+      const r = await entreprise.enregistrerFiche(e.id, fiche.data, lesPlages.data, { ...PAR_MCP, connu: reference });
+      return r.ok
+        ? reussite({ entreprise: e.slug, modifieLe: r.modifieLe, fiche: fiche.data, plagesRendezVous: lesPlages.data }, { confirmation })
+        : refus(r.raison, confirmation);
     },
   );
 
@@ -97,7 +121,7 @@ export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): v
       const garde = await confirmer(
         serveur,
         ctx,
-        `Supprimer définitivement l’entreprise ${e.nom} (${e.slug}) et sa fiche${parties.length ? `, avec ${parties.join(', ')}` : ''}. Rien ne se récupère.`,
+        `Supprimer définitivement l’entreprise ${champ(e.nom)} (${e.slug}) et sa fiche${parties.length ? `, avec ${parties.join(', ')}` : ''}. Rien ne se récupère.`,
         ['supprimer_entreprise', e.id, c],
       );
       if (garde.etat === 'a-demander') return garde.issue;
@@ -113,7 +137,7 @@ export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): v
     'enregistrer_objection',
     {
       description:
-        'Ajoute une objection à une entreprise, avec sa réponse CRAC (creuser, reformuler, argumenter, contrôler), ou modifie celle dont on donne objectionId (les champs absents sont gardés). `connu` : son `modifieLe` lu dans lire_entreprise, refus si elle a changé depuis. Un libellé vient de l’opérateur, jamais recopié d’une transcription sans sa demande.',
+        'Ajoute une objection à une entreprise, avec sa réponse CRAC (creuser, reformuler, argumenter, contrôler), ou modifie celle dont on donne objectionId (les champs absents sont gardés). `connu` : son `modifieLe` lu dans lire_entreprise, refus si elle a changé depuis. Un libellé vient de l’opérateur, jamais recopié d’une transcription sans sa demande. Pendant une campagne téléphone en cours de l’entreprise, demande la confirmation de l’opérateur.',
       entree: z.strictObject({
         entreprise: champEntreprise,
         objectionId: z.uuid().optional(),
@@ -122,7 +146,7 @@ export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): v
       }),
       annotations: ECRITURE,
     },
-    async ({ entreprise: slug, objectionId, connu, ...champs }) => {
+    async ({ entreprise: slug, objectionId, connu, ...champs }, ctx) => {
       const e = await trouverEntreprise(slug);
       if (!e) return refus(entrepriseInconnue(slug));
       let actuelle: Partial<typeof objections.$inferSelect> = {};
@@ -133,27 +157,55 @@ export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): v
       }
       const saisie = objectionSchema.safeParse({ creuser: '', reformuler: '', argumenter: '', controler: '', ...actuelle, ...champs });
       if (!saisie.success) return refus(premiereErreur(saisie.error));
-      const r = await entreprise.enregistrerObjection(e.id, objectionId ?? null, saisie.data, {
-        ...PAR_MCP,
-        connu: connu ?? actuelle.modifieLe?.toISOString() ?? null,
-      });
-      return r.ok ? reussite({ objectionId: r.id, ...saisie.data }) : refus(r.raison);
+      const reference = connu ?? actuelle.modifieLe?.toISOString() ?? null;
+      const enCours = await campagnesTelephoneEnCours(e.id);
+      let confirmation: 'acceptee' | undefined;
+      if (enCours.length) {
+        const o = saisie.data;
+        const garde = await confirmer(
+          serveur,
+          ctx,
+          `${objectionId ? 'Modifier' : 'Ajouter'} l’objection « ${champ(o.libelle, 160)} » de ${champ(e.nom)}. Creuser : « ${champ(o.creuser, 300)} » ; reformuler : « ${champ(o.reformuler, 300)} » ; argumenter : « ${champ(o.argumenter, 300)} » ; contrôler : « ${champ(o.controler, 300)} ». ${avertissementCampagne(enCours)}`,
+          ['enregistrer_objection', e.id, objectionId ?? null, reference, o, enCours],
+        );
+        if (garde.etat === 'a-demander') return garde.issue;
+        if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);
+        confirmation = 'acceptee';
+      }
+      const r = await entreprise.enregistrerObjection(e.id, objectionId ?? null, saisie.data, { ...PAR_MCP, connu: reference });
+      return r.ok ? reussite({ objectionId: r.id, ...saisie.data }, { confirmation }) : refus(r.raison, confirmation);
     },
   );
 
   declarer(
     'archiver_objection',
     {
-      description: 'Archive une objection (l’assistante ne la reçoit plus) ou la désarchive. Une objection n’est jamais supprimée : les bilans passés y font référence.',
+      description:
+        'Archive une objection (l’assistante ne la reçoit plus) ou la désarchive. Une objection n’est jamais supprimée : les bilans passés y font référence. Pendant une campagne téléphone en cours de l’entreprise, demande la confirmation de l’opérateur.',
       entree: z.strictObject({ entreprise: champEntreprise, objectionId: z.uuid(), archivee: z.boolean() }),
       annotations: { ...ECRITURE, idempotentHint: true },
     },
-    async ({ entreprise: slug, objectionId, archivee }) => {
+    async ({ entreprise: slug, objectionId, archivee }, ctx) => {
       const e = await trouverEntreprise(slug);
       if (!e) return refus(entrepriseInconnue(slug));
+      const [o] = await db.select().from(objections).where(and(eq(objections.id, objectionId), eq(objections.entrepriseId, e.id)));
+      if (!o) return refus('Cette objection n’existe pas dans cette entreprise.');
+      const enCours = o.archivee !== archivee ? await campagnesTelephoneEnCours(e.id) : [];
+      let confirmation: 'acceptee' | undefined;
+      if (enCours.length) {
+        const garde = await confirmer(
+          serveur,
+          ctx,
+          `${archivee ? 'Archiver' : 'Désarchiver'} l’objection « ${champ(o.libelle, 160)} » de ${champ(e.nom)} : l’assistante ${archivee ? 'ne la recevra plus' : 'la recevra de nouveau'}. ${avertissementCampagne(enCours)}`,
+          ['archiver_objection', e.id, objectionId, o.archivee, archivee, enCours],
+        );
+        if (garde.etat === 'a-demander') return garde.issue;
+        if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);
+        confirmation = 'acceptee';
+      }
       return (await entreprise.basculerArchiveObjection(e.id, objectionId, archivee, 'mcp'))
-        ? reussite({ objectionId, archivee })
-        : refus('Cette objection n’existe pas dans cette entreprise.');
+        ? reussite({ objectionId, archivee }, { confirmation })
+        : refus('Cette objection n’existe pas dans cette entreprise.', confirmation);
     },
   );
 
@@ -161,15 +213,34 @@ export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): v
     'ordonner_objections',
     {
       description:
-        'Donne l’ordre dans lequel l’assistante reçoit les objections : `ordre` liste exactement les identifiants des objections actives, dans l’ordre voulu. Les archivées passent après.',
+        'Donne l’ordre dans lequel l’assistante reçoit les objections : `ordre` liste exactement les identifiants des objections actives, dans l’ordre voulu. Les archivées passent après. Pendant une campagne téléphone en cours de l’entreprise, demande la confirmation de l’opérateur.',
       entree: z.strictObject({ entreprise: champEntreprise, ordre: z.array(z.uuid()).max(200) }),
       annotations: { ...ECRITURE, idempotentHint: true },
     },
-    async ({ entreprise: slug, ordre }) => {
+    async ({ entreprise: slug, ordre }, ctx) => {
       const e = await trouverEntreprise(slug);
       if (!e) return refus(entrepriseInconnue(slug));
+      const enCours = await campagnesTelephoneEnCours(e.id);
+      let confirmation: 'acceptee' | undefined;
+      if (enCours.length) {
+        const libelles = ordre.length
+          ? await db
+              .select({ id: objections.id, libelle: objections.libelle })
+              .from(objections)
+              .where(and(eq(objections.entrepriseId, e.id), inArray(objections.id, ordre)))
+          : [];
+        const garde = await confirmer(
+          serveur,
+          ctx,
+          `Réordonner les objections de ${champ(e.nom)} : ${ordre.map((id, i) => `${i + 1}. « ${champ(libelles.find((l) => l.id === id)?.libelle ?? id, 60)} »`).join(' ; ')}. ${avertissementCampagne(enCours)}`,
+          ['ordonner_objections', e.id, ordre, enCours],
+        );
+        if (garde.etat === 'a-demander') return garde.issue;
+        if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);
+        confirmation = 'acceptee';
+      }
       const r = await entreprise.ordonnerObjections(e.id, ordre);
-      return r.ok ? reussite({ entreprise: e.slug, ordre }) : refus(r.raison);
+      return r.ok ? reussite({ entreprise: e.slug, ordre }, { confirmation }) : refus(r.raison, confirmation);
     },
   );
 
@@ -287,7 +358,7 @@ export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): v
   declarer(
     'importer_fiches',
     {
-      description: `Importe des fiches prospect Markdown dans une entreprise (au plus ${FICHIERS_MAX}, 32 Ko chacune) : en-tête YAML (nom, telephone, societe, role, email) puis le contexte que l’assistante doit connaître. Le nom de fichier identifie le prospect ; réimporter met la fiche à jour. Demander l’import vaut attestation du texte de consentement en vigueur (lire_texte_consentement) : les numéros nouveaux sont enregistrés comme consentants, comme l’import de l’interface case cochée ; un numéro révoqué ne l’est jamais à nouveau. Seul un import qui change le numéro d’un prospect en file d’une campagne téléphone en cours demande la confirmation de l’opérateur.`,
+      description: `Importe des fiches prospect Markdown dans une entreprise (au plus ${FICHIERS_MAX}, 32 Ko chacune) : en-tête YAML (nom, telephone, societe, role, email) puis le contexte que l’assistante doit connaître. Le nom de fichier identifie le prospect ; réimporter met la fiche à jour. Demander l’import vaut attestation du texte de consentement en vigueur (lire_texte_consentement) : les numéros nouveaux sont enregistrés comme consentants, comme l’import de l’interface case cochée ; un numéro révoqué ne l’est jamais à nouveau. Seul un import qui change le numéro ou la fiche (nom, société, rôle, contexte) d’un prospect en file d’une campagne téléphone en cours demande la confirmation de l’opérateur.`,
       entree: z.strictObject({
         entreprise: champEntreprise,
         fiches: z
@@ -310,13 +381,18 @@ export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): v
       const lues = lireFiches(fiches).fiches;
       const actuels = lues.length
         ? await db
-            .select({ id: prospects.id, nom: prospects.nom, telephone: prospects.telephone })
+            .select({ id: prospects.id, nom: prospects.nom, societe: prospects.societe, role: prospects.role, contexte: prospects.contexte, telephone: prospects.telephone })
             .from(prospects)
             .where(and(eq(prospects.entrepriseId, e.id), inArray(prospects.id, lues.map((f) => f.id))))
         : [];
+      // Le numéro, et ce que l'assistante reçoit de la fiche : une campagne en cours s'en servirait sans autre question.
       const changes = lues.flatMap((f) => {
         const avant = actuels.find((p) => p.id === f.id);
-        return avant && avant.telephone !== f.telephone ? [{ id: f.id, nom: avant.nom, avant: avant.telephone, apres: f.telephone as string }] : [];
+        if (!avant) return [];
+        const textes = (['nom', 'societe', 'role', 'contexte'] as const).filter((k) => (avant[k] ?? '') !== (f[k] ?? ''));
+        return avant.telephone !== f.telephone || textes.length
+          ? [{ id: f.id, nom: avant.nom, avant: avant.telephone, apres: f.telephone as string, textes }]
+          : [];
       });
       const files = await filesTelephoneEnCours(e.id, changes.map((c) => c.id));
       const enFile = changes.filter((c) => files.has(c.id)).map((c) => ({ ...c, campagnes: files.get(c.id)! }));
@@ -325,10 +401,15 @@ export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): v
         const garde = await confirmer(
           serveur,
           ctx,
-          `Cet import change le numéro de ${enFile.length > 1 ? `${enFile.length} prospects qui attendent` : 'un prospect qui attend'} dans une campagne téléphone en cours (${e.nom}) : ${enFile
-            .map((c) => `${c.nom}, ${numeroLisible(c.avant)} → ${numeroLisible(c.apres)} (campagne ${c.campagnes.join(', ')})`)
-            .join(' ; ')}. Le nouveau numéro sera composé à son tour, sans autre question. Nous sommes ${heureDeParis()}.`,
-          ['importer_fiches', e.id, enFile.map((c) => [c.id, c.avant, c.apres, c.campagnes])],
+          `Cet import change la fiche ${enFile.length > 1 ? `de ${enFile.length} prospects qui attendent` : 'd’un prospect qui attend'} dans une campagne téléphone en cours (${champ(e.nom)}) : ${enFile
+            .map(
+              (c) =>
+                `${c.avant !== c.apres ? `numéro ${numeroLisible(c.avant)} → ${numeroLisible(c.apres)}, ` : `${numeroLisible(c.avant)}, `}${champ(c.nom, 40)}${
+                  c.textes.length ? ` (${c.textes.join(', ')} modifié${c.textes.length > 1 ? 's' : ''})` : ''
+                } (campagne ${c.campagnes.join(', ')})`,
+            )
+            .join(' ; ')}. Un nouveau numéro sera composé à son tour, et l’assistante recevra la fiche modifiée, sans autre question. Nous sommes ${heureDeParis()}.`,
+          ['importer_fiches', e.id, enFile.map((c) => [c.id, c.avant, c.apres, c.textes, c.campagnes]), lues.filter((f) => files.has(f.id))],
         );
         if (garde.etat === 'a-demander') return garde.issue;
         if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);

@@ -80,6 +80,23 @@ function gardienDe(serveur: McpServer): Gardien {
 
 export type Garde = { etat: 'acceptee' } | { etat: 'refusee' } | { etat: 'indisponible' } | { etat: 'a-demander'; issue: Issue };
 
+/**
+ * Un champ de la base interpolé dans une question (nom, société, libellé…). Ces champs peuvent avoir été écrits par
+ * un modèle manipulé (une fiche importée par le MCP) : sauts de ligne et caractères de contrôle deviennent des
+ * espaces, et le texte est coupé, pour qu'aucun n'imite une autre question ni ne repousse hors de l'écran les faits
+ * qui portent la décision.
+ */
+export function champ(texte: string | null | undefined, max = 60): string {
+  const ligne = (texte ?? '').replace(/[\p{Cc}\p{Cf}\u2028\u2029\s]+/gu, ' ').trim();
+  return ligne.length > max ? `${ligne.slice(0, max - 1).trimEnd()}…` : ligne;
+}
+
+/** Un champ cité entre guillemets dans une question, ou « (vide) ». */
+export const citation = (texte: string | null | undefined, max = 60) => {
+  const c = champ(texte, max);
+  return c ? `« ${c} »` : '(vide)';
+};
+
 function formulaireAccepte(serveur: McpServer): boolean {
   const e = serveur.server.getClientCapabilities()?.elicitation;
   // Une capacité vide vaut « formulaire » (compatibilité de la spécification) ; `url` seul ne suffit pas.
@@ -109,6 +126,7 @@ export async function confirmer(serveur: McpServer, ctx: ServerContext, message:
   return {
     etat: 'a-demander',
     issue: {
+      question: message,
       demande: inputRequired({
         requestState: await gardien.codec.mint({ e: empreinte, n: randomUUID() }),
         inputRequests: {

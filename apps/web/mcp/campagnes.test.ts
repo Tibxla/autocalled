@@ -117,7 +117,7 @@ describe('ajouter_a_la_campagne', () => {
     expect((await refus.appeler('ajouter_a_la_campagne', { campagneId, prospects: ['marc', 'paul'] })).erreur).toBe(true);
     expect((await lire(campagneId)).entrees).toHaveLength(1);
     expect(refus.messages[0]).toMatch(
-      /^Ajouter à la campagne de Gîte fictif, en cours sur le téléphone passerelle, 2 prospects qui seront appelés à la suite sans autre geste : Marc Fictif \(06 39 98 00 02\), Paul Fictif \(06 39 98 00 04\)\. Un de ces numéros a été ajouté par le MCP \(le dernier le .+\)\. Nous sommes /,
+      /^Ajouter à la campagne de Gîte fictif, en cours sur le téléphone passerelle, 2 prospects qui seront appelés à la suite sans autre geste : 06 39 98 00 02 \(Marc Fictif\), 06 39 98 00 04 \(Paul Fictif\)\. Numéro ajouté par le MCP : Paul Fictif \(06 39 98 00 04\), le .+\. Nous sommes /,
     );
     await refus.fermer();
 

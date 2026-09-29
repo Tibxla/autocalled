@@ -8,7 +8,8 @@ import { ajouterALaCampagne, retirerProspect, sauterProspect, supprimerCampagneP
 import { numeroLisible } from '@/lib/format';
 import { ajoutParMcp } from '@/lib/prospects';
 import { champProspect } from './communs';
-import { confirmer, heureDeParis, refusDeConfirmation } from './confirmation';
+import { champ, confirmer, heureDeParis, refusDeConfirmation } from './confirmation';
+import { numerosDuMcp } from './gardes-appel';
 import { type Declarer, refus, reussite } from './outil';
 
 /**
@@ -19,7 +20,6 @@ import { type Declarer, refus, reussite } from './outil';
 
 const ECRITURE = { readOnlyHint: false, destructiveHint: false, openWorldHint: false } as const;
 const champCampagne = z.uuid().describe('Identifiant de la campagne (donné par lister_campagnes).');
-const jourEtHeure = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Europe/Paris' });
 
 async function campagneEtEntreprise(campagneId: string) {
   const [c] = await db
@@ -111,17 +111,13 @@ export function outilsDeCampagnes(declarer: Declarer, serveur: McpServer): void 
         if (nonAutorises.length) return refus(`Numéro non autorisé : ${nonAutorises.map((p) => p.nom).join(', ')}. Rien n’a été ajouté.`);
         const ordonnes = ids.map((id) => trouves.find((p) => p.id === id)!);
         const parMcp = await Promise.all(ordonnes.map((p) => ajoutParMcp(p.telephone)));
-        const ajoutsMcp = parMcp.filter((d): d is Date => d !== null).sort((a, b) => b.getTime() - a.getTime());
-        const origine = ajoutsMcp.length
-          ? ` ${ajoutsMcp.length === 1 ? 'Un de ces numéros a été ajouté' : `${ajoutsMcp.length} de ces numéros ont été ajoutés`} par le MCP (le dernier le ${jourEtHeure.format(ajoutsMcp[0]!)}).`
-          : '';
         const garde = await confirmer(
           serveur,
           ctx,
-          `Ajouter à la campagne de ${c.entreprise}, en cours sur le téléphone passerelle, ${ordonnes.length} prospect${ordonnes.length > 1 ? 's' : ''} qui ${ordonnes.length > 1 ? 'seront appelés' : 'sera appelé'} à la suite sans autre geste : ${ordonnes
-            .map((p) => `${p.nom} (${numeroLisible(p.telephone)})`)
-            .join(', ')}.${origine} Nous sommes ${heureDeParis()}.`,
-          ['ajouter_a_la_campagne', campagneId, c.campagne.statut, ids, ordonnes.map((p) => p.telephone), ajoutsMcp.length],
+          `Ajouter à la campagne de ${champ(c.entreprise)}, en cours sur le téléphone passerelle, ${ordonnes.length} prospect${ordonnes.length > 1 ? 's' : ''} qui ${ordonnes.length > 1 ? 'seront appelés' : 'sera appelé'} à la suite sans autre geste : ${ordonnes
+            .map((p) => `${numeroLisible(p.telephone)} (${champ(p.nom, 40)})`)
+            .join(', ')}.${numerosDuMcp(ordonnes.map((p, i) => ({ ...p, ajout: parMcp[i] ?? null })))} Nous sommes ${heureDeParis()}.`,
+          ['ajouter_a_la_campagne', campagneId, c.campagne.statut, ids, ordonnes.map((p) => p.telephone), parMcp.filter(Boolean).length],
         );
         if (garde.etat === 'a-demander') return garde.issue;
         if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);

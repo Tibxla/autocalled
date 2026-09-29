@@ -41,7 +41,9 @@ describe('modifier_prospect', () => {
     expect((await db.select({ telephone: prospects.telephone }).from(prospects).where(eq(prospects.id, 'julie')))[0]?.telephone).toBe('+33639980005');
     expect((await db.select({ canal: imports.canal }).from(imports)).map((i) => i.canal)).toEqual(['interface', 'mcp']);
     const [ligne] = await db.select().from(journalMcp).where(eq(journalMcp.outil, 'modifier_prospect'));
-    expect(ligne?.arguments).toEqual({ entreprise: 'gite-fictif', prospect: 'julie', champs: ['telephone', 'contexte'], connu: majLe });
+    // Le contexte n'y est pas ; le numéro saisi, si (l'ancien et le nouveau sont dans le message du succès).
+    expect(ligne?.arguments).toEqual({ entreprise: 'gite-fictif', prospect: 'julie', champs: ['telephone', 'contexte'], telephone: '06 39 98 00 05', connu: majLe });
+    expect(ligne?.message).toBe('numéro 06 39 98 00 01 → 06 39 98 00 05');
     expect((await appeler('lister_prospects', { entreprise: 'gite-fictif', recherche: 'julie' })).json).toMatchObject({
       prospects: [expect.objectContaining({ prospect: 'julie', numero: '06 39 98 00 05', numeroAjouteParMcp: expect.any(String) })],
     });
@@ -115,13 +117,15 @@ describe('numéro changé pendant une campagne téléphone en cours', () => {
     const r = await appeler('modifier_prospect', { entreprise: 'gite-fictif', prospect: 'julie', champs: { telephone: '06 39 98 00 07' } });
 
     expect(r).toMatchObject({ erreur: true, texte: expect.stringContaining('n’a pas confirmé') });
-    expect(messages[0]).toContain('de 06 39 98 00 01 à 06 39 98 00 07');
+    expect(messages[0]).toContain('numéro 06 39 98 00 01 → 06 39 98 00 07');
     expect(messages[0]).toContain(campagneId);
     expect(await telephoneDeJulie()).toBe('+33639980001');
     expect(await db.$count(consentements, eq(consentements.numero, '+33639980007'))).toBe(0);
-    // Un autre champ ne demande rien.
-    expect((await appeler('modifier_prospect', { entreprise: 'gite-fictif', prospect: 'julie', champs: { role: 'Gérante' } })).erreur).toBe(false);
-    expect(messages).toHaveLength(1);
+    // Ce que l'assistante reçoit de la fiche (ici le rôle) demande aussi l'accord ; l'adresse e-mail, relue au prospect, non.
+    expect((await appeler('modifier_prospect', { entreprise: 'gite-fictif', prospect: 'julie', champs: { role: 'Gérante' } })).erreur).toBe(true);
+    expect(messages[1]).toContain('role (vide) → « Gérante »');
+    expect((await appeler('modifier_prospect', { entreprise: 'gite-fictif', prospect: 'julie', champs: { email: 'julie@exemple.test' } })).erreur).toBe(false);
+    expect(messages).toHaveLength(2);
   });
 
   it('modifier_prospect et importer_fiches changent le numéro après l’accord', async () => {
@@ -132,7 +136,7 @@ describe('numéro changé pendant une campagne téléphone en cours', () => {
     expect(await telephoneDeJulie()).toBe('+33639980007');
     const r = await appeler('importer_fiches', { entreprise: 'gite-fictif', fiches: [fiche('julie', 'Julie Fictive', '06 39 98 00 08'), fiche('marc', 'Marc Fictif', '06 39 98 00 09')] });
     expect(r.erreur).toBe(false);
-    expect(messages[1]).toContain('Julie Fictive, 06 39 98 00 07 → 06 39 98 00 08');
+    expect(messages[1]).toContain('numéro 06 39 98 00 07 → 06 39 98 00 08, Julie Fictive');
     expect(messages[1]).not.toContain('Marc');
     expect(await telephoneDeJulie()).toBe('+33639980008');
     const journal = await db.select().from(journalMcp).where(eq(journalMcp.resultat, 'ok'));
