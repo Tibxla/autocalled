@@ -7,7 +7,7 @@ présente le même secret à l'application quand il la rappelle (`$WEB_URL/api/p
     POST /appels                      {appelId, numero, variables, motsCles, premierMessage?} : compose ; premierMessage
                                       est la phrase dite si le prospect se tait au décroché (« Allô ? » sans elle)
     POST /appels/<id>/raccrocher
-    GET  /appels/<id>/evenements      fil de l'appel en SSE (états, tours de parole), rejoué depuis le début ;
+    GET  /appels/<id>/evenements      fil de l'appel en SSE (états, tours de parole, étapes du plan), rejoué depuis le début ;
                                       s'y glissent, sans `id:` et sans rejeu, les niveaux des deux voix (voir plus bas)
     GET  /appels/<id>/ecoute          prospect et Mina mélangés, PCM 16 bits mono (taux dans x-taux)
     GET  /appairage                   la fenêtre d'appairage et son code

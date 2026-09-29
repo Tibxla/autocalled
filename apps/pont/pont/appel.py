@@ -26,6 +26,7 @@ DELAI_CANAL_SON_S = 10.0
 DELAI_CANAL_APRES_DECROCHE_S = 3.0
 DUREE_MAX_S = 6 * 60  # au-delà du plafond de l'agent (300 s) : filet si la fin de session se perd
 DUREE_MAX_OPERATEUR_S = 60 * 60  # après une prise de main, l'opérateur parle aussi longtemps qu'il veut
+ETAPE_MAX = 10  # le plus grand nombre d'étapes d'un script (MAX_ETAPES, apps/web/src/lib/schemas.ts)
 
 
 def premier_message_valide(valeur: Any) -> str:
@@ -39,6 +40,28 @@ def premier_message_valide(valeur: Any) -> str:
     if not texte or len(texte) > PREMIER_MESSAGE_MAX:
         return PREMIER_MESSAGE_PAR_DEFAUT
     return texte
+
+
+def numero_d_etape(valeur: Any) -> int | None:
+    """Le numéro d'étape signalé par l'assistante (outil etape_script) : un entier de 1 à ETAPE_MAX, sinon None.
+
+    Le modèle peut l'envoyer en nombre ou en texte (« 2 », 2.0). Un numéro hors du plan n'est pas ramené à la
+    borne : il afficherait une étape fausse.
+    """
+    if isinstance(valeur, bool):
+        return None
+    if isinstance(valeur, str):
+        valeur = valeur.strip()
+        if not (valeur.isascii() and valeur.isdigit()):
+            return None
+        valeur = int(valeur)
+    if isinstance(valeur, float):
+        if not valeur.is_integer():
+            return None
+        valeur = int(valeur)
+    if not isinstance(valeur, int) or not 1 <= valeur <= ETAPE_MAX:
+        return None
+    return valeur
 
 
 class Rappels(Protocol):
@@ -132,13 +155,16 @@ class Appel:
         self._termine = threading.Event()
         self._pings: list[int] = []
         self._codec: int | None = None
-        # Fil de l'appel pour la page en direct : états du téléphone et tours de parole, rejoués à qui arrive tard.
+        # Fil de l'appel pour la page en direct : états du téléphone, tours de parole et étapes du plan, rejoués à qui
+        # arrive tard.
         self.evenements: list[dict[str, Any]] = []
         self._nouveau = threading.Condition()
 
         outils = ClientTools()
         for nom_outil in ("proposer_creneaux", "reserver_creneau"):
             outils.register(nom_outil, self._outil(nom_outil))
+        # Affichage seulement (« Étape 2 » dans la bande d'appel) : traité ici, sans aller-retour vers l'application.
+        outils.register("etape_script", self._etape)
         self._conversation = ConversationPont(
             ElevenLabs(api_key=cles["ELEVENLABS_API_KEY"]),
             cles["ELEVENLABS_AGENT_ID"],
@@ -329,6 +355,16 @@ class Appel:
             return self._rappels.outil(nom, utiles)
 
         return executer
+
+    def _etape(self, parametres: dict[str, Any]) -> str:
+        """Outil etape_script : l'assistante entre dans une étape du plan. Un événement du fil, rien d'autre."""
+        numero = numero_d_etape(parametres.get("numero"))
+        if numero is None:
+            self.journal("étape illisible :", parametres.get("numero"))
+            return ""
+        self.journal("étape", numero)
+        self._evenement("etape", {"numero": numero})
+        return ""
 
     def _fin_de_session(self) -> None:
         # Mina a terminé (end_call ou plafond de durée) : laisser partir la fin de sa phrase, puis raccrocher.
