@@ -384,7 +384,7 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
 
   // Ce qui reste d'un appel purgé : la mention, puis ses objections par libellé de la fiche, levées ou non.
   const blocPurge = purge ? (
-    <section aria-label="Bilan purgé" className="grid max-w-[68ch] gap-6">
+    <section aria-label={bilan ? 'Bilan purgé' : 'Appel purgé'} className="grid max-w-[68ch] gap-6">
       <Message ton="neutre">{mentionPurge(Boolean(bilan))}</Message>
       {bilan?.objections.length ? (
         <section aria-labelledby="titre-objections" className="grid gap-3">
