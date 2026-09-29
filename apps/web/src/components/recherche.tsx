@@ -4,6 +4,7 @@ import Form from 'next/form';
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useRef, useState } from 'react';
 import { focaliserPremiereLigne, inscrireRecherche, useRaccourci } from './clavier';
+import { LIEN_TEXTE } from './lien-texte';
 import { Touche } from './touche';
 import { lienAvec } from './url';
 
@@ -16,6 +17,9 @@ import { lienAvec } from './url';
  * `longueurMin` : Entrée ne part vers le serveur qu'à partir de ce nombre de caractères. `scroll={false}` :
  * la page ne remonte pas après la recherche. `sansFormulaire` : champ seul, sans <form> ni nom, pour vivre
  * dans un autre formulaire (Entrée n'y soumet rien) ; il suppose `instantane`.
+ * Au doigt : 16 px, et « Effacer » à droite dès que le champ contient du texte, qui fait ce que fait Échap puis
+ * rend le focus au champ. Jamais deux Recherche sur une page : « / » vise le dernier champ monté ; une page qui
+ * double une disposition mobile et une disposition bureau ne double jamais sa recherche.
  */
 export function Recherche({
   nom = 'q',
@@ -76,6 +80,16 @@ export function Recherche({
         }
       : undefined;
 
+  // Vide le champ ; si la recherche était appliquée côté serveur, retire le paramètre de l'URL.
+  const effacer = () => {
+    setTexte('');
+    instantane?.('');
+    if (valeur && !sansFormulaire) {
+      const parametres = Object.fromEntries(new URLSearchParams(location.search));
+      router.replace(lienAvec(location.pathname, parametres, { [nom]: null }), { scroll: false });
+    }
+  };
+
   const champSaisie = (
     <label
       htmlFor={id}
@@ -101,18 +115,28 @@ export function Recherche({
           if (sansFormulaire && e.key === 'Enter') e.preventDefault();
           if (e.key !== 'Escape') return;
           e.preventDefault();
-          if (texte) {
-            setTexte('');
-            instantane?.('');
-            if (valeur && !sansFormulaire) {
-              const parametres = Object.fromEntries(new URLSearchParams(location.search));
-              router.replace(lienAvec(location.pathname, parametres, { [nom]: null }), { scroll: false });
-            }
-          } else e.currentTarget.blur();
+          if (texte) effacer();
+          else e.currentTarget.blur();
         }}
-        className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-md text-encre placeholder:text-encre-3 focus-visible:outline-none [&::-webkit-search-cancel-button]:appearance-none"
+        className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-md text-encre placeholder:text-encre-3 focus-visible:outline-none pointer-coarse:text-champ [&::-webkit-search-cancel-button]:appearance-none"
       />
-      {texte ? null : <Touche decorative>/</Touche>}
+      {texte ? (
+        <button
+          type="button"
+          aria-label="Effacer la recherche"
+          // Le champ garde le focus : le clavier de l'écran ne se ferme pas pour se rouvrir.
+          onPointerDown={(e) => e.preventDefault()}
+          onClick={() => {
+            effacer();
+            champ.current?.focus();
+          }}
+          className={`-mr-2 hidden h-11 min-w-11 items-center justify-center rounded-[4px] px-2 text-sm text-encre-3 active:bg-survol pointer-coarse:inline-flex ${LIEN_TEXTE}`}
+        >
+          Effacer
+        </button>
+      ) : (
+        <Touche decorative>/</Touche>
+      )}
     </label>
   );
 
