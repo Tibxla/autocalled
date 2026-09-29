@@ -6,7 +6,8 @@ présente le même secret à l'application quand il la rappelle (`$WEB_URL/api/p
     GET  /etat                        le téléphone passerelle et l'appel en cours
     POST /appels                      {appelId, numero, variables, motsCles} : compose
     POST /appels/<id>/raccrocher
-    GET  /appels/<id>/evenements      fil de l'appel en SSE (états, tours de parole), rejoué depuis le début
+    GET  /appels/<id>/evenements      fil de l'appel en SSE (états, tours de parole), rejoué depuis le début ;
+                                      s'y glissent, sans `id:` et sans rejeu, les niveaux des deux voix (voir plus bas)
     GET  /appels/<id>/ecoute          prospect et Mina mélangés, PCM 16 bits mono (taux dans x-taux)
     GET  /appairage                   la fenêtre d'appairage et son code
     POST /appairage                   {adresse, remplacer?} : ouvre la fenêtre, filtrée sur cette adresse ;
@@ -19,6 +20,15 @@ présente le même secret à l'application quand il la rappelle (`$WEB_URL/api/p
 Prise de main (ADR 0008), WebSocket sur 127.0.0.1:PONT_PORT_WS, joint par `tailscale serve` sous /prise-en-main :
     /appels/<id>   le navigateur de l'opérateur envoie sa voix (PCM 16 kHz) et reçoit le prospect ;
                    accepté seulement si l'en-tête Tailscale-User-Login est celui de l'opérateur (ADR 0006).
+
+Fil d'un appel (`data:` de chaque message SSE, JSON). `t` : heure du pont, en millisecondes depuis l'epoch.
+    id: n   {"type": "etat", "etat": "composition" | "alerting" | "active" | "prise-en-main" | …, "t": …}
+    id: n   {"type": "tour", "role": "agent" | "prospect", "texte": "…", "t": …}
+            {"type": "niveaux", "t": …, "pasMs": 50, "mina": [0.42, 0.1], "prospect": [0, 0.07]}
+Les niveaux (RMS de chaque fenêtre de `pasMs`, ramenés sur [0, 1], voir `audio.Niveaux`) arrivent par lots d'un
+ou quelques relevés, à partir du décroché ; `t` est l'heure du dernier relevé du lot, les précédents le suivent
+de `pasMs` en `pasMs`. `mina` est ce que le pont envoie au téléphone : la voix de l'opérateur après une prise de
+main. Ils ne portent pas d'`id:` : une reconnexion reprend au dernier état ou tour, sans rejouer de niveaux.
 """
 import asyncio
 import hmac
@@ -43,6 +53,7 @@ from websockets.exceptions import ConnectionClosed
 
 from .appairage import Appairage
 from .appel import Appel, Journal
+from .audio import NIVEAU_PAS_MS
 from .ofono import Telephone, dans_glib
 from .plafond import Plafond
 from .reglages import Reglages
@@ -99,6 +110,17 @@ class RappelsWeb:
             self._poster_avec_relances("fin", bilan)
         except (urllib.error.URLError, TimeoutError) as e:
             self.journal("l'application n'a pas reçu la fin de l'appel :", e)
+
+
+def lot_de_niveaux(releves: list[tuple[int, float, float]]) -> dict[str, Any]:
+    """Relevés (t ms, mina, prospect) consécutifs → un message du fil, daté de son dernier relevé."""
+    return {
+        "type": "niveaux",
+        "t": releves[-1][0],
+        "pasMs": NIVEAU_PAS_MS,
+        "mina": [m for _, m, _ in releves],
+        "prospect": [p for _, _, p in releves],
+    }
 
 
 class Service:
@@ -355,14 +377,23 @@ class Service:
                 self.send_header("content-type", "text/event-stream; charset=utf-8")
                 self.send_header("cache-control", "no-store")
                 self.end_headers()
+                curseur = appel.pont.niveaux.curseur()
+                derniere_ecriture = time.monotonic()
                 try:
                     while True:
-                        nouveaux = appel.suivre(depuis)
+                        # Réveil tous les dixièmes de seconde pour les niveaux ; un état ou un tour réveille aussitôt.
+                        nouveaux = appel.suivre(depuis, delai=0.1)
                         for i, e in enumerate(nouveaux, start=depuis + 1):
                             self.wfile.write(f"id: {i}\ndata: {json.dumps(e, ensure_ascii=False)}\n\n".encode())
                         depuis += len(nouveaux)
-                        if not nouveaux:
+                        curseur, releves = appel.pont.niveaux.depuis(curseur)
+                        if releves:
+                            self.wfile.write(f"data: {json.dumps(lot_de_niveaux(releves))}\n\n".encode())
+                        if nouveaux or releves:
+                            derniere_ecriture = time.monotonic()
+                        elif time.monotonic() - derniere_ecriture > 15:
                             self.wfile.write(b": toujours la\n\n")
+                            derniere_ecriture = time.monotonic()
                         self.wfile.flush()
                         if appel.fini() and depuis >= len(appel.evenements):
                             return

@@ -144,8 +144,9 @@ class Appel:
     # --- suivi en direct -------------------------------------------------------------------------
 
     def _evenement(self, type_: str, donnees: dict[str, Any]) -> None:
+        # `t` : heure du pont (ms depuis l'epoch) ; l'historique rejoué à la connexion garde ainsi ses vraies heures.
         with self._nouveau:
-            self.evenements.append({"type": type_, **donnees})
+            self.evenements.append({"type": type_, **donnees, "t": int(time.time() * 1000)})
             self._nouveau.notify_all()
         self._rappels.evenement(type_, donnees)
 

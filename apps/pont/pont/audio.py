@@ -9,12 +9,14 @@ L'horloge est la boucle SCO : pour chaque bloc lu, on écrit un bloc de même ta
 de sortie ou complété de silence. Le SDK ne touche jamais le descripteur : `output()` remplit le
 tampon, `interrupt()` le vide (sinon Mina continuerait de parler par-dessus le prospect).
 """
+import math
 import os
 import queue
 import select
 import threading
 import time
 import wave
+from collections import deque
 from collections.abc import Callable
 
 import numpy as np
@@ -37,6 +39,17 @@ PRISE_TAMPON_MS = 120  # avance accumulée avant de lire la voix de l'opérateur
 # Le contrôle automatique du volume de Chrome amène le micro vers −19 dBFS, le niveau qui saturait avec Mina :
 # même traitement, vers −30 dBFS. À recaler avec la mesure « voix opérateur » du relevé.
 GAIN_OPERATEUR = 10 ** (-10 / 20)
+# Niveaux des deux voix pour l'onde de la page en direct, jamais l'audio lui-même : un relevé par fenêtre de
+# NIVEAU_PAS_MS, en dBFS ramenés sur [0, 1] entre un plancher et un plafond propres à chaque voix. Prospect : le
+# bruit de fond d'un décroché (200-300, vers −41 dBFS) reste à 0. Mina : mesurée sur la ligne puis ramenée au niveau
+# d'avant GAIN_SORTIE (ou GAIN_OPERATEUR), celui d'ElevenLabs, vers −13 dBFS. Plafonds à recaler avec les crêtes
+# que le relevé du journal donne toutes les 5 s.
+NIVEAU_PAS_MS = 50
+COMPENSATION_MINA_DB = -20 * math.log10(GAIN_SORTIE)
+COMPENSATION_OPERATEUR_DB = -20 * math.log10(GAIN_OPERATEUR)
+NIVEAU_PROSPECT_DBFS = (-40.0, -16.0)
+NIVEAU_MINA_DBFS = (-44.0, -8.0)
+NIVEAUX_GARDES = 100  # 5 s : de quoi servir un suivi qui prend un peu de retard, pas plus
 
 
 def accepter(fd: int) -> None:
@@ -76,6 +89,73 @@ def _vers_pcm(echantillons: np.ndarray) -> bytes:
     return np.clip(echantillons, -32768, 32767).astype("<i2").tobytes()
 
 
+def dbfs(somme_carres: float, compte: int) -> float:
+    """RMS d'une fenêtre de PCM 16 bits, en dBFS (−90 pour un silence numérique)."""
+    rms = math.sqrt(somme_carres / compte) if compte else 0.0
+    return 20 * math.log10(max(rms, 1.0) / 32768)
+
+
+def normaliser(db: float, echelle: tuple[float, float]) -> float:
+    plancher, plafond = echelle
+    return round(min(1.0, max(0.0, (db - plancher) / (plafond - plancher))), 2)
+
+
+class Niveaux:
+    """Niveaux de Mina et du prospect, relevés par la boucle audio et lus par le suivi en direct.
+
+    `ajouter` coûte deux produits scalaires par bloc ; le verrou n'est tenu que pour poser ou copier quelques
+    tuples, et la file est bornée : la boucle audio n'attend jamais un lecteur.
+    """
+
+    def __init__(self, taux: int):
+        self.regler_taux(taux)
+        self._compte = 0
+        self._prospect = self._mina = 0.0  # sommes des carrés de la fenêtre en cours
+        self._verrou = threading.Lock()
+        self._file: deque[tuple[int, int, float, float]] = deque(maxlen=NIVEAUX_GARDES)  # (n°, t ms, mina, prospect)
+        self._suivant = 0
+        self.cretes = [-90.0, -90.0]  # prospect, Mina (dBFS sur la ligne) depuis le dernier relevé du journal
+
+    def regler_taux(self, taux: int) -> None:
+        """Avant le premier bloc : le taux de la ligne n'est connu qu'à l'ouverture du canal son."""
+        self._fenetre = taux * NIVEAU_PAS_MS // 1000
+
+    def ajouter(self, prospect: np.ndarray, mina: np.ndarray, compensation_mina_db: float) -> None:
+        """Deux blocs PCM 16 bits de même longueur ; `compensation_mina_db` annule le gain appliqué à Mina."""
+        i = 0
+        while i < len(prospect):
+            k = min(len(prospect) - i, self._fenetre - self._compte)
+            p = prospect[i : i + k].astype(np.float32)
+            m = mina[i : i + k].astype(np.float32)
+            self._prospect += float(np.dot(p, p))
+            self._mina += float(np.dot(m, m))
+            self._compte += k
+            i += k
+            if self._compte >= self._fenetre:
+                self._clore(compensation_mina_db)
+
+    def _clore(self, compensation_mina_db: float) -> None:
+        db_p, db_m = dbfs(self._prospect, self._compte), dbfs(self._mina, self._compte)
+        self._prospect = self._mina = 0.0
+        self._compte = 0
+        self.cretes = [max(self.cretes[0], db_p), max(self.cretes[1], db_m)]
+        mina = normaliser(db_m + compensation_mina_db, NIVEAU_MINA_DBFS)
+        releve = (self._suivant, int(time.time() * 1000), mina, normaliser(db_p, NIVEAU_PROSPECT_DBFS))
+        with self._verrou:
+            self._file.append(releve)
+            self._suivant += 1
+
+    def curseur(self) -> int:
+        """Pour un nouveau lecteur : il reçoit les relevés à venir, pas ceux d'avant son arrivée."""
+        with self._verrou:
+            return self._suivant
+
+    def depuis(self, curseur: int) -> tuple[int, list[tuple[int, float, float]]]:
+        """(curseur suivant, [(t ms, mina, prospect)…]) ; un lecteur trop lent perd les plus anciens."""
+        with self._verrou:
+            return self._suivant, [(t, m, p) for n, t, m, p in self._file if n >= curseur]
+
+
 class Pont(AudioInterface):
     def __init__(self, enregistrement: str, journal: Callable[..., None]):
         self._chemin_enregistrement = enregistrement
@@ -102,6 +182,8 @@ class Pont(AudioInterface):
         self._energie_operateur: list[float] = []  # RMS des blocs reçus depuis le dernier relevé
         self._trames_voix = 0
         self._tampon_voix = bytearray()
+        self.niveaux = Niveaux(self._taux_ligne)
+        self._niveaux_actifs = True  # une erreur de relevé les coupe pour le reste de l'appel, jamais la boucle
         self._preparer_conversions()
 
     def _preparer_conversions(self) -> None:
@@ -118,6 +200,7 @@ class Pont(AudioInterface):
         """Appelé à l'ouverture du canal par oFono (dès la composition)."""
         self._codec = codec
         self._taux_ligne = 16000 if codec == MSBC else 8000
+        self.niveaux.regler_taux(self._taux_ligne)
         self._preparer_conversions()
         self._pompe = threading.Thread(target=self._pomper, args=(fd,), daemon=True, name="pompe-sco")
         self._pompe.start()
@@ -167,6 +250,9 @@ class Pont(AudioInterface):
                         self._energie_operateur.clear()
                         rms = float(np.sqrt(np.mean(np.square(parle))))
                         trames += f", voix opérateur {20 * np.log10(max(rms, 1) / 32768):.0f} dBFS"
+                    if self._actif.is_set():
+                        cretes, self.niveaux.cretes = self.niveaux.cretes, [-90.0, -90.0]
+                        trames += f", crêtes prospect {cretes[0]:.0f} / envoi {cretes[1]:.0f} dBFS"
                     self._journal(
                         f"son : {stats['lus']} o lus, {stats['ecrits']} o écrits, {stats['sautes']} écritures sautées{trames}"
                     )
@@ -179,6 +265,8 @@ class Pont(AudioInterface):
                     del rec_g[:n], rec_d[:n]
                     if self._auditeurs:
                         self._diffuser(((g.astype(np.int32) + d) // 2).astype("<i2").tobytes())
+                    if self._niveaux_actifs and self._actif.is_set():
+                        self._relever_niveaux(g, d)
                 if self._actif.is_set():
                     if self._prospect_seul:
                         self._diffuser(entrant, self._prospect_seul)
@@ -196,6 +284,13 @@ class Pont(AudioInterface):
             for c in (decodeur, encodeur):
                 if c:
                     c.fermer()
+
+    def _relever_niveaux(self, prospect: np.ndarray, envoye: np.ndarray) -> None:
+        try:
+            self.niveaux.ajouter(prospect, envoye, COMPENSATION_OPERATEUR_DB if self._mode_operateur else COMPENSATION_MINA_DB)
+        except Exception as e:  # l'onde n'est qu'un confort : elle s'arrête, l'appel continue
+            self._niveaux_actifs = False
+            self._journal("relevé des niveaux arrêté :", e)
 
     def _pcm_operateur(self, taille: int) -> bytes:
         """Tampon de gigue : la lecture ne reprend qu'avec PRISE_TAMPON_MS d'avance, sinon la voix hacherait
