@@ -9,6 +9,7 @@ import { Action, LienAction } from './action';
 import { useNomAssistante } from './assistante';
 import { toucheAria, useRaccourcis } from './clavier';
 import { Confirmation, useConfirmation } from './confirmation';
+import { etapeAffichee, numeroEtape } from './etape-direct';
 import { useLigne } from './etat-ligne-telephone';
 import { chrono as formatChrono, heure, numeroMasque, prenom } from './format-appel';
 import { useHorloge } from './horloge';
@@ -44,6 +45,8 @@ export function useFilAppel(
   enLigneDepuis: number | null;
   /** Niveaux des deux voix relayés par le pont ; null tant qu'aucun n'est arrivé (pont ancien, pas encore décroché). */
   niveaux: TamponNiveaux | null;
+  /** Dernière étape du plan signalée par l'assistante (outil etape_script) ; null avant la première ou sans l'outil. */
+  etape: number | null;
 } {
   const router = useRouter();
   const [etat, setEtat] = useState('composition');
@@ -52,6 +55,7 @@ export function useFilAppel(
   const [termineLe, setTermineLe] = useState<number | null>(null);
   const [enLigneDepuis, setEnLigneDepuis] = useState<number | null>(null);
   const [niveaux, setNiveaux] = useState<TamponNiveaux | null>(null);
+  const [etape, setEtape] = useState<number | null>(null);
   const surTermine = useRef(onTermine);
   useEffect(() => {
     surTermine.current = onTermine;
@@ -68,7 +72,7 @@ export function useFilAppel(
     const tampon = new TamponNiveaux();
     let niveauxAnnonces = false;
     source.onmessage = (m) => {
-      const e = JSON.parse(m.data) as { type: string; etat?: string; role?: TourDirect['role']; texte?: string; t?: number };
+      const e = JSON.parse(m.data) as { type: string; etat?: string; role?: TourDirect['role']; texte?: string; t?: number; numero?: unknown };
       if (e.type === 'niveaux') {
         const lot = lotDeNiveaux(e);
         if (!lot) return;
@@ -96,6 +100,10 @@ export function useFilAppel(
       } else if (e.type === 'tour' && e.role && e.texte?.trim()) {
         const tour = { role: e.role, texte: e.texte, recuLe: Date.now() };
         setTours((t) => [...t, tour]);
+      } else if (e.type === 'etape') {
+        // Rejoué d'un coup à qui arrive tard : la dernière étape reçue l'emporte.
+        const n = numeroEtape(e.numero);
+        if (n !== null) setEtape(n);
       }
     };
     // Coupure passagère : EventSource se reconnecte seul et reprend après le dernier événement reçu.
@@ -111,7 +119,7 @@ export function useFilAppel(
     };
   }, [appelId, router, suivre]);
 
-  return { etat, tours, perdu, termineLe, enLigneDepuis, niveaux };
+  return { etat, tours, perdu, termineLe, enLigneDepuis, niveaux, etape };
 }
 
 /* ------------------------------------------------------------------ écoute */
@@ -408,6 +416,10 @@ export interface VueBandeAppelProps {
   ecoute: { active: boolean; erreur: string | null; niveau?: () => number };
   /** Niveaux des deux voix relayés par le pont : l'onde s'en nourrit tant que l'écoute est fermée. */
   niveaux?: TamponNiveaux | null;
+  /** Dernière étape du plan signalée par l'assistante (outil etape_script), affichée tant que l'appel vit. */
+  etape?: number | null;
+  /** Intentions des étapes de la version de l'appel, pour le libellé et le total ; sans elles, « Étape 2 ». */
+  etapes?: readonly string[] | null;
   prise: { etat: EtatPrise; erreur: string | null; muet: boolean; depuis?: number | null };
   raccrochage: { enCours: boolean; erreur: string | null };
   /** Statut traitement : fil figé, contrôles retirés. */
@@ -461,6 +473,8 @@ export function VueBandeAppel({
   chrono,
   ecoute,
   niveaux = null,
+  etape = null,
+  etapes = null,
   prise,
   raccrochage,
   termine = null,
@@ -547,6 +561,8 @@ export function VueBandeAppel({
 
   const texteEtat = etat === 'prise-en-main' ? `Main reprise : ${nomAssistante} s’est tue` : (LIBELLES_ETAT[etat] ?? etat);
   const couleurEtat = vivant || prise.etat === 'active' ? 'text-antenne' : 'text-encre-3';
+  // Indicatif et discret : le bilan dira l'étape atteinte. Rien après une prise de main (l'assistante s'est tue).
+  const etapeEnCours = enLigne && prise.etat !== 'active' && etat !== 'prise-en-main' ? etapeAffichee(etape, etapes) : null;
 
   const boutons = telephone ? (
     <div className="-mx-1.5 flex flex-wrap items-center gap-x-1 gap-y-1 max-sm:grid max-sm:w-full max-sm:grid-cols-2 max-sm:[&_.touche]:hidden max-sm:[&>button]:h-11 max-sm:[&>button]:justify-center">
@@ -616,6 +632,7 @@ export function VueBandeAppel({
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 max-sm:w-full">
             <span className={`text-sm ${couleurEtat}`}>{texteEtat}</span>
             <Chrono chrono={chrono} maintenant={maintenant} enLigne={vivant} etat={etat} />
+            {etapeEnCours ? <EtapeEnCours etape={etapeEnCours} /> : null}
             {termine ? null : boutons}
           </div>
         </div>
@@ -759,6 +776,20 @@ export function VueBandeAppel({
   );
 }
 
+/** « Étape 2/4 · Qualification » : où l'assistante en est dans le plan, d'après elle. */
+function EtapeEnCours({ etape }: { etape: NonNullable<ReturnType<typeof etapeAffichee>> }) {
+  return (
+    <span className="min-w-0 truncate text-sm whitespace-nowrap text-encre-3 max-sm:max-w-full" title="Étape signalée par l’assistante ; le bilan dira l’étape atteinte.">
+      Étape{' '}
+      <span className="font-mono">
+        {etape.numero}
+        {etape.total ? `/${etape.total}` : ''}
+      </span>
+      {etape.libelle ? ` · ${etape.libelle}` : ''}
+    </span>
+  );
+}
+
 /** Le fil complet : défile dans son conteneur seulement, et seulement si l'opérateur était déjà en bas. */
 function Fil({ tours, nomProspect, nomAssistante }: { tours: TourDirect[]; nomProspect: string; nomAssistante: string }) {
   const conteneur = useRef<HTMLDivElement>(null);
@@ -828,10 +859,13 @@ export function BandeAppel({
   condensee = false,
   onTermine,
   libelleProspect,
+  etapes,
 }: {
   appelId: string;
   variante: 'bande' | 'fiche';
   identite?: IdentiteAppel;
+  /** Intentions des étapes de la version de l'appel : libellé de l'étape signalée en direct. */
+  etapes?: readonly string[] | null;
   /** Nom de qui parle côté prospect quand `identite` manque (fiche d'appel) : sinon « Prospect ». */
   libelleProspect?: string;
   debutLe?: string;
@@ -885,6 +919,8 @@ export function BandeAppel({
       chrono={chrono}
       ecoute={{ active: ecoute.active, erreur: ecoute.erreur, niveau: ecoute.niveau }}
       niveaux={fil.niveaux}
+      etape={fil.etape}
+      etapes={etapes ?? null}
       prise={{ etat: prise.etat, erreur: prise.erreur, muet: prise.muet, depuis: priseDepuis }}
       raccrochage={{ enCours: raccrochageEnCours, erreur: erreurRaccrochage }}
       termine={termine}

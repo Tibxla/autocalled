@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { after } from 'next/server';
 import { db } from '@/db';
-import { appels } from '@/db/schema';
+import { appels, versionsScript } from '@/db/schema';
 import { appelerParTelephone, enregistrerAppelSimule, preparerAppel, preparerReanalyse, reanalyser, simulerAppel, traiterAppel } from '@/lib/appels';
 import { rafraichirSiAncien } from '@/lib/agenda';
 import { jetonConversation } from '@/lib/elevenlabs';
@@ -13,7 +13,15 @@ import { exigerOperateur } from '@/lib/garde';
 import { commanderPont } from '@/lib/pont';
 
 export type DemarrageAppel =
-  | { ok: true; appelId: string; jeton: string; variables: VariablesDeLAppel; motsCles: string[] }
+  | {
+      ok: true;
+      appelId: string;
+      jeton: string;
+      variables: VariablesDeLAppel;
+      motsCles: string[];
+      /** Intentions des étapes de la version, pour nommer l'étape signalée en direct ; facultatif (campagne). */
+      etapes?: string[];
+    }
   | { ok: false; raison: string };
 
 /** Ligne navigateur : vérifie l'autorisation, obtient un jeton de conversation et enregistre l'appel. */
@@ -28,6 +36,8 @@ export async function demarrerAppelNavigateur(
   if (!preparation.ok) return preparation;
 
   await rafraichirSiAncien();
+  // Lu avant l'enregistrement : une erreur ici ne laisse pas d'appel « en cours » derrière elle.
+  const [version] = await db.select({ etapes: versionsScript.etapes }).from(versionsScript).where(eq(versionsScript.id, versionScriptId));
   const { jeton, conversationId } = await jetonConversation();
   const [appel] = await db
     .insert(appels)
@@ -43,7 +53,14 @@ export async function demarrerAppelNavigateur(
     })
     .returning({ id: appels.id });
   if (!appel) return { ok: false, raison: 'Impossible d’enregistrer l’appel.' };
-  return { ok: true, appelId: appel.id, jeton, variables: preparation.variables, motsCles: preparation.motsCles };
+  return {
+    ok: true,
+    appelId: appel.id,
+    jeton,
+    variables: preparation.variables,
+    motsCles: preparation.motsCles,
+    etapes: (version?.etapes ?? []).map((e) => e.intention),
+  };
 }
 
 /** Fin de session côté navigateur : le rapatriement et l'analyse continuent après la réponse. */

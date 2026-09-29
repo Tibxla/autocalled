@@ -10,6 +10,7 @@ import { Action } from './action';
 import { useNomAssistante } from './assistante';
 import { type TourDirect, VueBandeAppel } from './bande-appel';
 import { Saisie } from './champs';
+import { numeroEtape } from './etape-direct';
 import { prenom } from './format-appel';
 import { OndeDirect } from './onde-direct';
 
@@ -19,6 +20,8 @@ interface Proprietes {
   prospectNom: string;
   versionScriptId: string;
   campagneId?: string | null;
+  /** Intentions des étapes de la version, si l'ouverture ne les rend pas (enchaînement d'une campagne). */
+  etapes?: readonly string[] | null;
   /**
    * Appelé quand l'appel est fini ; par défaut, on ouvre la page de l'appel. `echec` porte le message quand
    * la connexion à Mina a raté : l'appel a été clos sans conversation, rien ne doit s'enchaîner derrière.
@@ -47,6 +50,7 @@ function Conversation({
   prospectNom,
   versionScriptId,
   campagneId = null,
+  etapes: etapesParDefaut = null,
   onFin,
   demarrageAuto,
   ouvrir,
@@ -59,6 +63,9 @@ function Conversation({
   const [tours, setTours] = useState<TourDirect[]>([]);
   const [enLigneDepuis, setEnLigneDepuis] = useState<number | null>(null);
   const [finLe, setFinLe] = useState(0);
+  // Étape du plan signalée par l'assistante (outil etape_script), et les intentions de la version pour la nommer.
+  const [etape, setEtape] = useState<number | null>(null);
+  const [etapes, setEtapes] = useState<readonly string[] | null>(etapesParDefaut);
   const appelId = useRef<string | null>(null);
   const phaseCourante = useRef<Phase>('repos');
   const idReponse = useId();
@@ -121,6 +128,7 @@ function Conversation({
     setErreur(null);
     setTours([]);
     setEnLigneDepuis(null);
+    setEtape(null);
     changerPhase('connexion');
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -143,6 +151,7 @@ function Conversation({
     }
     appelId.current = demarrage.appelId;
     const id = demarrage.appelId;
+    setEtapes(demarrage.etapes ?? etapesParDefaut);
     conversation.startSession({
       conversationToken: demarrage.jeton,
       connectionType: 'webrtc',
@@ -152,9 +161,14 @@ function Conversation({
         proposer_creneaux: () => outilProposerCreneaux(id),
         reserver_creneau: (parametres: { debut?: string; email?: string; adresse_confirmee?: boolean }) =>
           outilReserverCreneau(id, parametres?.debut, parametres?.email, parametres?.adresse_confirmee),
+        // Silencieux (expects_response faux) : l'étape s'affiche, rien ne revient à l'assistante.
+        etape_script: (parametres: { numero?: unknown }) => {
+          const n = numeroEtape(parametres?.numero);
+          if (n !== null) setEtape(n);
+        },
       },
     });
-  }, [abandonner, campagneId, changerPhase, conversation, entrepriseId, ouvrir, prospectId, versionScriptId]);
+  }, [abandonner, campagneId, changerPhase, conversation, entrepriseId, etapesParDefaut, ouvrir, prospectId, versionScriptId]);
 
   const lance = useRef(false);
   useEffect(() => {
@@ -208,6 +222,8 @@ function Conversation({
         tours={tours}
         chrono={phase === 'en-appel' && enLigneDepuis ? { libelle: 'en ligne', depuis: enLigneDepuis } : null}
         ecoute={{ active: false, erreur: null }}
+        etape={etape}
+        etapes={etapes}
         prise={{ etat: 'repos', erreur: null, muet: false }}
         raccrochage={{ enCours: false, erreur: null }}
         termine={phase === 'fin' ? { le: finLe } : null}
