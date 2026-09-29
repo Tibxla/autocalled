@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState, useTransition, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, useTransition, type FormEvent } from 'react';
 import { NomDeLAssistante } from '@/components/assistante';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
 import { Action, Champ, LigneDefinition, Message, Saisie } from '@/components/ui';
@@ -236,8 +236,6 @@ export function PanneauTelephone({
           nom={telephone.nom || 'ce téléphone'}
           adresse={telephone.adresse}
           oublier={gestes.oublier}
-          // Déconnecté, « Reconnecter le téléphone » est déjà sous le verdict de la page : une seule fois par écran.
-          reconnecter={telephone.connecte ? gestes.reconnecter : null}
           onChanger={() => {
             setAppairage(null);
             setChanger(true);
@@ -318,10 +316,12 @@ const ATTENTE_RECONNEXION_MS = 12_000;
 
 /**
  * Relance la liaison Bluetooth à distance : utile quand le téléphone ne répond plus (liaison endormie) ou vient
- * de revenir à portée, sans avoir à le toucher. Personne n'est appelé : ni confirmation ni raccourci clavier.
- * « Reconnexion… » tient une douzaine de secondes, puis la page se relit.
+ * de revenir à portée, sans avoir à le toucher. Personne n'est appelé : ni confirmation ni raccourci clavier
+ * (aucun raccourci n'écrit, clavier.tsx). « Reconnexion… » tient une douzaine de secondes, puis la page se
+ * relit ; `apres` passe alors, pour effacer un échec d'appel devenu périmé.
+ * Où l'action apparaît, et quand : reconnexion.ts.
  */
-export function useReconnexion(reconnecter: GestesTelephone['reconnecter'] = reconnecterTelephone) {
+export function useReconnexion(reconnecter: GestesTelephone['reconnecter'] = reconnecterTelephone, apres?: () => void) {
   const router = useRouter();
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -343,6 +343,7 @@ export function useReconnexion(reconnecter: GestesTelephone['reconnecter'] = rec
     }
     minuterie.current = setTimeout(() => {
       setEnCours(false);
+      apres?.();
       router.refresh();
     }, ATTENTE_RECONNEXION_MS);
   };
@@ -350,22 +351,46 @@ export function useReconnexion(reconnecter: GestesTelephone['reconnecter'] = rec
 }
 
 /**
- * « Reconnecter le téléphone » et son éventuelle erreur. Posée dans une rangée d'actions `flex-wrap` :
- * l'erreur passe sur sa propre ligne sous la rangée.
+ * « Reconnecter le téléphone », son aide et son éventuelle erreur, dans une rangée d'actions `flex-wrap` :
+ * l'aide et l'erreur passent chacune sur leur ligne sous l'action. Forte quand la ligne est coupée (c'est le
+ * geste de secours, 44 px de haut sur mobile), discrète quand le téléphone est dit connecté.
  */
 export function ActionReconnecter({
   reconnecter,
   ton = 'normal',
+  aide,
+  suite,
+  apres,
 }: {
   reconnecter?: GestesTelephone['reconnecter'];
-  ton?: 'normal' | 'discret';
+  ton?: 'fort' | 'normal' | 'discret';
+  aide?: string;
+  /** Les actions voisines, sur la même rangée, avant l'aide et l'erreur. */
+  suite?: React.ReactNode;
+  /** Après la reconnexion, quand la page se relit. */
+  apres?: () => void;
 }) {
-  const { enCours, erreur, lancer } = useReconnexion(reconnecter);
+  const { enCours, erreur, lancer } = useReconnexion(reconnecter, apres);
+  const idAide = useId();
   return (
     <>
-      <Action ton={ton} enCours={enCours} libelleEnCours="Reconnexion…" disabled={enCours} onClick={lancer}>
+      <Action
+        ton={ton}
+        enCours={enCours}
+        libelleEnCours="Reconnexion…"
+        disabled={enCours}
+        onClick={lancer}
+        aria-describedby={aide ? idAide : undefined}
+        className={ton === 'fort' ? 'max-sm:h-11' : ''}
+      >
         Reconnecter le téléphone
       </Action>
+      {suite}
+      {aide ? (
+        <p id={idAide} className="basis-full px-1.5 text-sm text-encre-3">
+          {aide}
+        </p>
+      ) : null}
       {erreur ? (
         <Message ton="alerte" className="mx-1.5 basis-full">
           {erreur}
@@ -376,20 +401,18 @@ export function ActionReconnecter({
 }
 
 /**
- * Rangée des gestes sur le téléphone connu : reconnecter (réversible, sans confirmation ; téléphone connecté
- * mais figé, sinon la page l'offre sous son verdict), changer, oublier.
+ * Rangée des gestes sur le téléphone connu : changer, oublier. « Reconnecter le téléphone » est en tête de la
+ * page, sous son verdict, connecté ou non : une seule fois par écran.
  */
 function ActionsTelephone({
   nom,
   adresse,
   oublier,
-  reconnecter,
   onChanger,
 }: {
   nom: string;
   adresse: string;
   oublier: GestesTelephone['oublier'];
-  reconnecter: GestesTelephone['reconnecter'] | null;
   onChanger: () => void;
 }) {
   const router = useRouter();
@@ -399,7 +422,6 @@ function ActionsTelephone({
   return (
     <div className="grid gap-3">
       <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-        {reconnecter ? <ActionReconnecter reconnecter={reconnecter} /> : null}
         <Action ton="normal" onClick={onChanger} disabled={confirmation.ouverte}>
           Changer de téléphone
         </Action>
