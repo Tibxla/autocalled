@@ -88,6 +88,12 @@ describe('variablesDeLAppel', () => {
     );
   });
 
+  it('donne l’issue seule d’un échange dont le bilan est purgé (durée de conservation)', () => {
+    const v = variablesDeLAppel({ ...contexte, historique: [{ le: new Date('2025-09-20T09:00:00Z'), issue: 'Refus', resume: '' }] });
+
+    expect(v.historique_appels).toBe('Le samedi 20 septembre : Refus.');
+  });
+
   it('décrit le rendez-vous : une visio avec l’interlocuteur de l’entreprise', () => {
     expect(variablesDeLAppel(contexte).rendez_vous).toBe('une visio de 30 minutes avec Camille');
   });

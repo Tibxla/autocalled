@@ -98,7 +98,7 @@ export function variablesDeLAppel(c: ContexteAppel): VariablesDeLAppel {
 
   const historique = [...c.historique]
     .sort((a, b) => a.le.getTime() - b.le.getTime())
-    .map((h) => `Le ${jourCourt.format(h.le)} : ${h.issue}. ${h.resume}`)
+    .map((h) => `Le ${jourCourt.format(h.le)} : ${h.issue}.${h.resume ? ` ${h.resume}` : ''}`)
     .join('\n');
 
   return {

@@ -97,6 +97,52 @@ export const schemaBilan = z.strictObject({
 
 export type Bilan = z.infer<typeof schemaBilan>;
 
+/**
+ * Un bilan passé la durée de conservation (ADR 0014) : le texte libre (résumé, citations, libellés d'objections
+ * nouvelles, points forts et faibles, rappel dit) est effacé ; restent les champs structurés qui font les chiffres de
+ * l'analyse des versions (issue, étape atteinte, objections par identifiant avec leur levée et leur temps CRAC) et
+ * la date du rappel. `purge` le distingue d'un bilan entier.
+ */
+export const schemaBilanPurge = z.strictObject({
+  purge: z.literal(true),
+  issue: z.string(),
+  etapeAtteinte: z.int().min(0),
+  objections: z
+    .array(
+      z.strictObject({
+        objectionId: z.string().nullable(),
+        levee: z.boolean(),
+        tempsBloquant: z.enum(TEMPS_CRAC).nullable(),
+      }),
+    )
+    .max(8),
+  rappelLe: schemaRappelDate.nullable().optional(),
+});
+
+export type BilanPurge = z.infer<typeof schemaBilanPurge>;
+
+/** Ce qu'un appel porte en base : un bilan entier, ou ce qu'il en reste après la durée de conservation. */
+export type BilanEnregistre = Bilan | BilanPurge;
+
+export const estBilanPurge = (b: BilanEnregistre): b is BilanPurge => 'purge' in b && b.purge === true;
+
+/** Le bilan entier, texte libre compris, ou null s'il n'y en a pas ou s'il est purgé. */
+export const bilanEntier = (b: BilanEnregistre | null | undefined): Bilan | null => (b && !estBilanPurge(b) ? b : null);
+
+/**
+ * Le bilan réduit à ses champs structurés, recopiés un à un : aucun autre champ ne passe. Idempotent : un bilan
+ * déjà purgé ressort identique.
+ */
+export function purgerBilan(b: BilanEnregistre): BilanPurge {
+  return {
+    purge: true,
+    issue: b.issue,
+    etapeAtteinte: b.etapeAtteinte,
+    objections: b.objections.map((o) => ({ objectionId: o.objectionId, levee: o.levee, tempsBloquant: o.tempsBloquant })),
+    ...(b.rappelLe !== undefined ? { rappelLe: b.rappelLe } : {}),
+  };
+}
+
 export type ValidationBilan = { ok: true; bilan: Bilan } | { ok: false; erreurs: string[] };
 
 function normaliser(texte: string): string {
