@@ -771,7 +771,7 @@ export function VueBandeAppel({
           <span className="min-w-0 truncate font-semibold max-sm:max-w-[6rem]">{identite?.prospect ?? nomProspect}</span>
           <span className={`shrink-0 text-sm max-sm:hidden ${couleurEtat}`}>{texteEtat}</span>
           <span className="max-sm:hidden">
-            <Chrono chrono={chrono} maintenant={maintenant} enLigne={vivant} etat={etat} />
+            {analyseCentree ? null : <Chrono chrono={chrono} maintenant={maintenant} enLigne={vivant} etat={etat} />}
           </span>
           <span className="min-w-0 flex-1 truncate text-encre-2 max-sm:hidden">{tourMina ? fin(tourMina.texte, 60) : ''}</span>
           {termine ? null : (
