@@ -168,6 +168,18 @@ describe('pousser_assistante', () => {
     expect((await c.appeler('pousser_assistante')).texte).toBe('Rien à pousser : agent/ est identique à la configuration ElevenLabs.');
   });
 
+  it('garde l’accord au journal quand la poussée échoue après lui, sans renvoyer le détail au modèle', async () => {
+    const c = await connecter('accepter');
+    await modifierTemperature(c);
+    faux.modifier = async () => {
+      throw new Error('ElevenLabs répond 500 (détail interne)');
+    };
+
+    expect(await c.appeler('pousser_assistante')).toMatchObject({ erreur: true, texte: 'Erreur interne : l’outil a échoué (le détail est au journal MCP).' });
+    const [ligne] = await db.select().from(journalMcp).where(eq(journalMcp.outil, 'pousser_assistante')).orderBy(desc(journalMcp.le)).limit(1);
+    expect(ligne).toMatchObject({ resultat: 'erreur', confirmation: 'acceptee', message: expect.stringContaining('détail interne') });
+  });
+
   it('ne pousse rien si l’opérateur refuse', async () => {
     const c = await connecter('refuser');
     await modifierTemperature(c);
