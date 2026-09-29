@@ -20,9 +20,10 @@ import { Touche } from './touche';
  *   V nouvelle version ; R relire (Téléphone) ; 1 à 8 onglets d'entreprise ; j et k élément suivant et
  *   précédent sur une fiche ; lecteur d'un appel terminé : Espace, ← →, ↑ ↓, Échap.
  * - Globaux : ? aide, / recherche (puis ↓ vers les résultats), g puis h, e, a, t, r (retenus par la garde
- *   de sortie pendant un appel navigateur).
+ *   de sortie pendant un appel navigateur). g puis t mène à Téléphone, dont « Reconnecter le téléphone » est
+ *   la première action : aucune touche ne déclenche la reconnexion elle-même.
  * - Jamais de touche seule pour Raccrocher, Lancer, Reprendre, Suspendre, Révoquer, Oublier, Archiver,
- *   Réanalyser, Importer, Enregistrer, Appeler.
+ *   Réanalyser, Importer, Enregistrer, Appeler, Reconnecter.
  */
 
 export type GroupeRaccourci = 'Appel' | 'Liste' | 'Navigation' | 'Page' | 'Confirmation';
@@ -262,7 +263,7 @@ export function FournisseurClavier({ children }: { children: React.ReactNode }) 
     { touche: 'h', sequence: 'g', libelle: 'Aller à l’accueil', groupe: 'Navigation', couche: 'global', action: () => aller('/') },
     { touche: 'e', sequence: 'g', libelle: 'Aller aux entreprises', groupe: 'Navigation', couche: 'global', action: () => aller('/entreprises') },
     { touche: 'a', sequence: 'g', libelle: 'Aller aux appels', groupe: 'Navigation', couche: 'global', action: () => aller('/appels') },
-    { touche: 't', sequence: 'g', libelle: 'Aller au téléphone', groupe: 'Navigation', couche: 'global', action: () => aller('/telephone') },
+    { touche: 't', sequence: 'g', libelle: 'Aller au téléphone (reconnexion)', groupe: 'Navigation', couche: 'global', action: () => aller('/telephone') },
     { touche: 'r', sequence: 'g', libelle: 'Aller aux réglages', groupe: 'Navigation', couche: 'global', action: () => aller('/reglages') },
   ]);
 
