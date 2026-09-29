@@ -31,18 +31,25 @@ export async function prospectsAutorisesParEntreprise(): Promise<Map<string, num
   return comptes;
 }
 
-export async function entrepriseParSlug(slug: string) {
+/** L'entreprise d'un slug, ou null : pour le serveur MCP, qui ne peut pas répondre par une page 404. */
+export async function trouverEntreprise(slug: string) {
   const [entreprise] = await db.select().from(entreprises).where(eq(entreprises.slug, slug)).limit(1);
-  if (!entreprise) notFound();
-  return entreprise;
+  return entreprise ?? null;
 }
 
-export async function prospectParId(entrepriseId: string, id: string) {
+export async function trouverProspect(entrepriseId: string, id: string) {
   const [prospect] = await db
     .select()
     .from(prospects)
     .where(and(eq(prospects.entrepriseId, entrepriseId), eq(prospects.id, id)))
     .limit(1);
-  if (!prospect) notFound();
-  return prospect;
+  return prospect ?? null;
+}
+
+export async function entrepriseParSlug(slug: string) {
+  return (await trouverEntreprise(slug)) ?? notFound();
+}
+
+export async function prospectParId(entrepriseId: string, id: string) {
+  return (await trouverProspect(entrepriseId, id)) ?? notFound();
 }

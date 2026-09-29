@@ -3,10 +3,10 @@ import { creerEvenement, creneauParle, listerCalendriers, occupations as occupat
 import { type Intervalle, type PlageHoraire, type ReglesRendezVous, epelerAdresse, estReservable, occupationsDepuisLibres, proposerCreneaux } from '@autocalled/domain';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { after } from 'next/server';
 import { db } from '@/db';
 import { appels, disponibilites, entreprises, prospects, rendezVous } from '@/db/schema';
 import { claudeStructure } from './claude';
+import { enFond } from './fond';
 import { accesGoogle } from './google';
 
 /**
@@ -102,7 +102,7 @@ export async function etatAgenda() {
 /** Relance une lecture en tâche de fond si la copie a plus de dix minutes. À appeler au début d'un appel. */
 export async function rafraichirSiAncien(): Promise<void> {
   const etat = await etatAgenda();
-  if (!etat || Date.now() - etat.synchroniseLe.getTime() > FRAICHEUR_MINUTES * 60_000) after(() => synchroniserAgenda());
+  if (!etat || Date.now() - etat.synchroniseLe.getTime() > FRAICHEUR_MINUTES * 60_000) enFond(() => synchroniserAgenda());
 }
 
 /** Plages occupées : la copie de l'agenda, plus les rendez-vous déjà pris par Mina et pas encore relus. */
@@ -224,7 +224,7 @@ export async function reserverPourAppel(appelId: string, debutBrut: unknown, ema
       .set({ email })
       .where(and(eq(prospects.entrepriseId, c.appel.entrepriseId), eq(prospects.id, c.appel.prospectId)));
   }
-  if (rdv) after(() => creerEvenementDuRendezVous(rdv.id));
+  if (rdv) enFond(() => creerEvenementDuRendezVous(rdv.id));
   return {
     reserve: true,
     libelle: creneauParle(debut, c.regles.fuseau),
