@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { epelerAdresse } from './epellation.ts';
 
 describe('epelerAdresse', () => {
-  it('épelle la partie avant l’arobase lettre par lettre, et dit un domaine courant en mots', () => {
-    expect(epelerAdresse('matheo23@gmail.com')).toBe('M, A, T, H, E, O, 2, 3, arobase gmail point com');
+  it('épelle la partie avant l’arobase lettre par lettre, et le domaine aussi quand il n’est pas courant', () => {
+    expect(epelerAdresse('matheo23@exemple.test')).toBe('M, A, T, H, E, O, 2, 3, arobase E, X, E, M, P, L, E, point test');
   });
 
   it('nomme les signes', () => {

@@ -82,11 +82,11 @@ describe('recreer_evenement', () => {
   }
 
   it('annonce l’invitation à l’adresse du prospect, et ne crée rien sans accord', async () => {
-    const rdv = await rendezVousEnEchec('julie@exemple.fr');
+    const rdv = await rendezVousEnEchec('julie@exemple.test');
     const { appeler, messages } = await connecter({ elicitation: 'refuser' });
 
     expect((await appeler('recreer_evenement', { rendezVousId: rdv.id })).erreur).toBe(true);
-    expect(messages[0]).toBe('Créer dans Google Agenda la visio de Julie Fictive (Gîte fictif) du mardi 6 octobre 2026 à 10:00, et envoyer l’invitation à julie@exemple.fr.');
+    expect(messages[0]).toBe('Créer dans Google Agenda la visio de Julie Fictive (Gîte fictif) du mardi 6 octobre 2026 à 10:00, et envoyer l’invitation à julie@exemple.test.');
     expect(await db.select({ statut: rendezVous.statut, erreur: rendezVous.erreur }).from(rendezVous)).toEqual([{ statut: 'echec', erreur: 'panne' }]);
   });
 

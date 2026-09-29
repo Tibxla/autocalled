@@ -213,7 +213,7 @@
           "historique_appels": "Aucun échange précédent.",
           "script_etapes": "1. Accroche : une phrase sur ce que tu as remarqué chez elle, puis tu demandes si elle a deux minutes. 2. Qualification : comment arrivent ses réservations aujourd'hui. 3. Pitch : le coût des commissions, en une phrase, relié à ce qu'elle a dit. 4. Rendez-vous : un échange de trente minutes pour lui montrer ce que ça donnerait.",
           "objections": "« On est déjà sur Booking » : creuser ce que Booking lui coûte par an ; argument : le site ne remplace pas Booking, il récupère les clients qui reviennent. « Pas le temps » : creuser si c'est maintenant ou en général ; argument : trente minutes, au moment qui l'arrange. « Ça ne m'intéresse pas » : creuser si c'est le sujet ou le moment.",
-          "prospect_email": "julie@exemple.fr",
+          "prospect_email": "julie@exemple.test",
           "rendez_vous": "une visio de 30 minutes avec Camille"
         }
       }

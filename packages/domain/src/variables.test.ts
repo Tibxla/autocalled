@@ -94,7 +94,7 @@ describe('variablesDeLAppel', () => {
 
   it('donne l’e-mail connu du prospect, ou dit qu’il faut le demander', () => {
     expect(variablesDeLAppel(contexte).prospect_email).toBe('inconnu, à demander');
-    expect(variablesDeLAppel({ ...contexte, prospect: { ...contexte.prospect, email: 'julie@exemple.fr' } }).prospect_email).toBe('julie@exemple.fr');
+    expect(variablesDeLAppel({ ...contexte, prospect: { ...contexte.prospect, email: 'julie@exemple.test' } }).prospect_email).toBe('julie@exemple.test');
   });
 
   it('se contente du nom quand le rôle ou la société manquent', () => {

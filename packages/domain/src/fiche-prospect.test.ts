@@ -37,11 +37,11 @@ describe('lireFiche', () => {
   });
 
   it('lit un e-mail facultatif et refuse une adresse mal formée', () => {
-    const avec = lireFiche('julie.md', '---\nnom: Julie\ntelephone: "0639980001"\nemail: julie@exemple.fr\n---\nContexte.');
+    const avec = lireFiche('julie.md', '---\nnom: Julie\ntelephone: "0639980001"\nemail: julie@exemple.test\n---\nContexte.');
     const sans = lireFiche('julie.md', '---\nnom: Julie\ntelephone: "0639980001"\n---\nContexte.');
     const faux = lireFiche('julie.md', '---\nnom: Julie\ntelephone: "0639980001"\nemail: julie-arobase-exemple\n---\nContexte.');
 
-    expect(avec.ok && avec.fiche.email).toBe('julie@exemple.fr');
+    expect(avec.ok && avec.fiche.email).toBe('julie@exemple.test');
     expect(sans.ok && sans.fiche.email).toBeNull();
     expect(faux.ok).toBe(false);
   });
@@ -185,7 +185,7 @@ describe('ecrireFiche', () => {
     societe: 'Gîte des Aravis',
     role: 'Gérante',
     telephone: '+33639980001' as FicheProspect['telephone'],
-    email: 'julie@exemple.fr',
+    email: 'julie@exemple.test',
     contexte: 'Gîte de 4 chambres.\n\nPiste : parler de la commission.',
   };
 
