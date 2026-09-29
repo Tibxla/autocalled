@@ -1,6 +1,9 @@
 /**
  * Les variables dynamiques injectées dans le prompt de l'assistante au début de chaque appel. L'assistante
  * est un agent unique : tout ce qu'elle sait d'elle-même (son nom), de l'entreprise et du prospect passe par ici.
+ *
+ * Un champ vide de la fiche de l'entreprise n'est pas transmis (ADR 0015) : sa variable part vide, car ElevenLabs
+ * exige que toutes existent, et le prompt dit qu'une ligne sans rien après ses deux-points n'existe pas.
  */
 
 export const VARIABLES_DE_L_APPEL = [
@@ -12,6 +15,7 @@ export const VARIABLES_DE_L_APPEL = [
   'entreprise_arguments',
   'entreprise_prix_consigne',
   'entreprise_interdits',
+  'entreprise_complements',
   'prospect_nom',
   'prospect_role',
   'prospect_societe',
@@ -35,6 +39,8 @@ export interface ContexteAppel {
     arguments: string;
     prixConsigne: string;
     interdits: string;
+    /** Informations complémentaires, texte libre que l'assistante n'emploie que si la conversation y mène. */
+    complements: string;
   };
   prospect: { nom: string; role: string | null; societe: string | null; contexte: string; email: string | null };
   /** Avec qui le prospect aura sa visio, et combien de temps. */
@@ -103,11 +109,13 @@ export function variablesDeLAppel(c: ContexteAppel): VariablesDeLAppel {
 
   return {
     ...simples,
-    entreprise_offre: ou(c.entreprise.offre, 'à présenter simplement.'),
-    entreprise_cible: ou(c.entreprise.cible, 'les professionnels.'),
-    entreprise_arguments: ou(c.entreprise.arguments, 'à tirer de la conversation.'),
-    entreprise_prix_consigne: ou(c.entreprise.prixConsigne, 'pas de consigne particulière.'),
-    entreprise_interdits: ou(c.entreprise.interdits, 'rien de particulier.'),
+    // Vides, ils le restent : aucun texte par défaut ne parle à la place de l'opérateur.
+    entreprise_offre: c.entreprise.offre.trim(),
+    entreprise_cible: c.entreprise.cible.trim(),
+    entreprise_arguments: c.entreprise.arguments.trim(),
+    entreprise_prix_consigne: c.entreprise.prixConsigne.trim(),
+    entreprise_interdits: c.entreprise.interdits.trim(),
+    entreprise_complements: c.entreprise.complements.trim(),
     prospect_contexte: ou(c.prospect.contexte, 'Rien de plus.'),
     prospect_email: c.prospect.email ?? 'inconnu, à demander',
     historique_appels: historique || 'Aucun échange précédent.',

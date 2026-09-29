@@ -10,6 +10,7 @@ const contexte: ContexteAppel = {
     arguments: 'Moins de commission.',
     prixConsigne: '',
     interdits: '',
+    complements: '',
   },
   prospect: { nom: 'Julie Martin', role: 'Gérante', societe: 'Gîte des Aravis', contexte: 'Quatre chambres.', email: null },
   rendezVous: { interlocuteur: 'Camille', dureeMinutes: 30 },
@@ -66,12 +67,32 @@ describe('variablesDeLAppel', () => {
     );
   });
 
-  it('remplace les champs vides par une consigne neutre plutôt que par du vide', () => {
-    const v = variablesDeLAppel(contexte);
+  it('ne transmet rien pour un champ vide de la fiche de l’entreprise : la variable part vide', () => {
+    const v = variablesDeLAppel({
+      ...contexte,
+      entreprise: { nom: 'Atelier Vitrine', offre: '  ', cible: '', arguments: '\n', prixConsigne: '', interdits: '', complements: ' \n ' },
+    });
 
-    expect(v.entreprise_prix_consigne).toBe('pas de consigne particulière.');
-    expect(v.entreprise_interdits).toBe('rien de particulier.');
+    expect(v.entreprise_offre).toBe('');
+    expect(v.entreprise_cible).toBe('');
+    expect(v.entreprise_arguments).toBe('');
+    expect(v.entreprise_prix_consigne).toBe('');
+    expect(v.entreprise_interdits).toBe('');
+    expect(v.entreprise_complements).toBe('');
     expect(v.historique_appels).toBe('Aucun échange précédent.');
+  });
+
+  it('transmet les informations complémentaires telles qu’écrites, sans leurs blancs de bord', () => {
+    const v = variablesDeLAppel({ ...contexte, entreprise: { ...contexte.entreprise, complements: '\nParking : gratuit devant le gîte.\nAnimaux acceptés.  ' } });
+
+    expect(v.entreprise_complements).toBe('Parking : gratuit devant le gîte.\nAnimaux acceptés.');
+    expect(v.entreprise_offre).toBe('Des sites de réservation directe.');
+  });
+
+  it('garde « un membre de l’équipe » quand l’interlocuteur est vide : la phrase du rendez-vous en a besoin', () => {
+    expect(variablesDeLAppel({ ...contexte, rendezVous: { interlocuteur: ' ', dureeMinutes: 30 } }).rendez_vous).toBe(
+      'une visio de 30 minutes avec un membre de l’équipe',
+    );
   });
 
   it('résume les échanges précédents, du plus ancien au plus récent', () => {
