@@ -1,75 +1,82 @@
-import { asc, desc, eq } from 'drizzle-orm';
+import { asc, desc, eq, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { PastilleAutorisation } from '@/components/pastille-autorisation';
-import { EtatVide, TitreSection } from '@/components/ui';
+import { dateCourte, etatAppel, issueEffective } from '@/components/format-appel';
+import { Page } from '@/components/ui';
 import { db } from '@/db';
-import { prospects, textesConsentement } from '@/db/schema';
+import { appels, issuesPersonnalisees, prospects, textesConsentement } from '@/db/schema';
 import { autorisationsDe } from '@/lib/autorisations';
-import { entrepriseParSlug } from '@/lib/pages';
 import { numeroLisible } from '@/lib/format';
-import { FormulaireImport } from './formulaire-import';
+import { entrepriseParSlug } from '@/lib/pages';
+import { ListeProspects, type LigneProspect } from './liste-prospects';
 
 export const metadata: Metadata = { title: 'Prospects' };
 
-export default async function PageProspects({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params;
+export default async function PageProspects({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ filtre?: string | string[]; import?: string | string[] }>;
+}) {
+  const [{ slug }, recherche] = await Promise.all([params, searchParams]);
   const entreprise = await entrepriseParSlug(slug);
-  const [liste, [texte]] = await Promise.all([
-    db.select().from(prospects).where(eq(prospects.entrepriseId, entreprise.id)).orderBy(asc(prospects.nom)),
+  const [liste, [texte], derniers, issuesPerso] = await Promise.all([
+    db.select().from(prospects).where(eq(prospects.entrepriseId, entreprise.id)).orderBy(asc(prospects.nom), asc(prospects.id)),
     db.select().from(textesConsentement).orderBy(desc(textesConsentement.version)).limit(1),
+    // Le dernier appel de chaque prospect, en une requête.
+    db
+      .selectDistinctOn([appels.prospectId], {
+        prospectId: appels.prospectId,
+        debutLe: appels.debutLe,
+        statut: appels.statut,
+        ligne: appels.ligne,
+        issue: appels.issue,
+        issueSysteme: appels.issueSysteme,
+        erreur: appels.erreur,
+        conversationId: appels.conversationId,
+        rappel: sql<string | null>`${appels.bilan}->>'rappel'`,
+      })
+      .from(appels)
+      .where(eq(appels.entrepriseId, entreprise.id))
+      .orderBy(appels.prospectId, desc(appels.debutLe)),
+    db
+      .select({ id: issuesPersonnalisees.id, libelle: issuesPersonnalisees.libelle })
+      .from(issuesPersonnalisees)
+      .where(eq(issuesPersonnalisees.entrepriseId, entreprise.id)),
   ]);
   const autorisations = await autorisationsDe(liste.map((p) => p.telephone));
+  const dernierDe = new Map(derniers.map((d) => [d.prospectId, d]));
+  const libellePerso = new Map(issuesPerso.map((i) => [`perso:${i.id}`, i.libelle]));
+
+  const lignes: LigneProspect[] = liste.map((p) => {
+    const d = dernierDe.get(p.id);
+    const lisible = numeroLisible(p.telephone);
+    return {
+      id: p.id,
+      nom: p.nom,
+      detail: [p.role, p.societe].filter(Boolean).join(', '),
+      numero: lisible,
+      chiffres: `${lisible.replace(/\D/g, '')} ${p.telephone.replace(/\D/g, '')}`,
+      autorisation: autorisations.get(p.telephone),
+      dernier: d
+        ? { date: dateCourte(d.debutLe).split(' ')[0] ?? '', libelle: etatAppel(d, { libellePerso: d.issue ? libellePerso.get(d.issue) : null }).libelle }
+        : null,
+      rappel: d && d.statut === 'termine' && issueEffective(d) === 'rappel-convenu' ? (d.rappel ?? 'moment non précisé') : null,
+    };
+  });
+
+  const filtre = typeof recherche.filtre === 'string' ? recherche.filtre : undefined;
 
   return (
-    <div className="grid gap-14 lg:grid-cols-[minmax(0,1fr)_22rem]">
-      <section className="grid content-start">
-        <TitreSection>
-          Prospects <span className="font-normal text-encre-3">{liste.length}</span>
-        </TitreSection>
-        {liste.length === 0 ? (
-          <EtatVide titre="Aucun prospect">
-            Importe des fiches Markdown : un en-tête avec nom, telephone, societe et role, puis le contexte que Mina doit connaître.
-          </EtatVide>
-        ) : (
-          <table className="w-full text-left">
-            <thead className="sr-only">
-              <tr>
-                <th>Prospect</th>
-                <th>Téléphone</th>
-                <th>Autorisation</th>
-              </tr>
-            </thead>
-            <tbody>
-              {liste.map((p) => (
-                <tr key={p.id} className="group border-b border-filet">
-                  <td className="py-4 pr-4 align-baseline">
-                    <Link href={`/entreprises/${slug}/prospects/${p.id}`} className="grid gap-0.5">
-                      <span className="font-medium group-hover:underline group-hover:decoration-filet-fort group-hover:underline-offset-4">
-                        {p.nom}
-                      </span>
-                      <span className="text-sm text-encre-2">{[p.role, p.societe].filter(Boolean).join(', ') || '—'}</span>
-                    </Link>
-                  </td>
-                  <td className="hidden w-40 py-4 pr-8 text-right align-baseline font-mono text-sm whitespace-nowrap text-encre-2 sm:table-cell">{numeroLisible(p.telephone)}</td>
-                  <td className="w-40 py-4 text-right align-baseline whitespace-nowrap">
-                    <PastilleAutorisation autorisation={autorisations.get(p.telephone)} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      <section className="grid content-start gap-5">
-        <TitreSection>Importer</TitreSection>
-        {texte ? (
-          <FormulaireImport entrepriseId={entreprise.id} texteConsentement={texte.texte} />
-        ) : (
-          <p className="text-sm text-alerte">Aucun texte de consentement en base : lance les migrations.</p>
-        )}
-      </section>
-    </div>
+    <Page largeur="pleine">
+      <ListeProspects
+        slug={slug}
+        entrepriseId={entreprise.id}
+        texteConsentement={texte?.texte ?? null}
+        prospects={lignes}
+        filtreInitial={filtre}
+        importOuvert={recherche.import === '1'}
+      />
+    </Page>
   );
 }

@@ -1,144 +1,574 @@
 'use client';
 
+import type { StatutCampagne } from '@autocalled/domain';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { AppelEnDirect } from '@/components/appel-en-direct';
-import { Bouton } from '@/components/ui';
-import { SuiviTelephone } from '../../appels/[id]/suivi-telephone';
+import { BandeAppel, type IdentiteAppel } from '@/components/bande-appel';
+import { Confirmation, useConfirmation } from '@/components/confirmation';
+import type { ReglagesLigne } from '@/components/garde-fous';
+import { Action, LienAction, Message } from '@/components/ui';
 import { cloreAppelDeCampagne, lancerCampagne, ouvrirAppelSuivant, suspendreCampagne } from '../actions';
-
-const PAUSE_SECONDES = 5;
+import { phraseEstimation, phrasePlafonds, Recapitulatif, type ProspectRecapitulatif } from './recapitulatif';
 
 /**
- * La régie d'une campagne. Sur la ligne navigateur, les appels s'enchaînent après un court décompte
- * qu'on peut passer ou suspendre ; en simulation et au téléphone, le serveur déroule seul et la page suit
- * (au téléphone, avec l'appel en cours en direct).
+ * La régie d'une campagne, selon sa ligne et son statut.
+ * - Téléphone : le serveur enchaîne ; la page suit l'appel en cours par la bande d'appel commune et se relit
+ *   toutes les 3 s. Lancer et Reprendre passent par une confirmation (des numéros vont sonner).
+ * - Ligne navigateur : l'appel vit dans cette page. Rien ne part au chargement ni au retour sur la page : le
+ *   premier appel attend un geste de l'opérateur, les suivants s'enchaînent ensuite après un décompte de 5 s.
+ * - Simulation : le serveur enchaîne seul, la page se relit.
+ * Suspendre est un frein réversible : immédiat, sans confirmation ni touche.
  */
-export function Regie({
-  campagneId,
-  statut,
-  ligne,
-  entrepriseId,
-  versionScriptId,
-  prochain,
-  appelOuvert,
-  appelTelephone = null,
-}: {
+
+export interface EtatPont {
+  etat: 'joignable' | 'injoignable' | 'deconnecte' | 'inconnu';
+  plafond: string | null;
+  reglages: ReglagesLigne | null;
+}
+
+export interface RaisonSuspension {
+  texte: string;
+  ton: 'alerte' | 'neutre';
+  lienTelephone?: boolean;
+}
+
+type Ligne = 'navigateur' | 'bluetooth' | 'simulation' | 'twilio';
+type Prochain = { id: string; nom: string; societe: string | null };
+
+interface ProprietesRegie {
   campagneId: string;
-  statut: 'prete' | 'en-cours' | 'en-pause' | 'terminee';
-  ligne: 'navigateur' | 'bluetooth' | 'simulation';
+  statut: StatutCampagne;
+  ligne: Ligne;
   entrepriseId: string;
+  entreprise: { nom: string; slug: string };
   versionScriptId: string;
-  prochain: { id: string; nom: string } | null;
-  appelOuvert: string | null;
-  appelTelephone?: string | null;
-}) {
+  version: string;
+  prochain: Prochain | null;
+  restants: number;
+  enAppel: boolean;
+  appelOuvertNavigateur: string | null;
+  appelTelephone: {
+    id: string;
+    statut: 'en-cours' | 'traitement';
+    debutLe: string;
+    finLe: string | null;
+    conversation: boolean;
+    identite: IdentiteAppel;
+  } | null;
+  pont: EtatPont | null;
+  passes24h: number | null;
+  raison: RaisonSuspension | null;
+  recapitulatif: { prospects: ProspectRecapitulatif[]; autorises: number } | null;
+}
+
+const CHANGEMENT = 'La campagne a changé d’état entre-temps.';
+const PAUSE_SECONDES = 5;
+
+/** Un geste sur la campagne : toute erreur (transition refusée, double clic, second onglet) relit la page. */
+function useGeste() {
   const router = useRouter();
+  const [erreur, setErreur] = useState<string | null>(null);
   const [enCours, demarrer] = useTransition();
-  const [lance, setLance] = useState<string | null>(null);
-  const [enAppel, setEnAppel] = useState<string | null>(null);
+  const agir = (geste: () => Promise<void>, suite: { succes?: () => void; toujours?: () => void } = {}) =>
+    demarrer(async () => {
+      setErreur(null);
+      try {
+        await geste();
+        suite.succes?.();
+      } catch {
+        setErreur(CHANGEMENT);
+        router.refresh();
+      }
+      suite.toujours?.();
+    });
+  return { erreur, enCours, agir };
+}
 
-  const auto = ligne === 'navigateur' && statut === 'en-cours' && prochain !== null && appelOuvert === null;
+/** Ce qui empêche un appel téléphone de partir maintenant, d'après le pont ; null si rien ne l'empêche. */
+function blocageLigne(pont: EtatPont | null): { texte: string; lienTelephone: boolean } | null {
+  if (!pont) return null;
+  if (pont.etat === 'injoignable') return { texte: 'Ligne injoignable : aucun appel ne peut partir par le téléphone passerelle.', lienTelephone: true };
+  if (pont.etat === 'deconnecte') return { texte: 'Téléphone passerelle déconnecté : aucun appel ne peut partir.', lienTelephone: true };
+  if (pont.plafond) return { texte: pont.plafond, lienTelephone: true };
+  return null;
+}
 
-  useEffect(() => {
-    if (ligne === 'navigateur' || statut !== 'en-cours') return;
-    const minuterie = setInterval(() => router.refresh(), 3000);
-    return () => clearInterval(minuterie);
-  }, [ligne, statut, router]);
-
-  const controles = (
-    <div className="flex flex-wrap items-center gap-3">
-      {statut === 'prete' || statut === 'en-pause' ? (
-        <Bouton type="button" disabled={enCours} onClick={() => demarrer(() => lancerCampagne(campagneId))}>
-          {statut === 'prete' ? 'Lancer la campagne' : 'Reprendre'}
-        </Bouton>
-      ) : null}
-      {statut === 'en-cours' ? (
-        <Bouton type="button" variante="secondaire" disabled={enCours} onClick={() => demarrer(() => suspendreCampagne(campagneId))}>
-          Pause
-        </Bouton>
-      ) : null}
-      {statut === 'en-pause' ? <span className="text-sm text-encre-3">L’appel en cours va à son terme, aucun autre ne part.</span> : null}
-    </div>
-  );
-
-  if (appelOuvert) {
-    return (
-      <div className="grid gap-3">
-        <p className="text-sm text-encre-2">Un appel de cette campagne est resté ouvert (page fermée pendant l’appel ?).</p>
-        <Bouton
-          type="button"
-          variante="secondaire"
-          className="justify-self-start"
-          disabled={enCours}
-          onClick={() => demarrer(() => cloreAppelDeCampagne(campagneId, appelOuvert))}
-        >
-          Clore cet appel et continuer
-        </Bouton>
-      </div>
-    );
-  }
-
-  if (statut === 'terminee') return <p className="text-encre-2">Campagne terminée.</p>;
-
+function Blocage({ blocage }: { blocage: { texte: string; lienTelephone: boolean } }) {
   return (
-    <div className="grid gap-6">
-      {controles}
-      {ligne === 'simulation' && statut === 'en-cours' ? (
-        <p className="text-sm text-encre-2">Le serveur enchaîne les appels simulés ; la liste se met à jour toute seule.</p>
-      ) : null}
-      {ligne === 'bluetooth' && statut === 'en-cours' && !appelTelephone ? (
-        <p className="text-sm text-encre-2">Le serveur enchaîne les appels sur le téléphone passerelle ; la liste se met à jour toute seule.</p>
-      ) : null}
-      {ligne === 'bluetooth' && appelTelephone ? <SuiviTelephone key={appelTelephone} appelId={appelTelephone} /> : null}
-      {auto && prochain ? (
-        enAppel !== null || lance === prochain.id ? (
-          <AppelEnDirect
-            key={prochain.id}
-            entrepriseId={entrepriseId}
-            prospectId={prochain.id}
-            prospectNom={prochain.nom}
-            versionScriptId={versionScriptId}
-            campagneId={campagneId}
-            demarrageAuto
-            ouvrir={async () => {
-              const r = await ouvrirAppelSuivant(campagneId);
-              if (r.ok) setEnAppel(r.appelId);
-              return r;
-            }}
-            clore={(appelId) => cloreAppelDeCampagne(campagneId, appelId)}
-            onFin={() => {
-              setEnAppel(null);
-              router.refresh();
-            }}
-          />
-        ) : (
-          <Decompte key={prochain.id} nom={prochain.nom} onFini={() => setLance(prochain.id)} />
-        )
-      ) : null}
-    </div>
+    <Message ton="alerte" action={blocage.lienTelephone ? <LienAction href="/telephone">Ouvrir Téléphone</LienAction> : undefined}>
+      {blocage.texte}
+    </Message>
   );
 }
 
-/** Court décompte avant l'appel suivant ; remonté à chaque prospect grâce à sa clé. */
-function Decompte({ nom, onFini }: { nom: string; onFini: () => void }) {
+function Raison({ raison }: { raison: RaisonSuspension }) {
+  if (raison.ton === 'neutre') return <p className="text-base text-encre-2">{raison.texte}</p>;
+  return (
+    <Message ton="alerte" action={raison.lienTelephone ? <LienAction href="/telephone">Ouvrir Téléphone</LienAction> : undefined}>
+      {raison.texte}
+    </Message>
+  );
+}
+
+/** « Marc Dupont, Boulangerie Dupont ». */
+function nomComplet(p: Prochain): string {
+  return p.societe ? `${p.nom}, ${p.societe}` : p.nom;
+}
+
+function Actions({ children }: { children: React.ReactNode }) {
+  return <div className="-mx-1.5 flex flex-wrap items-center gap-x-5 gap-y-1 max-sm:grid max-sm:justify-items-start">{children}</div>;
+}
+
+function Suspendre({ onClick, enCours }: { onClick: () => void; enCours: boolean }) {
+  return (
+    <>
+      <Action onClick={onClick} disabled={enCours} enCours={enCours} libelleEnCours="Suspension…">
+        Suspendre
+      </Action>
+      <span className="px-1.5 text-sm text-encre-3">L’appel en cours va à son terme, aucun autre ne part.</span>
+    </>
+  );
+}
+
+export function Regie(props: ProprietesRegie) {
+  const { statut, ligne, enAppel } = props;
+  const router = useRouter();
+
+  // Le serveur enchaîne hors de la page (téléphone, simulation) : relecture toutes les 3 s, onglet visible
+  // seulement, et tout de suite au retour sur l'onglet.
+  const suivre = ligne !== 'navigateur' && (statut === 'en-cours' || (statut === 'en-pause' && enAppel));
+  useEffect(() => {
+    if (!suivre) return;
+    const relire = () => {
+      if (document.visibilityState === 'visible') router.refresh();
+    };
+    const minuterie = setInterval(relire, 3000);
+    document.addEventListener('visibilitychange', relire);
+    return () => {
+      clearInterval(minuterie);
+      document.removeEventListener('visibilitychange', relire);
+    };
+  }, [suivre, router]);
+
+  if (statut === 'terminee') return null;
+
+  let contenu: React.ReactNode;
+  if (ligne === 'navigateur') contenu = <RegieNavigateur {...props} />;
+  else if (statut === 'prete') contenu = <Lancement {...props} />;
+  else if (ligne === 'bluetooth') contenu = <RegieTelephone {...props} />;
+  else if (ligne === 'simulation') contenu = <RegieSimulation {...props} />;
+  else contenu = <RegieTwilio {...props} />;
+
+  return (
+    <section aria-labelledby="titre-regie" className="grid gap-5 border-b border-filet pb-8">
+      <h2 id="titre-regie" className="sr-only">
+        Régie de la campagne
+      </h2>
+      {contenu}
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ prête : téléphone, simulation, Twilio */
+
+function Lancement({ campagneId, ligne, entreprise, version, recapitulatif, pont, passes24h }: ProprietesRegie) {
+  const { erreur, enCours, agir } = useGeste();
+  const confirmation = useConfirmation();
+  const prospects = recapitulatif?.prospects ?? [];
+  const autorises = recapitulatif?.autorises ?? 0;
+  const blocage = ligne === 'bluetooth' ? blocageLigne(pont) : null;
+  const vide = autorises === 0;
+
+  let action: React.ReactNode;
+  if (ligne === 'bluetooth') {
+    const estime = phraseEstimation(autorises, pont?.reglages ?? null, passes24h);
+    action = (
+      <div className="grid justify-items-start gap-3">
+        {blocage ? <Blocage blocage={blocage} /> : null}
+        <Actions>
+          <Action
+            ton="fort"
+            disabled={Boolean(blocage) || vide || enCours}
+            aria-expanded={confirmation.ouverte}
+            onClick={(e) => confirmation.ouvrir(e.currentTarget)}
+          >
+            Lancer {autorises} appel{autorises > 1 ? 's' : ''} sur le téléphone
+          </Action>
+        </Actions>
+        <Confirmation
+          ouverte={confirmation.ouverte}
+          question="Lancer la campagne sur le téléphone passerelle ?"
+          libelleConfirmer={`Lancer ${autorises} appel${autorises > 1 ? 's' : ''}`}
+          enCours={enCours}
+          libelleEnCours="Lancement…"
+          onAnnuler={confirmation.fermer}
+          onConfirmer={() => agir(() => lancerCampagne(campagneId), { toujours: confirmation.fermer })}
+        >
+          <p>
+            {autorises} numéro{autorises > 1 ? 's vont' : ' va'} sonner l’un après l’autre ({entreprise.nom} · {version}).{' '}
+            {phrasePlafonds(pont?.reglages ?? null, passes24h)}
+          </p>
+          {estime ? <p className="mt-1">{estime}</p> : null}
+        </Confirmation>
+      </div>
+    );
+  } else if (ligne === 'simulation') {
+    action = (
+      <Actions>
+        <Action ton="fort" disabled={vide || enCours} enCours={enCours} libelleEnCours="Lancement…" onClick={() => agir(() => lancerCampagne(campagneId))}>
+          Lancer la simulation ({autorises} appel{autorises > 1 ? 's' : ''} simulé{autorises > 1 ? 's' : ''})
+        </Action>
+      </Actions>
+    );
+  } else {
+    action = <p className="text-sm text-encre-3">Les campagnes sur Twilio ne se lancent pas depuis cette page.</p>;
+  }
+
+  return (
+    <>
+      <Recapitulatif ligne={ligne} prospects={prospects} autorises={autorises} reglages={pont?.reglages ?? null} passes24h={passes24h} action={action} />
+      {vide && prospects.length > 0 ? (
+        <Message ton="alerte">Aucun numéro de cette campagne n’est autorisé : tous seraient sautés, rien ne partirait.</Message>
+      ) : null}
+      {erreur ? <Message ton="alerte">{erreur}</Message> : null}
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ téléphone en cours ou suspendue */
+
+function RegieTelephone({
+  campagneId,
+  statut,
+  entreprise,
+  version,
+  prochain,
+  restants,
+  appelTelephone,
+  pont,
+  passes24h,
+  raison,
+}: ProprietesRegie) {
+  const { erreur, enCours, agir } = useGeste();
+  const confirmation = useConfirmation();
+  const blocage = blocageLigne(pont);
+  const pause = pont?.reglages?.pauseEntreAppelsS;
+
+  return (
+    <>
+      {statut === 'en-pause' && raison ? <Raison raison={raison} /> : null}
+
+      {appelTelephone ? (
+        <BandeAppel
+          key={appelTelephone.id}
+          appelId={appelTelephone.id}
+          variante="bande"
+          identite={appelTelephone.identite}
+          debutLe={appelTelephone.debutLe}
+          statut={appelTelephone.statut}
+          finLe={appelTelephone.finLe}
+          conversation={appelTelephone.conversation}
+        />
+      ) : statut === 'en-cours' ? (
+        <div className="grid gap-2">
+          {prochain ? (
+            <p className="text-lg text-balance">
+              <span className="text-encre-3">Suivant : </span>
+              <span className="font-medium">{nomComplet(prochain)}</span>
+              <span className="text-encre-2">
+                , après la pause {pause ? <>de <span className="font-mono">{pause}</span> s </> : null}réglée sur Téléphone.
+              </span>
+            </p>
+          ) : (
+            <p className="text-lg text-encre-2">Plus aucun prospect à appeler : la campagne se termine.</p>
+          )}
+          {blocage ? <Blocage blocage={blocage} /> : null}
+        </div>
+      ) : null}
+
+      {statut === 'en-cours' ? (
+        <Actions>
+          <Suspendre enCours={enCours} onClick={() => agir(() => suspendreCampagne(campagneId))} />
+        </Actions>
+      ) : (
+        <div className="grid justify-items-start gap-3">
+          {blocage && raison?.lienTelephone !== true ? <Blocage blocage={blocage} /> : null}
+          <Actions>
+            <Action
+              ton="fort"
+              disabled={Boolean(blocage) || restants === 0 || enCours}
+              aria-expanded={confirmation.ouverte}
+              onClick={(e) => confirmation.ouvrir(e.currentTarget)}
+            >
+              Reprendre
+            </Action>
+            {blocage ? <span className="px-1.5 text-sm text-encre-3">Reprise impossible tant que la ligne ne peut pas appeler.</span> : null}
+          </Actions>
+          <Confirmation
+            ouverte={confirmation.ouverte}
+            question="Reprendre la campagne ?"
+            libelleConfirmer={`Reprendre (${restants} restant${restants > 1 ? 's' : ''})`}
+            enCours={enCours}
+            libelleEnCours="Reprise…"
+            onAnnuler={confirmation.fermer}
+            onConfirmer={() => agir(() => lancerCampagne(campagneId), { toujours: confirmation.fermer })}
+          >
+            <p>
+              {prochain ? (
+                <>
+                  La campagne reprend à {nomComplet(prochain)} : {restants} appel{restants > 1 ? 's' : ''} restant{restants > 1 ? 's' : ''}, sur le
+                  téléphone passerelle ({entreprise.nom} · {version}).{' '}
+                </>
+              ) : null}
+              {phrasePlafonds(pont?.reglages ?? null, passes24h)}
+            </p>
+            {phraseEstimation(restants, pont?.reglages ?? null, passes24h) ? (
+              <p className="mt-1">{phraseEstimation(restants, pont?.reglages ?? null, passes24h)}</p>
+            ) : null}
+          </Confirmation>
+        </div>
+      )}
+      {erreur ? <Message ton="alerte">{erreur}</Message> : null}
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ simulation */
+
+function RegieSimulation({ campagneId, statut, restants, raison }: ProprietesRegie) {
+  const { erreur, enCours, agir } = useGeste();
+  return (
+    <>
+      {statut === 'en-cours' ? (
+        <p className="text-base text-encre-2">Le serveur enchaîne les appels simulés ; la file se met à jour toute seule.</p>
+      ) : raison ? (
+        <Raison raison={raison} />
+      ) : null}
+      <Actions>
+        {statut === 'en-cours' ? (
+          <Suspendre enCours={enCours} onClick={() => agir(() => suspendreCampagne(campagneId))} />
+        ) : (
+          <Action
+            ton="fort"
+            disabled={restants === 0 || enCours}
+            enCours={enCours}
+            libelleEnCours="Reprise…"
+            onClick={() => agir(() => lancerCampagne(campagneId))}
+          >
+            Reprendre la simulation ({restants} restant{restants > 1 ? 's' : ''})
+          </Action>
+        )}
+      </Actions>
+      {erreur ? <Message ton="alerte">{erreur}</Message> : null}
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ Twilio (ancienne ligne) */
+
+function RegieTwilio({ campagneId, statut, raison }: ProprietesRegie) {
+  const { erreur, enCours, agir } = useGeste();
+  return (
+    <>
+      {statut === 'en-pause' && raison ? <Raison raison={raison} /> : null}
+      <p className="text-base text-encre-2">Téléphone (Twilio) : cette page ne pilote pas l’enchaînement des appels de cette ligne.</p>
+      {statut === 'en-cours' ? (
+        <Actions>
+          <Suspendre enCours={enCours} onClick={() => agir(() => suspendreCampagne(campagneId))} />
+        </Actions>
+      ) : null}
+      {erreur ? <Message ton="alerte">{erreur}</Message> : null}
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ ligne navigateur */
+
+function RegieNavigateur(props: ProprietesRegie) {
+  const { campagneId, statut, entrepriseId, versionScriptId, prochain, restants, appelOuvertNavigateur, raison, recapitulatif } = props;
+  const router = useRouter();
+  const { erreur, enCours, agir } = useGeste();
+  // Premier geste de l'opérateur dans cette page : sans lui, aucun appel ne part (ni au chargement, ni au retour).
+  const [geste, setGeste] = useState(false);
+  // Le prospect de l'appel qui vit dans cette page, gardé ici : un rafraîchissement ne le démonte pas.
+  const [direct, setDirect] = useState<Prochain | null>(null);
+  const [appelId, setAppelId] = useState<string | null>(null);
+  const [dernier, setDernier] = useState<string | null>(null);
+
+  const appeler = (p: Prochain) => {
+    setGeste(true);
+    setDernier(p.id);
+    setDirect(p);
+  };
+
+  const resteOuvert = appelOuvertNavigateur !== null && appelOuvertNavigateur !== appelId && direct === null;
+
+  let corps: React.ReactNode;
+  if (direct) {
+    corps = (
+      <>
+        <AppelEnDirect
+          key={direct.id}
+          entrepriseId={entrepriseId}
+          prospectId={direct.id}
+          prospectNom={direct.nom}
+          versionScriptId={versionScriptId}
+          campagneId={campagneId}
+          demarrageAuto
+          ouvrir={async () => {
+            const r = await ouvrirAppelSuivant(campagneId);
+            if (r.ok) setAppelId(r.appelId);
+            return r;
+          }}
+          clore={(id) => cloreAppelDeCampagne(campagneId, id)}
+          onFin={() => {
+            setDirect(null);
+            setAppelId(null);
+            router.refresh();
+          }}
+        />
+        {statut === 'en-cours' ? (
+          <Actions>
+            <Suspendre enCours={enCours} onClick={() => agir(() => suspendreCampagne(campagneId))} />
+          </Actions>
+        ) : (
+          <p className="text-sm text-encre-3">Suspendue : cet appel va à son terme, aucun autre ne partira.</p>
+        )}
+      </>
+    );
+  } else if (statut === 'prete') {
+    corps = (
+      <Recapitulatif
+        ligne="navigateur"
+        prospects={recapitulatif?.prospects ?? []}
+        autorises={recapitulatif?.autorises ?? 0}
+        action={
+          <Actions>
+            <Action
+              ton="fort"
+              disabled={enCours || (recapitulatif?.autorises ?? 0) === 0}
+              enCours={enCours}
+              libelleEnCours="Lancement…"
+              onClick={() => agir(() => lancerCampagne(campagneId), { succes: () => setGeste(true) })}
+            >
+              Lancer la campagne
+            </Action>
+            <span className="px-1.5 text-sm text-encre-3">Le premier appel part 5 s après, au micro de cet ordinateur.</span>
+          </Actions>
+        }
+      />
+    );
+  } else if (resteOuvert && appelOuvertNavigateur) {
+    corps = (
+      <>
+        <p className="text-base text-encre-2">Un appel de cette campagne est resté ouvert : la page a sans doute été fermée pendant l’appel.</p>
+        <Actions>
+          <Action
+            enCours={enCours}
+            libelleEnCours="Clôture…"
+            disabled={enCours}
+            onClick={() => agir(() => cloreAppelDeCampagne(campagneId, appelOuvertNavigateur))}
+          >
+            Clore cet appel et continuer
+          </Action>
+        </Actions>
+      </>
+    );
+  } else if (statut === 'en-pause') {
+    corps = (
+      <>
+        {raison ? <Raison raison={raison} /> : null}
+        <Actions>
+          <Action
+            ton="fort"
+            disabled={restants === 0 || enCours}
+            enCours={enCours}
+            libelleEnCours="Reprise…"
+            onClick={() => agir(() => lancerCampagne(campagneId), { succes: () => setGeste(true) })}
+          >
+            Reprendre
+          </Action>
+          {prochain ? <span className="px-1.5 text-sm text-encre-3">Le prochain appel, {prochain.nom}, part 5 s après.</span> : null}
+        </Actions>
+      </>
+    );
+  } else if (!prochain) {
+    corps = <p className="text-base text-encre-2">Plus aucun prospect à appeler.</p>;
+  } else if (!geste) {
+    corps = (
+      <>
+        <div className="grid gap-1">
+          <p className="text-lg text-balance">
+            <span className="text-encre-3">Prochain : </span>
+            <span className="font-medium">{nomComplet(prochain)}</span>
+          </p>
+          <p className="text-sm text-encre-3">Rien ne part tant que tu n’appelles pas ; ensuite, les appels s’enchaînent après un décompte de 5 s.</p>
+        </div>
+        <Actions>
+          <Action ton="fort" onClick={() => appeler(prochain)}>
+            Appeler maintenant
+          </Action>
+          <Suspendre enCours={enCours} onClick={() => agir(() => suspendreCampagne(campagneId))} />
+        </Actions>
+      </>
+    );
+  } else if (prochain.id !== dernier) {
+    corps = (
+      <>
+        <Decompte key={prochain.id} nom={prochain.nom} onFini={() => appeler(prochain)} onArreter={() => setGeste(false)} />
+        <Actions>
+          <Suspendre enCours={enCours} onClick={() => agir(() => suspendreCampagne(campagneId))} />
+        </Actions>
+      </>
+    );
+  } else {
+    corps = <p className="text-base text-encre-3">Appel terminé : rapatriement et analyse…</p>;
+  }
+
+  return (
+    <>
+      {corps}
+      {erreur ? <Message ton="alerte">{erreur}</Message> : null}
+    </>
+  );
+}
+
+/** Court décompte avant l'appel suivant, seulement après un premier geste ; remonté à chaque prospect par sa clé. */
+function Decompte({ nom, onFini, onArreter }: { nom: string; onFini: () => void; onArreter: () => void }) {
   const [reste, setReste] = useState(PAUSE_SECONDES);
+  const fin = useRef(onFini);
+  useEffect(() => {
+    fin.current = onFini;
+  });
   useEffect(() => {
     if (reste === 0) {
-      onFini();
+      fin.current();
       return;
     }
     const minuterie = setTimeout(() => setReste((r) => r - 1), 1000);
     return () => clearTimeout(minuterie);
-  }, [reste, onFini]);
+  }, [reste]);
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <p className="text-encre-2">
-        Appel de <span className="font-medium text-encre">{nom}</span> dans <span className="font-mono">{reste}</span> s
+    <div className="grid gap-2">
+      <p className="sr-only" role="status">
+        Appel de {nom} dans {PAUSE_SECONDES} s.
       </p>
-      <Bouton type="button" variante="discret" onClick={onFini}>
-        Appeler maintenant
-      </Bouton>
+      <p role="timer" aria-live="off" className="text-lg text-balance">
+        <span className="text-encre-3">Appel de </span>
+        <span className="font-medium">{nom}</span>
+        <span className="text-encre-3"> dans </span>
+        <span className="font-mono text-encre">{reste}</span>
+        <span className="text-encre-3"> s</span>
+      </p>
+      <Actions>
+        <Action ton="fort" onClick={onFini}>
+          Appeler maintenant
+        </Action>
+        <Action ton="discret" touche="Échap" raccourci="Escape" libelleRaccourci="Arrêter le décompte" onClick={onArreter}>
+          Arrêter le décompte
+        </Action>
+      </Actions>
     </div>
   );
 }
