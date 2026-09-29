@@ -1,26 +1,36 @@
 /**
- * Synchronise la configuration de Mina entre le dépôt et ElevenLabs.
+ * Synchronise la configuration de l'assistante entre le dépôt et ElevenLabs.
  *
  *   node --env-file=.env scripts/agent.ts create   crée l'agent et affiche son identifiant
  *   node --env-file=.env scripts/agent.ts pull     rapatrie la configuration distante dans agent/ (refuse d'écraser
  *                                                   des modifications locales non poussées, sauf --force)
- *   node --env-file=.env scripts/agent.ts push     envoie agent/ vers ElevenLabs
- *   node --env-file=.env scripts/agent.ts status   dit si le dépôt et ElevenLabs divergent
+ *   node --env-file=.env scripts/agent.ts push     montre la différence avec ElevenLabs, demande confirmation, puis
+ *                                                   envoie agent/ (--oui saute la question ; sans terminal, --oui est exigé)
+ *   node --env-file=.env scripts/agent.ts status   dit si le dépôt et ElevenLabs divergent, et en quoi
  *
- * On règle Mina dans le tableau de bord, puis on fait `pull` et on commite. `push` refuse d'écraser
- * une configuration distante modifiée depuis le dernier `pull` ou `push` : agent/remote.lock.json
- * garde l'empreinte de la dernière configuration distante connue.
+ * `push` refuse d'écraser une configuration distante modifiée depuis le dernier `pull` ou `push` :
+ * agent/remote.lock.json garde la dernière configuration distante connue. La logique vit dans
+ * packages/agent, que le serveur MCP partage : un seul verrou, une seule empreinte.
  */
-import { createHash } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
+import { stdin, stdout } from 'node:process';
+import { createInterface } from 'node:readline/promises';
+import { fileURLToPath } from 'node:url';
+import {
+  avecPrompt,
+  CHEMIN_PROMPT,
+  clientElevenLabs,
+  difference,
+  distanteModifieeDepuis,
+  empreinte,
+  enregistrerDistante,
+  lireLocal,
+  pousser,
+  rapatrier,
+  separerPrompt,
+  versionDe,
+} from '../packages/agent/src/index.ts';
 
-const API = 'https://api.elevenlabs.io/v1/convai/agents';
-const DOSSIER = new URL('../agent/', import.meta.url);
-const FICHIER_CONFIG = new URL('mina.config.json', DOSSIER);
-const FICHIER_PROMPT = new URL('prompt.md', DOSSIER);
-const FICHIER_VERROU = new URL('remote.lock.json', DOSSIER);
-
-type Json = Record<string, unknown>;
+const DOSSIER = fileURLToPath(new URL('../agent/', import.meta.url));
 
 function exiger(nom: string): string {
   const valeur = process.env[nom];
@@ -28,167 +38,89 @@ function exiger(nom: string): string {
   return valeur;
 }
 
-async function api(chemin: string, init: RequestInit = {}): Promise<Json> {
-  const reponse = await fetch(`${API}${chemin}`, {
-    ...init,
-    headers: { 'xi-api-key': exiger('ELEVENLABS_API_KEY'), 'content-type': 'application/json' },
-  });
-  if (!reponse.ok) throw new Error(`ElevenLabs ${reponse.status} : ${await reponse.text()}`);
-  return (await reponse.json()) as Json;
+function client() {
+  return clientElevenLabs({ cle: exiger('ELEVENLABS_API_KEY'), agentId: process.env.ELEVENLABS_AGENT_ID });
 }
 
-function lire(objet: unknown, chemin: string): unknown {
-  return chemin.split('.').reduce<unknown>((o, cle) => (o as Json | undefined)?.[cle], objet);
+/** La différence de la configuration distante vers le dépôt : ce qu'un push changerait. */
+async function differenceAvecDistante() {
+  const locale = await lireLocal(DOSSIER);
+  const distante = await client().lire();
+  const d = difference(separerPrompt(distante), { prompt: locale.prompt, configuration: locale.configuration });
+  const distanteModifiee = distanteModifieeDepuis(locale.verrou, { versionId: versionDe(distante), empreinte: empreinte(distante) });
+  return { locale, distante, d, distanteModifiee };
 }
 
-function ecrire(objet: Json, chemin: string, valeur: unknown): void {
-  const cles = chemin.split('.');
-  const derniere = cles.pop() as string;
-  let courant = objet;
-  for (const cle of cles) courant = (courant[cle] ??= {}) as Json;
-  courant[derniere] = valeur;
-}
-
-/** Les seuls champs que le dépôt gère ; le reste de la configuration reste à ElevenLabs. */
-const CHAMPS_GERES = [
-  'name',
-  'conversation_config.agent.first_message',
-  'conversation_config.agent.language',
-  'conversation_config.agent.prompt.prompt',
-  'conversation_config.agent.prompt.llm',
-  'conversation_config.agent.prompt.temperature',
-  'conversation_config.agent.prompt.built_in_tools',
-  'conversation_config.agent.prompt.tools',
-  'platform_settings.auth.enable_auth',
-  'platform_settings.overrides.conversation_config_override.asr.keywords',
-  'conversation_config.agent.dynamic_variables.dynamic_variable_placeholders',
-  'conversation_config.tts.voice_id',
-  'conversation_config.tts.model_id',
-  'conversation_config.tts.stability',
-  'conversation_config.tts.similarity_boost',
-  'conversation_config.tts.speed',
-  'conversation_config.turn.turn_eagerness',
-  'conversation_config.turn.turn_timeout',
-  'conversation_config.turn.speculative_turn',
-  'conversation_config.turn.interruption_ignore_terms',
-  'conversation_config.turn.interruption_ignore_term_languages',
-  'conversation_config.turn.merge_with_default_ignore_terms',
-  'conversation_config.turn.soft_timeout_config',
-  'conversation_config.conversation.max_duration_seconds',
-];
-
-/** ElevenLabs renvoie chaque outil désactivé sous forme de `null` : on les retire pour garder un fichier lisible. */
-function sansNull(valeur: unknown): unknown {
-  if (valeur === null) return undefined;
-  if (Array.isArray(valeur)) return valeur.map(sansNull);
-  if (typeof valeur === 'object') {
-    return Object.fromEntries(
-      Object.entries(valeur as Json)
-        .map(([cle, v]) => [cle, sansNull(v)] as const)
-        .filter(([, v]) => v !== undefined),
-    );
+async function confirmer(question: string): Promise<boolean> {
+  if (process.argv.includes('--oui')) return true;
+  if (!stdin.isTTY) {
+    console.error('Pas de terminal pour confirmer : relance avec --oui après avoir relu la différence.');
+    return false;
   }
-  return valeur;
-}
-
-function extraireGere(config: Json): Json {
-  const gere: Json = {};
-  for (const chemin of CHAMPS_GERES) {
-    const valeur = sansNull(lire(config, chemin));
-    if (valeur !== undefined) ecrire(gere, chemin, valeur);
-  }
-  return gere;
-}
-
-function trier(valeur: unknown): unknown {
-  if (Array.isArray(valeur)) return valeur.map(trier);
-  if (valeur && typeof valeur === 'object') {
-    return Object.fromEntries(Object.keys(valeur).sort().map((cle) => [cle, trier((valeur as Json)[cle])]));
-  }
-  return valeur;
-}
-
-function empreinte(config: Json): string {
-  return createHash('sha256').update(JSON.stringify(trier(extraireGere(config)))).digest('hex');
-}
-
-async function configLocale(): Promise<Json> {
-  const config = JSON.parse(await readFile(FICHIER_CONFIG, 'utf8')) as Json;
-  ecrire(config, 'conversation_config.agent.prompt.prompt', await readFile(FICHIER_PROMPT, 'utf8'));
-  return config;
-}
-
-async function verrou(): Promise<{ empreinte: string; versionId?: string | null } | null> {
+  const rl = createInterface({ input: stdin, output: stdout });
   try {
-    return JSON.parse(await readFile(FICHIER_VERROU, 'utf8')) as { empreinte: string; versionId?: string | null };
-  } catch {
-    return null;
+    return /^o(ui)?$/i.test((await rl.question(`${question} (o/N) `)).trim());
+  } finally {
+    rl.close();
   }
-}
-
-async function enregistrerLocal(distante: Json): Promise<void> {
-  const gere = extraireGere(distante);
-  const prompt = lire(gere, 'conversation_config.agent.prompt.prompt');
-  ecrire(gere, 'conversation_config.agent.prompt.prompt', undefined);
-  const sansPrompt = JSON.parse(JSON.stringify(gere)) as Json;
-  await writeFile(FICHIER_CONFIG, `${JSON.stringify(sansPrompt, null, 2)}\n`);
-  await writeFile(FICHIER_PROMPT, typeof prompt === 'string' ? prompt : '');
-  await writeFile(
-    FICHIER_VERROU,
-    `${JSON.stringify({ versionId: distante.version_id ?? null, empreinte: empreinte(distante) }, null, 2)}\n`,
-  );
-}
-
-async function distante(): Promise<Json> {
-  return api(`/${exiger('ELEVENLABS_AGENT_ID')}`);
 }
 
 const commandes: Record<string, () => Promise<void>> = {
   async create() {
     if (process.env.ELEVENLABS_AGENT_ID) throw new Error('ELEVENLABS_AGENT_ID est déjà défini : utilise push');
-    const { agent_id } = await api('/create', { method: 'POST', body: JSON.stringify(await configLocale()) });
-    process.env.ELEVENLABS_AGENT_ID = String(agent_id);
-    await enregistrerLocal(await distante());
-    console.log(`Agent créé. Ajoute dans .env : ELEVENLABS_AGENT_ID=${agent_id}`);
+    const locale = await lireLocal(DOSSIER);
+    const agentId = await client().creer(avecPrompt(locale.configuration, locale.prompt));
+    const cree = clientElevenLabs({ cle: exiger('ELEVENLABS_API_KEY'), agentId });
+    await enregistrerDistante(DOSSIER, await cree.lire());
+    console.log(`Agent créé. Ajoute dans .env : ELEVENLABS_AGENT_ID=${agentId}`);
   },
 
   async pull() {
-    // Ne jamais écraser en silence des modifications locales pas encore poussées.
-    const connu = await verrou();
-    if (connu && !process.argv.includes('--force') && empreinte(await configLocale()) !== connu.empreinte) {
-      throw new Error('agent/ contient des modifications non poussées : pousse-les, ou relance avec --force pour les écraser.');
-    }
-    await enregistrerLocal(await distante());
+    const resultat = await rapatrier(DOSSIER, client(), { force: process.argv.includes('--force') });
+    if (!resultat.ok) throw new Error(`${resultat.raison} Ou relance avec --force pour les écraser.`);
     console.log('Configuration distante rapatriée dans agent/. Relis le diff, puis commite.');
   },
 
   async push() {
-    const connu = await verrou();
-    const avant = await distante();
-    // ElevenLabs change de version à chaque modification : c'est le signal le plus sûr, indépendant
-    // de la liste des champs suivis. L'empreinte ne sert qu'aux verrous écrits avant cette règle.
-    const distanteModifiee = connu?.versionId ? connu.versionId !== avant.version_id : connu && connu.empreinte !== empreinte(avant);
+    const { locale, distante, d, distanteModifiee } = await differenceAvecDistante();
     if (distanteModifiee) {
       throw new Error('La configuration distante a changé depuis le dernier pull : lance pull et relis le diff avant de pousser.');
     }
-    await api(`/${exiger('ELEVENLABS_AGENT_ID')}`, { method: 'PATCH', body: JSON.stringify(await configLocale()) });
-    await enregistrerLocal(await distante());
-    console.log('Configuration envoyée.');
+    if (d.vide) {
+      console.log('Rien à pousser : agent/ est identique à la configuration distante.');
+      return;
+    }
+    console.log(`Ce que la poussée change chez ElevenLabs (distant → dépôt) :\n\n${d.texte}\n`);
+    if (!(await confirmer('Pousser ?'))) {
+      console.log('Rien n’est parti.');
+      process.exitCode = 1;
+      return;
+    }
+    // La poussée revérifie que ni le dépôt ni la configuration distante n'ont bougé depuis la différence affichée.
+    const resultat = await pousser(DOSSIER, client(), {
+      empreinteLocale: empreinte(avecPrompt(locale.configuration, locale.prompt)),
+      versionIdDistante: versionDe(distante),
+    });
+    if (!resultat.ok) throw new Error(resultat.raison);
+    console.log(`Configuration envoyée (version ${versionDe(distante) ?? 'inconnue'} → ${resultat.versionId ?? 'inconnue'}). Relis le diff de agent/, puis commite.`);
   },
 
   async status() {
-    const connu = await verrou();
-    const actuelle = await distante();
-    const distanteModifiee = connu?.versionId ? connu.versionId !== actuelle.version_id : connu?.empreinte !== empreinte(actuelle);
-    const localeModifiee = empreinte(await configLocale()) !== empreinte(actuelle);
+    const { d, distanteModifiee } = await differenceAvecDistante();
     console.log(`distante modifiée depuis le dernier pull : ${distanteModifiee ? 'oui' : 'non'}`);
-    console.log(`dépôt différent de la configuration distante : ${localeModifiee ? 'oui' : 'non'}`);
+    console.log(`dépôt différent de la configuration distante : ${d.vide ? 'non' : 'oui'}`);
+    for (const { chemin } of d.champs) console.log(`  ${chemin === CHEMIN_PROMPT ? 'prompt' : chemin}`);
   },
 };
 
 const commande = commandes[process.argv[2] ?? ''];
 if (!commande) {
-  console.error('usage : scripts/agent.ts create | pull | push | status');
+  console.error('usage : scripts/agent.ts create | pull [--force] | push [--oui] | status');
   process.exit(1);
 }
-await commande();
+try {
+  await commande();
+} catch (erreur) {
+  console.error((erreur as Error).message);
+  process.exit(1);
+}
