@@ -23,7 +23,7 @@ export function Marque({ enAppel = false, className = '' }: { enAppel?: boolean;
       {LETTRES.map((d) => (
         <path key={d.slice(0, 24)} fillRule="evenodd" fill="currentColor" d={d} />
       ))}
-      <path d={POINT} className={`transition-[fill] duration-300 ${enAppel ? 'fill-antenne' : 'fill-filet-fort'}`} />
+      <path d={POINT} className={`transition-[fill] duration-300 ${enAppel ? 'fill-antenne' : 'fill-trait-2'}`} />
     </svg>
   );
 }

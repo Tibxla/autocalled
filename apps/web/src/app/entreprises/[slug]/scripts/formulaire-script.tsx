@@ -1,24 +1,55 @@
 'use client';
 
-import { useActionState } from 'react';
-import { Bouton, Saisie } from '@/components/ui';
+import { useRef, useState } from 'react';
+import { RangeeCreation } from '@/components/rangee-creation';
+import { Action, TitreSection } from '@/components/ui';
 import { creerScript } from '../actions';
 
-export function FormulaireScript({ entrepriseId, slug }: { entrepriseId: string; slug: string }) {
-  const [etat, action, enCours] = useActionState(creerScript.bind(null, entrepriseId, slug), null);
-  const erreur = etat?.erreurs?.nom;
+/** Titre de la liste des scripts, « N Nouveau script » et la rangée de création (dépliée d'office sans script). */
+export function CreationScript({ entrepriseId, slug, compte }: { entrepriseId: string; slug: string; compte: number }) {
+  const vide = compte === 0;
+  const [ouverte, setOuverte] = useState(vide);
+  const bouton = useRef<HTMLButtonElement>(null);
+  const montree = ouverte || vide;
+
   return (
-    <form action={action} className="grid gap-1.5">
-      <label htmlFor="nom-script" className="sr-only">
-        Nom du nouveau script
-      </label>
-      <div className="flex gap-2">
-        <Saisie id="nom-script" name="nom" placeholder="Nom du script" required className="w-56" aria-invalid={erreur ? true : undefined} />
-        <Bouton type="submit" disabled={enCours}>
-          {enCours ? 'Création…' : 'Créer'}
-        </Bouton>
-      </div>
-      {erreur ? <p className="text-sm text-alerte">{erreur}</p> : null}
-    </form>
+    <>
+      <TitreSection
+        id="titre-scripts"
+        compte={compte}
+        action={
+          <Action
+            ref={bouton}
+            touche="N"
+            raccourci="n"
+            aria-expanded={montree}
+            className="-mr-1.5"
+            onClick={() => {
+              setOuverte(true);
+              requestAnimationFrame(() => document.getElementById('nom-script')?.focus());
+            }}
+          >
+            Nouveau script
+          </Action>
+        }
+      >
+        Scripts
+      </TitreSection>
+      {montree ? (
+        <div className="pt-2">
+          <RangeeCreation
+            action={creerScript.bind(null, entrepriseId, slug)}
+            id="nom-script"
+            libelle="Nom du nouveau script"
+            placeholder="Nom du script"
+            annulable={!vide}
+            onAnnuler={() => {
+              setOuverte(false);
+              requestAnimationFrame(() => bouton.current?.focus());
+            }}
+          />
+        </div>
+      ) : null}
+    </>
   );
 }

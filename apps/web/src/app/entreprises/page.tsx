@@ -1,56 +1,80 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { EnTetePage, EtatVide } from '@/components/ui';
+import { NavigationListe } from '@/components/clavier';
+import { Cellule, CelluleEnTete, EnTeteTable, EtatVide, LienLigne, LigneTable, Page, TableDense } from '@/components/ui';
 import { listerEntreprises, prospectsAutorisesParEntreprise } from '@/lib/donnees';
-import { FormulaireCreation } from './formulaire-creation';
+import { CreationEntreprise } from './formulaire-creation';
 
 export const metadata: Metadata = { title: 'Entreprises' };
 
-function compte(nombre: number, singulier: string, pluriel: string) {
-  return `${nombre} ${nombre > 1 ? pluriel : singulier}`;
+const COLONNES = 'minmax(10rem,14rem) minmax(0,1fr) 7rem 6rem 5rem 11rem';
+
+/** Ce qui manque en premier pour que Mina puisse appeler, dans l'ordre du travail ; null si l'entreprise est prête. */
+function premierManque(e: { offre: string; nombreScripts: number; nombreProspects: number }, appelables: number): string | null {
+  if (!e.offre.trim()) return 'Offre à écrire';
+  if (e.nombreScripts === 0) return 'Aucun script';
+  if (e.nombreProspects === 0) return 'Aucun prospect';
+  if (appelables === 0) return 'Aucun numéro autorisé';
+  return null;
 }
 
 export default async function PageEntreprises() {
   const [liste, autorises] = await Promise.all([listerEntreprises(), prospectsAutorisesParEntreprise()]);
 
   return (
-    <>
-      <EnTetePage
-        titre="Entreprises"
-        sousTitre="Chaque entreprise que Mina peut représenter : son offre, ses objections, ses scripts et ses prospects."
-        action={<FormulaireCreation />}
-      />
+    <Page largeur="lecture">
+      <CreationEntreprise compte={liste.length} />
 
       {liste.length === 0 ? (
-        <EtatVide titre="Aucune entreprise pour l’instant">
-          Crée la première avec son nom, puis décris son offre : c’est ce que Mina dira au téléphone.
+        <EtatVide titre="Aucune entreprise pour l’instant.">
+          Crée l’entreprise, décris son offre, écris un script, puis importe ses prospects : c’est ce que Mina dira au téléphone.
         </EtatVide>
       ) : (
-        <ul className="border-t border-filet">
-          {liste.map((e) => (
-            <li key={e.id} className="border-b border-filet">
-              <Link
-                href={`/entreprises/${e.slug}`}
-                className="group grid gap-1 py-5 transition-colors duration-150 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-baseline sm:gap-8"
-              >
-                <div className="grid gap-1">
-                  <span className="font-medium group-hover:underline group-hover:decoration-filet-fort group-hover:underline-offset-4">
-                    {e.nom}
-                  </span>
-                  <span className="max-w-[70ch] truncate text-sm text-encre-2">
-                    {e.offre || 'Offre pas encore décrite'}
-                  </span>
-                </div>
-                <span className="text-sm text-encre-3">
-                  {compte(e.nombreProspects, 'prospect', 'prospects')}
-                  {e.nombreProspects > 0 ? `, dont ${autorises.get(e.id) ?? 0} appelable${(autorises.get(e.id) ?? 0) > 1 ? 's' : ''}` : ''} · {compte(e.nombreObjections, 'objection', 'objections')} ·{' '}
-                  {compte(e.nombreScripts, 'script', 'scripts')}
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <NavigationListe memoriser="entreprises">
+          <TableDense libelle="Entreprises" colonnes={COLONNES} className="mt-2">
+            <EnTeteTable>
+              <CelluleEnTete>Entreprise</CelluleEnTete>
+              <CelluleEnTete masqueeMobile>Offre</CelluleEnTete>
+              <CelluleEnTete align="droite">Appelables</CelluleEnTete>
+              <CelluleEnTete align="droite">Objections</CelluleEnTete>
+              <CelluleEnTete align="droite">Scripts</CelluleEnTete>
+              <CelluleEnTete>État</CelluleEnTete>
+            </EnTeteTable>
+            <div role="rowgroup">
+              {liste.map((e) => {
+                const appelables = autorises.get(e.id) ?? 0;
+                const manque = premierManque(e, appelables);
+                return (
+                  <LigneTable key={e.id}>
+                    <Cellule tronquee titre={e.nom} className="font-medium max-sm:order-1 max-sm:flex-1">
+                      <LienLigne href={`/entreprises/${e.slug}`}>{e.nom}</LienLigne>
+                    </Cellule>
+                    <Cellule tronquee titre={e.offre || undefined} attenuee masqueeMobile>
+                      {e.offre.trim() || 'Offre à écrire'}
+                    </Cellule>
+                    <Cellule align="droite" mono className="max-sm:order-3">
+                      {appelables}/{e.nombreProspects}
+                      <span className="sm:hidden"> appelables</span>
+                    </Cellule>
+                    <Cellule align="droite" mono className="max-sm:order-3">
+                      {e.nombreObjections}
+                      <span className="sm:hidden"> {e.nombreObjections > 1 ? 'objections' : 'objection'}</span>
+                    </Cellule>
+                    <Cellule align="droite" mono className="max-sm:order-3">
+                      {e.nombreScripts}
+                      <span className="sm:hidden"> {e.nombreScripts > 1 ? 'scripts' : 'script'}</span>
+                    </Cellule>
+                    <Cellule tronquee className={`max-sm:order-1 ${manque ? 'text-encre-3' : 'text-encre-2'}`}>
+                      {manque ?? 'Prête'}
+                    </Cellule>
+                    {/* Sous 640 px : nom et état sur la première rangée, les comptes sur la seconde. */}
+                    <span aria-hidden="true" className="h-0 basis-full max-sm:order-2 sm:hidden" />
+                  </LigneTable>
+                );
+              })}
+            </div>
+          </TableDense>
+        </NavigationListe>
       )}
-    </>
+    </Page>
   );
 }

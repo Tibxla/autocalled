@@ -1,14 +1,51 @@
 'use client';
 
-import { useTransition } from 'react';
-import { Bouton } from '@/components/ui';
+import { useState, useTransition } from 'react';
+import { Confirmation, useConfirmation } from '@/components/confirmation';
+import { Action } from '@/components/ui';
 import { deconnecterGoogle } from './actions';
 
-export function BoutonDeconnecter() {
+/** Déconnecter l'API Google ralentit la lecture de l'agenda : le geste passe par une Confirmation. */
+export function BoutonDeconnecter({ deconnecter = deconnecterGoogle }: { deconnecter?: () => Promise<void> }) {
+  const confirmation = useConfirmation();
   const [enCours, demarrer] = useTransition();
+  const [erreur, setErreur] = useState<string | null>(null);
   return (
-    <Bouton type="button" variante="discret" className="-ml-3.5 justify-self-start" disabled={enCours} onClick={() => demarrer(deconnecterGoogle)}>
-      Déconnecter Google Agenda
-    </Bouton>
+    <div className="grid gap-3">
+      <div className="-mx-1.5">
+        <Action
+          ton="discret"
+          aria-expanded={confirmation.ouverte}
+          onClick={(e) => {
+            setErreur(null);
+            confirmation.ouvrir(e.currentTarget);
+          }}
+        >
+          Déconnecter l’API Google
+        </Action>
+      </div>
+      <Confirmation
+        ouverte={confirmation.ouverte}
+        question="Déconnecter l’API Google ?"
+        libelleConfirmer="Déconnecter"
+        ton="alerte"
+        enCours={enCours}
+        libelleEnCours="Déconnexion…"
+        erreur={erreur}
+        onAnnuler={confirmation.fermer}
+        onConfirmer={() =>
+          demarrer(async () => {
+            try {
+              await deconnecter();
+              confirmation.fermer();
+            } catch {
+              setErreur('La déconnexion a échoué. Réessaie dans un instant.');
+            }
+          })
+        }
+      >
+        L’agenda sera de nouveau lu par le connecteur de claude.ai, plus lent (une vingtaine de secondes par lecture).
+      </Confirmation>
+    </div>
   );
 }

@@ -8,7 +8,7 @@ web
 
 ## Users
 
-Un seul utilisateur connecté : l'opérateur (le créateur du projet). Il prépare des entreprises et des prospects, lance des campagnes d'appels et relit les bilans, souvent pendant une démonstration, devant quelqu'un qui regarde l'écran par-dessus son épaule (recruteur, client potentiel). Second public, indirect : les visiteurs du dépôt GitHub public, qui verront les captures d'écran.
+Un seul utilisateur connecté : l'opérateur (le créateur du projet). Il prépare des entreprises et des prospects, lance des campagnes d'appels (jusqu'à une centaine par jour) et relit les bilans, souvent pendant une démonstration, devant quelqu'un qui regarde l'écran par-dessus son épaule (recruteur, client potentiel). Second public, indirect : les visiteurs du dépôt GitHub public, qui verront les captures d'écran.
 
 ## Product Purpose
 
@@ -22,24 +22,25 @@ La même assistante représente plusieurs entreprises et change de discours selo
 
 - Interface servie uniquement sur le tailnet de l'opérateur, derrière `tailscale serve` ; aucun écran de connexion.
 - Les prospects arrivent par import de fichiers Markdown (un fichier par prospect, en-tête YAML + contexte libre), avec un consentement collectif enregistré à l'import.
-- Un seul appel à la fois (un seul téléphone passerelle) ; une campagne enchaîne les prospects.
+- Un seul appel à la fois (un seul téléphone passerelle) ; une campagne enchaîne les prospects, jusqu'à une centaine d'appels par jour, sous le plafond horaire et journalier du pont.
 - Langue de l'interface et du domaine : français.
 
 ## Capabilities and Constraints
 
 - Vocabulaire imposé par `CONTEXT.md` à la racine du dépôt (Entreprise, Prospect, Fiche prospect, Objection, CRAC, Script, Étape, Version de script, Issue, Bilan, Campagne, Numéro autorisé…).
-- Écrans prévus : Entreprises, Prospects, Campagne en direct, Appel, Analyse. Les trois derniers dépendent des étapes suivantes (pont téléphonique, bilans) et n'existent pas encore.
+- Écrans en place : Entreprises (fiche, prospects, objections, scripts, issues, campagnes, analyse), Appels (liste et fiche d'appel avec écoute et prise de main), Campagne en direct, Téléphone, Réglages. Reste à faire : l'accueil, régie de la journée (aujourd'hui la racine redirige vers Entreprises).
+- Toute liste d'appels reste lisible, filtrable et cherchable à 100 appels par jour : une vue qui ne tient qu'avec quelques appels ne convient pas.
 - Une version de script est figée : la modifier crée la version suivante. Une objection s'archive, elle ne se supprime pas.
 - Un numéro sans consentement actif n'est jamais composé.
 
 ## Brand Commitments
 
 - Nom du produit : Autocalled. Nom de l'assistante : Mina.
-- Direction visuelle fixée par l'opérateur dans `docs/direction-visuelle.md` : minimaliste premium, régie d'écoute épurée, sans esthétique « générée par IA ».
+- Direction visuelle fixée par l'opérateur dans `docs/direction-visuelle.md` : régie d'écoute sombre, dense et pilotée au clavier, sans esthétique « générée par IA » (choisie le 29/09/2026, remplace la direction claire d'origine).
 
 ## Evidence on Hand
 
-Aucun appel réel, aucun enregistrement, aucun client, aucun chiffre. Les données d'exemple sont fictives (entreprise « Atelier Vitrine », numéros de la tranche fictive ARCEP 06 39 98). Ne jamais inventer de témoignage, de statistique ou de résultat.
+Premiers vrais appels passés sur la ligne téléphone le 28/09/2026 ; aucun client, aucun chiffre publiable. Rien des vrais appels (transcription, réplique, adresse) ne va dans le dépôt public ni dans les captures. Les données d'exemple sont fictives (entreprise « Atelier Vitrine », numéros de la tranche fictive ARCEP 06 39 98). Ne jamais inventer de témoignage, de statistique ou de résultat.
 
 ## Product Principles
 

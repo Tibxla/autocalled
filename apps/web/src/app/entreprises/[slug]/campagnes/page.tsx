@@ -1,77 +1,172 @@
-import { asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, or } from 'drizzle-orm';
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { EtatVide, TitreSection } from '@/components/ui';
+import { comptesCampagne, dateCourte, etatAppel, issueEffective, STATUTS_CAMPAGNE } from '@/components/format-appel';
+import { Cellule, CelluleEnTete, EnTeteTable, LienLigne, LigneTable, Page, TableDense } from '@/components/ui';
+import { NavigationListe } from '@/components/clavier';
 import { db } from '@/db';
-import { campagnes, prospects } from '@/db/schema';
+import { appels, campagnes, issuesPersonnalisees, prospects } from '@/db/schema';
 import { autorisationsDe } from '@/lib/autorisations';
 import { entrepriseParSlug } from '@/lib/pages';
 import { versionsDeLEntreprise } from '@/lib/versions';
-import { FormulaireCampagne } from './formulaire-campagne';
+import { SectionCampagnes, type ProspectCampagne } from './formulaire-campagne';
 
 export const metadata: Metadata = { title: 'Campagnes' };
 
-const date = new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' });
-const STATUTS = { prete: 'Prête', 'en-cours': 'En cours', 'en-pause': 'En pause', terminee: 'Terminée' } as const;
+const LIGNES: Record<string, { libelle: string; classe: string }> = {
+  bluetooth: { libelle: 'Téléphone passerelle · vrais numéros', classe: 'text-encre-2' },
+  navigateur: { libelle: 'Ligne navigateur', classe: 'text-encre-3' },
+  simulation: { libelle: 'Appel simulé', classe: 'text-encre-3' },
+  twilio: { libelle: 'Téléphone (Twilio)', classe: 'text-encre-2' },
+};
+
+const TON_STATUT = { prete: 'text-encre', 'en-cours': '', 'en-pause': 'text-encre-2', terminee: 'text-encre-3' } as const;
 
 export default async function PageCampagnes({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const entreprise = await entrepriseParSlug(slug);
-  const [liste, versions, listeProspects] = await Promise.all([
+  const [liste, versions, listeProspects, derniers, avecRendezVous, issuesPerso] = await Promise.all([
     db.select().from(campagnes).where(eq(campagnes.entrepriseId, entreprise.id)).orderBy(desc(campagnes.creeLe)),
     versionsDeLEntreprise(entreprise.id),
-    db.select().from(prospects).where(eq(prospects.entrepriseId, entreprise.id)).orderBy(asc(prospects.nom)),
+    db
+      .select({ id: prospects.id, nom: prospects.nom, societe: prospects.societe, telephone: prospects.telephone })
+      .from(prospects)
+      .where(eq(prospects.entrepriseId, entreprise.id))
+      .orderBy(asc(prospects.nom), asc(prospects.id)),
+    // Le dernier appel de chaque prospect, pour les filtres et les cases cochées d'office.
+    db
+      .selectDistinctOn([appels.prospectId], {
+        prospectId: appels.prospectId,
+        debutLe: appels.debutLe,
+        statut: appels.statut,
+        ligne: appels.ligne,
+        issue: appels.issue,
+        issueSysteme: appels.issueSysteme,
+        erreur: appels.erreur,
+        conversationId: appels.conversationId,
+      })
+      .from(appels)
+      .where(eq(appels.entrepriseId, entreprise.id))
+      .orderBy(appels.prospectId, desc(appels.debutLe)),
+    db
+      .selectDistinct({ prospectId: appels.prospectId })
+      .from(appels)
+      .where(and(eq(appels.entrepriseId, entreprise.id), or(eq(appels.issueSysteme, 'rendez-vous-pris'), eq(appels.issue, 'rendez-vous-pris')))),
+    db
+      .select({ id: issuesPersonnalisees.id, libelle: issuesPersonnalisees.libelle })
+      .from(issuesPersonnalisees)
+      .where(eq(issuesPersonnalisees.entrepriseId, entreprise.id)),
   ]);
-  const autorisations = await autorisationsDe(listeProspects.map((p) => p.telephone));
+  const ids = liste.map((c) => c.id);
+  const [autorisations, appelsCampagnes] = await Promise.all([
+    autorisationsDe(listeProspects.map((p) => p.telephone)),
+    ids.length > 0
+      ? db
+          .select({ campagneId: appels.campagneId, issue: appels.issue, issueSysteme: appels.issueSysteme })
+          .from(appels)
+          .where(inArray(appels.campagneId, ids))
+      : Promise.resolve([]),
+  ]);
+
   const libelleVersion = new Map(versions.map((v) => [v.id, v.libelle]));
+  const libellePerso = new Map(issuesPerso.map((i) => [`perso:${i.id}`, i.libelle]));
+  const dernierDe = new Map(derniers.map((d) => [d.prospectId, d]));
+  const rendezVousDe = new Set(avecRendezVous.map((r) => r.prospectId));
+  const rendezVousParCampagne = new Map<string, number>();
+  for (const a of appelsCampagnes) {
+    if (a.campagneId && issueEffective(a) === 'rendez-vous-pris') rendezVousParCampagne.set(a.campagneId, (rendezVousParCampagne.get(a.campagneId) ?? 0) + 1);
+  }
+
+  const prospectsFormulaire: ProspectCampagne[] = listeProspects.map((p) => {
+    const d = dernierDe.get(p.id);
+    return {
+      id: p.id,
+      nom: p.nom,
+      societe: p.societe,
+      autorisation: autorisations.get(p.telephone),
+      derniere: d ? { cle: issueEffective(d), libelle: etatAppel(d, { libellePerso: d.issue ? libellePerso.get(d.issue) : null }).libelle } : null,
+      rendezVous: rendezVousDe.has(p.id),
+    };
+  });
+
+  const base = `/entreprises/${slug}`;
+  const prerequis =
+    versions.length === 0
+      ? { texte: 'Aucun script : crée-en un dans Scripts.', lien: { href: `${base}/scripts`, libelle: 'Ouvrir les scripts' } }
+      : listeProspects.length === 0
+        ? { texte: 'Aucun prospect : importe des fiches dans Prospects.', lien: { href: `${base}/prospects?import=1`, libelle: 'Importer des fiches' } }
+        : prospectsFormulaire.every((p) => !p.autorisation?.autorise)
+          ? {
+              texte: 'Aucun numéro autorisé : chaque prospect est révoqué ou sans consentement.',
+              lien: { href: `${base}/prospects`, libelle: 'Voir les prospects' },
+            }
+          : null;
+
+  // La campagne en cours d'abord, puis de la plus récente à la plus ancienne.
+  const triees = [...liste].sort((a, b) => Number(b.statut === 'en-cours') - Number(a.statut === 'en-cours'));
 
   return (
-    <div className="grid gap-14 lg:grid-cols-[minmax(0,1fr)_24rem]">
-      <section className="grid content-start">
-        <TitreSection>Campagnes</TitreSection>
-        {liste.length === 0 ? (
-          <EtatVide titre="Aucune campagne">
-            Une campagne appelle une liste de prospects l’un après l’autre, avec une même version de script.
-          </EtatVide>
-        ) : (
-          <ul>
-            {liste.map((c) => {
-              const faits = c.entrees.filter((e) => e.etat === 'appelee' || e.etat === 'sautee').length;
-              return (
-                <li key={c.id} className="border-b border-filet">
-                  <Link href={`/campagnes/${c.id}`} className="group grid gap-1 py-4 sm:grid-cols-[8.5rem_minmax(0,1fr)_auto] sm:items-baseline sm:gap-6">
-                    <span className="font-mono text-sm text-encre-3">{date.format(c.creeLe)}</span>
-                    <span className="font-medium group-hover:underline group-hover:decoration-filet-fort group-hover:underline-offset-4">
-                      {libelleVersion.get(c.versionScriptId) ?? 'Version supprimée'}
-                      <span className="font-normal text-encre-3"> · {c.ligne === 'simulation' ? 'simulation' : c.ligne === 'bluetooth' ? 'téléphone' : 'navigateur'}</span>
-                    </span>
-                    <span className="text-sm text-encre-3">
-                      {STATUTS[c.statut]} · <span className="font-mono">{faits}/{c.entrees.length}</span>
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-      <section className="grid content-start gap-5">
-        <TitreSection>Nouvelle campagne</TitreSection>
-        {versions.length === 0 || listeProspects.length === 0 ? (
-          <p className="text-sm text-encre-3">Il faut au moins un script et un prospect.</p>
-        ) : (
-          <FormulaireCampagne
-            entrepriseId={entreprise.id}
-            versions={versions.map((v) => ({ id: v.id, libelle: v.libelle }))}
-            prospects={listeProspects.map((p) => ({
-              id: p.id,
-              nom: p.nom,
-              detail: [p.role, p.societe].filter(Boolean).join(', '),
-              autorise: Boolean(autorisations.get(p.telephone)?.autorise),
-            }))}
-          />
-        )}
-      </section>
-    </div>
+    <Page largeur="pleine">
+      <SectionCampagnes
+        compte={liste.length}
+        prerequis={prerequis}
+        entrepriseId={entreprise.id}
+        versions={versions.map((v) => ({ id: v.id, libelle: v.libelle }))}
+        prospects={prospectsFormulaire}
+        vide={liste.length === 0}
+      >
+        <NavigationListe memoriser="campagnes">
+          <TableDense libelle="Campagnes" colonnes="7.5rem minmax(0,1fr) minmax(0,1.1fr) 6.5rem 5.5rem 6.5rem" className="pt-2">
+            <EnTeteTable>
+              <CelluleEnTete>Créée</CelluleEnTete>
+              <CelluleEnTete>Version</CelluleEnTete>
+              <CelluleEnTete masqueeMobile>Ligne</CelluleEnTete>
+              <CelluleEnTete>Statut</CelluleEnTete>
+              <CelluleEnTete align="droite">Traités</CelluleEnTete>
+              <CelluleEnTete align="droite" masqueeMobile>
+                Rendez-vous
+              </CelluleEnTete>
+            </EnTeteTable>
+            <div role="rowgroup">
+              {triees.map((c) => {
+                const comptes = comptesCampagne(c.entrees);
+                const ligne = LIGNES[c.ligne] ?? { libelle: c.ligne, classe: 'text-encre-3' };
+                const version = libelleVersion.get(c.versionScriptId) ?? 'Version supprimée';
+                const rendezVous = rendezVousParCampagne.get(c.id) ?? 0;
+                return (
+                  <LigneTable key={c.id} etat={c.statut === 'en-cours' ? 'vivante' : 'normale'}>
+                    <Cellule className="max-sm:order-1 max-sm:flex-1">
+                      <LienLigne href={`/campagnes/${c.id}`} className="font-mono text-xs text-encre-2">
+                        {dateCourte(c.creeLe)}
+                      </LienLigne>
+                    </Cellule>
+                    <Cellule tronquee titre={`${version} · ${ligne.libelle}`} className="max-sm:order-4 max-sm:basis-full max-sm:text-sm">
+                      <span className="text-encre-2">{version}</span>
+                      <span className="text-encre-3 sm:hidden"> · {ligne.libelle}</span>
+                    </Cellule>
+                    <Cellule tronquee titre={ligne.libelle} masqueeMobile className={ligne.classe}>
+                      {ligne.libelle}
+                    </Cellule>
+                    <Cellule etat className={`max-sm:order-2 ${TON_STATUT[c.statut]}`}>
+                      {STATUTS_CAMPAGNE[c.statut]}
+                    </Cellule>
+                    <Cellule mono align="droite" className="max-sm:order-3">
+                      <span aria-hidden="true">
+                        {comptes.traites}/{comptes.total}
+                      </span>
+                      <span className="sr-only">
+                        {comptes.traites} traités sur {comptes.total}
+                      </span>
+                    </Cellule>
+                    <Cellule align="droite" masqueeMobile className={`font-mono text-xs ${rendezVous > 0 ? 'text-encre' : 'text-encre-3'}`}>
+                      {rendezVous}
+                    </Cellule>
+                  </LigneTable>
+                );
+              })}
+            </div>
+          </TableDense>
+        </NavigationListe>
+      </SectionCampagnes>
+    </Page>
   );
 }

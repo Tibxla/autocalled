@@ -1,101 +1,157 @@
 /*
- * Contrat de direction — interface opérateur
- * THÈSE : une régie d'écoute épurée ; l'écran se tait jusqu'à ce qu'un appel vive. Refuse le
- *   tableau de bord SaaS (barre latérale grise, cartes à icônes, chiffres géants).
- * MONDE : neutres chauds sans crème, graphite pour l'encre et les actions, filets d'un pixel,
- *   un seul rouge « antenne » réservé à ce qui est vivant. Une police (Schibsted Grotesk),
- *   chasse fixe (Geist Mono) seulement pour numéros, heures et identifiants.
- * RÉCIT : l'opérateur prépare une entreprise, importe ses prospects, et voit d'un coup d'œil ce
- *   qui peut être appelé.
- * PREMIER ÉCRAN : barre fine (marque, navigation, état de la ligne en trait), puis une liste
- *   en tableau aéré ; l'action principale en haut à droite de la liste.
- * FORME : Operate, monde imposé par docs/direction-visuelle.md, pas de tirage.
+ * Contrat de direction : interface opérateur
+ * THÈSE : une régie d'écoute sombre, dense, pilotée au clavier, pour 100 appels par jour et une démo
+ *   regardée par-dessus l'épaule. L'écran se tait jusqu'à ce qu'un appel vive.
+ * MONDE : graphite chaud #121110, texte #f2f0eb, un seul rouge « antenne » #ff6a4d pour ce qui vit,
+ *   brique mate #b98468 pour les erreurs. Chivo pour le texte, Chivo Mono pour heures, durées, numéros,
+ *   comptes et identifiants. Filets d'un pixel, actions en texte précédées de leur touche, filtres
+ *   soulignés, recherche sur filet bas, coins de 6 px au plus.
+ * RÉCIT : l'opérateur voit l'appel en cours, situe la journée, retrouve n'importe quel appel en deux gestes.
+ * PREMIER ÉCRAN : barre de 64 px (marque, navigation, état de la ligne), puis le contenu en pleine largeur.
+ * FORME : docs/direction-visuelle.md, esquisse G.
+ *
+ * Contrastes mesurés (WCAG) : --encre-3 est le PLANCHER de tout texte utile (5,27 sur fond, 4,96 sur
+ * surface, 4,81 sur survol, 4,86 sur alerte-fond). --trait (3,40) et --trait-2 (2,42) ne servent
+ * jamais au texte : traits, pointillés, glyphes, point éteint.
  */
 @import "tailwindcss";
 
 :root {
-  --fond: #f6f5f2;
-  --surface: #fdfdfc;
-  --encre: #1d1c1a;
-  --encre-2: #55524c;
-  --encre-3: #6f6b64;
-  --filet: #e3e1dc;
-  --filet-fort: #cbc8c1;
-  --survol: #eeede9;
-  --antenne: #d23f26;
-  --alerte: #a1321f;
-  --alerte-fond: #fbeeeb;
-  --focus: #1d1c1a;
+  color-scheme: dark;
+  --fond: #121110;        /* page */
+  --surface: #191816;     /* zones posées : bande Journée, zone de texte, confirmation, aide des raccourcis, message neutre */
+  --survol: #1c1b19;      /* ligne survolée ou sélectionnée */
+  --encre: #f2f0eb;       /* texte principal : 16,56:1 sur fond */
+  --encre-2: #c9c5bd;     /* secondaire fort : 10,96:1 */
+  --encre-3: #8b877f;     /* tertiaire, plancher de tout texte utile */
+  --trait: #6b6862;       /* NON TEXTUEL : traits de la frise, ligne libre en pointillé, glyphe d'étape, filtre inactif à compte nul */
+  --trait-2: #55524c;     /* NON TEXTUEL : graduations fines, point éteint du logo */
+  --grille: #1c1b19;      /* lignes d'heure de la frise */
+  --filet: #211f1d;       /* séparateur entre lignes */
+  --filet-2: #2a2926;     /* filet sous un en-tête de tableau, base de la frise, bord d'un panneau flottant */
+  --filet-fort: #3a3935;  /* contour des touches, filet bas des champs */
+  --souligne: #4a4843;    /* soulignement au survol */
+  --antenne: #ff6a4d;     /* ce qui vit, et rien d'autre : 6,67:1 */
+  /* Brique mate : erreurs et révocation en texte ; ligne coupée et échec d'appel en forme seulement (trait coupé,
+     point creux), leur libellé restant graphite. Chroma OKLCH 0,077 contre 0,188 pour l'antenne : elle ne se lit
+     pas comme un rouge vivant. 5,89 fond / 5,55 surface / 5,38 survol / 5,44 sur alerte-fond. */
+  --alerte: #b98468;
+  --alerte-fond: #221812; /* fond d'un message d'alerte */
+  --focus: #f2f0eb;
+  --gouttiere: 16px;
+  --hauteur-barre: 0px;   /* barre non collante sous 640 px */
 }
 
-@media (prefers-color-scheme: dark) {
+@media (min-width: 640px) {
   :root {
-    --fond: #131312;
-    --surface: #1a1a18;
-    --encre: #ebe9e4;
-    --encre-2: #aeaaa2;
-    --encre-3: #918d85;
-    --filet: #2b2a27;
-    --filet-fort: #3d3b37;
-    --survol: #22211f;
-    --antenne: #ff6a4d;
-    --alerte: #ff8a73;
-    --alerte-fond: #2a1714;
-    --focus: #ebe9e4;
+    --gouttiere: 32px;
+    --hauteur-barre: 64px;
+  }
+}
+
+@media (min-width: 1280px) {
+  :root {
+    --gouttiere: 48px;
   }
 }
 
 @theme inline {
   --color-fond: var(--fond);
   --color-surface: var(--surface);
+  --color-survol: var(--survol);
   --color-encre: var(--encre);
   --color-encre-2: var(--encre-2);
   --color-encre-3: var(--encre-3);
+  --color-trait: var(--trait);
+  --color-trait-2: var(--trait-2);
+  --color-grille: var(--grille);
   --color-filet: var(--filet);
+  --color-filet-2: var(--filet-2);
   --color-filet-fort: var(--filet-fort);
-  --color-survol: var(--survol);
+  --color-souligne: var(--souligne);
   --color-antenne: var(--antenne);
   --color-alerte: var(--alerte);
   --color-alerte-fond: var(--alerte-fond);
+  --color-focus: var(--focus);
   --font-sans: var(--police-texte), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--police-donnees), ui-monospace, monospace;
+
+  /* Échelle : 11 / 12 / 13 / 14 (corps) / 15 (lecture) / 17 / 20 / 28 / 34 px. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
   --text-xs: 0.75rem;
   --text-xs--line-height: 1rem;
   --text-sm: 0.8125rem;
-  --text-sm--line-height: 1.25rem;
+  --text-sm--line-height: 1.125rem;
+  --text-md: 0.875rem;
+  --text-md--line-height: 1.25rem;
   --text-base: 0.9375rem;
   --text-base--line-height: 1.5rem;
-  --text-lg: 1.125rem;
-  --text-lg--line-height: 1.625rem;
-  --text-xl: 1.5rem;
-  --text-xl--line-height: 2rem;
+  --text-lg: 1.0625rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 2.25rem;
+  --text-3xl: 2.125rem;
+  --text-3xl--line-height: 2.625rem;
 }
 
-html {
-  background: var(--fond);
-  color: var(--encre);
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+/* Dans la couche base : les utilitaires (focus-visible:outline-none, outline-trait…) passent devant. */
+@layer base {
+  html {
+    background: var(--fond);
+    color: var(--encre);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    scrollbar-color: var(--filet-fort) var(--fond);
+  }
+
+  body {
+    background: var(--fond);
+  }
+
+  ::selection {
+    background: var(--souligne);
+    color: var(--encre);
+  }
+
+  /* Pas de border-radius ici : l'outline suit le rayon propre de l'élément, sa forme ne change pas au focus. */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
 }
 
-body {
-  font-feature-settings: "ss01", "tnum" 0;
+/* Lignes denses de 38 px et éléments collés à leurs voisins : l'anneau reste à l'intérieur. */
+@utility focus-interne {
+  &:focus-visible {
+    outline-offset: -2px;
+  }
 }
 
-::selection {
-  background: var(--encre);
-  color: var(--fond);
+/* Mouvement réservé à ce qui vit : la réplique de Mina en cours sur la piste de parole. */
+@keyframes parole {
+  from {
+    transform: scaleY(0.35);
+  }
+  to {
+    transform: scaleY(1);
+  }
 }
 
-:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-  border-radius: 4px;
+@utility anime-parole {
+  transform-origin: 50% 100%;
+  animation: parole 0.8s ease-in-out infinite alternate;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
