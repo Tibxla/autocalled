@@ -86,10 +86,16 @@ export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): v
       const obstacle = entreprise.obstacleSuppressionEntreprise(contenu);
       if (obstacle) return refus(obstacle);
       const c = contenu.configuration;
+      const pluriel = (n: number, mot: string) => `${n} ${mot}${n > 1 ? 's' : ''}`;
+      const parties = [
+        c.objections && pluriel(c.objections, 'objection'),
+        c.issues && `${pluriel(c.issues, 'issue')} personnalisée${c.issues > 1 ? 's' : ''}`,
+        c.scripts && `${pluriel(c.scripts, 'script')} (${pluriel(c.versions, 'version')})`,
+      ].filter(Boolean);
       const garde = await confirmer(
         serveur,
         ctx,
-        `Supprimer définitivement l’entreprise ${e.nom} (${e.slug}), sa fiche, ses ${c.objections} objection${c.objections > 1 ? 's' : ''}, ${c.issues} issue${c.issues > 1 ? 's' : ''} personnalisée${c.issues > 1 ? 's' : ''} et ${c.scripts} script${c.scripts > 1 ? 's' : ''} (${c.versions} version${c.versions > 1 ? 's' : ''}). Rien ne se récupère.`,
+        `Supprimer définitivement l’entreprise ${e.nom} (${e.slug}) et sa fiche${parties.length ? `, avec ${parties.join(', ')}` : ''}. Rien ne se récupère.`,
         ['supprimer_entreprise', e.id, c],
       );
       if (garde.etat === 'a-demander') return garde.issue;

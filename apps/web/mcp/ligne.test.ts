@@ -1,9 +1,9 @@
 import { desc, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/db';
-import { appels, campagnes, journalMcp } from '@/db/schema';
+import { appels, campagnes, journalMcp, versionsScript } from '@/db/schema';
 import { enregistrerCampagne } from '@/lib/campagnes';
-import { creerScript } from '@/lib/entreprises';
+import { basculerArchiveScript, creerScript } from '@/lib/entreprises';
 import { importerFiches, revoquerNumero } from '@/lib/prospects';
 import { clientDeTest } from '../test/client-mcp';
 import { fauxPont } from '../test/faux-pont';
@@ -211,5 +211,39 @@ describe('journal', () => {
       ['lancer_appel', 'refus', 'refusee'],
       ['lancer_appel', 'confirmation-demandee', null],
     ]);
+  });
+});
+
+describe('ajouts à la ligne', () => {
+  it('refuse d’appeler avec la version d’un script archivé, sans rien demander', async () => {
+    const [v] = await db.select({ scriptId: versionsScript.scriptId }).from(versionsScript);
+    await basculerArchiveScript(entrepriseId, v!.scriptId, true);
+    const { appeler, messages } = await connecter({ elicitation: 'accepter' });
+
+    expect(await appeler('lancer_appel', appelJulie())).toMatchObject({ erreur: true, texte: expect.stringContaining('Ce script est archivé') });
+    expect(messages).toHaveLength(0);
+    expect(pont.compositions()).toHaveLength(0);
+  });
+
+  it('relance la liaison du téléphone sans confirmation, jamais pendant un appel', async () => {
+    const { appeler } = await connecter();
+
+    expect((await appeler('reconnecter_telephone')).json).toMatchObject({ reconnexion: 'demandée' });
+    expect(pont.requetes.filter((r) => r.chemin === '/telephone/reconnecter')).toHaveLength(1);
+
+    await pont.fermer();
+    pont = await fauxPont({ etat: { appelEnCours: true } });
+    expect(await appeler('reconnecter_telephone')).toMatchObject({ erreur: true, texte: expect.stringContaining('la reconnexion le couperait') });
+    expect(pont.requetes.filter((r) => r.chemin === '/telephone/reconnecter')).toHaveLength(0);
+  });
+
+  it('ne relance pas une analyse déjà en cours', async () => {
+    const [a] = await db
+      .insert(appels)
+      .values({ entrepriseId, prospectId: 'julie', versionScriptId, ligne: 'simulation', numero: '+33639980001', statut: 'traitement', traitementLe: new Date(), transcription: [] , conversationId: 'conv_fictive' })
+      .returning();
+    const { appeler } = await connecter();
+
+    expect(await appeler('relancer_analyse', { appelId: a!.id })).toMatchObject({ erreur: true, texte: 'Le bilan de cet appel est déjà en cours de calcul.' });
   });
 });

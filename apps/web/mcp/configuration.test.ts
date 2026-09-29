@@ -1,8 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { db } from '@/db';
-import { campagnes, consentements, entreprises, imports, journalMcp, objections, prospects, versionsScript } from '@/db/schema';
-import { creerScript } from '@/lib/entreprises';
+import { campagnes, consentements, entreprises, imports, issuesPersonnalisees, journalMcp, objections, prospects, scripts, versionsScript } from '@/db/schema';
+import { basculerArchiveScript, creerScript } from '@/lib/entreprises';
 import { importerFiches, revoquerNumero } from '@/lib/prospects';
 import { clientDeTest } from '../test/client-mcp';
 import { entrepriseDeTest, fiche } from '../test/fixtures';
@@ -143,5 +143,93 @@ describe('campagnes', () => {
       texte: 'Prospects inconnus dans cette entreprise : personne.',
     });
     expect(await db.$count(campagnes)).toBe(0);
+  });
+});
+
+describe('gestes de configuration ajoutés', () => {
+  it('refuse d’écraser une fiche relue avant une autre écriture, écrit avec la lecture à jour', async () => {
+    await entrepriseDeTest();
+    const { modifieLe } = (await appeler('lire_entreprise', { entreprise: 'gite-fictif' })).json as { modifieLe: string };
+    await appeler('modifier_fiche_entreprise', { entreprise: 'gite-fictif', champs: { offre: 'Première offre.' } });
+
+    expect(await appeler('modifier_fiche_entreprise', { entreprise: 'gite-fictif', champs: { offre: 'Offre périmée.' }, connu: modifieLe })).toMatchObject({
+      erreur: true,
+      texte: expect.stringContaining('par Claude Code'),
+    });
+    expect((await db.select({ offre: entreprises.offre, modifiePar: entreprises.modifiePar }).from(entreprises))[0]).toEqual({ offre: 'Première offre.', modifiePar: 'mcp' });
+  });
+
+  it('ordonne les objections et les rend dans cet ordre, l’origine mcp posée', async () => {
+    await entrepriseDeTest();
+    const ids: string[] = [];
+    for (const libelle of ['Pas le temps', 'Trop cher']) ids.push(((await appeler('enregistrer_objection', { entreprise: 'gite-fictif', libelle })).json as { objectionId: string }).objectionId);
+
+    expect((await appeler('ordonner_objections', { entreprise: 'gite-fictif', ordre: [ids[1], ids[0]] })).erreur).toBe(false);
+    const lue = (await appeler('lire_entreprise', { entreprise: 'gite-fictif' })).json as { objections: { libelle: string; modifiePar: string }[] };
+    expect(lue.objections.map((o) => [o.libelle, o.modifiePar])).toEqual([
+      ['Trop cher', 'mcp'],
+      ['Pas le temps', 'mcp'],
+    ]);
+    expect((await appeler('ordonner_objections', { entreprise: 'gite-fictif', ordre: [ids[0]] })).erreur).toBe(true);
+  });
+
+  it('renomme une issue sans toucher son rattachement', async () => {
+    await entrepriseDeTest();
+    const { issueId } = (await appeler('ajouter_issue', { entreprise: 'gite-fictif', libelle: 'Brochure', issueSysteme: 'envoi-informations' })).json as { issueId: string };
+
+    expect((await appeler('renommer_issue', { entreprise: 'gite-fictif', issueId, libelle: 'Brochure envoyée' })).json).toEqual({ issueId, libelle: 'Brochure envoyée' });
+    expect(await db.select({ libelle: issuesPersonnalisees.libelle, issueSysteme: issuesPersonnalisees.issueSysteme }).from(issuesPersonnalisees)).toEqual([
+      { libelle: 'Brochure envoyée', issueSysteme: 'envoi-informations' },
+    ]);
+  });
+
+  it('renomme et archive un script, dit son usage, et refuse ensuite de lancer une campagne sur lui', async () => {
+    const e = await entrepriseDeTest();
+    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01')]);
+    const { scriptId, versionScriptId } = await creerScript(e.id, 'Découverte');
+
+    expect((await appeler('renommer_script', { entreprise: 'gite-fictif', scriptId, nom: 'Relance' })).json).toEqual({ scriptId, nom: 'Relance' });
+    expect((await appeler('archiver_script', { entreprise: 'gite-fictif', scriptId, archive: true })).json).toEqual({ scriptId, archive: true, usage: { campagnes: 0, appelsEnCours: 0 } });
+    expect(await db.select({ nom: scripts.nom, archive: scripts.archive }).from(scripts)).toEqual([{ nom: 'Relance', archive: true }]);
+    expect(await appeler('nouvelle_campagne', { entreprise: 'gite-fictif', versionScriptId, ligne: 'simulation', prospects: ['julie'] })).toMatchObject({
+      erreur: true,
+      texte: expect.stringContaining('Ce script est archivé'),
+    });
+    await basculerArchiveScript(e.id, scriptId, false);
+    expect((await appeler('nouvelle_campagne', { entreprise: 'gite-fictif', versionScriptId, ligne: 'simulation', prospects: ['julie'] })).erreur).toBe(false);
+  });
+
+  it('crée une version seulement si `connu` est la dernière version', async () => {
+    const e = await entrepriseDeTest();
+    const { scriptId } = await creerScript(e.id, 'Découverte');
+
+    expect(await appeler('creer_version_script', { entreprise: 'gite-fictif', scriptId, etapes: [{ intention: 'Autre accroche', exemples: [] }], connu: 2 })).toMatchObject({
+      erreur: true,
+      texte: expect.stringContaining('Une v1 a été créée'),
+    });
+    expect((await appeler('creer_version_script', { entreprise: 'gite-fictif', scriptId, etapes: [{ intention: 'Autre accroche', exemples: [] }], connu: 1 })).json).toMatchObject({ numero: 2 });
+    expect((await db.select({ creePar: versionsScript.creePar }).from(versionsScript)).map((v) => v.creePar).sort()).toEqual(['mcp', null]);
+  });
+});
+
+describe('supprimer_entreprise', () => {
+  it('annonce ce qui part et supprime une entreprise vide après l’accord ; refuse sans rien demander une entreprise qui a un historique', async () => {
+    const c = await clientDeTest({ elicitation: 'accepter' });
+    try {
+      const vide = await entrepriseDeTest('Erreur fictive', 'erreur-fictive');
+      await creerScript(vide.id, 'Découverte');
+      const pleine = await entrepriseDeTest();
+      await importerFiches(pleine.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01')]);
+
+      expect(await c.appeler('supprimer_entreprise', { entreprise: 'gite-fictif' })).toMatchObject({ erreur: true, texte: expect.stringContaining('1 prospect, 1 import') });
+      expect(c.messages).toHaveLength(0);
+      expect((await c.appeler('supprimer_entreprise', { entreprise: 'erreur-fictive' })).json).toMatchObject({ supprimee: true, scripts: 1, versions: 1 });
+      expect(c.messages[0]).toBe(
+        'Supprimer définitivement l’entreprise Erreur fictive (erreur-fictive) et sa fiche, avec 1 script (1 version). Rien ne se récupère.',
+      );
+      expect((await db.select({ slug: entreprises.slug }).from(entreprises)).map((e) => e.slug)).toEqual(['gite-fictif']);
+    } finally {
+      await c.fermer();
+    }
   });
 });

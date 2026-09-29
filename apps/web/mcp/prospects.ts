@@ -63,7 +63,7 @@ export function outilsDeProspects(declarer: Declarer, serveur: McpServer): void 
         serveur,
         ctx,
         `Supprimer définitivement la fiche de ${p.nom}${p.societe ? ` (${p.societe})` : ''} dans l’entreprise ${e.nom}. ${
-          nAppels ? `Ses ${nAppels} appel${nAppels > 1 ? 's gardent leur' : ' garde son'} bilan, sans fiche.` : 'Aucun appel ne lui est rattaché.'
+          nAppels > 1 ? `Ses ${nAppels} appels gardent leur bilan, sans fiche.` : nAppels === 1 ? 'Son appel garde son bilan, sans fiche.' : 'Aucun appel ne lui est rattaché.'
         } ${
           autorisations.get(p.telephone)?.autorise
             ? `Le numéro ${numero} reste autorisé : revoquer_numero pour ne plus jamais l’appeler.`
