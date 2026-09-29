@@ -6,9 +6,9 @@ import { useRaccourcis } from './clavier';
 
 /**
  * Confirmation en ligne, juste sous l'action qui l'ouvre. Obligatoire pour tout geste qui fait sonner un
- * téléphone (appel, lancement ou reprise d'une campagne téléphone), prend la main, raccroche, révoque,
+ * téléphone (appel, lancement ou reprise d'une campagne téléphone), prend la main, révoque,
  * oublie le téléphone, déconnecte l'API Google, remplace un bilan (Réanalyser) ou desserre un garde-fou.
- * Pas de confirmation pour les freins réversibles (Suspendre), la ligne navigateur, la simulation,
+ * Pas de confirmation pour les freins (Raccrocher, Suspendre), la ligne navigateur, la simulation,
  * l'archivage et les enregistrements de formulaire.
  *
  * Focus, tranché : à l'ouverture il va sur le CONTENEUR, jamais sur un bouton. Entrée confirme seulement

@@ -381,7 +381,7 @@ export interface VueBandeAppelProps {
   /** Accueil : version collante quand la bande sort de l'écran. */
   condensee?: boolean;
   /** Démonstration : une confirmation déjà ouverte. */
-  confirmationInitiale?: 'prise' | 'raccrochage' | null;
+  confirmationInitiale?: 'prise' | null;
   /** Fil perdu mais appel encore « en cours » en base : Raccrocher reste proposé (le pont a pu redémarrer). */
   raccrochageSiPerdu?: boolean;
 }
@@ -434,22 +434,15 @@ export function VueBandeAppel({
   const nomProspect = libelleProspect ?? (identite ? prenom(identite.prospect) : 'Prospect');
 
   const confirmationPrise = useConfirmation();
-  const confirmationRaccrochage = useConfirmation();
   const [ouverteAuDepart, setOuverteAuDepart] = useState(confirmationInitiale);
   const priseOuverte = confirmationPrise.ouverte || ouverteAuDepart === 'prise';
-  const raccrochageOuvert = confirmationRaccrochage.ouverte || ouverteAuDepart === 'raccrochage';
   const fermerPrise = () => {
     setOuverteAuDepart(null);
     confirmationPrise.fermer();
   };
-  const fermerRaccrochage = () => {
-    setOuverteAuDepart(null);
-    confirmationRaccrochage.fermer();
-  };
 
   const [filOuvert, setFilOuvert] = useState(variante === 'fiche');
   const boutonPrise = useRef<HTMLButtonElement>(null);
-  const boutonRaccrocher = useRef<HTMLButtonElement>(null);
 
   const telephone = !actions;
   const voirEcoute = telephone && enLigne && prise.etat !== 'active' && prise.etat !== 'connexion';
@@ -460,7 +453,10 @@ export function VueBandeAppel({
 
   const basculerEcoute = () => (ecoute.active ? onArreterEcoute() : onEcouter());
   const ouvrirPrise = () => confirmationPrise.ouvrir(boutonPrise.current);
-  const ouvrirRaccrochage = () => confirmationRaccrochage.ouvrir(boutonRaccrocher.current);
+  // Raccrocher est un frein : immédiat, sans confirmation (choix de l'opérateur, aligné sur l'ADR 0009).
+  const raccrocher = () => {
+    if (!raccrochage.enCours) void onRaccrocher();
+  };
 
   useRaccourcis([
     { touche: 'e', libelle: ecoute.active ? 'Arrêter l’écoute' : 'Écouter', groupe: 'Appel', actif: raccourcis && voirEcoute, action: basculerEcoute },
@@ -527,7 +523,7 @@ export function VueBandeAppel({
         </Action>
       ) : null}
       {voirRaccrocher ? (
-        <Action ref={boutonRaccrocher} ton="alerte" className="sm:ml-6" onClick={ouvrirRaccrochage} aria-expanded={raccrochageOuvert}>
+        <Action ton="alerte" className="sm:ml-6" onClick={raccrocher} enCours={raccrochage.enCours} libelleEnCours="Raccrochage…" disabled={raccrochage.enCours}>
           Raccrocher
         </Action>
       ) : null}
@@ -584,20 +580,6 @@ export function VueBandeAppel({
             prends le relais »). Mets un casque : sans lui, ton micro reprend la voix du prospect. La transcription et le bilan s’arrêtent au relais.
           </Confirmation>
         ) : null}
-        <Confirmation
-          ouverte={raccrochageOuvert && (enLigne || raccrocherPerdu)}
-          question={`Raccrocher l’appel de ${nomProspect} ?`}
-          libelleConfirmer="Raccrocher"
-          libelleAnnuler="Continuer l’appel"
-          ton="alerte"
-          enCours={raccrochage.enCours}
-          libelleEnCours="Raccrochage…"
-          erreur={raccrochage.erreur}
-          onConfirmer={() => onRaccrocher()}
-          onAnnuler={fermerRaccrochage}
-        >
-          La conversation s’arrête pour le prospect.
-        </Confirmation>
         {prise.etat === 'connexion' ? <p className="text-sm text-encre-3">Connexion au téléphone…</p> : null}
         {prise.etat === 'active' ? (
           <p className="text-sm text-antenne">
@@ -619,7 +601,7 @@ export function VueBandeAppel({
             {ecoute.erreur}
           </p>
         ) : null}
-        {raccrochage.erreur && !raccrochageOuvert ? (
+        {raccrochage.erreur ? (
           <p role="alert" className="rounded-md bg-alerte-fond px-3.5 py-2.5 text-sm text-alerte">
             {raccrochage.erreur}
           </p>
@@ -631,7 +613,7 @@ export function VueBandeAppel({
             {raccrocherPerdu ? <p>Si le téléphone sonne encore, raccroche d’ici.</p> : null}
             <div className="-mx-1.5 flex flex-wrap gap-x-4">
               {raccrocherPerdu ? (
-                <Action ref={boutonRaccrocher} ton="alerte" onClick={ouvrirRaccrochage} aria-expanded={raccrochageOuvert}>
+                <Action ton="alerte" onClick={raccrocher} enCours={raccrochage.enCours} libelleEnCours="Raccrochage…" disabled={raccrochage.enCours}>
                   Raccrocher
                 </Action>
               ) : null}
@@ -699,7 +681,7 @@ export function VueBandeAppel({
                 </Action>
               ) : null}
               {voirRaccrocher ? (
-                <Action ton="alerte" onClick={ouvrirRaccrochage} className="h-8">
+                <Action ton="alerte" onClick={raccrocher} enCours={raccrochage.enCours} libelleEnCours="Raccrochage…" disabled={raccrochage.enCours} className="h-8">
                   Raccrocher
                 </Action>
               ) : null}
