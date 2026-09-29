@@ -138,7 +138,7 @@ def tester_son(fichier_variables: str, fichier_son: str) -> int:
             pont.fermer()
             boucle.quit()
 
-    telephone.composer(numero, Suivi())
+    telephone.composer(numero, Suivi(), lambda raison: (journal("composition impossible :", raison), boucle.quit()))
     GLib.timeout_add_seconds(90, lambda: (telephone.raccrocher(), False)[-1])
     boucle.run()
     return 0

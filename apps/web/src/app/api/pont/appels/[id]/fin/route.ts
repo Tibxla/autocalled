@@ -23,11 +23,12 @@ export async function POST(requete: Request, { params }: { params: Promise<{ id:
   if (conversationId) {
     await db.update(appels).set({ conversationId, finLe: new Date() }).where(eq(appels.id, id));
     after(() => traiterAppel(id));
-  } else if (fin.raison === 'canal son absent') {
-    await db
-      .update(appels)
-      .set({ finLe: new Date(), statut: 'echec', erreur: 'Le téléphone passerelle n’a pas ouvert le canal son, même après reconnexion.' })
-      .where(eq(appels.id, id));
+  } else if (fin.raison === 'canal son absent' || fin.raison === 'composition impossible') {
+    const erreur =
+      fin.raison === 'canal son absent'
+        ? 'Le téléphone passerelle n’a pas ouvert le canal son, même après reconnexion.'
+        : 'Le téléphone passerelle n’a pas composé, même après reconnexion : vérifie qu’il est allumé et à portée (page Téléphone).';
+    await db.update(appels).set({ finLe: new Date(), statut: 'echec', erreur }).where(eq(appels.id, id));
   } else {
     await db.update(appels).set({ finLe: new Date(), statut: 'termine', issue: 'non-abouti' }).where(eq(appels.id, id));
   }

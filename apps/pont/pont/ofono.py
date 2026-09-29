@@ -79,6 +79,7 @@ class Telephone:
             self._raison_fin, "DisconnectReason", "org.ofono.VoiceCall", "org.ofono", path_keyword="chemin"
         )
         bus.add_signal_receiver(self._retire, "CallRemoved", "org.ofono.VoiceCallManager", "org.ofono")
+        bus.add_signal_receiver(self._ajoute, "CallAdded", "org.ofono.VoiceCallManager", "org.ofono")
         bus.add_signal_receiver(self._modem_retire, "ModemRemoved", "org.ofono.Manager", "org.ofono")
 
     # --- état ------------------------------------------------------------------------------------
@@ -129,19 +130,29 @@ class Telephone:
         # mains-libres : un agent enregistré après coup n'obtient le mSBC que si la liaison l'avait déjà annoncé.
         audio.Register(CHEMIN_AGENT, dbus.Array([dbus.Byte(MSBC), dbus.Byte(CVSD)], signature="y"))
 
-    def composer(self, numero: str, suivi: Suivi) -> None:
+    def composer(self, numero: str, suivi: Suivi, echec: Callable[[str], None]) -> None:
+        """Demande au téléphone de composer, sans attendre sa réponse : un téléphone dont la liaison s'est figée
+        ne répond pas, et un appel D-Bus bloquant figeait tout le pont (29/09). `echec` est appelé si la demande
+        est refusée ou reste sans réponse."""
         if self._suivi is not None:
             raise RuntimeError("un appel est déjà en cours")
         self._modem = self.modem()
         self._couper_traitement_du_telephone()
         self._suivi = suivi  # avant Dial : le canal son peut s'ouvrir aussitôt
+        self._appel = None
         self._raison = "inconnue"
         gestionnaire = dbus.Interface(self._bus.get_object("org.ofono", self._modem), "org.ofono.VoiceCallManager")
-        try:
-            self._appel = str(gestionnaire.Dial(numero, "default"))
-        except dbus.DBusException:
-            self._suivi = None
-            raise
+
+        def reponse(chemin):
+            if self._suivi is suivi:
+                self._appel = str(chemin)
+
+        def erreur(e):
+            if self._suivi is suivi and self._appel is None:
+                self._suivi = None
+                echec(e.get_dbus_message() if isinstance(e, dbus.DBusException) else str(e))
+
+        gestionnaire.Dial(numero, "default", reply_handler=reponse, error_handler=erreur, timeout=15)
 
     def raccrocher(self) -> None:
         """Depuis n'importe quel thread."""
@@ -158,9 +169,17 @@ class Telephone:
 
         GLib.idle_add(_faire)
 
+    def modem_connu(self) -> str | None:
+        """Le téléphone passerelle appairé, connecté ou non (pour le reconnecter à distance)."""
+        manager = dbus.Interface(self._bus.get_object("org.ofono", "/"), "org.ofono.Manager")
+        for chemin, proprietes in manager.GetModems():
+            if proprietes.get("Type") == "hfp":
+                return str(chemin)
+        return None
+
     def reconnecter(self, modem: str | None = None) -> None:
-        """Déconnecte puis reconnecte le téléphone (canal son bloqué, ou liaison établie sans le mSBC).
-        Bloquant : hors du thread GLib, sur une connexion D-Bus à part."""
+        """Déconnecte puis reconnecte le téléphone (liaison figée, canal son bloqué, ou liaison établie sans le
+        mSBC). Bloquant : hors du thread GLib, sur une connexion D-Bus à part."""
         modem = modem or self._modem
         if not modem:
             return
@@ -168,7 +187,10 @@ class Telephone:
         bus = dbus.SystemBus(private=True)
         try:
             d = dbus.Interface(bus.get_object("org.bluez", appareil), "org.bluez.Device1")
-            d.Disconnect()
+            try:
+                d.Disconnect()
+            except dbus.DBusException:
+                pass  # déjà déconnecté
             time.sleep(3)
             d.Connect()
             time.sleep(4)  # le temps que la liaison mains-libres se rétablisse
@@ -193,6 +215,14 @@ class Telephone:
             os.close(fd)
             return
         self._suivi.nouvelle_connexion(fd, codec)
+
+    def _ajoute(self, chemin, proprietes):
+        # L'appel peut être annoncé avant la réponse à Dial : on le rattache dès son apparition.
+        if self._suivi is not None and self._appel is None and str(chemin).startswith(str(self._modem)):
+            self._appel = str(chemin)
+            etat = proprietes.get("State")
+            if etat:
+                self._suivi.etat_change(str(etat))
 
     def _propriete(self, nom, valeur, chemin=None):
         if chemin == self._appel and nom == "State" and self._suivi:

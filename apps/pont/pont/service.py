@@ -13,6 +13,7 @@ présente le même secret à l'application quand il la rappelle (`$WEB_URL/api/p
                                       le téléphone `remplacer` est oublié dès que le nouveau est appairé
     POST /appairage/fermer
     POST /telephone/oublier           {adresse}
+    POST /telephone/reconnecter       relance la liaison Bluetooth du téléphone (hors appel)
     POST /reglages                    {appelsParHeure, appelsParJour, pauseEntreAppelsS}
 
 Prise de main (ADR 0008), WebSocket sur 127.0.0.1:PONT_PORT_WS, joint par `tailscale serve` sous /prise-en-main :
@@ -203,6 +204,17 @@ class Service:
         if not appel:
             return 404, {"erreur": "Appel inconnu du pont."}
         appel.raccrocher()
+        return 202, {"ok": True}
+
+    def reconnecter(self) -> tuple[int, dict[str, Any]]:
+        """Relance la liaison Bluetooth du téléphone à distance (liaison figée, téléphone hors de portée revenu)."""
+        if not self._telephone.libre():
+            return 409, {"erreur": "Un appel est en cours : raccroche d'abord."}
+        modem = dans_glib(self._telephone.modem_connu)
+        if not modem:
+            return 404, {"erreur": "Aucun téléphone appairé."}
+        self.journal("reconnexion du téléphone demandée depuis l'application")
+        threading.Thread(target=self._telephone.reconnecter, args=(modem,), daemon=True).start()
         return 202, {"ok": True}
 
     def appairage(self, action: str, corps: dict[str, Any]) -> tuple[int, dict[str, Any]]:
@@ -403,6 +415,8 @@ class Service:
                     self._repondre(*service.appairage("fermer", corps))
                 elif self.path == "/reglages":
                     self._repondre(*service.regler(corps))
+                elif self.path == "/telephone/reconnecter":
+                    self._repondre(*service.reconnecter())
                 elif self.path == "/telephone/oublier":
                     self._repondre(*service.appairage("oublier", corps))
                 else:

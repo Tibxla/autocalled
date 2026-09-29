@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 import { Bouton, Message, Saisie } from '@/components/ui';
-import { type Appairage, type EtatTelephone, fermerAppairage, lireAppairage, oublierTelephone, ouvrirAppairage } from './actions';
+import { type Appairage, type EtatTelephone, fermerAppairage, lireAppairage, oublierTelephone, ouvrirAppairage, reconnecterTelephone } from './actions';
 
 /**
  * Le téléphone passerelle et ce qu'on peut lui faire, au même endroit : sa fiche quand il est connu,
@@ -103,6 +103,7 @@ export function PanneauTelephone({ telephone, initial }: { telephone: EtatTeleph
       ) : null}
       {telephone.appelEnCours ? null : (
         <div className="flex flex-wrap items-center gap-3">
+          <BoutonReconnecter />
           <Bouton type="button" variante="secondaire" onClick={() => setChanger(true)}>
             Changer de téléphone
           </Bouton>
@@ -208,6 +209,42 @@ function AppairageEnCours({ appairage, onFerme }: { appairage: Appairage; onFerm
         Fermer la fenêtre
       </Bouton>
     </div>
+  );
+}
+
+/**
+ * Relance la liaison Bluetooth à distance : utile quand le téléphone ne répond plus (liaison endormie) ou vient
+ * de revenir à portée, sans avoir à le toucher. La page se relit une dizaine de secondes plus tard.
+ */
+function BoutonReconnecter() {
+  const router = useRouter();
+  const [etat, setEtat] = useState<'repos' | 'en-cours' | 'fait'>('repos');
+  const [erreur, setErreur] = useState<string | null>(null);
+  return (
+    <>
+      <Bouton
+        type="button"
+        variante="secondaire"
+        disabled={etat === 'en-cours'}
+        onClick={async () => {
+          setErreur(null);
+          setEtat('en-cours');
+          const r = await reconnecterTelephone();
+          if (!r.ok) {
+            setErreur(r.raison);
+            setEtat('repos');
+            return;
+          }
+          setTimeout(() => {
+            setEtat('fait');
+            router.refresh();
+          }, 12_000);
+        }}
+      >
+        {etat === 'en-cours' ? 'Reconnexion…' : 'Reconnecter le téléphone'}
+      </Bouton>
+      {erreur ? <Message ton="alerte">{erreur}</Message> : null}
+    </>
   );
 }
 
