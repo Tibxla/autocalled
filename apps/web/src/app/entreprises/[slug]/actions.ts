@@ -131,3 +131,32 @@ export async function lireApercu(
   const { ok, ...apercu } = resultat;
   return { ok, apercu };
 }
+
+/** Monte ou descend une objection d'un rang : l'ordre dans lequel Mina les reçoit. */
+export async function deplacerObjection(
+  entrepriseId: string,
+  objectionId: string,
+  sens: 'monter' | 'descendre',
+): Promise<ResultatAction<{ position: number }>> {
+  await exigerOperateur();
+  const resultat = await entreprise.deplacerObjection(entrepriseId, objectionId, sens === 'monter' ? -1 : 1);
+  if (!resultat.ok) return resultat;
+  revalidatePath('/entreprises', 'layout');
+  return { ok: true, position: resultat.position };
+}
+
+export async function renommerScript(entrepriseId: string, scriptId: string, nom: string): Promise<ResultatAction<{ nom: string }>> {
+  await exigerOperateur();
+  const saisie = nomScriptSchema.safeParse(nom);
+  if (!saisie.success) return { ok: false, raison: saisie.error.issues[0]?.message ?? 'Nom invalide.' };
+  if (!(await entreprise.renommerScript(entrepriseId, scriptId, saisie.data))) return { ok: false, raison: 'Ce script n’existe plus.' };
+  revalidatePath('/entreprises', 'layout');
+  return { ok: true, nom: saisie.data };
+}
+
+export async function basculerArchiveScript(entrepriseId: string, scriptId: string, archive: boolean): Promise<ResultatAction<{ archive: boolean }>> {
+  await exigerOperateur();
+  if (!(await entreprise.basculerArchiveScript(entrepriseId, scriptId, archive))) return { ok: false, raison: 'Ce script n’existe plus.' };
+  revalidatePath('/entreprises', 'layout');
+  return { ok: true, archive };
+}

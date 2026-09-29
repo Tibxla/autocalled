@@ -1,12 +1,15 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
+import Link from 'next/link';
+import { BoutonArchive } from '@/components/bouton-archive';
 import { NavigationListe } from '@/components/clavier';
 import { FUSEAU } from '@/components/format-appel';
-import { Cellule, CelluleEnTete, EnTeteTable, EtatVide, LienLigne, LigneTable, Page, TableDense } from '@/components/ui';
+import { Cellule, CelluleEnTete, EnTeteTable, EtatVide, LienLigne, LigneTable, Page, TableDense, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { campagnes, scripts, versionsScript } from '@/db/schema';
 import { analyseEntreprise } from '@/lib/lecture';
 import { entrepriseParSlug } from '@/lib/pages';
+import { basculerArchiveScript } from '../actions';
 import { CreationScript } from './formulaire-script';
 
 export const metadata: Metadata = { title: 'Scripts' };
@@ -18,7 +21,7 @@ export default async function PageScripts({ params }: { params: Promise<{ slug: 
   const { slug } = await params;
   const entreprise = await entrepriseParSlug(slug);
   const [liste, versions, actives, analyse] = await Promise.all([
-    db.select({ id: scripts.id, nom: scripts.nom }).from(scripts).where(eq(scripts.entrepriseId, entreprise.id)).orderBy(asc(scripts.creeLe)),
+    db.select({ id: scripts.id, nom: scripts.nom, archive: scripts.archive }).from(scripts).where(eq(scripts.entrepriseId, entreprise.id)).orderBy(asc(scripts.creeLe)),
     db
       .select({
         id: versionsScript.id,
@@ -37,7 +40,8 @@ export default async function PageScripts({ params }: { params: Promise<{ slug: 
     analyseEntreprise(entreprise.id, false),
   ]);
 
-  const lignes = liste.map((s) => {
+  const archives = liste.filter((s) => s.archive);
+  const lignes = liste.filter((s) => !s.archive).map((s) => {
     const siennes = versions.filter((v) => v.scriptId === s.id);
     const derniere = siennes.reduce<(typeof siennes)[number] | undefined>((max, v) => (!max || v.numero > max.numero ? v : max), undefined);
     const ids = new Set(siennes.map((v) => v.id));
@@ -58,11 +62,17 @@ export default async function PageScripts({ params }: { params: Promise<{ slug: 
           comparent des choses comparables.
         </p>
         <section aria-labelledby="titre-scripts">
-          <CreationScript entrepriseId={entreprise.id} slug={slug} compte={liste.length} />
+          <CreationScript entrepriseId={entreprise.id} slug={slug} compte={lignes.length} />
           {lignes.length === 0 ? (
-            <EtatVide titre="Aucun script.">
-              Crée un premier script : il démarre avec quatre étapes (accroche, qualification, pitch, rendez-vous) que tu adaptes.
-            </EtatVide>
+            archives.length > 0 ? (
+              <EtatVide titre="Tous les scripts sont archivés.">
+                Aucun script n’est proposé pour lancer un appel ou une campagne : réactives-en un plus bas, ou crées-en un nouveau.
+              </EtatVide>
+            ) : (
+              <EtatVide titre="Aucun script.">
+                Crée un premier script : il démarre avec quatre étapes (accroche, qualification, pitch, rendez-vous) que tu adaptes.
+              </EtatVide>
+            )
           ) : (
             <NavigationListe memoriser="scripts">
               <TableDense libelle="Scripts" colonnes={COLONNES} className="mt-2">
@@ -105,6 +115,28 @@ export default async function PageScripts({ params }: { params: Promise<{ slug: 
             </NavigationListe>
           )}
         </section>
+
+        {archives.length > 0 ? (
+          <section aria-labelledby="titre-scripts-archives">
+            <TitreSection id="titre-scripts-archives" compte={archives.length}>
+              Archivés
+            </TitreSection>
+            <ul>
+              {archives.map((s) => (
+                <li key={s.id} className="flex min-h-[38px] flex-wrap items-center gap-x-4 border-b border-filet py-1 text-encre-3">
+                  <Link
+                    href={`/entreprises/${slug}/scripts/${s.id}`}
+                    className="min-w-0 flex-1 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline"
+                  >
+                    {s.nom}
+                  </Link>
+                  <span className="text-sm">Archivé</span>
+                  <BoutonArchive archivee masculin nom={s.nom} action={basculerArchiveScript.bind(null, entreprise.id, s.id, false)} />
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
       </div>
     </Page>
   );

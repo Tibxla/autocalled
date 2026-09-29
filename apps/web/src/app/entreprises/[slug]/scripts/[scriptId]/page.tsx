@@ -8,7 +8,9 @@ import { db } from '@/db';
 import { campagnes, prospects, scripts, versionsScript, type Etape } from '@/db/schema';
 import { analyseEntreprise } from '@/lib/lecture';
 import { entrepriseParSlug } from '@/lib/pages';
+import { usageDuScript } from '@/lib/versions';
 import { ApercuMina } from '../../apercu-mina';
+import { ActionsScript } from './actions-script';
 import { EspaceVersion } from './espace-version';
 
 export const metadata: Metadata = { title: 'Script' };
@@ -122,7 +124,7 @@ export default async function PageScript({
   const base = `/entreprises/${slug}/scripts/${script.id}`;
   const lienVersion = (n: number) => (n === derniere.numero ? base : `${base}?version=${n}`);
 
-  const [analyse, servies, listeProspects] = await Promise.all([
+  const [analyse, servies, listeProspects, usage] = await Promise.all([
     analyseEntreprise(entreprise.id, false),
     db
       .select({ versionScriptId: campagnes.versionScriptId, statut: campagnes.statut })
@@ -141,6 +143,7 @@ export default async function PageScript({
       .from(prospects)
       .where(eq(prospects.entrepriseId, entreprise.id))
       .orderBy(asc(prospects.nom), asc(prospects.id)),
+    usageDuScript(script.id),
   ]);
   const chiffres = new Map(analyse.parVersion.map((v) => [v.versionScriptId, v]));
   const numeroDe = new Map(versions.map((v) => [v.id, v.numero]));
@@ -166,6 +169,7 @@ export default async function PageScript({
           <h2 className="text-lg font-semibold text-balance">
             {script.nom} <span className="ml-1 font-mono text-md font-normal text-encre-3">v{affichee.numero}</span>
           </h2>
+          <ActionsScript entrepriseId={entreprise.id} scriptId={script.id} nom={script.nom} archive={script.archive} usage={usage} />
         </div>
 
         <nav aria-label="Versions du script" className="border-b border-filet pb-2">

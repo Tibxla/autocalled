@@ -1,6 +1,6 @@
 import 'server-only';
 import { etapesIdentiques } from '@autocalled/domain';
-import { and, desc, eq, max } from 'drizzle-orm';
+import { and, asc, desc, eq, max } from 'drizzle-orm';
 import { cleJour, heure, jourCourt } from '@/components/format-appel';
 import { db } from '@/db';
 import { entreprises, issuesPersonnalisees, objections, type Origine, scripts, versionsScript } from '@/db/schema';
@@ -149,6 +149,42 @@ export async function basculerArchiveObjection(
   return touchees.length > 0;
 }
 
+/**
+ * Monte (-1) ou descend (+1) une objection d'un rang parmi les objections actives : c'est l'ordre dans lequel
+ * Mina les reçoit. Toute la liste est renumérotée de 1 à n (les archivées gardent leur place relative). Le
+ * réordonnancement ne compte pas comme une modification de l'objection (`modifieLe` inchangé) : l'opérateur
+ * ne doit pas entrer en conflit avec son propre formulaire ouvert. Renvoie la nouvelle position (à partir de 1).
+ */
+export async function deplacerObjection(entrepriseId: string, objectionId: string, sens: -1 | 1): Promise<{ ok: true; position: number } | Refus> {
+  return db.transaction(async (tx) => {
+    const liste = await tx
+      .select({ id: objections.id, ordre: objections.ordre, archivee: objections.archivee })
+      .from(objections)
+      .where(eq(objections.entrepriseId, entrepriseId))
+      .orderBy(asc(objections.ordre), asc(objections.id))
+      .for('update');
+    const actives = liste.filter((o) => !o.archivee);
+    const rang = actives.findIndex((o) => o.id === objectionId);
+    if (rang < 0) {
+      return {
+        ok: false as const,
+        raison: liste.some((o) => o.id === objectionId) ? 'Une objection archivée n’a pas de rang : réactive-la d’abord.' : 'Cette objection n’existe pas dans cette entreprise.',
+      };
+    }
+    const voisine = actives[rang + sens];
+    if (!voisine) return { ok: true as const, position: rang + 1 };
+
+    const ici = liste.findIndex((o) => o.id === objectionId);
+    const la = liste.findIndex((o) => o.id === voisine.id);
+    const nouvelle = [...liste];
+    [nouvelle[ici], nouvelle[la]] = [nouvelle[la]!, nouvelle[ici]!];
+    for (const [i, o] of nouvelle.entries()) {
+      if (o.ordre !== i + 1) await tx.update(objections).set({ ordre: i + 1 }).where(eq(objections.id, o.id));
+    }
+    return { ok: true as const, position: rang + 1 + sens };
+  });
+}
+
 export async function ajouterIssue(entrepriseId: string, saisie: SaisieIssue): Promise<string> {
   const [creee] = await db
     .insert(issuesPersonnalisees)
@@ -186,6 +222,29 @@ export async function creerScript(entrepriseId: string, nom: string): Promise<{ 
     if (!version) throw new Error('création de la version impossible');
     return { scriptId: script.id, versionScriptId: version.id };
   });
+}
+
+/** Renomme un script ; ses versions, ses appels et ses campagnes le suivent. False s'il n'existe pas. */
+export async function renommerScript(entrepriseId: string, scriptId: string, nom: string): Promise<boolean> {
+  const touches = await db
+    .update(scripts)
+    .set({ nom })
+    .where(and(eq(scripts.id, scriptId), eq(scripts.entrepriseId, entrepriseId)))
+    .returning({ id: scripts.id });
+  return touches.length > 0;
+}
+
+/**
+ * Un script archivé sort des choix de lancement (appel, campagne) ; il garde ses versions et ses appels, et une
+ * campagne déjà lancée garde sa version. False s'il n'existe pas.
+ */
+export async function basculerArchiveScript(entrepriseId: string, scriptId: string, archive: boolean): Promise<boolean> {
+  const touches = await db
+    .update(scripts)
+    .set({ archive })
+    .where(and(eq(scripts.id, scriptId), eq(scripts.entrepriseId, entrepriseId)))
+    .returning({ id: scripts.id });
+  return touches.length > 0;
 }
 
 export type Etapes = { intention: string; exemples: string[] }[];

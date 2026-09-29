@@ -76,7 +76,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
   const prospect = await prospectParId(entreprise.id, id);
   // L'agenda se relit dès l'ouverture de la fiche : il sera à jour quand Mina proposera des créneaux.
   await rafraichirSiAncien();
-  const [autorisations, partages, versions, historique, [derniereRevocation], ordre, issuesPerso, ajoutMcp] = await Promise.all([
+  const [autorisations, partages, toutesVersions, historique, [derniereRevocation], ordre, issuesPerso, ajoutMcp] = await Promise.all([
     autorisationsDe([prospect.telephone]),
     db.$count(prospects, and(eq(prospects.entrepriseId, entreprise.id), eq(prospects.telephone, prospect.telephone))),
     versionsDeLEntreprise(entreprise.id),
@@ -103,6 +103,8 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
     // Consentement entré par le serveur MCP (ADR 0009) : rappelé sur la fiche et dans la confirmation d'appel.
     ajoutParMcp(prospect.telephone),
   ]);
+  // Les scripts archivés ne sont plus proposés au lancement.
+  const versions = toutesVersions.filter((v) => !v.scriptArchive);
   const autorisation = autorisations.get(prospect.telephone);
   const autorise = Boolean(autorisation?.autorise);
   const revocation = autorise ? null : (derniereRevocation?.le ?? null);
@@ -156,7 +158,10 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
           ? { texte: 'Numéro invalide : corrige-le dans la fiche puis réimporte-la.', lien: { href: `${base}?import=1`, libelle: 'Importer des fiches' } }
           : { texte: 'Pas de consentement : réimporte la fiche en cochant l’attestation.', lien: { href: `${base}?import=1`, libelle: 'Importer des fiches' } };
   } else if (versions.length === 0) {
-    blocage = { texte: 'Aucun script : crée-en un dans Scripts.', lien: { href: `/entreprises/${slug}/scripts`, libelle: 'Ouvrir les scripts' } };
+    blocage = {
+      texte: toutesVersions.length > 0 ? 'Tous les scripts sont archivés : réactives-en un ou crées-en un dans Scripts.' : 'Aucun script : crées-en un dans Scripts.',
+      lien: { href: `/entreprises/${slug}/scripts`, libelle: 'Ouvrir les scripts' },
+    };
   }
 
   return (

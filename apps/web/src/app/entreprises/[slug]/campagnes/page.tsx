@@ -68,6 +68,8 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
   ]);
 
   const libelleVersion = new Map(versions.map((v) => [v.id, v.libelle]));
+  // Les campagnes passées gardent le libellé de leur version ; une nouvelle ne se lance pas sur un script archivé.
+  const lancables = versions.filter((v) => !v.scriptArchive);
   const libellePerso = new Map(issuesPerso.map((i) => [`perso:${i.id}`, i.libelle]));
   const dernierDe = new Map(derniers.map((d) => [d.prospectId, d]));
   const rendezVousDe = new Set(avecRendezVous.map((r) => r.prospectId));
@@ -90,8 +92,11 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
 
   const base = `/entreprises/${slug}`;
   const prerequis =
-    versions.length === 0
-      ? { texte: 'Aucun script : crée-en un dans Scripts.', lien: { href: `${base}/scripts`, libelle: 'Ouvrir les scripts' } }
+    lancables.length === 0
+      ? {
+          texte: versions.length > 0 ? 'Tous les scripts sont archivés : réactives-en un ou crées-en un dans Scripts.' : 'Aucun script : crées-en un dans Scripts.',
+          lien: { href: `${base}/scripts`, libelle: 'Ouvrir les scripts' },
+        }
       : listeProspects.length === 0
         ? { texte: 'Aucun prospect : importe des fiches dans Prospects.', lien: { href: `${base}/prospects?import=1`, libelle: 'Importer des fiches' } }
         : prospectsFormulaire.every((p) => !p.autorisation?.autorise)
@@ -110,7 +115,7 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
         compte={liste.length}
         prerequis={prerequis}
         entrepriseId={entreprise.id}
-        versions={versions.map((v) => ({ id: v.id, libelle: v.libelle }))}
+        versions={lancables.map((v) => ({ id: v.id, libelle: v.libelle }))}
         prospects={prospectsFormulaire}
         vide={liste.length === 0}
       >

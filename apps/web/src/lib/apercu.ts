@@ -11,7 +11,7 @@ import { and, asc, desc, eq, isNotNull } from 'drizzle-orm';
 import { db } from '@/db';
 import { appels, entreprises, objections, prospects, scripts, versionsScript, type Etape } from '@/db/schema';
 import { autorisationsDe } from './autorisations';
-import { versionsDeLEntreprise } from './versions';
+import { versionsLancables } from './versions';
 
 /**
  * Les variables que Mina reçoit au début d'un appel, calculées d'un seul endroit : `preparerAppel` (qui appelle
@@ -155,7 +155,7 @@ export async function apercuVariablesAppel(
     if (!trouvee) return { ok: false, raison: 'Cette version de script n’appartient pas à cette entreprise.' };
     version = trouvee;
   } else {
-    const [premiere] = await versionsDeLEntreprise(entrepriseId);
+    const [premiere] = await versionsLancables(entrepriseId);
     if (premiere) {
       const [etapes] = await db.select({ etapes: versionsScript.etapes }).from(versionsScript).where(eq(versionsScript.id, premiere.id));
       version = { id: premiere.id, numero: premiere.numero, script: premiere.script, etapes: etapes?.etapes ?? [] };

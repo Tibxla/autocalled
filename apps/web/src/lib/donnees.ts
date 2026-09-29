@@ -13,7 +13,7 @@ export async function listerEntreprises() {
       offre: entreprises.offre,
       nombreProspects: sql<number>`(select count(*)::int from prospects p where p.entreprise_id = entreprises.id)`,
       nombreObjections: sql<number>`(select count(*)::int from objections o where o.entreprise_id = entreprises.id and not o.archivee)`,
-      nombreScripts: sql<number>`(select count(*)::int from scripts s where s.entreprise_id = entreprises.id)`,
+      nombreScripts: sql<number>`(select count(*)::int from scripts s where s.entreprise_id = entreprises.id and not s.archive)`,
     })
     .from(entreprises)
     .orderBy(asc(entreprises.nom));

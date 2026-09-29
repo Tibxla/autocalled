@@ -4,7 +4,7 @@ import { Page } from '@/components/ui';
 import { db } from '@/db';
 import { prospects } from '@/db/schema';
 import { entrepriseParSlug } from '@/lib/pages';
-import { versionsDeLEntreprise } from '@/lib/versions';
+import { versionsLancables } from '@/lib/versions';
 import { ApercuMina } from './apercu-mina';
 import { FormulaireFiche } from './formulaire-fiche';
 
@@ -14,7 +14,7 @@ export default async function PageFiche({ params }: { params: Promise<{ slug: st
   const { slug } = await params;
   const entreprise = await entrepriseParSlug(slug);
   const [versions, listeProspects] = await Promise.all([
-    versionsDeLEntreprise(entreprise.id),
+    versionsLancables(entreprise.id),
     db
       .select({ id: prospects.id, nom: prospects.nom })
       .from(prospects)

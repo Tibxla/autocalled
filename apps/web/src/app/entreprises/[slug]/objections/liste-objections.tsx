@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { BoutonArchive } from '@/components/bouton-archive';
-import { useRaccourci } from '@/components/clavier';
+import { useRaccourci, useRaccourcis } from '@/components/clavier';
 import { Action, Chevron, EtatVide, TitreSection } from '@/components/ui';
-import { basculerArchiveObjection } from '../actions';
+import { basculerArchiveObjection, deplacerObjection } from '../actions';
 import { FormulaireObjection, TEMPS, type Objection } from './formulaire-objection';
 
 export interface ChiffresObjection {
@@ -48,6 +48,8 @@ function Chiffres({ chiffres }: { chiffres: ChiffresObjection | undefined }) {
 /**
  * Objections connues (une ligne dépliable chacune), formulaire de création en tête de liste (N), objections
  * archivées en bas. Échap (hors champ) referme l'objection ouverte ; ?objection=id l'ouvre et l'amène à l'écran.
+ * L'ordre de la liste est celui dans lequel Mina reçoit les objections : ↑ et ↓ au bout de chaque ligne, ou
+ * Ctrl ↑ et Ctrl ↓ quand le focus est sur une objection, la déplacent d'un rang ; le focus la suit.
  */
 export function ListeObjections({
   entrepriseId,
@@ -100,6 +102,54 @@ export function ListeObjections({
   }, []);
   const enregistree = useCallback((message: string) => setAnnonce(message), []);
 
+  const [deplacement, demarrer] = useTransition();
+  const [erreur, setErreur] = useState<string | null>(null);
+  // Après un déplacement, la liste revient du serveur dans le nouvel ordre : le focus retrouve alors l'objection.
+  const ordre = actives.map((o) => o.id).join(',');
+  const [suivi, setSuivi] = useState<{ id: string; sens: 'monter' | 'descendre'; bouton: boolean; avant: string } | null>(null);
+  const suiviTraite = useRef<typeof suivi>(null);
+  useEffect(() => {
+    if (!suivi || suiviTraite.current === suivi || ordre === suivi.avant) return;
+    suiviTraite.current = suivi;
+    const ligne = document.getElementById(`objection-${suivi.id}`);
+    const bouton = suivi.bouton ? ligne?.querySelector<HTMLButtonElement>(`[data-deplacer="${suivi.sens}"]:not(:disabled)`) : null;
+    (bouton ?? ligne?.querySelector('summary'))?.focus();
+  }, [ordre, suivi]);
+
+  const deplacer = (o: Objection, sens: 'monter' | 'descendre', depuisBouton: boolean) =>
+    demarrer(async () => {
+      setErreur(null);
+      try {
+        const resultat = await deplacerObjection(entrepriseId, o.id, sens);
+        if (!resultat.ok) return setErreur(resultat.raison);
+        setSuivi({ id: o.id, sens, bouton: depuisBouton, avant: ordre });
+        setAnnonce(`« ${o.libelle} » est en position ${resultat.position} sur ${actives.length}.`);
+      } catch {
+        setErreur('Le déplacement a échoué : réessaie.');
+      }
+    });
+
+  /** L'objection qui a le focus (sa ligne, ses flèches, son formulaire hors des champs). */
+  const objectionFocalisee = () => {
+    const id = document.activeElement?.closest<HTMLElement>('[data-objection]')?.dataset.objection;
+    return actives.find((o) => o.id === id);
+  };
+  useRaccourcis(
+    (['monter', 'descendre'] as const).map((sens) => ({
+      touche: sens === 'monter' ? 'ArrowUp' : 'ArrowDown',
+      ctrl: true,
+      libelle: sens === 'monter' ? 'Monter l’objection' : 'Descendre l’objection',
+      actif: actives.length > 1 && !deplacement,
+      action: () => {
+        const o = objectionFocalisee();
+        if (!o) return false;
+        const rang = actives.indexOf(o);
+        if (sens === 'monter' ? rang === 0 : rang === actives.length - 1) return;
+        deplacer(o, sens, false);
+      },
+    })),
+  );
+
   return (
     <div className="grid gap-12">
       <section aria-labelledby="titre-objections">
@@ -118,6 +168,11 @@ export function ListeObjections({
         <p role="status" className="text-sm text-encre-3 [&:not(:empty)]:pt-3">
           {annonce}
         </p>
+        {erreur ? (
+          <p role="alert" className="mt-3 rounded-md bg-alerte-fond px-3.5 py-2.5 text-sm text-alerte">
+            {erreur}
+          </p>
+        ) : null}
 
         {formulaireOuvert ? (
           <div className="border-b border-filet pt-4">
@@ -132,18 +187,26 @@ export function ListeObjections({
           </EtatVide>
         ) : (
           <ul>
-            {actives.map((o) => {
+            {actives.map((o, rang) => {
               const estOuverte = ouverte === o.id;
               return (
-                <li key={o.id} id={`objection-${o.id}`} className="scroll-mt-[calc(var(--hauteur-barre)+16px)] border-b border-filet">
+                <li
+                  key={o.id}
+                  id={`objection-${o.id}`}
+                  data-objection={o.id}
+                  className="flex scroll-mt-[calc(var(--hauteur-barre)+16px)] items-start gap-x-2 border-b border-filet"
+                >
                   <details
+                    className="min-w-0 flex-1"
                     open={estOuverte}
                     onToggle={(ev) => {
                       const ouvert = ev.currentTarget.open;
                       setOuverte((cur) => (ouvert ? o.id : cur === o.id ? null : cur));
                     }}
                   >
-                    <summary className="flex min-h-[38px] cursor-pointer list-none flex-wrap items-center gap-x-4 gap-y-0.5 py-2 transition-colors duration-100 hover:bg-survol focus-interne pointer-coarse:min-h-11 [&::-webkit-details-marker]:hidden">
+                    <summary
+                      aria-keyshortcuts={actives.length > 1 ? 'Control+ArrowUp Control+ArrowDown' : undefined}
+                      className="flex min-h-[38px] cursor-pointer list-none flex-wrap items-center gap-x-4 gap-y-0.5 py-2 transition-colors duration-100 hover:bg-survol focus-interne pointer-coarse:min-h-11 [&::-webkit-details-marker]:hidden">
                       <Chevron ouvert={estOuverte} className="stroke-encre-3" />
                       <span className="min-w-0 flex-1 font-medium">{o.libelle}</span>
                       <Crac objection={o} />
@@ -173,6 +236,30 @@ export function ListeObjections({
                       />
                     </div>
                   </details>
+                  {actives.length > 1 ? (
+                    <span className="flex shrink-0 pt-px">
+                      <Action
+                        ton="discret"
+                        className="text-base"
+                        data-deplacer="monter"
+                        aria-label={`Monter « ${o.libelle} »`}
+                        disabled={rang === 0 || deplacement}
+                        onClick={() => deplacer(o, 'monter', true)}
+                      >
+                        ↑
+                      </Action>
+                      <Action
+                        ton="discret"
+                        className="text-base"
+                        data-deplacer="descendre"
+                        aria-label={`Descendre « ${o.libelle} »`}
+                        disabled={rang === actives.length - 1 || deplacement}
+                        onClick={() => deplacer(o, 'descendre', true)}
+                      >
+                        ↓
+                      </Action>
+                    </span>
+                  ) : null}
                 </li>
               );
             })}
