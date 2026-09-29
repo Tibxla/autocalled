@@ -230,7 +230,7 @@ export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): v
     async ({ entreprise: slug, nom, etapes }) => {
       const e = await trouverEntreprise(slug);
       if (!e) return refus(entrepriseInconnue(slug));
-      return reussite({ ...(await entreprise.creerScript(e.id, nom, etapes)), numero: 1 });
+      return reussite({ ...(await entreprise.creerScript(e.id, nom, etapes, 'mcp')), numero: 1 });
     },
   );
 

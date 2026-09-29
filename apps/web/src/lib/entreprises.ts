@@ -319,13 +319,14 @@ export async function creerScript(
   entrepriseId: string,
   nom: string,
   etapes: Etapes = ETAPES_INITIALES,
+  origine: Origine | null = null,
 ): Promise<{ scriptId: string; versionScriptId: string }> {
   return db.transaction(async (tx) => {
     const [script] = await tx.insert(scripts).values({ entrepriseId, nom }).returning({ id: scripts.id });
     if (!script) throw new Error('création du script impossible');
     const [version] = await tx
       .insert(versionsScript)
-      .values({ scriptId: script.id, numero: 1, etapes })
+      .values({ scriptId: script.id, numero: 1, etapes, creePar: origine })
       .returning({ id: versionsScript.id });
     if (!version) throw new Error('création de la version impossible');
     return { scriptId: script.id, versionScriptId: version.id };

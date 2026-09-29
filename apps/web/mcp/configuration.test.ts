@@ -68,7 +68,7 @@ describe('configuration d’une entreprise', () => {
     const premieres = [{ intention: 'Accroche : se présenter', exemples: [] }];
     expect((await appeler('creer_script', { entreprise: 'gite-fictif', nom: 'Découverte' })).erreur).toBe(true);
     const { scriptId } = (await appeler('creer_script', { entreprise: 'gite-fictif', nom: 'Découverte', etapes: premieres })).json as { scriptId: string };
-    expect((await db.select({ etapes: versionsScript.etapes }).from(versionsScript))[0]?.etapes).toEqual(premieres);
+    expect(await db.select({ etapes: versionsScript.etapes, creePar: versionsScript.creePar }).from(versionsScript)).toEqual([{ etapes: premieres, creePar: 'mcp' }]);
     const etapes = [{ intention: 'Accroche courte', exemples: ['Bonjour !'] }];
 
     expect((await appeler('creer_version_script', { entreprise: 'gite-fictif', scriptId, etapes })).json).toMatchObject({ numero: 2 });
