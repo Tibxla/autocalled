@@ -8,3 +8,4 @@ export * from './bilan.ts';
 export * from './variables.ts';
 export * from './analyse.ts';
 export * from './epellation.ts';
+export * from './etapes.ts';
