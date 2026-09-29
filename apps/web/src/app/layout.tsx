@@ -1,10 +1,14 @@
-import type { Metadata } from 'next';
-import { Geist_Mono, Schibsted_Grotesk } from 'next/font/google';
+import type { Metadata, Viewport } from 'next';
+import { Chivo, Chivo_Mono } from 'next/font/google';
 import { BarreHaut } from '@/components/barre-haut';
+import { AideRaccourcis, FournisseurClavier } from '@/components/clavier';
+import { GardeSortie } from '@/components/garde-sortie';
 import './globals.css';
 
-const texte = Schibsted_Grotesk({ subsets: ['latin'], variable: '--police-texte' });
-const donnees = Geist_Mono({ subsets: ['latin'], variable: '--police-donnees' });
+// Polices variables (100 à 900) : pas de `weight`. Le sous-ensemble latin couvre accents, œ, « », ’, …,
+// espace fine, •, ·, ×, ↑ et ↓, mais pas ←, → ni ↵ : les touches s'écrivent en toutes lettres.
+const texte = Chivo({ subsets: ['latin'], display: 'swap', variable: '--police-texte' });
+const donnees = Chivo_Mono({ subsets: ['latin'], display: 'swap', variable: '--police-donnees' });
 
 /** Tout vient de la base à chaque requête : rien n'est figé au moment de la construction. */
 export const dynamic = 'force-dynamic';
@@ -15,12 +19,26 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+export const viewport: Viewport = { themeColor: '#121110', colorScheme: 'dark' };
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fr" className={`${texte.variable} ${donnees.variable}`}>
-      <body className="min-h-dvh font-sans text-base">
-        <BarreHaut />
-        <main className="mx-auto w-full max-w-[72rem] px-5 pb-24 sm:px-8">{children}</main>
+      <body className="min-h-dvh bg-fond font-sans text-md text-encre">
+        <FournisseurClavier>
+          <a
+            href="#contenu"
+            className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-[4px] focus:bg-surface focus:px-3 focus:py-2"
+          >
+            Aller au contenu
+          </a>
+          <BarreHaut />
+          <GardeSortie />
+          <main id="contenu" tabIndex={-1} className="px-(--gouttiere) pb-24 focus:outline-none">
+            {children}
+          </main>
+          <AideRaccourcis />
+        </FournisseurClavier>
       </body>
     </html>
   );
