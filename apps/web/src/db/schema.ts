@@ -33,6 +33,8 @@ export const entreprises = pgTable('entreprises', {
   arguments: text().notNull().default(''),
   prixConsigne: text().notNull().default(''),
   interdits: text().notNull().default(''),
+  /** Informations complémentaires : texte libre que l'assistante n'emploie que si la conversation y mène. */
+  complements: text().notNull().default(''),
   dureeRendezVousMinutes: integer().notNull().default(30),
   /** La personne avec qui le prospect aura sa visio (« Camille »). */
   interlocuteur: text().notNull().default(''),
