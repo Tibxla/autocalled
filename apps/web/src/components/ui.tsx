@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { cloneElement, isValidElement, type ComponentProps, type CSSProperties } from 'react';
 import { duree, hauteurTrait, heure } from './format-appel';
+import { LienTexte } from './lien-texte';
+import { RangeeDefilante } from './rangee-defilante';
 
 /**
  * Primitives de mise en page, de texte, de filtre et de tableau. Sans directive : utilisables côté serveur
@@ -9,7 +11,8 @@ import { duree, hauteurTrait, heure } from './format-appel';
  */
 
 export { Touche } from './touche';
-export { Action, Bouton, LienAction, LienBouton, type TonAction } from './action';
+export { Action, Bouton, classesAction, LienAction, LienBouton, type FormeAction, type TonAction } from './action';
+export { LIEN_TEXTE, LienTexte } from './lien-texte';
 export { Saisie, Selection, ZoneTexte } from './champs';
 export { Recherche } from './recherche';
 
@@ -56,13 +59,11 @@ export function EnTetePage({
   return (
     <div className="flex flex-wrap items-end justify-between gap-4 pt-8 pb-5 max-sm:pt-6 max-sm:pb-4">
       <div className="grid gap-1">
+        {/* Indispensable en mode installé : il n'y a plus de bouton retour du navigateur. */}
         {retour ? (
-          <Link
-            href={retour.href}
-            className="justify-self-start text-sm text-encre-3 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline"
-          >
+          <LienTexte isole href={retour.href} className="justify-self-start text-sm text-encre-3 hover:text-encre-2">
             {retour.libelle}
-          </Link>
+          </LienTexte>
         ) : null}
         <h1 className="text-xl font-semibold tracking-[-0.01em] text-balance">
           {titre}
@@ -87,7 +88,10 @@ export function TitreSection({ children, action, compte, id }: { children: React
   );
 }
 
-/** vide : rien encore, avec le geste suivant en action ; filtre : rien ne correspond, action « Effacer ». */
+/**
+ * vide : rien encore, avec le geste suivant en action ; filtre : rien ne correspond, action « Effacer ». L'action
+ * suivante est une action forte : au doigt, elle prend le relief, et l'enveloppe lâche son retrait.
+ */
 export function EtatVide({
   titre,
   children,
@@ -103,7 +107,7 @@ export function EtatVide({
     <div className={`grid justify-items-start gap-2 ${forme === 'vide' ? 'border-b border-filet py-10' : 'py-6'}`}>
       <p className="font-medium">{titre}</p>
       {children ? <div className="max-w-[56ch] text-encre-3">{children}</div> : null}
-      {action ? <div className="-mx-1.5 pt-1">{action}</div> : null}
+      {action ? <div className="-mx-1.5 pt-1 pointer-coarse:mx-0">{action}</div> : null}
     </div>
   );
 }
@@ -205,8 +209,9 @@ export function Compteur({ valeur, max, seuil = 0.8 }: { valeur: number; max: nu
 /* ------------------------------------------------------------------ filtres */
 
 /**
- * Rangée de filtres. `rangee` : une seule ligne qui défile horizontalement quand elle déborde, au lieu de
- * passer à la ligne (la recherche garde sa place à droite).
+ * Rangée de filtres. Sous 640 px, toujours une seule rangée qui défile (RangeeDefilante), débordant dans la
+ * gouttière, fondue sur le bord qui déborde, le filtre actif amené dans la vue. `rangee` ne décide plus que du
+ * bureau : une ligne qui défile au lieu de passer à la ligne (la recherche garde sa place à droite).
  */
 export function Filtres({
   libelle,
@@ -219,24 +224,26 @@ export function Filtres({
   className?: string;
   rangee?: boolean;
 }) {
-  const disposition = rangee
-    ? 'flex-nowrap overflow-x-auto overscroll-x-contain -m-0.5 p-0.5 [scrollbar-width:thin]'
-    : 'flex-wrap';
   return (
-    <div role="group" aria-label={libelle} className={`flex gap-x-[22px] gap-y-1 text-md ${disposition} ${className}`}>
+    <RangeeDefilante
+      role="group"
+      aria-label={libelle}
+      className={`gap-x-[22px] gap-y-1 text-md ${rangee ? '' : 'sm:flex-wrap sm:overflow-visible sm:fondu-aucun'} ${className}`}
+    >
       {children}
-    </div>
+    </RangeeDefilante>
   );
 }
 
-const BASE_FILTRE = 'inline-flex items-baseline gap-1.5 rounded-[4px] py-1 whitespace-nowrap pointer-coarse:py-2.5';
+const BASE_FILTRE =
+  'inline-flex shrink-0 items-baseline gap-1.5 rounded-[4px] py-1 whitespace-nowrap pointer-coarse:min-h-11 pointer-coarse:items-center pointer-coarse:active:text-encre-2';
 const FILTRE_ACTIF = 'font-semibold text-encre shadow-[inset_0_-1.5px_0_var(--encre)]';
 const FILTRE_INACTIF = 'text-encre-3 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline';
 
 /**
  * Filtre SERVEUR (href : la page relit la base) ou LOCAL (onClick : liste déjà chargée ; l'URL se met à jour
  * par window.history.replaceState, jamais router.replace qui relancerait la page). Un filtre inactif à compte
- * nul reste à sa place, inerte.
+ * nul reste à sa place, inerte, dès 640 px ; sous 640 px, il quitte la rangée. 44 px au doigt.
  */
 export function Filtre({
   actif,
@@ -256,7 +263,7 @@ export function Filtre({
   const nombre = compte !== undefined ? <span className="font-mono font-normal text-encre-3">{compte}</span> : null;
   if (compte === 0 && !actif) {
     return (
-      <span aria-disabled="true" className={`${BASE_FILTRE} text-trait`}>
+      <span aria-disabled="true" className={`${BASE_FILTRE} text-trait max-sm:hidden`}>
         {children}
         <span className="font-mono">0</span>
       </span>
@@ -283,7 +290,10 @@ export function Filtre({
 
 /**
  * Tableau en grille (rôles ARIA table, row, columnheader, cell sur des div) : une seule tabulation par ligne,
- * par son LienLigne. Lignes de 38 px ; sous 640 px, deux rangées, les cellules masqueeMobile disparaissent.
+ * par son LienLigne. Lignes de 38 px ; sous 640 px, deux rangées (le nom seul sur la première, rien qui le
+ * coupe ; la seconde ouverte par une cellule `max-sm:basis-full` qui porte l'état, le rappel, l'heure ou le
+ * détail d'échec), les cellules masqueeMobile disparaissent, un chevron en bout de ligne dit qu'elle s'ouvre.
+ * Rien d'utile dans un `title` : il ne s'affiche jamais au doigt.
  */
 export function TableDense({ libelle, colonnes, children, className = '' }: { libelle: string; colonnes: string; children: React.ReactNode; className?: string }) {
   return (
@@ -334,7 +344,7 @@ export function LigneTable({
       role="row"
       id={id}
       data-ligne=""
-      className={`relative flex min-h-[52px] scroll-mt-[calc(var(--hauteur-barre)+8px)] flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-filet py-2 transition-colors duration-100 hover:bg-survol has-[a:focus-visible]:outline-2 has-[a:focus-visible]:-outline-offset-2 has-[a:focus-visible]:outline-focus data-selectionnee:bg-survol sm:grid sm:h-[38px] sm:min-h-0 sm:grid-cols-(--colonnes) sm:gap-4 sm:py-0 ${ETATS_LIGNE[etat]} ${className}`}
+      className={`relative flex min-h-[52px] scroll-mt-[calc(var(--hauteur-barre)+8px)] scroll-mb-[calc(var(--hauteur-nav-bas)+8px)] flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-filet py-2 transition-colors duration-100 hover:bg-survol max-sm:has-[[data-lien-ligne]]:pr-6 pointer-coarse:has-[[data-lien-ligne]:active]:bg-survol has-[a:focus-visible]:outline-2 has-[a:focus-visible]:-outline-offset-2 has-[a:focus-visible]:outline-focus data-selectionnee:bg-survol sm:grid sm:h-[38px] sm:min-h-0 sm:grid-cols-(--colonnes) sm:gap-4 sm:py-0 ${ETATS_LIGNE[etat]} ${className}`}
     >
       {children}
     </div>
@@ -350,17 +360,22 @@ export function Cellule({
   titre,
   masqueeMobile,
   etat,
+  unite,
   className = '',
 }: {
   children?: React.ReactNode;
   align?: 'droite';
   mono?: boolean;
   attenuee?: boolean;
+  /** Une ligne coupée dès 640 px ; deux lignes au plus sous 640 px, où rien ne se lit au survol. */
   tronquee?: boolean;
+  /** Texte entier au survol d'une cellule tronquée (au pointeur fin seulement : jamais d'information utile). */
   titre?: string;
   masqueeMobile?: boolean;
   /** La cellule d'état : en antenne quand la ligne est vivante. */
   etat?: boolean;
+  /** Unité affichée après la valeur sous 640 px (« min », « rendez-vous »), où les en-têtes sont réservés aux lecteurs d'écran. */
+  unite?: string;
   className?: string;
 }) {
   return (
@@ -369,17 +384,27 @@ export function Cellule({
       title={tronquee ? titre : undefined}
       data-cellule-etat={etat ? '' : undefined}
       className={`min-w-0 ${align === 'droite' ? 'sm:text-right' : ''} ${mono ? 'font-mono text-xs text-encre-3' : ''} ${attenuee ? 'text-encre-3' : ''} ${
-        tronquee ? 'truncate' : ''
+        tronquee ? 'max-sm:line-clamp-2 max-sm:break-words sm:truncate' : ''
       } ${masqueeMobile ? 'max-sm:hidden' : ''} ${className}`}
     >
       {children}
+      {unite ? <span className="sm:hidden">{`\u00a0${unite}`}</span> : null}
     </span>
   );
 }
 
-/** Le seul lien d'une ligne (sur le nom) : toute la ligne devient cliquable, le focus se voit sur la ligne. */
-export function LienLigne({ className = '', ...props }: ComponentProps<typeof Link>) {
-  return <Link data-lien-ligne="" className={`focus-visible:outline-none after:absolute after:inset-0 ${className}`} {...props} />;
+/**
+ * Le seul lien d'une ligne (sur le nom) : toute la ligne devient cliquable, le focus se voit sur la ligne. Sous
+ * 640 px, un chevron `encre-3` en bout de ligne dit qu'elle s'ouvre (LigneTable lui réserve la place et donne
+ * l'appui au doigt).
+ */
+export function LienLigne({ className = '', children, ...props }: ComponentProps<typeof Link>) {
+  return (
+    <Link data-lien-ligne="" className={`focus-visible:outline-none after:absolute after:inset-0 ${className}`} {...props}>
+      {children}
+      <Chevron className="absolute top-1/2 right-0 -translate-y-1/2 stroke-encre-3 sm:hidden" />
+    </Link>
+  );
 }
 
 /* ------------------------------------------------------------------ données */
@@ -477,13 +502,13 @@ export function Chevron({ direction = 'droite', ouvert, className = 'stroke-curr
 
 const LARGEURS_SQUELETTE = ['40%', '55%', '30%', '62%', '45%', '35%', '58%', '28%', '50%', '42%'];
 
-/** Squelette statique d'une liste, sans animation ni reflet. */
+/** Squelette statique d'une liste, sans animation ni reflet ; lignes de 52 px sous 640 px, comme les vraies. */
 export function SqueletteListe({ lignes = 10, titre = false, className = 'pt-8' }: { lignes?: number; titre?: boolean; className?: string }) {
   return (
     <div aria-hidden="true" className={className}>
       {titre ? <div className="mb-6 h-5 w-40 rounded-[3px] bg-survol" /> : null}
       {Array.from({ length: lignes }, (_, i) => (
-        <div key={i} className="flex h-[38px] items-center border-b border-filet">
+        <div key={i} className="flex h-[52px] items-center border-b border-filet sm:h-[38px]">
           <div className="h-3 rounded-[3px] bg-survol" style={{ width: LARGEURS_SQUELETTE[i % LARGEURS_SQUELETTE.length] }} />
         </div>
       ))}
