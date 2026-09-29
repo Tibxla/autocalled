@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Suspense, use, useId, useState, useTransition } from 'react';
 import { demarrerAppelTelephone, lancerSimulation } from '@/app/appels/actions';
 import { phrasePlafonds } from '@/app/campagnes/[id]/recapitulatif';
+import { AjoutClaudeCode } from '@/components/ajout-claude-code';
 import { AppelEnDirect } from '@/components/appel-en-direct';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
 import { numeroMasque, prenom as prenomDe } from '@/components/format-appel';
@@ -90,6 +91,7 @@ export function PanneauAppel({
   versions,
   autorise,
   numero,
+  ajoutMcp = null,
   blocage = null,
   plafonds,
   telephoneBloque,
@@ -101,6 +103,8 @@ export function PanneauAppel({
   autorise: boolean;
   /** Numéro lisible (« 06 39 98 00 01 »), déjà formaté par le serveur. */
   numero: string;
+  /** Date d'entrée du numéro par le serveur MCP (ADR 0009), redite dans la confirmation ; null s'il vient de l'interface. */
+  ajoutMcp?: Date | null;
   /** Pourquoi aucun appel n'est possible, avec le lien qui le règle s'il y en a un. */
   blocage?: { texte: string; lien?: { href: string; libelle: string } } | null;
   /** Plafonds de la ligne téléphone, lus sans bloquer la page (le pont peut tarder). */
@@ -247,6 +251,11 @@ export function PanneauAppel({
             <p>
               Le <span className="font-mono text-encre">{numero}</span> va sonner. Version : <span className="font-mono">{libelleVersion}</span>.
             </p>
+            {ajoutMcp ? (
+              <p className="mt-1">
+                <AjoutClaudeCode le={ajoutMcp} />
+              </p>
+            ) : null}
             <p className="mt-1">
               <Suspense fallback="Lecture des plafonds de la ligne…">
                 <Plafonds promesse={plafonds} />

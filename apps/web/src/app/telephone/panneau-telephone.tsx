@@ -230,7 +230,8 @@ export function PanneauTelephone({
           nom={telephone.nom || 'ce téléphone'}
           adresse={telephone.adresse}
           oublier={gestes.oublier}
-          reconnecter={gestes.reconnecter}
+          // Déconnecté, « Reconnecter le téléphone » est déjà sous le verdict de la page : une seule fois par écran.
+          reconnecter={telephone.connecte ? gestes.reconnecter : null}
           onChanger={() => {
             setAppairage(null);
             setChanger(true);
@@ -314,7 +315,7 @@ const ATTENTE_RECONNEXION_MS = 12_000;
  * de revenir à portée, sans avoir à le toucher. Personne n'est appelé : ni confirmation ni raccourci clavier.
  * « Reconnexion… » tient une douzaine de secondes, puis la page se relit.
  */
-function useReconnexion(reconnecter: GestesTelephone['reconnecter'] = reconnecterTelephone) {
+export function useReconnexion(reconnecter: GestesTelephone['reconnecter'] = reconnecterTelephone) {
   const router = useRouter();
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -368,7 +369,10 @@ export function ActionReconnecter({
   );
 }
 
-/** Rangée des gestes sur le téléphone connu : reconnecter (réversible, sans confirmation), changer, oublier. */
+/**
+ * Rangée des gestes sur le téléphone connu : reconnecter (réversible, sans confirmation ; téléphone connecté
+ * mais figé, sinon la page l'offre sous son verdict), changer, oublier.
+ */
 function ActionsTelephone({
   nom,
   adresse,
@@ -379,7 +383,7 @@ function ActionsTelephone({
   nom: string;
   adresse: string;
   oublier: GestesTelephone['oublier'];
-  reconnecter: GestesTelephone['reconnecter'];
+  reconnecter: GestesTelephone['reconnecter'] | null;
   onChanger: () => void;
 }) {
   const router = useRouter();
@@ -389,7 +393,7 @@ function ActionsTelephone({
   return (
     <div className="grid gap-3">
       <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-        <ActionReconnecter reconnecter={reconnecter} />
+        {reconnecter ? <ActionReconnecter reconnecter={reconnecter} /> : null}
         <Action ton="normal" onClick={onChanger} disabled={confirmation.ouverte}>
           Changer de téléphone
         </Action>

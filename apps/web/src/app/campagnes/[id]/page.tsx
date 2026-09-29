@@ -10,6 +10,7 @@ import { rafraichirSiAncien } from '@/lib/agenda';
 import { autorisationsDe } from '@/lib/autorisations';
 import { numeroLisible } from '@/lib/format';
 import { commanderPont } from '@/lib/pont';
+import { ajoutParMcp } from '@/lib/prospects';
 import { versionsDeLEntreprise } from '@/lib/versions';
 import { File, type EntreeFile } from './file';
 import type { ProspectRecapitulatif } from './recapitulatif';
@@ -161,6 +162,9 @@ export default async function PageCampagne({
   if (campagne.statut === 'prete') {
     const aAppeler = campagne.entrees.filter((e) => e.etat === 'a-appeler');
     const autorisations = await autorisationsDe(aAppeler.flatMap((e) => prospectDe.get(e.prospectId)?.telephone ?? []));
+    // Au téléphone, les numéros autorisés entrés par le serveur MCP (ADR 0009) sont signalés avant le lancement.
+    const aVerifier = telephone ? [...autorisations].filter(([, a]) => a.autorise).map(([n]) => n) : [];
+    const datesMcp = new Map(await Promise.all(aVerifier.map(async (n) => [n, await ajoutParMcp(n)] as const)));
     const lignes = aAppeler.map((e, i) => {
       const p = prospectDe.get(e.prospectId);
       return {
@@ -170,6 +174,7 @@ export default async function PageCampagne({
         societe: p?.societe ?? null,
         numero: p ? numeroMasque(numeroLisible(p.telephone)) : '',
         autorisation: p ? autorisations.get(p.telephone) : undefined,
+        ajoutMcp: p ? (datesMcp.get(p.telephone) ?? null) : null,
       };
     });
     recapitulatif = { prospects: lignes, autorises: lignes.filter((l) => l.autorisation?.autorise).length };

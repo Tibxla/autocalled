@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { AjoutClaudeCode } from '@/components/ajout-claude-code';
 import { ListeAppels } from '@/components/liste-appels';
 import { PastilleAutorisation } from '@/components/pastille-autorisation';
 import { dateCourte, etatAppel, issueEffective } from '@/components/format-appel';
@@ -14,6 +15,7 @@ import { preparerAppel } from '@/lib/appels';
 import { autorisationsDe } from '@/lib/autorisations';
 import { numeroLisible } from '@/lib/format';
 import { entrepriseParSlug, prospectParId } from '@/lib/pages';
+import { ajoutParMcp } from '@/lib/prospects';
 import { reglagesDuPont } from '@/lib/pont';
 import { versionsDeLEntreprise } from '@/lib/versions';
 import { BoutonRevoquer } from './bouton-revoquer';
@@ -74,7 +76,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
   const prospect = await prospectParId(entreprise.id, id);
   // L'agenda se relit dès l'ouverture de la fiche : il sera à jour quand Mina proposera des créneaux.
   await rafraichirSiAncien();
-  const [autorisations, partages, versions, historique, [derniereRevocation], ordre, issuesPerso] = await Promise.all([
+  const [autorisations, partages, versions, historique, [derniereRevocation], ordre, issuesPerso, ajoutMcp] = await Promise.all([
     autorisationsDe([prospect.telephone]),
     db.$count(prospects, and(eq(prospects.entrepriseId, entreprise.id), eq(prospects.telephone, prospect.telephone))),
     versionsDeLEntreprise(entreprise.id),
@@ -98,6 +100,8 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
       .select({ id: issuesPersonnalisees.id, libelle: issuesPersonnalisees.libelle })
       .from(issuesPersonnalisees)
       .where(eq(issuesPersonnalisees.entrepriseId, entreprise.id)),
+    // Consentement entré par le serveur MCP (ADR 0009) : rappelé sur la fiche et dans la confirmation d'appel.
+    ajoutParMcp(prospect.telephone),
   ]);
   const autorisation = autorisations.get(prospect.telephone);
   const autorise = Boolean(autorisation?.autorise);
@@ -253,6 +257,11 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
             <NumeroMasquable lisible={lisible} />
             {prospect.email ? <p className="font-mono text-sm break-all text-encre-2">{prospect.email}</p> : null}
             <PastilleAutorisation autorisation={autorisation} />
+            {ajoutMcp ? (
+              <p className="text-sm text-encre-3">
+                <AjoutClaudeCode le={ajoutMcp} />
+              </p>
+            ) : null}
             {revocation ? (
               <p className="text-sm text-encre-3">
                 Révoqué le <span className="font-mono">{JOUR_MOIS.format(revocation)}</span>.
@@ -271,6 +280,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
             versions={versions.map((v) => ({ id: v.id, libelle: v.libelle }))}
             autorise={autorise}
             numero={lisible}
+            ajoutMcp={ajoutMcp}
             blocage={blocage}
             plafonds={lirePlafonds()}
             telephoneBloque={lireBlocageTelephone()}

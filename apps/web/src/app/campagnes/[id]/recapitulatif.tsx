@@ -1,4 +1,5 @@
 import type { Autorisation } from '@autocalled/domain';
+import { AjoutClaudeCode } from '@/components/ajout-claude-code';
 import { estimation, type ReglagesLigne } from '@/components/garde-fous';
 import { PastilleAutorisation } from '@/components/pastille-autorisation';
 
@@ -16,6 +17,8 @@ export interface ProspectRecapitulatif {
   /** Déjà masqué par la page (« 06 •• •• •• 40 »). */
   numero: string;
   autorisation: Autorisation | undefined;
+  /** Au téléphone : date d'entrée du numéro par le serveur MCP (ADR 0009), sinon null. */
+  ajoutMcp?: Date | null;
 }
 
 const PHRASES = {
@@ -55,6 +58,11 @@ function Ligne({ p }: { p: ProspectRecapitulatif }) {
       <span className="max-sm:ml-auto sm:text-right">
         <PastilleAutorisation autorisation={p.autorisation} />
       </span>
+      {p.ajoutMcp ? (
+        <span className="basis-full pb-1.5 text-sm text-encre-3 sm:col-span-3 sm:col-start-2 sm:-mt-1.5">
+          <AjoutClaudeCode le={p.ajoutMcp} />
+        </span>
+      ) : null}
     </li>
   );
 }
@@ -79,6 +87,7 @@ export function Recapitulatif({
   const sautes = prospects.length - autorises;
   const telephone = ligne === 'bluetooth';
   const estime = telephone ? phraseEstimation(autorises, reglages, passes24h) : null;
+  const ajoutsMcp = prospects.filter((p) => p.ajoutMcp).length;
 
   return (
     <div className="grid gap-5">
@@ -91,6 +100,18 @@ export function Recapitulatif({
             <>
               {' '}
               <span className="font-mono">{sautes}</span> ser{sautes > 1 ? 'ont' : 'a'} sauté{sautes > 1 ? 's' : ''} : numéro non autorisé.
+            </>
+          ) : null}
+          {ajoutsMcp > 0 ? (
+            <>
+              {' '}
+              {ajoutsMcp > 1 ? (
+                <>
+                  <span className="font-mono">{ajoutsMcp}</span> numéros ajoutés par Claude Code, signalés dans la liste.
+                </>
+              ) : (
+                'Un numéro ajouté par Claude Code, signalé dans la liste.'
+              )}
             </>
           ) : null}
         </p>

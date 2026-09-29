@@ -13,6 +13,7 @@ import { chrono, dateCourte, duree, etatAppel, FUSEAU, heure, LIGNES_COURTES } f
 import { estimation } from '@/components/garde-fous';
 import { useHorloge } from '@/components/horloge';
 import { GlypheEtape, PointCreux } from '@/components/ui';
+import { useReconnexion } from '@/app/telephone/panneau-telephone';
 import type { AppelDuJour, CampagneJour, EtatLigneServeur } from '@/lib/accueil';
 import { ligneBloquee, type Situation } from './situation';
 import { AxePiste } from './squelette-bande';
@@ -150,34 +151,7 @@ function SansAppel({
         />
       );
     case 'ligne-coupee':
-      return (
-        <Cadre
-          etiquette="Ligne"
-          titre={s.raison === 'injoignable' ? 'Ligne injoignable' : 'Téléphone passerelle déconnecté'}
-          tonTitre="alerte"
-          {...(s.campagne ? { contexte: `${identiteCampagne(s.campagne)} · ${s.campagne.statut === 'en-cours' ? 'en cours' : 'suspendue'}` } : {})}
-          phrase={
-            s.raison === 'injoignable'
-              ? 'Aucun appel ne peut partir par le téléphone passerelle : le service de la ligne ne répond pas.'
-              : 'Hors de portée ou Bluetooth coupé : aucun appel ne peut partir par le téléphone.'
-          }
-          detail={
-            <span className="inline-flex flex-wrap items-center justify-center gap-x-3">
-              La ligne navigateur et les appels simulés restent disponibles.
-              {s.entrepriseSlug ? (
-                <LienAction ton="discret" href={`/entreprises/${s.entrepriseSlug}/prospects`} className="-my-1.5">
-                  Ouvrir les prospects
-                </LienAction>
-              ) : null}
-            </span>
-          }
-          actions={
-            <LienAction ton="fort" href="/telephone">
-              Ouvrir Téléphone
-            </LienAction>
-          }
-        />
-      );
+      return <LigneCoupee situation={s} />;
     case 'plafond':
       return (
         <Cadre
@@ -279,6 +253,56 @@ function Cadre({
         <AxePiste />
       </div>
     </section>
+  );
+}
+
+/**
+ * La ligne ne peut rien composer. Téléphone déconnecté : « Reconnecter le téléphone » relance la liaison
+ * Bluetooth sans quitter l'accueil (personne n'est appelé : ni confirmation ni raccourci). Ligne injoignable :
+ * le service ne répond pas, seul Téléphone aide.
+ */
+function LigneCoupee({ situation: s }: { situation: Extract<Situation, { type: 'ligne-coupee' }> }) {
+  const reconnexion = useReconnexion();
+  const deconnecte = s.raison === 'deconnecte';
+  return (
+    <Cadre
+      etiquette="Ligne"
+      titre={deconnecte ? 'Téléphone passerelle déconnecté' : 'Ligne injoignable'}
+      tonTitre="alerte"
+      {...(s.campagne ? { contexte: `${identiteCampagne(s.campagne)} · ${s.campagne.statut === 'en-cours' ? 'en cours' : 'suspendue'}` } : {})}
+      phrase={
+        deconnecte
+          ? 'Hors de portée ou Bluetooth coupé : aucun appel ne peut partir par le téléphone.'
+          : 'Aucun appel ne peut partir par le téléphone passerelle : le service de la ligne ne répond pas.'
+      }
+      {...(reconnexion.erreur ? { tonDetail: 'alerte' as const } : {})}
+      detail={
+        reconnexion.erreur ? (
+          <span role="alert">{reconnexion.erreur}</span>
+        ) : (
+          <span className="inline-flex flex-wrap items-center justify-center gap-x-3">
+            La ligne navigateur et les appels simulés restent disponibles.
+            {s.entrepriseSlug ? (
+              <LienAction ton="discret" href={`/entreprises/${s.entrepriseSlug}/prospects`} className="-my-1.5">
+                Ouvrir les prospects
+              </LienAction>
+            ) : null}
+          </span>
+        )
+      }
+      actions={
+        <>
+          {deconnecte ? (
+            <Action ton="fort" enCours={reconnexion.enCours} libelleEnCours="Reconnexion…" disabled={reconnexion.enCours} onClick={reconnexion.lancer}>
+              Reconnecter le téléphone
+            </Action>
+          ) : null}
+          <LienAction ton={deconnecte ? 'normal' : 'fort'} href="/telephone">
+            Ouvrir Téléphone
+          </LienAction>
+        </>
+      }
+    />
   );
 }
 
