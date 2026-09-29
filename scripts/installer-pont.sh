@@ -24,7 +24,7 @@ sudo systemctl reload dbus
 
 echo "→ environnement Python du pont"
 python3 -m venv --system-site-packages "$racine/apps/pont/.venv"
-"$racine/apps/pont/.venv/bin/pip" install -q -r "$racine/apps/pont/requirements.txt"
+"$racine/apps/pont/.venv/bin/pip" install -q -r "$racine/apps/pont/requirements.txt" -c "$racine/apps/pont/contraintes.txt"
 
 echo "→ secret partagé (PONT_SECRET dans .env)"
 touch "$racine/.env"
