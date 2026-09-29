@@ -21,9 +21,6 @@ const HEURE_SECONDES = new Intl.DateTimeFormat('fr-FR', {
   timeZone: FUSEAU,
 });
 
-/** Le corps de /etat porte aussi l'appel en cours (appelId), absent du type partagé. */
-type EtatLu = EtatTelephone & { appelId?: string | null };
-
 type Verdict = {
   ton: 'encre' | 'encre-2' | 'alerte' | 'antenne';
   texte: string;
@@ -52,7 +49,7 @@ function reglagesLisibles(r: unknown): r is ReglagesLigne {
   );
 }
 
-function etatLisible(corps: Record<string, unknown>): corps is EtatLu {
+function etatLisible(corps: Record<string, unknown>): corps is EtatTelephone {
   return typeof corps.connecte === 'boolean' && reglagesLisibles(corps.reglages);
 }
 

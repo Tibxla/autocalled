@@ -29,10 +29,11 @@ export default async function PageObjections({
         argumenter: objections.argumenter,
         controler: objections.controler,
         archivee: objections.archivee,
+        modifieLe: objections.modifieLe,
       })
       .from(objections)
       .where(eq(objections.entrepriseId, entreprise.id))
-      .orderBy(asc(objections.ordre)),
+      .orderBy(asc(objections.ordre), asc(objections.id)),
     // Les appels réels seulement : un appel simulé ne dit pas ce qu'un vrai prospect objecte.
     analyseEntreprise(entreprise.id, false),
   ]);
@@ -48,6 +49,7 @@ export default async function PageObjections({
     reformuler: o.reformuler,
     argumenter: o.argumenter,
     controler: o.controler,
+    modifieLe: o.modifieLe.toISOString(),
   });
 
   return (

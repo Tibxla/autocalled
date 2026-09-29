@@ -9,15 +9,19 @@ import { appels } from '@/db/schema';
 import { rafraichirSiAncien } from '@/lib/agenda';
 import { traiterAppel } from '@/lib/appels';
 import {
+  ajouterALaCampagne,
   appelerSuivantNavigateur,
   appelerSuivantTelephone,
   clore,
   demarrerCampagne,
   derouleSimulation,
   enregistrerCampagne,
+  retirerProspect,
+  sauterProspect,
   suspendreSiEnCours,
+  terminerCampagne,
 } from '@/lib/campagnes';
-import type { EtatFormulaire } from '@/lib/formulaire';
+import type { EtatFormulaire, ResultatAction } from '@/lib/formulaire';
 import { exigerOperateur } from '@/lib/garde';
 import { campagneSchema } from '@/lib/schemas';
 import type { DemarrageAppel } from '../appels/actions';
@@ -49,11 +53,12 @@ export async function suspendreCampagne(campagneId: string): Promise<void> {
   revalidatePath(`/campagnes/${campagneId}`);
 }
 
-export async function ouvrirAppelSuivant(campagneId: string): Promise<DemarrageAppel> {
+/** `attendu` : le prospect que la régie affiche ; si la file a changé entre-temps, rien ne part. */
+export async function ouvrirAppelSuivant(campagneId: string, attendu?: string): Promise<DemarrageAppel> {
   await exigerOperateur();
   await rafraichirSiAncien();
-  const suivant = await appelerSuivantNavigateur(campagneId);
-  if (suivant.type === 'attente') return { ok: false, raison: 'Plus aucun prospect à appeler.' };
+  const suivant = await appelerSuivantNavigateur(campagneId, attendu);
+  if (suivant.type === 'attente') return { ok: false, raison: suivant.raison ?? 'Plus aucun prospect à appeler.' };
   return { ok: true, appelId: suivant.appelId, jeton: suivant.jeton, variables: suivant.variables as never, motsCles: suivant.motsCles };
 }
 
@@ -63,4 +68,37 @@ export async function cloreAppelDeCampagne(campagneId: string, appelId: string):
   await clore(campagneId, appelId);
   after(() => traiterAppel(appelId));
   revalidatePath(`/campagnes/${campagneId}`);
+}
+
+/* Gestes sur la file : aucun n'appelle personne. Une campagne en cours enchaîne ensuite comme d'habitude. */
+
+export async function sauterDansLaFile(campagneId: string, prospectId: string): Promise<ResultatAction> {
+  await exigerOperateur();
+  const resultat = await sauterProspect(campagneId, prospectId);
+  revalidatePath(`/campagnes/${campagneId}`);
+  return resultat;
+}
+
+export async function retirerDeLaFile(campagneId: string, prospectId: string): Promise<ResultatAction<{ terminee: boolean }>> {
+  await exigerOperateur();
+  const resultat = await retirerProspect(campagneId, prospectId);
+  revalidatePath(`/campagnes/${campagneId}`);
+  return resultat;
+}
+
+export async function ajouterDansLaFile(campagneId: string, prospectIds: string[]): Promise<ResultatAction<{ ajoutes: number }>> {
+  await exigerOperateur();
+  if (!Array.isArray(prospectIds) || prospectIds.some((id) => typeof id !== 'string' || id === '')) {
+    return { ok: false, raison: 'Choisis au moins un prospect.' };
+  }
+  const resultat = await ajouterALaCampagne(campagneId, prospectIds);
+  revalidatePath(`/campagnes/${campagneId}`);
+  return resultat;
+}
+
+export async function terminerAvantLaFin(campagneId: string): Promise<ResultatAction<{ fin: 'immediate' | 'apres-appel' }>> {
+  await exigerOperateur();
+  const resultat = await terminerCampagne(campagneId);
+  revalidatePath(`/campagnes/${campagneId}`);
+  return resultat;
 }

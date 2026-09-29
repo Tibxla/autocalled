@@ -7,7 +7,14 @@ export type RequetePont = { methode: string; chemin: string; corps: unknown; sec
  * Un pont Bluetooth factice (ADR 0007) sur un port libre de 127.0.0.1 : il répond comme le vrai à /etat,
  * /appels, /reglages et /raccrocher, et garde chaque requête reçue. Rien ne compose jamais.
  */
-export async function fauxPont(etat: { plafond?: string | null; reglages?: Record<string, number> } = {}) {
+export async function fauxPont(
+  etat: {
+    plafond?: string | null;
+    reglages?: Record<string, number>;
+    /** Champs de plus (ou remplacés) dans la réponse à /etat : appel en cours, décroché, heure du prochain appel… */
+    etat?: Record<string, unknown>;
+  } = {},
+) {
   const requetes: RequetePont[] = [];
   let reglages = { appelsParHeure: 15, appelsParJour: 50, pauseEntreAppelsS: 5, ...etat.reglages };
   const serveur: Server = createServer((req, res) => {
@@ -20,7 +27,7 @@ export async function fauxPont(etat: { plafond?: string | null; reglages?: Recor
         res.writeHead(code, { 'content-type': 'application/json' });
         res.end(JSON.stringify(json));
       };
-      if (req.url === '/etat') return repondre(200, { connecte: true, appelEnCours: false, plafond: etat.plafond ?? null, reglages });
+      if (req.url === '/etat') return repondre(200, { connecte: true, appelEnCours: false, plafond: etat.plafond ?? null, reglages, ...etat.etat });
       if (req.url === '/appels' && req.method === 'POST') return repondre(202, { ok: true });
       if (req.url === '/reglages' && req.method === 'POST') {
         reglages = { ...reglages, ...(corps as object) };

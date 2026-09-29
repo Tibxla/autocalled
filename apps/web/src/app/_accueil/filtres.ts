@@ -1,5 +1,5 @@
 import { ISSUES_SYSTEME, type IssueSysteme } from '@autocalled/domain';
-import { estNonCompose, issueEffective } from '../../components/format-appel';
+import { estNonCompose } from '../../components/format-appel';
 import type { AppelDuJour } from '@/lib/accueil';
 
 /**
@@ -14,13 +14,13 @@ export const CLES_FILTRE: readonly CleFiltre[] = [...ISSUES_SYSTEME, 'non-compos
 type Classable = Pick<AppelDuJour, 'statut' | 'issue' | 'issueSysteme' | 'ligne' | 'conversation'>;
 
 /**
- * La case d'un appel : son issue effective quand il a abouti ; « Non composé » quand la ligne ne l'a pas
+ * La case d'un appel : son issue système quand il a abouti ; « Non composé » quand la ligne ne l'a pas
  * composé (même mot que sa ligne dans le tableau) ; sinon « Sans bilan ».
  */
 export function cleFiltre(a: Classable): CleFiltre {
   if (estNonCompose({ statut: a.statut, conversationId: a.conversation ? 'oui' : null })) return 'non-compose';
   if (a.statut !== 'termine') return 'sans-bilan';
-  return issueEffective(a) ?? 'sans-bilan';
+  return a.issueSysteme ?? 'sans-bilan';
 }
 
 export const estSimule = (a: Pick<AppelDuJour, 'ligne'>) => a.ligne === 'simulation';
@@ -100,7 +100,7 @@ export function bilanJournee(appels: readonly (Classable & Pick<AppelDuJour, 'de
     }
     total += 1;
     if (!premier || Date.parse(a.debutLe) < Date.parse(premier)) premier = a.debutLe;
-    const issue = a.statut === 'termine' ? issueEffective(a) : null;
+    const issue = a.statut === 'termine' ? a.issueSysteme : null;
     if (issue && issue !== 'non-abouti') conversations += 1;
     if (issue === 'rendez-vous-pris') rendezVous += 1;
   }

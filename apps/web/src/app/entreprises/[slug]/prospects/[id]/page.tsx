@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { AjoutClaudeCode } from '@/components/ajout-claude-code';
 import { ListeAppels } from '@/components/liste-appels';
 import { PastilleAutorisation } from '@/components/pastille-autorisation';
-import { dateCourte, etatAppel, issueEffective } from '@/components/format-appel';
+import { cleJour, dateCourte, etatAppel, quandRappeler } from '@/components/format-appel';
 import { Chevron, EtatVide, LienAction, Page, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { appels, consentements, issuesPersonnalisees, prospects, rendezVous, versionsScript } from '@/db/schema';
@@ -16,6 +16,7 @@ import { autorisationsDe } from '@/lib/autorisations';
 import { numeroLisible } from '@/lib/format';
 import { entrepriseParSlug, prospectParId } from '@/lib/pages';
 import { ajoutParMcp } from '@/lib/prospects';
+import { rappelEnAttente } from '@/lib/rappels';
 import { reglagesDuPont } from '@/lib/pont';
 import { versionsDeLEntreprise } from '@/lib/versions';
 import { BoutonRevoquer } from './bouton-revoquer';
@@ -70,13 +71,18 @@ async function lireBlocageTelephone(): Promise<BlocageTelephone | null> {
   }
 }
 
+/** L'heure se lit hors du rendu. */
+function lireMaintenant(): Date {
+  return new Date();
+}
+
 export default async function PageProspect({ params }: { params: Promise<{ slug: string; id: string }> }) {
   const { slug, id } = await params;
   const entreprise = await entrepriseParSlug(slug);
   const prospect = await prospectParId(entreprise.id, id);
   // L'agenda se relit dès l'ouverture de la fiche : il sera à jour quand Mina proposera des créneaux.
   await rafraichirSiAncien();
-  const [autorisations, partages, versions, historique, [derniereRevocation], ordre, issuesPerso, ajoutMcp] = await Promise.all([
+  const [autorisations, partages, toutesVersions, historique, [derniereRevocation], ordre, issuesPerso, ajoutMcp] = await Promise.all([
     autorisationsDe([prospect.telephone]),
     db.$count(prospects, and(eq(prospects.entrepriseId, entreprise.id), eq(prospects.telephone, prospect.telephone))),
     versionsDeLEntreprise(entreprise.id),
@@ -103,6 +109,8 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
     // Consentement entré par le serveur MCP (ADR 0009) : rappelé sur la fiche et dans la confirmation d'appel.
     ajoutParMcp(prospect.telephone),
   ]);
+  // Les scripts archivés ne sont plus proposés au lancement.
+  const versions = toutesVersions.filter((v) => !v.scriptArchive);
   const autorisation = autorisations.get(prospect.telephone);
   const autorise = Boolean(autorisation?.autorise);
   const revocation = autorise ? null : (derniereRevocation?.le ?? null);
@@ -143,8 +151,10 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
   const nombreEtapes = new Map(etapesVersions.map((e) => [e.id, Number(e.nombre)]));
   const avecRendezVous = new Set(rdvHistorique.map((r) => r.appelId));
   const etatDernier = dernier ? etatAppel(dernier, { libellePerso: dernier.issue ? libellePerso.get(dernier.issue) : null }) : null;
-  const dernierTermine = historique.find((a) => a.statut === 'termine');
-  const rappel = dernierTermine && issueEffective(dernierTermine) === 'rappel-convenu' ? (dernierTermine.bilan?.rappel ?? 'moment non précisé') : null;
+  // Le rappel à faire : le dernier appel hors simulation a fini en rappel convenu (un appel plus récent le fait).
+  const rappel = rappelEnAttente(historique);
+  const maintenant = lireMaintenant();
+  const rappelEnRetard = rappel?.rappelLe ? cleJour(rappel.rappelLe) < cleJour(maintenant) : false;
 
   let blocage: { texte: string; lien?: { href: string; libelle: string } } | null = null;
   if (!autorise) {
@@ -156,7 +166,10 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
           ? { texte: 'Numéro invalide : corrige-le dans la fiche puis réimporte-la.', lien: { href: `${base}?import=1`, libelle: 'Importer des fiches' } }
           : { texte: 'Pas de consentement : réimporte la fiche en cochant l’attestation.', lien: { href: `${base}?import=1`, libelle: 'Importer des fiches' } };
   } else if (versions.length === 0) {
-    blocage = { texte: 'Aucun script : crée-en un dans Scripts.', lien: { href: `/entreprises/${slug}/scripts`, libelle: 'Ouvrir les scripts' } };
+    blocage = {
+      texte: toutesVersions.length > 0 ? 'Tous les scripts sont archivés : réactives-en un ou crées-en un dans Scripts.' : 'Aucun script : crées-en un dans Scripts.',
+      lien: { href: `/entreprises/${slug}/scripts`, libelle: 'Ouvrir les scripts' },
+    };
   }
 
   return (
@@ -173,7 +186,19 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
               <Link href={`/appels/${dernier.id}?depuis=${encodeURIComponent(`${base}/${prospect.id}`)}`} className="decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline">
                 Dernier appel le <span className="font-mono">{dateCourte(dernier.debutLe).split(' ')[0]}</span> : {etatDernier.libelle}
               </Link>
-              {rappel ? <span className="text-encre">Rappel convenu : {rappel}</span> : null}
+              {rappel ? (
+                <span className="text-encre">
+                  {rappel.rappelLe ? (
+                    <>
+                      {rappelEnRetard ? 'Rappel en retard' : 'Prochain rappel'} :{' '}
+                      {quandRappeler(rappel.rappelLe, rappel.quand, maintenant)}
+                    </>
+                  ) : (
+                    'Rappel convenu'
+                  )}
+                  {rappel.texte ? <span className="text-encre-3"> · « {rappel.texte} »</span> : rappel.rappelLe ? null : ' : moment non précisé'}
+                </span>
+              ) : null}
             </p>
           ) : (
             <p className="pt-1 text-sm text-encre-3">Jamais appelé.</p>

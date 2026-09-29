@@ -1,4 +1,4 @@
-import { and, eq, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { heure, jourCourt } from '@/components/format-appel';
 import { EnTetePage, LigneDefinition, Message, Page, TitreSection } from '@/components/ui';
@@ -38,7 +38,7 @@ const SECTION = 'grid scroll-mt-[calc(var(--hauteur-barre)+16px)] gap-5';
 
 /**
  * Appels réels dont l'issue dit Rendez-vous pris sans aucune réservation liée dans l'agenda : Appels les compte
- * parmi les rendez-vous, cette page ne les montrerait pas. Même issue effective que le filtre d'Appels.
+ * parmi les rendez-vous, cette page ne les montrerait pas. Même issue système que le filtre d'Appels.
  */
 async function rendezVousSansReservation(): Promise<number> {
   const [ligne] = await db
@@ -49,7 +49,7 @@ async function rendezVousSansReservation(): Promise<number> {
       and(
         isNull(rendezVous.appelId),
         ne(appels.ligne, 'simulation'),
-        or(eq(appels.issueSysteme, 'rendez-vous-pris'), and(isNull(appels.issueSysteme), eq(appels.issue, 'rendez-vous-pris'))),
+        eq(appels.issueSysteme, 'rendez-vous-pris'),
       ),
     );
   return Number(ligne?.n ?? 0);

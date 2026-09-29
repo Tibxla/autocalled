@@ -1,6 +1,7 @@
-import { and, asc, desc, eq, inArray, or } from 'drizzle-orm';
+import { finDemandee } from '@autocalled/domain';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import type { Metadata } from 'next';
-import { comptesCampagne, dateCourte, etatAppel, issueEffective, STATUTS_CAMPAGNE } from '@/components/format-appel';
+import { comptesCampagne, dateCourte, etatAppel, STATUTS_CAMPAGNE } from '@/components/format-appel';
 import { Cellule, CelluleEnTete, EnTeteTable, LienLigne, LigneTable, Page, TableDense } from '@/components/ui';
 import { NavigationListe } from '@/components/clavier';
 import { db } from '@/db';
@@ -50,7 +51,7 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
     db
       .selectDistinct({ prospectId: appels.prospectId })
       .from(appels)
-      .where(and(eq(appels.entrepriseId, entreprise.id), or(eq(appels.issueSysteme, 'rendez-vous-pris'), eq(appels.issue, 'rendez-vous-pris')))),
+      .where(and(eq(appels.entrepriseId, entreprise.id), eq(appels.issueSysteme, 'rendez-vous-pris'))),
     db
       .select({ id: issuesPersonnalisees.id, libelle: issuesPersonnalisees.libelle })
       .from(issuesPersonnalisees)
@@ -68,12 +69,14 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
   ]);
 
   const libelleVersion = new Map(versions.map((v) => [v.id, v.libelle]));
+  // Les campagnes passées gardent le libellé de leur version ; une nouvelle ne se lance pas sur un script archivé.
+  const lancables = versions.filter((v) => !v.scriptArchive);
   const libellePerso = new Map(issuesPerso.map((i) => [`perso:${i.id}`, i.libelle]));
   const dernierDe = new Map(derniers.map((d) => [d.prospectId, d]));
   const rendezVousDe = new Set(avecRendezVous.map((r) => r.prospectId));
   const rendezVousParCampagne = new Map<string, number>();
   for (const a of appelsCampagnes) {
-    if (a.campagneId && issueEffective(a) === 'rendez-vous-pris') rendezVousParCampagne.set(a.campagneId, (rendezVousParCampagne.get(a.campagneId) ?? 0) + 1);
+    if (a.campagneId && a.issueSysteme === 'rendez-vous-pris') rendezVousParCampagne.set(a.campagneId, (rendezVousParCampagne.get(a.campagneId) ?? 0) + 1);
   }
 
   const prospectsFormulaire: ProspectCampagne[] = listeProspects.map((p) => {
@@ -83,15 +86,18 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
       nom: p.nom,
       societe: p.societe,
       autorisation: autorisations.get(p.telephone),
-      derniere: d ? { cle: issueEffective(d), libelle: etatAppel(d, { libellePerso: d.issue ? libellePerso.get(d.issue) : null }).libelle } : null,
+      derniere: d ? { cle: d.issueSysteme, libelle: etatAppel(d, { libellePerso: d.issue ? libellePerso.get(d.issue) : null }).libelle } : null,
       rendezVous: rendezVousDe.has(p.id),
     };
   });
 
   const base = `/entreprises/${slug}`;
   const prerequis =
-    versions.length === 0
-      ? { texte: 'Aucun script : crée-en un dans Scripts.', lien: { href: `${base}/scripts`, libelle: 'Ouvrir les scripts' } }
+    lancables.length === 0
+      ? {
+          texte: versions.length > 0 ? 'Tous les scripts sont archivés : réactives-en un ou crées-en un dans Scripts.' : 'Aucun script : crées-en un dans Scripts.',
+          lien: { href: `${base}/scripts`, libelle: 'Ouvrir les scripts' },
+        }
       : listeProspects.length === 0
         ? { texte: 'Aucun prospect : importe des fiches dans Prospects.', lien: { href: `${base}/prospects?import=1`, libelle: 'Importer des fiches' } }
         : prospectsFormulaire.every((p) => !p.autorisation?.autorise)
@@ -110,7 +116,7 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
         compte={liste.length}
         prerequis={prerequis}
         entrepriseId={entreprise.id}
-        versions={versions.map((v) => ({ id: v.id, libelle: v.libelle }))}
+        versions={lancables.map((v) => ({ id: v.id, libelle: v.libelle }))}
         prospects={prospectsFormulaire}
         vide={liste.length === 0}
       >
@@ -147,7 +153,7 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
                       {ligne.libelle}
                     </Cellule>
                     <Cellule etat className={`max-sm:order-2 ${TON_STATUT[c.statut]}`}>
-                      {STATUTS_CAMPAGNE[c.statut]}
+                      {finDemandee(c) ? 'Se termine' : STATUTS_CAMPAGNE[c.statut]}
                     </Cellule>
                     <Cellule mono align="droite" className="max-sm:order-3">
                       <span aria-hidden="true">

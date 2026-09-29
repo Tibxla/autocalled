@@ -1,0 +1,1 @@
+ALTER TABLE "appels" ADD COLUMN "traitement_le" timestamp with time zone;

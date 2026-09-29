@@ -121,7 +121,7 @@ export function PanneauAppel({
   const confirmation = useConfirmation();
 
   if (blocage || !autorise || versions.length === 0) {
-    const texte = blocage?.texte ?? (versions.length === 0 ? 'Aucun script : crée-en un dans Scripts.' : 'Ce numéro n’est pas autorisé : aucun appel possible.');
+    const texte = blocage?.texte ?? (versions.length === 0 ? 'Aucun script : crées-en un dans Scripts.' : 'Ce numéro n’est pas autorisé : aucun appel possible.');
     return (
       <section aria-label="Appeler" className="grid gap-2 border-t border-filet pt-4">
         <p className="text-md text-encre-2">{texte}</p>

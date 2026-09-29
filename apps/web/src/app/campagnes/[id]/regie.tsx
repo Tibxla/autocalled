@@ -9,7 +9,7 @@ import { BandeAppel, type IdentiteAppel } from '@/components/bande-appel';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
 import type { ReglagesLigne } from '@/components/garde-fous';
 import { Action, LienAction, Message } from '@/components/ui';
-import { cloreAppelDeCampagne, lancerCampagne, ouvrirAppelSuivant, suspendreCampagne } from '../actions';
+import { cloreAppelDeCampagne, lancerCampagne, ouvrirAppelSuivant, suspendreCampagne, terminerAvantLaFin } from '../actions';
 import { phraseEstimation, phrasePlafonds, Recapitulatif, type ProspectRecapitulatif } from './recapitulatif';
 
 /**
@@ -20,6 +20,8 @@ import { phraseEstimation, phrasePlafonds, Recapitulatif, type ProspectRecapitul
  *   premier appel attend un geste de l'opérateur, les suivants s'enchaînent ensuite après un décompte de 5 s.
  * - Simulation : le serveur enchaîne seul, la page se relit.
  * Suspendre est un frein réversible : immédiat, sans confirmation ni touche.
+ * Terminer ferme la file pour de bon : confirmation en ligne. Il ne coupe aucun appel : l'appel en cours va à
+ * son terme et la campagne se termine avec lui.
  */
 
 export interface EtatPont {
@@ -61,6 +63,8 @@ interface ProprietesRegie {
   passes24h: number | null;
   raison: RaisonSuspension | null;
   recapitulatif: { prospects: ProspectRecapitulatif[]; autorises: number } | null;
+  /** Terminée pendant un appel : elle se termine quand cet appel finit. */
+  seTermine: boolean;
 }
 
 const CHANGEMENT = 'La campagne a changé d’état entre-temps.';
@@ -166,8 +170,64 @@ export function Regie(props: ProprietesRegie) {
       <h2 id="titre-regie" className="sr-only">
         Régie de la campagne
       </h2>
+      {props.seTermine ? (
+        <p role="status" className="text-base text-encre-2">
+          Campagne terminée à la fin de l’appel en cours : plus aucun prospect ne sera appelé.
+        </p>
+      ) : null}
       {contenu}
+      {!props.seTermine && props.restants > 0 ? <Terminer campagneId={props.campagneId} restants={props.restants} enAppel={enAppel} /> : null}
     </section>
+  );
+}
+
+/** Terminer avant la fin : les prospects restants ne seront pas appelés ; l'appel en cours, lui, va à son terme. */
+function Terminer({ campagneId, restants, enAppel }: { campagneId: string; restants: number; enAppel: boolean }) {
+  const confirmation = useConfirmation();
+  const [enCours, demarrer] = useTransition();
+  const [erreur, setErreur] = useState<string | null>(null);
+  const fermer = () => {
+    setErreur(null);
+    confirmation.fermer();
+  };
+  return (
+    <div className="grid justify-items-start gap-2">
+      <Actions>
+        <Action ton="discret" aria-expanded={confirmation.ouverte} onClick={(e) => confirmation.ouvrir(e.currentTarget)}>
+          Terminer la campagne
+        </Action>
+        <span className="px-1.5 text-sm text-encre-3">Les prospects restants ne seront pas appelés ; aucun appel n’est coupé.</span>
+      </Actions>
+      <Confirmation
+        className="justify-self-stretch"
+        ouverte={confirmation.ouverte}
+        question="Terminer la campagne maintenant ?"
+        libelleConfirmer="Terminer la campagne"
+        enCours={enCours}
+        libelleEnCours="Clôture…"
+        erreur={erreur}
+        onAnnuler={fermer}
+        onConfirmer={() =>
+          demarrer(async () => {
+            setErreur(null);
+            try {
+              const r = await terminerAvantLaFin(campagneId);
+              if (!r.ok) return setErreur(r.raison);
+              confirmation.fermer();
+            } catch {
+              setErreur('La clôture n’a pas abouti : la campagne continue. Réessaie.');
+            }
+          })
+        }
+      >
+        <p>
+          {restants} prospect{restants > 1 ? 's' : ''} encore à appeler ne {restants > 1 ? 'le seront' : 'le sera'} pas : {restants > 1 ? 'ils restent' : 'il reste'}{' '}
+          dans la file, marqué{restants > 1 ? 's' : ''} non appelé{restants > 1 ? 's' : ''}.
+          {enAppel ? ' L’appel en cours va à son terme ; la campagne se termine avec lui.' : ''}
+        </p>
+        <p className="mt-1">Une campagne terminée ne se relance pas : pour appeler ces prospects plus tard, crée une nouvelle campagne.</p>
+      </Confirmation>
+    </div>
   );
 }
 
@@ -419,7 +479,8 @@ function RegieNavigateur(props: ProprietesRegie) {
           campagneId={campagneId}
           demarrageAuto
           ouvrir={async () => {
-            const r = await ouvrirAppelSuivant(campagneId);
+            // Le prospect affiché : si la file a changé entre-temps (Sauter, Retirer), rien ne part.
+            const r = await ouvrirAppelSuivant(campagneId, direct.id);
             if (r.ok) setAppelId(r.appelId);
             return r;
           }}

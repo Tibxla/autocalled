@@ -1,7 +1,9 @@
 import type { Bilan, EntreeCampagne, IssueSysteme, PlageHoraire, StatutCampagne, TourDeParole } from '@autocalled/domain';
 import { ISSUES_SYSTEME } from '@autocalled/domain';
+import { sql } from 'drizzle-orm';
 import {
   boolean,
+  index,
   integer,
   jsonb,
   pgEnum,
@@ -12,6 +14,12 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
+
+/**
+ * Qui a écrit en dernier une donnée que l'opérateur édite aussi : l'interface ou le serveur MCP (Claude Code).
+ * Null pour les lignes antérieures à la colonne, dont l'origine n'est pas connue.
+ */
+export type Origine = 'interface' | 'mcp';
 
 export const issueSysteme = pgEnum('issue_systeme', ISSUES_SYSTEME as unknown as [IssueSysteme, ...IssueSysteme[]]);
 
@@ -32,6 +40,9 @@ export const entreprises = pgTable('entreprises', {
   horizonJours: integer().notNull().default(14),
   fuseau: text().notNull().default('Europe/Paris'),
   creeLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  /** Dernier enregistrement de la fiche : un formulaire ouvert avant refuse d'écraser ce qu'il n'a pas vu. */
+  modifieLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  modifiePar: text().$type<Origine>(),
 });
 
 /** Une objection garde son identité d'un appel à l'autre : on l'archive, on ne la supprime pas. */
@@ -49,6 +60,9 @@ export const objections = pgTable(
     controler: text().notNull().default(''),
     ordre: integer().notNull().default(0),
     archivee: boolean().notNull().default(false),
+    /** Dernière écriture du texte ou de l'archivage (pas de l'ordre) : garde contre les modifications concurrentes. */
+    modifieLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    modifiePar: text().$type<Origine>(),
   },
 );
 
@@ -68,6 +82,8 @@ export const scripts = pgTable('scripts', {
     .notNull()
     .references(() => entreprises.id, { onDelete: 'cascade' }),
   nom: text().notNull(),
+  /** Un script archivé sort des choix de lancement ; ses versions et ses appels restent. */
+  archive: boolean().notNull().default(false),
   creeLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -87,6 +103,7 @@ export const versionsScript = pgTable(
     numero: integer().notNull(),
     etapes: jsonb().$type<Etape[]>().notNull(),
     creeLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    creePar: text().$type<Origine>(),
   },
   (t) => [unique().on(t.scriptId, t.numero)],
 );
@@ -187,6 +204,8 @@ export const appels = pgTable('appels', {
   statut: statutAppel().notNull().default('en-cours'),
   debutLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
   finLe: timestamp({ withTimezone: true }),
+  /** Dernier passage en `traitement` (fin d'appel ou relance) : l'âge d'une analyse se mesure de là, pas de `finLe`. */
+  traitementLe: timestamp({ withTimezone: true }),
   dureeSecondes: integer(),
   transcription: jsonb().$type<TourDeParole[]>(),
   /** Chemin relatif de l'enregistrement dans le dossier de données, hors dépôt. */
@@ -194,9 +213,14 @@ export const appels = pgTable('appels', {
   bilan: jsonb().$type<Bilan>(),
   issue: text(),
   issueSysteme: issueSysteme(),
+  /**
+   * L'instant du rappel convenu, tiré du bilan (`bilan.rappelLe`, heure de Paris) pour trier et filtrer les
+   * rappels en base ; null sans rappel daté. Réécrit à chaque analyse.
+   */
+  rappelLe: timestamp({ withTimezone: true }),
   versionAnalyseur: text(),
   erreur: text(),
-});
+}, (t) => [index('appels_rappel_le_idx').on(t.rappelLe).where(sql`${t.rappelLe} is not null`)]);
 
 /** La connexion Google Agenda de l'opérateur (une seule). Le jeton de rafraîchissement est chiffré. */
 export const connexionGoogle = pgTable('connexion_google', {

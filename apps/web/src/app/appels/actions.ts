@@ -6,7 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { after } from 'next/server';
 import { db } from '@/db';
 import { appels } from '@/db/schema';
-import { appelerParTelephone, enregistrerAppelSimule, preparerAppel, reanalyser, simulerAppel, traiterAppel } from '@/lib/appels';
+import { appelerParTelephone, enregistrerAppelSimule, preparerAppel, preparerReanalyse, reanalyser, simulerAppel, traiterAppel } from '@/lib/appels';
 import { rafraichirSiAncien } from '@/lib/agenda';
 import { jetonConversation } from '@/lib/elevenlabs';
 import { exigerOperateur } from '@/lib/garde';
@@ -74,9 +74,15 @@ export async function lancerSimulation(
   return { ok: true, appelId: appel.appelId };
 }
 
-/** Recalcule le bilan (nouvelle version de l'analyseur, ou analyse précédente en échec). */
-export async function relancerAnalyse(appelId: string): Promise<void> {
+/**
+ * Recalcule le bilan (nouvelle version de l'analyseur, ou analyse précédente en échec). L'appel passe en
+ * `traitement` avant la réponse : la page revalidée montre l'analyse en cours, puis se relit seule.
+ */
+export async function demanderAnalyse(appelId: string): Promise<{ ok: true } | { ok: false; raison: string }> {
   await exigerOperateur();
+  const preparation = await preparerReanalyse(appelId);
+  if (!preparation.ok) return preparation;
   after(() => reanalyser(appelId));
   revalidatePath(`/appels/${appelId}`);
+  return { ok: true };
 }

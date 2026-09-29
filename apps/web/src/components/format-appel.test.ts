@@ -8,11 +8,11 @@ import {
   etatAppel,
   hauteurTrait,
   heure,
-  issueEffective,
   jourCourt,
   libelleJour,
   numeroMasque,
   prenom,
+  quandRappeler,
 } from './format-appel';
 
 describe('heure de Paris', () => {
@@ -78,21 +78,6 @@ describe('identité', () => {
   });
 });
 
-describe('issueEffective', () => {
-  it('garde l’issue système', () => {
-    expect(issueEffective({ issueSysteme: 'refus', issue: 'trop-cher' })).toBe('refus');
-  });
-
-  it('se replie sur une clé système posée seule dans issue', () => {
-    expect(issueEffective({ issueSysteme: null, issue: 'non-abouti' })).toBe('non-abouti');
-  });
-
-  it('ignore une issue personnalisée sans issue système', () => {
-    expect(issueEffective({ issueSysteme: null, issue: 'demande-une-maquette' })).toBeNull();
-    expect(issueEffective({ issueSysteme: null })).toBeNull();
-  });
-});
-
 describe('etatAppel', () => {
   const maintenant = new Date('2026-09-29T12:00:00Z');
   const base = { issueSysteme: null, ligne: 'bluetooth', debutLe: new Date('2026-09-29T11:58:00Z') };
@@ -134,7 +119,7 @@ describe('etatAppel', () => {
     expect(etatAppel({ ...base, statut: 'termine', issueSysteme: 'refus' }, { maintenant })).toEqual({ cle: 'issue', libelle: 'Refus', ton: 'encre-2' });
     expect(etatAppel({ ...base, statut: 'termine', issueSysteme: 'refus' }, { libellePerso: 'Trop cher', maintenant })).toMatchObject({ libelle: 'Trop cher' });
     expect(etatAppel({ ...base, statut: 'termine', issueSysteme: 'rendez-vous-pris' }, { maintenant })).toMatchObject({ ton: 'encre' });
-    expect(etatAppel({ ...base, statut: 'termine', issue: 'non-abouti' }, { maintenant })).toMatchObject({ cle: 'issue', libelle: 'Non abouti' });
+    expect(etatAppel({ ...base, statut: 'termine', issueSysteme: 'non-abouti' }, { maintenant })).toMatchObject({ cle: 'issue', libelle: 'Non abouti' });
   });
 
   it('dit « Sans issue » plutôt qu’un tiret', () => {
@@ -167,7 +152,25 @@ describe('comptesCampagne', () => {
         { prospectId: 'b', etat: 'en-appel', appelId: 'x' },
         { prospectId: 'c', etat: 'appelee', appelId: 'y' },
         { prospectId: 'd', etat: 'sautee', raisonSaut: 'numero-non-autorise' },
+        { prospectId: 'e', etat: 'retiree', motif: 'retrait', le: '2026-09-29T10:00:00.000Z', par: 'interface' },
+        { prospectId: 'f', etat: 'a-appeler', sauts: 2 },
       ]),
-    ).toEqual({ total: 4, aAppeler: 1, enAppel: 1, appelees: 1, sautees: 1, traites: 2 });
+    ).toEqual({ total: 6, aAppeler: 2, enAppel: 1, appelees: 1, sautees: 1, retirees: 1, traites: 3 });
+  });
+});
+
+describe('quandRappeler', () => {
+  const maintenant = new Date('2026-09-29T08:00:00Z'); // mardi 29 septembre, 10 h à Paris
+
+  it('dit le jour relatif et la précision donnée par le prospect', () => {
+    expect(quandRappeler('2026-09-29T12:30:00Z', { heure: '14:30', moment: null }, maintenant)).toBe('aujourd’hui à 14:30');
+    expect(quandRappeler('2026-09-30T07:00:00Z', { heure: null, moment: 'matin' }, maintenant)).toBe('demain matin');
+    expect(quandRappeler('2026-10-01T12:00:00Z', { heure: null, moment: 'apres-midi' }, maintenant)).toBe('jeu. 01/10 après-midi');
+    expect(quandRappeler('2026-10-01T07:00:00Z', { heure: null, moment: null }, maintenant)).toBe('jeu. 01/10');
+    expect(quandRappeler('2026-09-28T07:00:00Z', { heure: null, moment: 'matin' }, maintenant)).toBe('hier matin');
+  });
+
+  it('sans précision connue, donne l’heure de l’instant', () => {
+    expect(quandRappeler('2026-09-29T12:30:00Z', null, maintenant)).toBe('aujourd’hui à 14:30');
   });
 });

@@ -33,7 +33,7 @@ function appel(p: Partial<AppelDuJour> = {}): AppelDuJour {
 
 const JOUR = [
   appel({ id: '1' }),
-  appel({ id: '2', issue: 'non-abouti', issueSysteme: null, conversation: false }),
+  appel({ id: '2', issue: 'non-abouti', issueSysteme: 'non-abouti', conversation: false }),
   appel({ id: '3', issue: 'perso:9', issueSysteme: 'rendez-vous-pris', libellePerso: 'Visio fixée' }),
   appel({ id: '4', statut: 'traitement', issue: null, issueSysteme: null }),
   appel({ id: '5', statut: 'echec', issue: null, issueSysteme: null }),
@@ -42,7 +42,7 @@ const JOUR = [
 ];
 
 describe('cleFiltre et comptes', () => {
-  it('issue effective, clé système des issues personnalisées, non composé, sans bilan', () => {
+  it('issue système, clé système des issues personnalisées, non composé, sans bilan', () => {
     expect(JOUR.map(cleFiltre)).toEqual(['refus', 'non-abouti', 'rendez-vous-pris', 'sans-bilan', 'sans-bilan', 'refus', 'non-compose']);
   });
 

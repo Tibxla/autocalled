@@ -104,7 +104,7 @@ describe('traitFrise', () => {
   });
 
   it('non abouti sans issue système (route de fin) : trait plein minimal', () => {
-    const t = traitFrise(appel({ issue: 'non-abouti', issueSysteme: null, etapeAtteinte: null, nombreEtapes: 4 }), b);
+    const t = traitFrise(appel({ issue: 'non-abouti', issueSysteme: 'non-abouti', etapeAtteinte: null, nombreEtapes: 4 }), b);
     expect(t).toMatchObject({ forme: 'normal', hauteur: 4 });
   });
 

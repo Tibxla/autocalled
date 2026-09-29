@@ -4,13 +4,14 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
-import { FUSEAU, LIGNES_LONGUES, duree, etatAppel, heure, issueEffective, jourCourt, numeroMasque, prenom } from '@/components/format-appel';
-import { cleFiltreIssue, estFiltreIssue } from '@/components/liste-appels';
+import { FUSEAU, LIGNES_LONGUES, duree, etatAppel, heure, jourCourt, numeroMasque, prenom } from '@/components/format-appel';
 import { EtatVide, GlypheEtape, LienAction, Message, Page, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { campagnes, scripts } from '@/db/schema';
+import { DUREE_MAX_ANALYSE_S } from '@/lib/appels';
 import { numeroLisible } from '@/lib/format';
-import { LIGNES, type Ligne, listerAppels, lireAppel } from '@/lib/lecture';
+import { lireAppel, voisinsAppel } from '@/lib/lecture';
+import { lireFiltresAppels } from '../filtres';
 import { Actualisation, Ecoule } from './actualisation';
 import { BoutonRelancer } from './bouton-relancer';
 import { LecteurAppel } from './lecteur-appel';
@@ -19,8 +20,6 @@ import { SuiviTelephone } from './suivi-telephone';
 const lire = cache(lireAppel);
 const FORME_ID = /^[0-9a-f-]{36}$/;
 
-/** Au-delà, une analyse qui n'a pas abouti est déclarée bloquée. */
-const ANALYSE_MAX_S = 5 * 60;
 /** Au-delà, un appel navigateur ou simulé encore « en cours » n'est plus présenté comme vivant. */
 const VIE_MAX_S = 10 * 60;
 
@@ -60,18 +59,10 @@ function origine(depuis: string | undefined, nomProspect: string): { href: strin
   return defaut;
 }
 
-/** L'appel précédent et le suivant dans la liste d'origine, mêmes filtres et même fenêtre. */
+/** L'appel précédent et le suivant dans la liste d'origine, mêmes filtres, sur toute la liste (pas seulement sa page). */
 async function voisins(id: string, liste: URL | null) {
   if (!liste) return { precedent: null, suivant: null };
-  const p = Object.fromEntries(liste.searchParams);
-  const ligne = (LIGNES as readonly string[]).includes(p.ligne ?? '') ? (p.ligne as Ligne) : undefined;
-  const n = Math.min(1000, Math.max(200, Math.ceil((Number.parseInt(p.n ?? '', 10) || 200) / 200) * 200));
-  const fenetre = await listerAppels({ entreprise: p.entreprise, ligne, recherche: p.q?.trim() ?? '' }, n);
-  const issue = estFiltreIssue(p.issue) ? p.issue : null;
-  const ordre = (issue ? fenetre.filter((f) => cleFiltreIssue(f.appel) === issue) : fenetre).map((f) => f.appel.id);
-  const i = ordre.indexOf(id);
-  if (i < 0) return { precedent: null, suivant: null };
-  return { precedent: ordre[i - 1] ?? null, suivant: ordre[i + 1] ?? null };
+  return voisinsAppel(id, lireFiltresAppels(Object.fromEntries(liste.searchParams)).filtres);
 }
 
 function lienVoisin(id: string, depuis: string, q: string): string {
@@ -97,14 +88,22 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
   ]);
 
   const bilan = appel.bilan;
+  // Le rappel daté par l'analyse, en date absolue (la fiche d'appel se relit longtemps après).
+  const rappelDate =
+    appel.rappelLe && bilan?.rappelLe
+      ? `${jourCourt(appel.rappelLe)}${
+          bilan.rappelLe.heure ? ` à ${heure(appel.rappelLe)}` : bilan.rappelLe.moment === 'matin' ? ' matin' : bilan.rappelLe.moment === 'apres-midi' ? ' après-midi' : ''
+        }`
+      : null;
   const etapes = version?.etapes ?? [];
   const enDirect = appel.statut === 'en-cours';
   const telephone = appel.ligne === 'bluetooth';
   const age = ecouleDepuis(appel.debutLe);
-  const ageAnalyse = ecouleDepuis(appel.finLe ?? appel.debutLe);
-  const analyseBloquee = appel.statut === 'traitement' && ageAnalyse > ANALYSE_MAX_S;
+  const debutAnalyse = appel.traitementLe ?? appel.finLe ?? appel.debutLe;
+  const ageAnalyse = ecouleDepuis(debutAnalyse);
+  const analyseBloquee = appel.statut === 'traitement' && ageAnalyse > DUREE_MAX_ANALYSE_S;
 
-  const issue = issueEffective({ issueSysteme: appel.issueSysteme, issue: appel.issue });
+  const issue = appel.issueSysteme;
   const cleIssue = bilan?.issue ?? appel.issue ?? null;
   const perso = cleIssue?.startsWith('perso:') ? (personnalisees.find((p) => `perso:${p.id}` === cleIssue)?.libelle ?? null) : null;
   const libelleIssue = perso ?? (issue ? LIBELLES_ISSUES[issue as IssueSysteme] : etatAppel(appel).libelle);
@@ -153,7 +152,7 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
   const suivant = proches.suivant ? lienVoisin(proches.suivant, retour.href, q) : null;
 
   const rapatrier = (ton: 'fort' | 'normal' = 'fort') => (
-    <BoutonRelancer appelId={appel.id} libelle="Rapatrier la conversation et le bilan" ton={ton} suivre statut={appel.statut} />
+    <BoutonRelancer appelId={appel.id} libelle="Rapatrier la conversation et le bilan" ton={ton} />
   );
 
   // Le suivi direct : même place et même clé pour en-cours puis traitement (le fil survit au rapatriement).
@@ -198,10 +197,10 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
     if (!telephone)
       etatDirect = (
         <Message ton="neutre">
-          Rapatriement et analyse en cours · <Ecoule depuis={(appel.finLe ?? appel.debutLe).toISOString()} />
+          Rapatriement et analyse en cours · <Ecoule depuis={debutAnalyse.toISOString()} />
         </Message>
       );
-    actualisation = <Actualisation secondes={3} dureeMaxSecondes={Math.max(3, Math.ceil(ANALYSE_MAX_S - ageAnalyse))} />;
+    actualisation = <Actualisation secondes={3} dureeMaxSecondes={Math.max(3, Math.ceil(DUREE_MAX_ANALYSE_S - ageAnalyse))} />;
   } else if (appel.statut === 'echec' && !appel.conversationId) {
     etatDirect = (
       <Message ton="alerte" action={<LienAction href="/telephone">Voir la ligne</LienAction>}>
@@ -212,7 +211,7 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
     etatDirect = (
       <Message ton="alerte" titre={`L’analyse a échoué : ${appel.erreur ?? 'aucune raison enregistrée.'}`}>
         <div className="-mx-1.5 pt-1.5">
-          <BoutonRelancer appelId={appel.id} libelle="Relancer l’analyse" ton="fort" suivre statut={appel.statut} />
+          <BoutonRelancer appelId={appel.id} libelle="Relancer l’analyse" ton="fort" />
         </div>
       </Message>
     );
@@ -232,7 +231,12 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
           <p className="text-xl font-semibold tracking-[-0.01em] text-encre">{libelleIssue}</p>
           {perso && issue ? <span className="text-md text-encre-3">{LIBELLES_ISSUES[issue as IssueSysteme]}</span> : null}
         </div>
-        {bilan?.rappel ? <p className="text-base text-encre-2">Rappel convenu : {bilan.rappel}</p> : null}
+        {bilan?.rappel ? (
+          <p className="text-base text-encre-2">
+            Rappel convenu : {rappelDate ? <span className="text-encre">{rappelDate}</span> : null}
+            {rappelDate ? <span className="text-encre-3"> · « {bilan.rappel} »</span> : bilan.rappel}
+          </p>
+        ) : null}
         {rendezVousPris && !rdv ? (
           <p className="text-sm text-encre-3">Aucun rendez-vous réservé dans l’agenda pour cet appel : seul le bilan le dit.</p>
         ) : null}
@@ -354,8 +358,6 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
             appelId={appel.id}
             libelle="Réanalyser ce bilan"
             ton="discret"
-            suivre
-            statut={appel.statut}
             confirmer={{
               question: 'Remplacer ce bilan par une nouvelle analyse ?',
               texte: 'L’analyse relit la transcription et remplace l’issue, le résumé et les objections.',

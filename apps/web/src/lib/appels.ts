@@ -3,16 +3,17 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   ISSUES_SYSTEME,
+  instantDuRappel,
   LIBELLES_ISSUES,
   type NumeroAutorise,
   SENS_ISSUES,
   type VariablesDeLAppel,
-  variablesDeLAppel,
 } from '@autocalled/domain';
 import { creneauParle } from '@autocalled/agenda';
-import { and, asc, desc, eq, isNotNull } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { appels, entreprises, issuesPersonnalisees, objections, prospects, rendezVous, versionsScript } from '@/db/schema';
+import { variablesPour } from './apercu';
 import { VERSION_ANALYSEUR, analyser } from './analyseur';
 import { autorisationsDe } from './autorisations';
 import { rafraichirSiAncien } from './agenda';
@@ -23,8 +24,6 @@ import { commanderPont, refusDuPont } from './pont';
 export function dossierDonnees(): string {
   return process.env.DOSSIER_DONNEES ?? join(process.cwd(), '..', '..', 'data');
 }
-
-const libelleIssue = new Map<string, string>(ISSUES_SYSTEME.map((i) => [i, LIBELLES_ISSUES[i]]));
 
 export type PreparationAppel =
   | { ok: true; numero: NumeroAutorise; variables: VariablesDeLAppel; entrepriseId: string; motsCles: string[] }
@@ -48,36 +47,7 @@ export async function preparerAppel(entrepriseId: string, prospectId: string, ve
     return { ok: false, raison: 'Ce numéro n’est pas autorisé : aucun consentement actif.' };
   }
 
-  const [listeObjections, precedents] = await Promise.all([
-    db
-      .select()
-      .from(objections)
-      .where(and(eq(objections.entrepriseId, entrepriseId), eq(objections.archivee, false)))
-      .orderBy(asc(objections.ordre)),
-    db
-      .select({ le: appels.debutLe, issue: appels.issue, bilan: appels.bilan })
-      .from(appels)
-      .where(and(eq(appels.entrepriseId, entrepriseId), eq(appels.prospectId, prospectId), isNotNull(appels.bilan)))
-      .orderBy(desc(appels.debutLe))
-      .limit(5),
-  ]);
-
-  const variables = variablesDeLAppel({
-    entreprise,
-    prospect,
-    rendezVous: { interlocuteur: entreprise.interlocuteur, dureeMinutes: entreprise.dureeRendezVousMinutes },
-    etapes: version.etapes,
-    objections: listeObjections,
-    historique: precedents.map((p) => ({
-      le: p.le,
-      issue: libelleIssue.get(p.issue ?? '') ?? p.issue ?? 'issue inconnue',
-      resume: p.bilan?.resume ?? '',
-    })),
-    maintenant: new Date(),
-    fuseau: entreprise.fuseau,
-  });
-  // Noms propres de l'appel, pour que la reconnaissance vocale les entende bien.
-  const motsCles = [...new Set([entreprise.nom, prospect.nom, ...prospect.nom.split(/\s+/), prospect.societe].filter((m): m is string => Boolean(m && m.length > 2)))].slice(0, 12);
+  const { variables, motsCles } = await variablesPour(entreprise, prospect, version.etapes, new Date());
   return { ok: true, numero: autorisation.numero, variables, entrepriseId, motsCles };
 }
 
@@ -133,6 +103,38 @@ export async function enregistrerAppelSimule(
   return { ok: true, appelId: appel.id, variables: preparation.variables };
 }
 
+/** Au-delà, une analyse encore « en traitement » est tenue pour bloquée : on peut la relancer. */
+export const DUREE_MAX_ANALYSE_S = 5 * 60;
+
+/**
+ * Prépare une relance du bilan demandée par l'opérateur : refuse ce qui ne peut pas être relancé, puis passe
+ * l'appel en `traitement` tout de suite, pour que la page relue montre l'analyse en cours. Le travail lui-même
+ * (`reanalyser`) se fait ensuite, en tâche de fond.
+ */
+export async function preparerReanalyse(appelId: string, maintenant = new Date()): Promise<{ ok: true } | { ok: false; raison: string }> {
+  const [a] = await db
+    .select({
+      statut: appels.statut,
+      ligne: appels.ligne,
+      conversationId: appels.conversationId,
+      transcription: appels.transcription,
+      debutLe: appels.debutLe,
+      finLe: appels.finLe,
+      traitementLe: appels.traitementLe,
+    })
+    .from(appels)
+    .where(eq(appels.id, appelId));
+  if (!a) return { ok: false, raison: 'Cet appel n’existe plus.' };
+  if (!a.transcription && !a.conversationId) return { ok: false, raison: 'Cet appel n’a ni transcription ni conversation à rapatrier : rien à analyser.' };
+  if (a.statut === 'en-cours' && a.ligne === 'bluetooth') return { ok: false, raison: 'L’appel est en cours : son bilan sera calculé à la fin.' };
+  const depuis = a.traitementLe ?? a.finLe ?? a.debutLe;
+  if (a.statut === 'traitement' && maintenant.getTime() - depuis.getTime() < DUREE_MAX_ANALYSE_S * 1000) {
+    return { ok: false, raison: 'Le bilan de cet appel est déjà en cours de calcul.' };
+  }
+  await db.update(appels).set({ statut: 'traitement', traitementLe: maintenant, erreur: null }).where(eq(appels.id, appelId));
+  return { ok: true };
+}
+
 /** Recalcule le bilan : analyse seule si la transcription est là, sinon rapatriement complet. */
 export async function reanalyser(appelId: string): Promise<void> {
   const [appel] = await db.select({ transcription: appels.transcription }).from(appels).where(eq(appels.id, appelId));
@@ -142,8 +144,19 @@ export async function reanalyser(appelId: string): Promise<void> {
 /** Rapatrie la conversation terminée (transcription, durée, audio) puis lance l'analyse. */
 export async function traiterAppel(appelId: string): Promise<void> {
   const [appel] = await db.select().from(appels).where(eq(appels.id, appelId));
-  if (!appel?.conversationId) return;
-  await db.update(appels).set({ statut: 'traitement', finLe: appel.finLe ?? new Date() }).where(eq(appels.id, appelId));
+  if (!appel) return;
+  if (!appel.conversationId) {
+    await db
+      .update(appels)
+      .set({
+        statut: 'echec',
+        erreur: 'Aucune conversation n’est rattachée à cet appel : rien à rapatrier, donc pas de bilan.',
+        finLe: appel.finLe ?? new Date(),
+      })
+      .where(eq(appels.id, appelId));
+    return;
+  }
+  await db.update(appels).set({ statut: 'traitement', traitementLe: new Date(), finLe: appel.finLe ?? new Date() }).where(eq(appels.id, appelId));
 
   try {
     let conversation = await lireConversation(appel.conversationId);
@@ -180,8 +193,15 @@ export async function traiterAppel(appelId: string): Promise<void> {
 /** Produit et enregistre le bilan d'un appel dont la transcription est connue. Peut être relancé. */
 export async function analyserAppel(appelId: string): Promise<void> {
   const [appel] = await db.select().from(appels).where(eq(appels.id, appelId));
-  if (!appel?.transcription) return;
-  await db.update(appels).set({ statut: 'traitement', erreur: null }).where(eq(appels.id, appelId));
+  if (!appel) return;
+  if (!appel.transcription) {
+    const erreur = appel.conversationId
+      ? 'La transcription n’a pas été rapatriée : rapatrie la conversation pour obtenir le bilan.'
+      : 'Aucune transcription ni conversation pour cet appel : rien à analyser.';
+    await db.update(appels).set({ statut: 'echec', erreur }).where(eq(appels.id, appelId));
+    return;
+  }
+  await db.update(appels).set({ statut: 'traitement', traitementLe: new Date(), erreur: null }).where(eq(appels.id, appelId));
 
   const [[entreprise], [version], listeObjections, personnalisees, [rdv]] = await Promise.all([
     db.select().from(entreprises).where(eq(entreprises.id, appel.entrepriseId)),
@@ -193,7 +213,11 @@ export async function analyserAppel(appelId: string): Promise<void> {
       .where(and(eq(issuesPersonnalisees.entrepriseId, appel.entrepriseId), eq(issuesPersonnalisees.archivee, false))),
     db.select().from(rendezVous).where(eq(rendezVous.appelId, appelId)),
   ]);
-  if (!entreprise || !version) return;
+  if (!entreprise || !version) {
+    const manque = entreprise ? 'la version de script' : 'l’entreprise';
+    await db.update(appels).set({ statut: 'echec', erreur: `Analyse impossible : ${manque} de cet appel n’existe plus.` }).where(eq(appels.id, appelId));
+    return;
+  }
 
   const issues = [
     ...ISSUES_SYSTEME.map((i) => ({ cle: i as string, systeme: i, libelle: LIBELLES_ISSUES[i], sens: SENS_ISSUES[i] })),
@@ -213,6 +237,7 @@ export async function analyserAppel(appelId: string): Promise<void> {
         objectionIds: listeObjections.map((o) => o.id),
         issues,
         rendezVousReserve: Boolean(rdv),
+        debutAppel: appel.debutLe,
       },
       entreprise: entreprise.nom,
       etapes: version.etapes.map((e) => e.intention),
@@ -226,6 +251,8 @@ export async function analyserAppel(appelId: string): Promise<void> {
         bilan,
         issue: bilan.issue,
         issueSysteme: issues.find((i) => i.cle === bilan.issue)?.systeme ?? null,
+        // Réécrit à chaque analyse : une réanalyse qui n'est plus un rappel daté l'efface.
+        rappelLe: bilan.rappelLe ? instantDuRappel(bilan.rappelLe) : null,
         versionAnalyseur: VERSION_ANALYSEUR,
         statut: 'termine',
       })
@@ -248,7 +275,7 @@ export async function simulerAppel(appelId: string, variables: VariablesDeLAppel
     const duree = Math.round(transcription.reduce((total, t) => total + t.texte.split(/\s+/).length / 2.6, 0));
     await db
       .update(appels)
-      .set({ transcription, dureeSecondes: duree, finLe: new Date(), statut: 'traitement' })
+      .set({ transcription, dureeSecondes: duree, finLe: new Date(), statut: 'traitement', traitementLe: new Date() })
       .where(eq(appels.id, appelId));
   } catch (erreur) {
     await db.update(appels).set({ statut: 'echec', erreur: (erreur as Error).message }).where(eq(appels.id, appelId));

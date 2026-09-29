@@ -15,7 +15,10 @@
  * l'étape atteinte du script (blanc : rendez-vous pris) ; tableau des appels du jour, 38 px par ligne.
  * FORME : esquisse G du canevas, choisie par l'opérateur parmi une vingtaine ; pas de tirage concept-seed.
  *
- * Données : la page lit les appels et les campagnes du jour elle-même, HORS de la frontière de la bande :
+ * RAPPELS : sous la bande, « À rappeler aujourd'hui » liste les rappels convenus datés du jour et en retard ;
+ * chaque ligne ouvre la fiche du prospect, d'où l'appel part. Sans rappel, rien ne s'affiche.
+ *
+ * Données : la page lit les appels, les campagnes et les rappels du jour elle-même, HORS de la frontière de la bande :
  * une ligne muette (jusqu'à 15 s) ne bloque jamais la frise ni le tableau.
  */
 import type { Metadata } from 'next';
@@ -33,8 +36,10 @@ import {
   type AppelDuJour,
   type CampagneJour,
 } from '@/lib/accueil';
+import { rappelsDuJour } from '@/lib/rappels';
 import { BandeAccueil } from './_accueil/bande-accueil';
 import { FrontiereLigne } from './_accueil/frontiere-ligne';
+import { RappelsDuJour } from './_accueil/rappels-du-jour';
 import { Journee } from './_accueil/journee';
 import { situationAccueil } from './_accueil/situation';
 import { SqueletteBande } from './_accueil/squelette-bande';
@@ -48,7 +53,12 @@ const un = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 export default async function Accueil({ searchParams }: { searchParams: Promise<Parametres> }) {
   const p = await searchParams;
   const q = un(p.q)?.trim() ?? '';
-  const [journee, campagnes, resultats] = await Promise.all([appelsDuJour(), campagnesDuJour(), q.length >= 3 ? rechercherDansLaJournee(q) : null]);
+  const [journee, campagnes, resultats, rappels] = await Promise.all([
+    appelsDuJour(),
+    campagnesDuJour(),
+    q.length >= 3 ? rechercherDansLaJournee(q) : null,
+    rappelsDuJour(),
+  ]);
 
   return (
     <Page>
@@ -60,6 +70,7 @@ export default async function Accueil({ searchParams }: { searchParams: Promise<
           </Suspense>
         </FrontiereLigne>
       </div>
+      <RappelsDuJour rappels={rappels.rappels} sansDate={rappels.sansDate} maintenant={journee.maintenant} />
       <Journee
         appels={journee.appels}
         campagnes={campagnes}

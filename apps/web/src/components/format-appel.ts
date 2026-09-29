@@ -1,8 +1,8 @@
 import {
-  ISSUES_SYSTEME,
   LIBELLES_ISSUES,
   type EntreeCampagne,
   type IssueSysteme,
+  type RappelDate,
   type StatutCampagne,
 } from '@autocalled/domain';
 
@@ -72,6 +72,26 @@ export function libelleJour(d: Date | string, maintenant: Date = new Date()): st
   return majuscule((memeAnnee ? FORMAT_LONG : FORMAT_LONG_ANNEE).format(date(d)));
 }
 
+/** Le lendemain d'une clé de jour. */
+function lendemain(cle: string): string {
+  const [a, m, j] = cle.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(a, m - 1, j + 1)).toISOString().slice(0, 10);
+}
+
+/**
+ * Quand rappeler, en clair : « aujourd'hui à 14:30 », « demain matin », « jeu. 01/10 après-midi »,
+ * « jeu. 01/10 » (le jour seul). `quand` : la précision donnée par le prospect ; sans elle, l'heure de l'instant.
+ */
+export function quandRappeler(instant: Date | string, quand: Pick<RappelDate, 'heure' | 'moment'> | null, maintenant: Date = new Date()): string {
+  const cle = cleJour(instant);
+  const aujourdhui = cleJour(maintenant);
+  const jour = cle === aujourdhui ? 'aujourd’hui' : cle === lendemain(aujourdhui) ? 'demain' : cle === veille(aujourdhui) ? 'hier' : jourCourt(instant);
+  if (!quand || quand.heure) return `${jour} à ${heure(instant)}`;
+  if (quand.moment === 'matin') return `${jour} matin`;
+  if (quand.moment === 'apres-midi') return `${jour} après-midi`;
+  return jour;
+}
+
 const deux = (n: number) => String(n).padStart(2, '0');
 
 /** Durée d'un appel : « 0:47 », « 12:05 », « 1:02:03 » ; rien quand elle est inconnue ou nulle. */
@@ -111,19 +131,6 @@ export function numeroMasque(lisible: string): string {
   });
 }
 
-function estIssueSysteme(issue: string | null | undefined): issue is IssueSysteme {
-  return typeof issue === 'string' && (ISSUES_SYSTEME as readonly string[]).includes(issue);
-}
-
-/**
- * L'issue système d'un appel. Repli sur `issue` quand `issueSysteme` est nul et qu'`issue` est une clé
- * système : la route de fin d'un appel téléphone sans décroché pose `issue: 'non-abouti'` seule.
- */
-export function issueEffective(a: { issueSysteme: IssueSysteme | null; issue?: string | null }): IssueSysteme | null {
-  if (a.issueSysteme) return a.issueSysteme;
-  return estIssueSysteme(a.issue) ? a.issue : null;
-}
-
 export type TonEtat = 'antenne' | 'alerte' | 'encre' | 'encre-2' | 'encre-3';
 
 export interface EtatAppelAffiche {
@@ -149,7 +156,6 @@ export function etatAppel(
   a: {
     statut: string;
     issueSysteme: IssueSysteme | null;
-    issue?: string | null;
     erreur?: string | null;
     conversationId?: string | null;
     ligne: string;
@@ -172,7 +178,7 @@ export function etatAppel(
       ? { cle: 'pas-parti', libelle: LIBELLE_NON_COMPOSE, ton: 'encre-2', ...detail }
       : { cle: 'analyse-echec', libelle: 'Analyse en échec', ton: 'encre-2', ...detail };
   }
-  const issue = issueEffective(a);
+  const issue = a.issueSysteme;
   if (!issue) return { cle: 'sans-issue', libelle: 'Sans issue', ton: 'encre-3' };
   return {
     cle: 'issue',
@@ -218,24 +224,27 @@ export const STATUTS_CAMPAGNE: Record<StatutCampagne, string> = {
   terminee: 'Terminée',
 };
 
-/** Comptes d'une campagne : `traites` = appelés + sautés. */
+/** Comptes d'une campagne : `traites` = appelés, sautés (numéro non autorisé) et retirés, tout ce qui a quitté la file. */
 export function comptesCampagne(entrees: readonly EntreeCampagne[]): {
   total: number;
   aAppeler: number;
   enAppel: number;
   appelees: number;
   sautees: number;
+  retirees: number;
   traites: number;
 } {
   let aAppeler = 0;
   let enAppel = 0;
   let appelees = 0;
   let sautees = 0;
+  let retirees = 0;
   for (const e of entrees) {
     if (e.etat === 'a-appeler') aAppeler += 1;
     else if (e.etat === 'en-appel') enAppel += 1;
     else if (e.etat === 'appelee') appelees += 1;
-    else sautees += 1;
+    else if (e.etat === 'sautee') sautees += 1;
+    else retirees += 1;
   }
-  return { total: entrees.length, aAppeler, enAppel, appelees, sautees, traites: appelees + sautees };
+  return { total: entrees.length, aAppeler, enAppel, appelees, sautees, retirees, traites: appelees + sautees + retirees };
 }

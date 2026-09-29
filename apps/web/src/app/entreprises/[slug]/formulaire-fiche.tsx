@@ -3,6 +3,7 @@
 import type { PlageHoraire } from '@autocalled/domain';
 import { useState } from 'react';
 import { useRaccourci } from '@/components/clavier';
+import { ChampConnu, MessageConflit, useRechargement } from '@/components/conflit';
 import { Action, Champ, Compteur, Message, Saisie, Selection, TitreSection, ZoneTexte } from '@/components/ui';
 import { useFormulaire } from '@/components/use-formulaire';
 import type { EtatFormulaire } from '@/lib/formulaire';
@@ -49,6 +50,7 @@ interface Fiche {
   delaiMinimumHeures: number;
   horizonJours: number;
   fuseau: string;
+  modifieLe: Date;
 }
 
 interface Plage {
@@ -118,7 +120,13 @@ function ResumePlages({ plages, fuseau }: { plages: Plage[]; fuseau: string }) {
   );
 }
 
+/** « Recharger », après un refus pour modification concurrente, remonte le formulaire avec la fiche relue. */
 export function FormulaireFiche({ fiche }: { fiche: Fiche }) {
+  const { cle, recharger, enCours } = useRechargement();
+  return <Formulaire key={cle} fiche={fiche} recharger={recharger} rechargement={enCours} />;
+}
+
+function Formulaire({ fiche, recharger, rechargement }: { fiche: Fiche; recharger: () => void; rechargement: boolean }) {
   const { etat, enCours, modifie, proprietes } = useFormulaire<EtatFormulaire>(enregistrerFiche.bind(null, fiche.id), null, {
     avertirSiQuitte: true,
   });
@@ -192,6 +200,7 @@ export function FormulaireFiche({ fiche }: { fiche: Fiche }) {
       aria-label="Fiche de l’entreprise"
       className="grid gap-12 [--barre:4rem] [&_:is(input,textarea,select,summary)]:scroll-mb-(--barre)"
     >
+      <ChampConnu valeur={fiche.modifieLe.toISOString()} />
       <section aria-labelledby="titre-mina" className="grid max-w-[44rem] gap-6">
         <TitreSection id="titre-mina">Ce que Mina dit de l’entreprise</TitreSection>
         <Champ libelle="Nom" htmlFor="nom" erreur={e.nom}>
@@ -338,7 +347,16 @@ export function FormulaireFiche({ fiche }: { fiche: Fiche }) {
             ))}
           </Message>
         ) : null}
-        {etat && !etat.ok && etat.message ? (
+        {etat?.conflit && etat.message ? (
+          <MessageConflit
+            message={etat.message}
+            jeton={etat.conflit.jeton}
+            onRecharger={recharger}
+            rechargement={rechargement}
+            desactive={enCours}
+            className="max-w-[44rem]"
+          />
+        ) : etat && !etat.ok && etat.message ? (
           <Message ton="alerte" className="max-w-[44rem]">
             {etat.message}
           </Message>

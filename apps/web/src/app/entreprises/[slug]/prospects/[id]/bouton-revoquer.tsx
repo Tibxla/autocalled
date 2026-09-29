@@ -23,14 +23,14 @@ export function BoutonRevoquer({
   autorise?: boolean;
 }) {
   const [enCours, demarrer] = useTransition();
-  const [fait, setFait] = useState(false);
+  const [fait, setFait] = useState<string | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const confirmation = useConfirmation();
 
   if (!autorise) {
     return fait ? (
       <p role="status" className="text-sm text-encre-2">
-        Numéro révoqué : il ne sera plus jamais composé.
+        {fait}
       </p>
     ) : null;
   }
@@ -57,8 +57,13 @@ export function BoutonRevoquer({
           demarrer(async () => {
             setErreur(null);
             try {
-              await revoquerNumero(numero);
-              setFait(true);
+              const resultat = await revoquerNumero(numero);
+              if (!resultat.ok) return setErreur(resultat.raison);
+              setFait(
+                resultat.revoques === 0
+                  ? 'Ce numéro était déjà révoqué : il ne sera plus jamais composé.'
+                  : `Numéro révoqué (${resultat.revoques} consentement${resultat.revoques > 1 ? 's' : ''}) : il ne sera plus jamais composé.`,
+              );
               confirmation.fermer();
             } catch {
               setErreur('La révocation n’a pas abouti : le numéro reste autorisé. Réessaie.');

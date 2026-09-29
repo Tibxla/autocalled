@@ -4,7 +4,8 @@ import { comptesCampagne } from '@/components/format-appel';
 import { db } from '@/db';
 import { campagnes, prospects } from '@/db/schema';
 import { autorisationsDe } from '@/lib/autorisations';
-import { listerEntreprises, trouverEntreprise } from '@/lib/donnees';
+import { listerEntreprises } from '@/lib/donnees';
+import { lireEntreprise } from '@/lib/pages';
 import { ChoixEntreprise } from './choix-entreprise';
 import { OngletsEntreprise } from './onglets-entreprise';
 
@@ -12,13 +13,14 @@ import { OngletsEntreprise } from './onglets-entreprise';
  * En-tête commun à tous les onglets d'une entreprise (Prospects et Campagnes compris) : nom, sélecteur,
  * ligne d'état de préparation et onglets. N'impose aucune largeur : chaque page choisit la sienne.
  *
- * Ce layout lit la base sans cache et bloque la navigation qui y entre (aucun loading.tsx ne le couvre) :
- * ses lectures sont légères et parallèles. Un slug inconnu ne lève pas notFound() ici, sinon la 404 sortirait
+ * Ce layout lit la base sans cache de données et bloque la navigation qui y entre (aucun loading.tsx ne le
+ * couvre) : ses lectures sont légères et parallèles. L'entreprise est lue une fois pour le layout et la page
+ * (`lireEntreprise`, cache de la requête). Un slug inconnu ne lève pas notFound() ici, sinon la 404 sortirait
  * du segment : l'en-tête s'efface et la page, qui lit la même entreprise, répond par [slug]/not-found.tsx.
  */
 export default async function LayoutEntreprise({ params, children }: { params: Promise<{ slug: string }>; children: React.ReactNode }) {
   const { slug } = await params;
-  const entreprise = await trouverEntreprise(slug);
+  const entreprise = await lireEntreprise(slug);
   if (!entreprise) return <>{children}</>;
 
   const [liste, appelables, campagnesActives] = await Promise.all([

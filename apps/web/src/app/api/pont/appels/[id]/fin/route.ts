@@ -30,7 +30,8 @@ export async function POST(requete: Request, { params }: { params: Promise<{ id:
         : 'Le téléphone passerelle n’a pas composé, même après reconnexion : vérifie qu’il est allumé et à portée (page Téléphone).';
     await db.update(appels).set({ finLe: new Date(), statut: 'echec', erreur }).where(eq(appels.id, id));
   } else {
-    await db.update(appels).set({ finLe: new Date(), statut: 'termine', issue: 'non-abouti' }).where(eq(appels.id, id));
+    // Pas de bilan, mais une issue système : les lectures (listes, filtres, analyse) comptent l'appel.
+    await db.update(appels).set({ finLe: new Date(), statut: 'termine', issue: 'non-abouti', issueSysteme: 'non-abouti' }).where(eq(appels.id, id));
   }
   // Appel de campagne : on clôt son entrée et on enchaîne sur le prospect suivant.
   const campagneId = appel.campagneId;

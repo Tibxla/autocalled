@@ -1,11 +1,11 @@
 import Link from 'next/link';
 import { BoutonAideRaccourcis } from './clavier';
 import { LienNav } from './lien-nav';
-import { LigneStatut, TitreEnAppel } from './ligne-statut';
+import { CampagneStatut, LigneStatut, TitreEnAppel } from './ligne-statut';
 import { MarqueVivante } from './marque-vivante';
 
 /**
- * Barre de 64 px, pleine largeur, collante dès 640 px : marque, navigation, état de la ligne, aide des
+ * Barre de 64 px, pleine largeur, collante dès 640 px : marque, navigation, campagne ouverte, état de la ligne, aide des
  * raccourcis. Sous 640 px, deux rangées : marque et état (48 px), puis la navigation qui défile seule (40 px).
  */
 export function BarreHaut() {
@@ -29,7 +29,8 @@ export function BarreHaut() {
           <LienNav href="/telephone">Téléphone</LienNav>
           <LienNav href="/reglages">Réglages</LienNav>
         </nav>
-        <div className="ml-auto flex items-center gap-4">
+        <div className="ml-auto flex min-w-0 items-center gap-4 xl:pl-6">
+          <CampagneStatut />
           <LigneStatut />
           <BoutonAideRaccourcis />
         </div>

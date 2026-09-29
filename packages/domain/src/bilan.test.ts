@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type ContexteBilan, type TourDeParole, schemaJsonBilan, validerBilan } from './bilan.ts';
+import { type ContexteBilan, type TourDeParole, instantDuRappel, precisionDuRappel, schemaJsonBilan, validerBilan } from './bilan.ts';
 
 const transcription: TourDeParole[] = [
   { role: 'prospect', texte: 'Allô ?', secondes: 0 },
@@ -116,7 +116,77 @@ describe('rendez-vous réellement réservé', () => {
   });
 });
 
+describe('rappel daté', () => {
+  // Mardi 29 septembre 2026, 14 h 32 à Paris : « jeudi » est le 1er octobre.
+  const avecDate: ContexteBilan = { ...contexte, debutAppel: new Date('2026-09-29T12:32:00Z') };
+  const jeudi = (rappelLe: unknown) => ({ ...valide, rappelLe });
+
+  it('garde valides les bilans sans date, anciens (clé absente) ou nouveaux (null)', () => {
+    expect(validerBilan(valide, avecDate).ok).toBe(true);
+    expect(validerBilan(jeudi(null), avecDate).ok).toBe(true);
+  });
+
+  it('accepte un jour avec une heure, une demi-journée ou le jour seul, le texte d’origine gardé', () => {
+    for (const rappelLe of [
+      { date: '2026-10-01', heure: '10:30', moment: null },
+      { date: '2026-10-01', heure: null, moment: 'matin' },
+      { date: '2026-10-01', heure: null, moment: null },
+    ]) {
+      const resultat = validerBilan(jeudi(rappelLe), avecDate);
+      expect(resultat.ok).toBe(true);
+      if (resultat.ok) expect(resultat.bilan).toMatchObject({ rappel: 'jeudi', rappelLe });
+    }
+  });
+
+  it('refuse une date hors d’un rappel convenu, une heure et un moment à la fois, une date qui n’existe pas', () => {
+    expect(validerBilan({ ...jeudi({ date: '2026-10-01', heure: null, moment: null }), issue: 'refus', rappel: null }, avecDate).ok).toBe(false);
+    expect(validerBilan(jeudi({ date: '2026-10-01', heure: '10:00', moment: 'matin' }), avecDate).ok).toBe(false);
+    expect(validerBilan(jeudi({ date: '2026-02-30', heure: null, moment: null }), avecDate).ok).toBe(false);
+    expect(validerBilan(jeudi({ date: '1er octobre', heure: null, moment: null }), avecDate).ok).toBe(false);
+    expect(validerBilan(jeudi({ date: '2026-10-01', heure: '25:00', moment: null }), avecDate).ok).toBe(false);
+  });
+
+  it('refuse une date antérieure à l’appel, ou à plus d’un an', () => {
+    const veille = validerBilan(jeudi({ date: '2026-09-28', heure: null, moment: null }), avecDate);
+    expect(veille.ok).toBe(false);
+    if (!veille.ok) expect(veille.erreurs.join(' ')).toMatch(/antérieur à l’appel/);
+    // Le jour même : plus tard, oui ; plus tôt que l'appel, non.
+    expect(validerBilan(jeudi({ date: '2026-09-29', heure: '17:00', moment: null }), avecDate).ok).toBe(true);
+    expect(validerBilan(jeudi({ date: '2026-09-29', heure: '11:00', moment: null }), avecDate).ok).toBe(false);
+    expect(validerBilan(jeudi({ date: '2027-12-01', heure: null, moment: null }), avecDate).ok).toBe(false);
+    // Sans date d'appel connue, seule la forme est vérifiée.
+    expect(validerBilan(jeudi({ date: '2026-09-28', heure: null, moment: null }), contexte).ok).toBe(true);
+  });
+});
+
+describe('instantDuRappel', () => {
+  it('lit l’heure de Paris, heure d’été comme d’hiver', () => {
+    expect(instantDuRappel({ date: '2026-10-01', heure: '10:30', moment: null }).toISOString()).toBe('2026-10-01T08:30:00.000Z');
+    expect(instantDuRappel({ date: '2026-11-05', heure: '10:30', moment: null }).toISOString()).toBe('2026-11-05T09:30:00.000Z');
+  });
+
+  it('place le matin à 9 h, l’après-midi à 14 h, le jour seul à 9 h', () => {
+    expect(instantDuRappel({ date: '2026-10-01', heure: null, moment: 'matin' }).toISOString()).toBe('2026-10-01T07:00:00.000Z');
+    expect(instantDuRappel({ date: '2026-10-01', heure: null, moment: 'apres-midi' }).toISOString()).toBe('2026-10-01T12:00:00.000Z');
+    expect(instantDuRappel({ date: '2026-10-01', heure: null, moment: null }).toISOString()).toBe('2026-10-01T07:00:00.000Z');
+  });
+
+  it('dit la précision', () => {
+    expect(precisionDuRappel({ date: '2026-10-01', heure: '10:30', moment: null })).toBe('heure');
+    expect(precisionDuRappel({ date: '2026-10-01', heure: null, moment: 'apres-midi' })).toBe('demi-journee');
+    expect(precisionDuRappel({ date: '2026-10-01', heure: null, moment: null })).toBe('jour');
+  });
+});
+
 describe('schemaJsonBilan', () => {
+  it('demande toujours la date de rappel au modèle, null permis', () => {
+    const schema = schemaJsonBilan() as { properties: Record<string, { anyOf?: { type: string }[] }>; required: string[] };
+
+    expect(schema.required).toContain('rappelLe');
+    expect(schema.required).toContain('rappel');
+    expect(schema.properties.rappelLe?.anyOf?.map((t) => t.type)).toEqual(['object', 'null']);
+  });
+
   it('produit un schéma JSON objet fermé, utilisable comme sortie structurée', () => {
     const schema = schemaJsonBilan() as { type: string; additionalProperties: boolean; required: string[] };
 

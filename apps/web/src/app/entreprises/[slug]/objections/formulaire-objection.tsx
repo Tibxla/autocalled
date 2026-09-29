@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useRaccourci } from '@/components/clavier';
+import { ChampConnu, MessageConflit, useRechargement } from '@/components/conflit';
 import { Action, Champ, Message, Saisie, ZoneTexte } from '@/components/ui';
 import { useFormulaire } from '@/components/use-formulaire';
 import type { EtatFormulaire } from '@/lib/formulaire';
@@ -21,6 +22,8 @@ export interface Objection {
   reformuler: string;
   argumenter: string;
   controler: string;
+  /** Horodatage de la dernière modification (ISO), renvoyé pour la garde de concurrence. */
+  modifieLe: string;
 }
 
 /**
@@ -28,19 +31,29 @@ export interface Objection {
  * une zone de texte enregistre. `archive` se place à l'autre bout de la rangée d'actions ; `onAnnuler` (nouvelle
  * objection) ajoute « Échap Annuler ».
  */
-export function FormulaireObjection({
-  entrepriseId,
-  objection,
-  onSucces,
-  onAnnuler,
-  archive,
-}: {
+type Proprietes = {
   entrepriseId: string;
   objection?: Objection;
   onSucces?: (message: string) => void;
   onAnnuler?: () => void;
   archive?: React.ReactNode;
-}) {
+};
+
+/** « Recharger », après un refus pour modification concurrente, remonte le formulaire avec l'objection relue. */
+export function FormulaireObjection(proprietes: Proprietes) {
+  const { cle, recharger, enCours } = useRechargement();
+  return <Formulaire key={cle} {...proprietes} recharger={recharger} rechargement={enCours} />;
+}
+
+function Formulaire({
+  entrepriseId,
+  objection,
+  onSucces,
+  onAnnuler,
+  archive,
+  recharger,
+  rechargement,
+}: Proprietes & { recharger: () => void; rechargement: boolean }) {
   const { etat, enCours, modifie, proprietes } = useFormulaire<EtatFormulaire>(
     enregistrerObjection.bind(null, entrepriseId, objection?.id ?? null),
     null,
@@ -70,6 +83,7 @@ export function FormulaireObjection({
 
   return (
     <form {...proprietes} aria-label={nouvelle ? 'Nouvelle objection' : `Objection « ${objection.libelle} »`} className="grid gap-5 pt-2 pb-6">
+      {objection ? <ChampConnu valeur={objection.modifieLe} /> : null}
       <Champ libelle="L’objection, telle que le prospect la dit" htmlFor={`${prefixe}-libelle`} erreur={e.libelle}>
         <Saisie
           id={`${prefixe}-libelle`}
@@ -94,7 +108,11 @@ export function FormulaireObjection({
           </li>
         ))}
       </ol>
-      {etat && !etat.ok && etat.message ? <Message ton="alerte">{etat.message}</Message> : null}
+      {etat?.conflit && etat.message ? (
+        <MessageConflit message={etat.message} jeton={etat.conflit.jeton} onRecharger={recharger} rechargement={rechargement} desactive={enCours} />
+      ) : etat && !etat.ok && etat.message ? (
+        <Message ton="alerte">{etat.message}</Message>
+      ) : null}
       <div className="-mx-1.5 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <Action

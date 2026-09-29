@@ -1,8 +1,7 @@
 import { ISSUES_SYSTEME, LIBELLES_ISSUES, SENS_ISSUES } from '@autocalled/domain';
-import { and, asc, eq, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, ne, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { BoutonArchive } from '@/components/bouton-archive';
-import { issueEffective } from '@/components/format-appel';
 import { LienAction, Page } from '@/components/ui';
 import { db } from '@/db';
 import { appels, issuesPersonnalisees } from '@/db/schema';
@@ -23,18 +22,15 @@ export default async function PageIssues({ params }: { params: Promise<{ slug: s
       .from(issuesPersonnalisees)
       .where(eq(issuesPersonnalisees.entrepriseId, entreprise.id))
       .orderBy(asc(issuesPersonnalisees.archivee), asc(issuesPersonnalisees.libelle)),
-    // Appels réels de l'entreprise par issue effective : le compte que montre Appels derrière le lien.
+    // Appels réels de l'entreprise par issue système : le compte que montre Appels derrière le lien.
     db
-      .select({ issueSysteme: appels.issueSysteme, issue: appels.issue, n: sql<number>`count(*)::int` })
+      .select({ issueSysteme: appels.issueSysteme, n: sql<number>`count(*)::int` })
       .from(appels)
-      .where(and(eq(appels.entrepriseId, entreprise.id), ne(appels.ligne, 'simulation')))
-      .groupBy(appels.issueSysteme, appels.issue),
+      .where(and(eq(appels.entrepriseId, entreprise.id), ne(appels.ligne, 'simulation'), isNotNull(appels.issueSysteme)))
+      .groupBy(appels.issueSysteme),
   ]);
   const comptes = new Map<string, number>();
-  for (const g of groupes) {
-    const cle = issueEffective(g);
-    if (cle) comptes.set(cle, (comptes.get(cle) ?? 0) + Number(g.n));
-  }
+  for (const g of groupes) if (g.issueSysteme) comptes.set(g.issueSysteme, Number(g.n));
 
   return (
     <Page largeur="lecture">

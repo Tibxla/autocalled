@@ -1,8 +1,9 @@
 import 'server-only';
 import { etapesIdentiques } from '@autocalled/domain';
-import { and, desc, eq, max } from 'drizzle-orm';
+import { and, asc, desc, eq, max } from 'drizzle-orm';
+import { cleJour, heure, jourCourt } from '@/components/format-appel';
 import { db } from '@/db';
-import { entreprises, issuesPersonnalisees, objections, scripts, versionsScript } from '@/db/schema';
+import { entreprises, issuesPersonnalisees, objections, type Origine, scripts, versionsScript } from '@/db/schema';
 import type { Fiche, Plages, SaisieIssue, SaisieObjection } from './schemas';
 import { slugifier } from './slug';
 
@@ -13,6 +14,46 @@ import { slugifier } from './slug';
  */
 
 export type Refus = { ok: false; raison: string };
+
+/**
+ * Qui écrit, et ce qu'il avait sous les yeux. `connu` est l'horodatage de dernière modification lu à l'ouverture
+ * du formulaire (ISO), ou pour une version le numéro de la dernière version : s'il a changé depuis, l'écriture
+ * est refusée (`Conflit`). Absent, rien n'est contrôlé : c'est le cas du serveur MCP.
+ */
+export interface Ecriture {
+  origine: Origine;
+  connu?: string | null;
+}
+
+/**
+ * Sans précision, l'écriture vient du serveur MCP : c'est aujourd'hui le seul appelant qui ne dit pas qui il est
+ * (l'interface passe toujours `{ origine: 'interface' }`). Ce défaut disparaîtra quand le MCP passera la sienne.
+ */
+const PAR_MCP: Ecriture = { origine: 'mcp' };
+
+/** Refus d'une écriture concurrente. `jeton` est la valeur de `connu` qui permet d'écraser en connaissance de cause. */
+export type Conflit = Refus & { conflit: { le: Date; origine: Origine | null; jeton: string } };
+
+const AUTEUR: Record<Origine, string> = { mcp: 'par Claude Code', interface: 'dans une autre fenêtre' };
+
+/** « à 14:02 » le jour même, « le mar. 29/09 à 14:02 » sinon. */
+function moment(le: Date, maintenant = new Date()): string {
+  return cleJour(le) === cleJour(maintenant) ? `à ${heure(le)}` : `le ${jourCourt(le)} à ${heure(le)}`;
+}
+
+/** « Modifiée par Claude Code à 14:02 », « modifiée ailleurs à 14:02 » quand l'origine n'est pas connue. */
+export function auteurEtMoment(le: Date, origine: Origine | null): string {
+  return `${origine ? AUTEUR[origine] : 'ailleurs'} ${moment(le)}`;
+}
+
+function conflitSi(connu: string | null | undefined, actuel: { modifieLe: Date; modifiePar: Origine | null }, sujet: string): Conflit | null {
+  if (connu == null || Date.parse(connu) === actuel.modifieLe.getTime()) return null;
+  return {
+    ok: false,
+    raison: `${sujet} ${auteurEtMoment(actuel.modifieLe, actuel.modifiePar)}, depuis que tu l’as ouverte.`,
+    conflit: { le: actuel.modifieLe, origine: actuel.modifiePar, jeton: actuel.modifieLe.toISOString() },
+  };
+}
 
 export async function creerEntreprise(nom: string): Promise<{ ok: true; id: string; slug: string } | Refus> {
   const slug = slugifier(nom);
@@ -26,26 +67,57 @@ export async function creerEntreprise(nom: string): Promise<{ ok: true; id: stri
   return { ok: true, ...creee };
 }
 
-export async function enregistrerFiche(entrepriseId: string, fiche: Fiche, plages: Plages): Promise<void> {
-  await db
-    .update(entreprises)
-    .set({ ...fiche, plagesRendezVous: plages })
-    .where(eq(entreprises.id, entrepriseId));
+/** Enregistre la fiche, sauf si elle a changé depuis `ecriture.connu` (formulaire ouvert avant une autre écriture). */
+export async function enregistrerFiche(
+  entrepriseId: string,
+  fiche: Fiche,
+  plages: Plages,
+  ecriture: Ecriture = PAR_MCP,
+): Promise<{ ok: true; modifieLe: Date } | Refus | Conflit> {
+  return db.transaction(async (tx) => {
+    const [actuelle] = await tx
+      .select({ modifieLe: entreprises.modifieLe, modifiePar: entreprises.modifiePar })
+      .from(entreprises)
+      .where(eq(entreprises.id, entrepriseId))
+      .for('update');
+    if (!actuelle) return { ok: false as const, raison: 'Cette entreprise n’existe plus.' };
+    const conflit = conflitSi(ecriture.connu, actuelle, 'Fiche modifiée');
+    if (conflit) return conflit;
+    const modifieLe = new Date();
+    await tx
+      .update(entreprises)
+      .set({ ...fiche, plagesRendezVous: plages, modifieLe, modifiePar: ecriture.origine })
+      .where(eq(entreprises.id, entrepriseId));
+    return { ok: true as const, modifieLe };
+  });
 }
 
-/** Crée l'objection (en dernière position) ou modifie celle dont l'identifiant est donné. */
+/**
+ * Crée l'objection (en dernière position) ou modifie celle dont l'identifiant est donné, sauf si elle a changé
+ * depuis `ecriture.connu`.
+ */
 export async function enregistrerObjection(
   entrepriseId: string,
   objectionId: string | null,
   saisie: SaisieObjection,
-): Promise<{ ok: true; id: string } | Refus> {
+  ecriture: Ecriture = PAR_MCP,
+): Promise<{ ok: true; id: string } | Refus | Conflit> {
   if (objectionId) {
-    const [modifiee] = await db
-      .update(objections)
-      .set(saisie)
-      .where(and(eq(objections.id, objectionId), eq(objections.entrepriseId, entrepriseId)))
-      .returning({ id: objections.id });
-    return modifiee ? { ok: true, id: modifiee.id } : { ok: false, raison: 'Cette objection n’existe pas dans cette entreprise.' };
+    return db.transaction(async (tx) => {
+      const [actuelle] = await tx
+        .select({ modifieLe: objections.modifieLe, modifiePar: objections.modifiePar })
+        .from(objections)
+        .where(and(eq(objections.id, objectionId), eq(objections.entrepriseId, entrepriseId)))
+        .for('update');
+      if (!actuelle) return { ok: false as const, raison: 'Cette objection n’existe pas dans cette entreprise.' };
+      const conflit = conflitSi(ecriture.connu, actuelle, 'Objection modifiée');
+      if (conflit) return conflit;
+      await tx
+        .update(objections)
+        .set({ ...saisie, modifieLe: new Date(), modifiePar: ecriture.origine })
+        .where(eq(objections.id, objectionId));
+      return { ok: true as const, id: objectionId };
+    });
   }
   const [dernier] = await db
     .select({ ordre: max(objections.ordre) })
@@ -53,20 +125,64 @@ export async function enregistrerObjection(
     .where(eq(objections.entrepriseId, entrepriseId));
   const [creee] = await db
     .insert(objections)
-    .values({ ...saisie, entrepriseId, ordre: (dernier?.ordre ?? 0) + 1 })
+    .values({ ...saisie, entrepriseId, ordre: (dernier?.ordre ?? 0) + 1, modifiePar: ecriture.origine })
     .returning({ id: objections.id });
   if (!creee) throw new Error('création de l’objection impossible');
   return { ok: true, id: creee.id };
 }
 
-/** Une objection n'est jamais supprimée : les bilans passés y font référence. Renvoie false si elle n'existe pas. */
-export async function basculerArchiveObjection(entrepriseId: string, objectionId: string, archivee: boolean): Promise<boolean> {
+/**
+ * Une objection n'est jamais supprimée : les bilans passés y font référence. Renvoie false si elle n'existe pas.
+ * L'archivage compte comme une modification (un formulaire ouvert avant ne l'écrase pas sans le dire).
+ */
+export async function basculerArchiveObjection(
+  entrepriseId: string,
+  objectionId: string,
+  archivee: boolean,
+  origine: Origine = PAR_MCP.origine,
+): Promise<boolean> {
   const touchees = await db
     .update(objections)
-    .set({ archivee })
+    .set({ archivee, modifieLe: new Date(), modifiePar: origine })
     .where(and(eq(objections.id, objectionId), eq(objections.entrepriseId, entrepriseId)))
     .returning({ id: objections.id });
   return touchees.length > 0;
+}
+
+/**
+ * Monte (-1) ou descend (+1) une objection d'un rang parmi les objections actives : c'est l'ordre dans lequel
+ * Mina les reçoit. Toute la liste est renumérotée de 1 à n (les archivées gardent leur place relative). Le
+ * réordonnancement ne compte pas comme une modification de l'objection (`modifieLe` inchangé) : l'opérateur
+ * ne doit pas entrer en conflit avec son propre formulaire ouvert. Renvoie la nouvelle position (à partir de 1).
+ */
+export async function deplacerObjection(entrepriseId: string, objectionId: string, sens: -1 | 1): Promise<{ ok: true; position: number } | Refus> {
+  return db.transaction(async (tx) => {
+    const liste = await tx
+      .select({ id: objections.id, ordre: objections.ordre, archivee: objections.archivee })
+      .from(objections)
+      .where(eq(objections.entrepriseId, entrepriseId))
+      .orderBy(asc(objections.ordre), asc(objections.id))
+      .for('update');
+    const actives = liste.filter((o) => !o.archivee);
+    const rang = actives.findIndex((o) => o.id === objectionId);
+    if (rang < 0) {
+      return {
+        ok: false as const,
+        raison: liste.some((o) => o.id === objectionId) ? 'Une objection archivée n’a pas de rang : réactive-la d’abord.' : 'Cette objection n’existe pas dans cette entreprise.',
+      };
+    }
+    const voisine = actives[rang + sens];
+    if (!voisine) return { ok: true as const, position: rang + 1 };
+
+    const ici = liste.findIndex((o) => o.id === objectionId);
+    const la = liste.findIndex((o) => o.id === voisine.id);
+    const nouvelle = [...liste];
+    [nouvelle[ici], nouvelle[la]] = [nouvelle[la]!, nouvelle[ici]!];
+    for (const [i, o] of nouvelle.entries()) {
+      if (o.ordre !== i + 1) await tx.update(objections).set({ ordre: i + 1 }).where(eq(objections.id, o.id));
+    }
+    return { ok: true as const, position: rang + 1 + sens };
+  });
 }
 
 export async function ajouterIssue(entrepriseId: string, saisie: SaisieIssue): Promise<string> {
@@ -108,35 +224,73 @@ export async function creerScript(entrepriseId: string, nom: string): Promise<{ 
   });
 }
 
+/** Renomme un script ; ses versions, ses appels et ses campagnes le suivent. False s'il n'existe pas. */
+export async function renommerScript(entrepriseId: string, scriptId: string, nom: string): Promise<boolean> {
+  const touches = await db
+    .update(scripts)
+    .set({ nom })
+    .where(and(eq(scripts.id, scriptId), eq(scripts.entrepriseId, entrepriseId)))
+    .returning({ id: scripts.id });
+  return touches.length > 0;
+}
+
+/**
+ * Un script archivé sort des choix de lancement (appel, campagne) ; il garde ses versions et ses appels, et une
+ * campagne déjà lancée garde sa version. False s'il n'existe pas.
+ */
+export async function basculerArchiveScript(entrepriseId: string, scriptId: string, archive: boolean): Promise<boolean> {
+  const touches = await db
+    .update(scripts)
+    .set({ archive })
+    .where(and(eq(scripts.id, scriptId), eq(scripts.entrepriseId, entrepriseId)))
+    .returning({ id: scripts.id });
+  return touches.length > 0;
+}
+
 export type Etapes = { intention: string; exemples: string[] }[];
 
 /**
  * Une version est figée : enregistrer des modifications crée la version suivante. Des étapes identiques à la
  * dernière version sont refusées : deux versions pareilles couperaient l'échantillon de l'analyse en deux.
+ * `ecriture.connu` est le numéro de la dernière version que l'éditeur connaissait : si une autre est arrivée
+ * depuis, rien n'est créé (`Conflit`, dont le jeton est le numéro de cette nouvelle dernière version).
  */
 export async function creerVersion(
   entrepriseId: string,
   scriptId: string,
   etapes: Etapes,
-): Promise<{ ok: true; id: string; numero: number } | Refus> {
-  const [script] = await db
-    .select({ id: scripts.id })
-    .from(scripts)
-    .where(and(eq(scripts.id, scriptId), eq(scripts.entrepriseId, entrepriseId)));
-  if (!script) return { ok: false, raison: 'Ce script n’existe plus.' };
-
+  ecriture: Ecriture = PAR_MCP,
+): Promise<{ ok: true; id: string; numero: number } | Refus | Conflit> {
   return db.transaction(async (tx) => {
+    // Verrou sur le script : deux créations simultanées passent l'une après l'autre.
+    const [script] = await tx
+      .select({ id: scripts.id })
+      .from(scripts)
+      .where(and(eq(scripts.id, scriptId), eq(scripts.entrepriseId, entrepriseId)))
+      .for('update');
+    if (!script) return { ok: false as const, raison: 'Ce script n’existe plus.' };
+
     const [derniere] = await tx
-      .select({ numero: versionsScript.numero, etapes: versionsScript.etapes })
+      .select({ numero: versionsScript.numero, etapes: versionsScript.etapes, creeLe: versionsScript.creeLe, creePar: versionsScript.creePar })
       .from(versionsScript)
       .where(eq(versionsScript.scriptId, scriptId))
       .orderBy(desc(versionsScript.numero))
       .limit(1);
+    if (ecriture.connu != null && derniere && String(derniere.numero) !== ecriture.connu) {
+      return {
+        ok: false as const,
+        raison: `Une v${derniere.numero} a été créée ${auteurEtMoment(derniere.creeLe, derniere.creePar)}, depuis que tu as ouvert l’éditeur.`,
+        conflit: { le: derniere.creeLe, origine: derniere.creePar, jeton: String(derniere.numero) },
+      };
+    }
     if (derniere && etapesIdentiques(derniere.etapes, etapes)) {
       return { ok: false as const, raison: `Ces étapes sont celles de la version ${derniere.numero} : rien n’a été enregistré.` };
     }
     const numero = (derniere?.numero ?? 0) + 1;
-    const [version] = await tx.insert(versionsScript).values({ scriptId, numero, etapes }).returning({ id: versionsScript.id });
+    const [version] = await tx
+      .insert(versionsScript)
+      .values({ scriptId, numero, etapes, creePar: ecriture.origine })
+      .returning({ id: versionsScript.id });
     if (!version) throw new Error('création de la version impossible');
     return { ok: true as const, id: version.id, numero };
   });

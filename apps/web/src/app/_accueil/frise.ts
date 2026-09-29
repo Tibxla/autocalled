@@ -1,4 +1,4 @@
-import { FUSEAU, hauteurTrait, heure, issueEffective } from '../../components/format-appel';
+import { FUSEAU, hauteurTrait, heure } from '../../components/format-appel';
 import type { AppelDuJour } from '@/lib/accueil';
 
 /**
@@ -101,7 +101,7 @@ export function traitFrise(a: Tracable, b: Bornes, o: { vivant?: boolean } = {})
   const gauche = position(minutesParis(a.debutLe), b);
   const largeur = (dureeMinutes(a) / (b.fin - b.debut)) * 100;
   if (o.vivant) return { id: a.id, gauche, largeur: 0, hauteur: HAUTEUR_FRISE, forme: 'vivant' };
-  const issue = a.statut === 'termine' ? issueEffective(a) : null;
+  const issue = a.statut === 'termine' ? a.issueSysteme : null;
   const forme: FormeTrait =
     a.statut === 'echec' ? 'echec' : issue === 'rendez-vous-pris' ? 'rendez-vous' : issue ? 'normal' : 'pointille';
   const hauteur = forme === 'pointille' ? TRAIT.min : hauteurTrait(a.etapeAtteinte, a.nombreEtapes, TRAIT);
@@ -113,7 +113,7 @@ export function resumeFrise(appels: readonly Tracable[], vivant: { debutLe: stri
   const tries = [...appels].sort((x, y) => Date.parse(x.debutLe) - Date.parse(y.debutLe));
   const premier = tries[0];
   const dernier = tries.at(-1);
-  const rdv = tries.filter((a) => a.statut === 'termine' && issueEffective(a) === 'rendez-vous-pris').length;
+  const rdv = tries.filter((a) => a.statut === 'termine' && a.issueSysteme === 'rendez-vous-pris').length;
   let phrase =
     !premier || !dernier
       ? 'Aucun appel aujourd’hui.'

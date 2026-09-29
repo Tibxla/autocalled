@@ -12,6 +12,8 @@ export type EtatTelephone = {
   signal?: number;
   batterie?: number;
   appelEnCours: boolean;
+  /** L'appel que le pont porte en ce moment ; absent ou nul quand la ligne est libre. */
+  appelId?: string | null;
   plafond: string | null;
   reglages: ReglagesLigne;
 };

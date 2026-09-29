@@ -1,13 +1,24 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import type { ResultatAction } from '@/lib/formulaire';
 import { Action } from './action';
 
 /**
- * Archiver ou réactiver une objection, une issue : geste réversible, sans confirmation. `nom` précise
- * l'élément pour les lecteurs d'écran (« Archiver « Trop cher » »).
+ * Archiver ou réactiver une objection, une issue, un script : geste réversible, sans confirmation. `nom` précise
+ * l'élément pour les lecteurs d'écran (« Archiver « Trop cher » ») ; `masculin` accorde le message (un script).
  */
-export function BoutonArchive({ action, archivee, nom }: { action: () => Promise<void>; archivee: boolean; nom?: string }) {
+export function BoutonArchive({
+  action,
+  archivee,
+  nom,
+  masculin = false,
+}: {
+  action: () => Promise<ResultatAction>;
+  archivee: boolean;
+  nom?: string;
+  masculin?: boolean;
+}) {
   const [enCours, demarrer] = useTransition();
   const [erreur, setErreur] = useState<string | null>(null);
   const [fait, setFait] = useState<string | null>(null);
@@ -23,9 +34,19 @@ export function BoutonArchive({ action, archivee, nom }: { action: () => Promise
         onClick={() =>
           demarrer(async () => {
             setErreur(null);
+            setFait(null);
             try {
-              await action();
-              setFait(archivee ? 'Réactivée.' : 'Archivée. Elle reste dans la liste des archivées.');
+              const resultat = await action();
+              if (!resultat.ok) return setErreur(resultat.raison);
+              setFait(
+                masculin
+                  ? archivee
+                    ? 'Réactivé.'
+                    : 'Archivé. Il reste dans la liste des archivés.'
+                  : archivee
+                    ? 'Réactivée.'
+                    : 'Archivée. Elle reste dans la liste des archivées.',
+              );
             } catch {
               setErreur(archivee ? 'La réactivation a échoué : réessaie.' : 'L’archivage a échoué : réessaie.');
             }

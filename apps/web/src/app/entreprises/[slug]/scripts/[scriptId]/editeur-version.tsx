@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useRaccourci } from '@/components/clavier';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
+import { ChampConnu, MessageConflit } from '@/components/conflit';
 import { Action, Champ, Message, Saisie, ZoneTexte } from '@/components/ui';
 import { useFormulaire } from '@/components/use-formulaire';
 import type { Etape } from '@/db/schema';
@@ -45,14 +46,18 @@ export function EditeurVersion({
   prochainNumero,
   onFermer,
   onEnregistree,
+  onRecharger,
 }: {
   entrepriseId: string;
   scriptId: string;
   etapes: Etape[];
   origine: number;
+  /** Le numéro suivant la dernière version connue : la garde de concurrence renvoie `prochainNumero - 1`. */
   prochainNumero: number;
   onFermer: () => void;
   onEnregistree: () => void;
+  /** Après un refus pour une version créée ailleurs : ferme l'éditeur et relit la page. */
+  onRecharger: () => void;
 }) {
   const { etat, enCours, modifie, proprietes } = useFormulaire<EtatFormulaire>(creerVersion.bind(null, entrepriseId, scriptId), null, {
     avertirSiQuitte: true,
@@ -77,6 +82,20 @@ export function EditeurVersion({
     vu.current = etat;
     if (etat?.ok) onEnregistree();
   }, [etat, onEnregistree]);
+
+  // Refus : chaque erreur du serveur (clé « rang:champ », rang dans l'ordre envoyé) revient sous le champ de
+  // son étape, une fois par réponse (ajustement pendant le rendu, sans effet).
+  const [reponseLue, setReponseLue] = useState(etat);
+  if (reponseLue !== etat) {
+    setReponseLue(etat);
+    const parEtape: Erreurs = {};
+    for (const [cle, message] of Object.entries(etat?.erreurs ?? {})) {
+      const [rangEnvoye, champ] = cle.split(':');
+      const ligne = actives[Number(rangEnvoye)];
+      if (ligne && (champ === 'intention' || champ === 'exemples')) parEtape[`${ligne.cle}:${champ}`] = message;
+    }
+    if (Object.keys(parEtape).length > 0) setErreurs(parEtape);
+  }
 
   const toucher = () => proprietes.onInput();
   const changer = (cle: string, changement: Partial<Ligne>) => {
@@ -171,10 +190,17 @@ export function EditeurVersion({
   });
 
   const abandonner = () => (modifie ? confirmation.ouvrir() : onFermer());
-  const refusServeur = etat && !etat.ok ? (etat.erreurs?.etapes ?? etat.message ?? null) : null;
+  const erreursEtapes = Object.keys(etat?.erreurs ?? {}).filter((cle) => cle.includes(':')).length;
+  const refusServeur =
+    etat && !etat.ok
+      ? (etat.erreurs?.etapes ??
+        etat.message ??
+        (erreursEtapes > 0 ? `${erreursEtapes > 1 ? `${erreursEtapes} erreurs` : 'Une erreur'} à corriger dans les étapes : rien n’a été enregistré.` : null))
+      : null;
 
   return (
     <form {...proprietes} onSubmit={envoyer} aria-label={`Nouvelle version v${prochainNumero}`} className="grid gap-4">
+      <ChampConnu valeur={String(prochainNumero - 1)} />
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
         <p className="text-sm text-encre-3">
           À partir de la <span className="font-mono">v{origine}</span> : l’enregistrement crée la{' '}
@@ -269,7 +295,18 @@ export function EditeurVersion({
       </div>
 
       {erreurGenerale ? <Message ton="alerte">{erreurGenerale}</Message> : null}
-      {refusServeur ? <Message ton="alerte">{refusServeur}</Message> : null}
+      {etat?.conflit && etat.message ? (
+        <MessageConflit
+          message={etat.message}
+          jeton={etat.conflit.jeton}
+          onRecharger={onRecharger}
+          libelleEcraser={`Enregistrer quand même comme v${Number(etat.conflit.jeton) + 1}`}
+          explication={`Recharger ferme l’éditeur et montre la v${etat.conflit.jeton} ; enregistrer quand même crée la v${Number(etat.conflit.jeton) + 1} avec ta saisie.`}
+          desactive={enCours || confirmation.ouverte}
+        />
+      ) : refusServeur ? (
+        <Message ton="alerte">{refusServeur}</Message>
+      ) : null}
 
       <div className="sticky bottom-0 z-10 -mx-(--gouttiere) grid gap-2 border-t border-filet bg-fond px-(--gouttiere) py-3">
         <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">

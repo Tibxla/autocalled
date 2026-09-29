@@ -8,11 +8,26 @@ export type StatutCampagne = 'prete' | 'en-cours' | 'en-pause' | 'terminee';
 
 export type RaisonSaut = 'numero-non-autorise';
 
+/** Qui a fait un geste sur la file : l'interface ou le serveur MCP (Claude Code). */
+export type OrigineGeste = 'interface' | 'mcp';
+
+/** `retrait` : l'opérateur a retiré ce prospect ; `fin-anticipee` : la campagne a été terminée avant lui. */
+export type MotifRetrait = 'retrait' | 'fin-anticipee';
+
+/** La trace d'un geste sur la file : quand (ISO) et par où. */
+export interface TraceGeste {
+  le: string;
+  par: OrigineGeste;
+}
+
 export type EntreeCampagne =
-  | { prospectId: string; etat: 'a-appeler' }
+  /** `sauts` : combien de fois l'opérateur l'a renvoyé en fin de file (absent : jamais). */
+  | { prospectId: string; etat: 'a-appeler'; sauts?: number }
   | { prospectId: string; etat: 'en-appel'; appelId: string }
   | { prospectId: string; etat: 'appelee'; appelId: string }
-  | { prospectId: string; etat: 'sautee'; raisonSaut: RaisonSaut };
+  | { prospectId: string; etat: 'sautee'; raisonSaut: RaisonSaut }
+  /** Sorti de la file sans être appelé, par un geste de l'opérateur ; la trace reste. */
+  | ({ prospectId: string; etat: 'retiree'; motif: MotifRetrait } & TraceGeste);
 
 export interface Campagne {
   id: string;
@@ -117,4 +132,67 @@ export function sauter(campagne: Campagne, prospectId: string, raisonSaut: Raiso
     throw new TransitionInvalide(`le prospect « ${prospectId} » n'est pas en attente d'appel`);
   }
   return remplacerEntree(campagne, prospectId, { prospectId, etat: 'sautee', raisonSaut });
+}
+
+function entreeAAppeler(campagne: Campagne, prospectId: string) {
+  if (campagne.statut === 'terminee') throw new TransitionInvalide('la campagne est terminée');
+  const entree = campagne.entrees.find((e) => e.prospectId === prospectId);
+  if (entree?.etat !== 'a-appeler') {
+    throw new TransitionInvalide(`le prospect « ${prospectId} » n'est pas en attente d'appel`);
+  }
+  return entree;
+}
+
+/**
+ * La campagne a été terminée pendant un appel : plus aucun prospect à appeler, elle se termine quand cet
+ * appel finit. D'ici là, rien ne s'y ajoute.
+ */
+export function finDemandee(campagne: Campagne): boolean {
+  return campagne.statut !== 'terminee' && campagne.entrees.some((e) => e.etat === 'retiree' && e.motif === 'fin-anticipee');
+}
+
+/**
+ * « Sauter » de l'opérateur : le prospect repasse en fin de file, sans être appelé maintenant. Refusé s'il est
+ * déjà le dernier à appeler (rien ne changerait).
+ */
+export function reporter(campagne: Campagne, prospectId: string): Campagne {
+  const entree = entreeAAppeler(campagne, prospectId);
+  const rang = campagne.entrees.indexOf(entree);
+  if (!campagne.entrees.slice(rang + 1).some((e) => e.etat === 'a-appeler')) {
+    throw new TransitionInvalide(`le prospect « ${prospectId} » est déjà le dernier à appeler`);
+  }
+  const autres = campagne.entrees.filter((e) => e.prospectId !== prospectId);
+  // Après le dernier prospect à appeler : les entrées closes gardent leur rang.
+  const dernier = autres.findLastIndex((e) => e.etat === 'a-appeler');
+  const deplacee: EntreeCampagne = { prospectId, etat: 'a-appeler', sauts: (entree.sauts ?? 0) + 1 };
+  return { ...campagne, entrees: [...autres.slice(0, dernier + 1), deplacee, ...autres.slice(dernier + 1)] };
+}
+
+/** Retire un prospect de la file : il ne sera pas appelé dans cette campagne. */
+export function retirer(campagne: Campagne, prospectId: string, trace: TraceGeste): Campagne {
+  entreeAAppeler(campagne, prospectId);
+  return remplacerEntree(campagne, prospectId, { prospectId, etat: 'retiree', motif: 'retrait', ...trace });
+}
+
+/** Ajoute des prospects en fin de file, dans l'ordre donné. Un prospect déjà dans la file, quel que soit son état, est refusé. */
+export function ajouterProspects(campagne: Campagne, prospectIds: readonly string[]): Campagne {
+  if (campagne.statut === 'terminee') throw new TransitionInvalide('impossible d’ajouter à une campagne terminée');
+  if (finDemandee(campagne)) throw new TransitionInvalide('la campagne se termine après l’appel en cours');
+  if (prospectIds.length === 0) throw new TransitionInvalide('aucun prospect à ajouter');
+  const doublon = prospectIds.find((id, i) => prospectIds.indexOf(id) !== i || campagne.entrees.some((e) => e.prospectId === id));
+  if (doublon) throw new TransitionInvalide(`le prospect « ${doublon} » est déjà dans la file`);
+  return { ...campagne, entrees: [...campagne.entrees, ...prospectIds.map((prospectId) => ({ prospectId, etat: 'a-appeler' as const }))] };
+}
+
+/**
+ * Termine la campagne avant la fin : chaque prospect encore à appeler est retiré. Sans appel en cours, elle est
+ * terminée tout de suite ; sinon l'appel va à son terme et `terminerAppel` la termine.
+ */
+export function terminerAvantLaFin(campagne: Campagne, trace: TraceGeste): Campagne {
+  if (campagne.statut === 'terminee') throw new TransitionInvalide('la campagne est déjà terminée');
+  if (!suivant(campagne)) throw new TransitionInvalide('plus aucun prospect à appeler : la campagne se termine avec l’appel en cours');
+  return avecStatutAJour({
+    ...campagne,
+    entrees: campagne.entrees.map((e) => (e.etat === 'a-appeler' ? { prospectId: e.prospectId, etat: 'retiree', motif: 'fin-anticipee', ...trace } : e)),
+  });
 }

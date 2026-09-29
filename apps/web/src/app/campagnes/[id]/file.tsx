@@ -1,9 +1,9 @@
 'use client';
 
-import type { IssueSysteme } from '@autocalled/domain';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { NavigationListe } from '@/components/clavier';
-import { etatAppel, issueEffective, type TonEtat } from '@/components/format-appel';
+import type { IssueSysteme, MotifRetrait, OrigineGeste } from '@autocalled/domain';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { NavigationListe, useRaccourcis } from '@/components/clavier';
+import { dateCourte, etatAppel, type TonEtat } from '@/components/format-appel';
 import {
   Cellule,
   CelluleEnTete,
@@ -16,15 +16,22 @@ import {
   Heure,
   LienLigne,
   LigneTable,
+  Message,
   Recherche,
   TableDense,
   Action,
 } from '@/components/ui';
+import { retirerDeLaFile, sauterDansLaFile } from '../actions';
 
 /**
  * La file d'une campagne : chaque prospect dans l'ordre d'appel, avec son appel s'il est parti. Filtres et
  * recherche restent dans la page (la liste est déjà chargée en entier) ; l'URL garde le filtre par
  * window.history.replaceState, sans relancer le rendu serveur que la régie rafraîchit déjà.
+ *
+ * Tant que la campagne n'est pas terminée, chaque prospect encore à appeler se saute (il repasse en fin de
+ * file) ou se retire (il ne sera pas appelé dans cette campagne, et n'y revient pas). Ces gestes n'appellent
+ * personne : pas de confirmation. S saute la ligne sélectionnée (j, k) ; Retirer, définitif pour la campagne,
+ * n'a pas de touche : il se fait à la souris ou par Tab.
  */
 
 export interface EntreeFile {
@@ -32,8 +39,12 @@ export interface EntreeFile {
   prospectId: string;
   nom: string;
   societe: string | null;
-  etat: 'a-appeler' | 'en-appel' | 'appelee' | 'sautee';
+  etat: 'a-appeler' | 'en-appel' | 'appelee' | 'sautee' | 'retiree';
   suivant: boolean;
+  /** Combien de fois l'opérateur l'a sauté (repassé en fin de file). */
+  sauts: number;
+  /** Retiré de la file : pourquoi, quand (ISO), par où. */
+  retrait: { motif: MotifRetrait; le: string; par: OrigineGeste } | null;
   appel: {
     id: string;
     ligne: string;
@@ -49,7 +60,7 @@ export interface EntreeFile {
   } | null;
 }
 
-type Categorie = 'a-appeler' | 'en-appel' | 'rendez-vous-pris' | 'rappel-convenu' | 'refus' | 'non-abouti' | 'autres' | 'sautes';
+type Categorie = 'a-appeler' | 'en-appel' | 'rendez-vous-pris' | 'rappel-convenu' | 'refus' | 'non-abouti' | 'autres' | 'sautes' | 'retires';
 
 const FILTRES: { cle: Categorie; libelle: string }[] = [
   { cle: 'a-appeler', libelle: 'À appeler' },
@@ -60,6 +71,7 @@ const FILTRES: { cle: Categorie; libelle: string }[] = [
   { cle: 'non-abouti', libelle: 'Non abouti' },
   { cle: 'autres', libelle: 'Autres' },
   { cle: 'sautes', libelle: 'Sautés' },
+  { cle: 'retires', libelle: 'Retirés' },
 ];
 
 const CLES = new Set<string>(FILTRES.map((f) => f.cle));
@@ -68,7 +80,8 @@ function categorie(e: EntreeFile): Categorie {
   if (e.etat === 'a-appeler') return 'a-appeler';
   if (e.etat === 'en-appel') return 'en-appel';
   if (e.etat === 'sautee') return 'sautes';
-  const issue = e.appel ? issueEffective(e.appel) : null;
+  if (e.etat === 'retiree') return 'retires';
+  const issue = e.appel?.issueSysteme ?? null;
   if (issue === 'rendez-vous-pris' || issue === 'rappel-convenu' || issue === 'refus' || issue === 'non-abouti') return issue;
   return 'autres';
 }
@@ -87,9 +100,19 @@ function sansAccents(texte: string): string {
 
 function Issue({ e }: { e: EntreeFile }) {
   if (e.etat === 'a-appeler') {
-    return e.suivant ? <span className="text-encre-2">Suivant</span> : <span className="text-encre-3">À appeler</span>;
+    const repasse = e.sauts > 0 ? ` · repassé${e.sauts > 1 ? ` ${e.sauts} fois` : ''} en fin de file` : '';
+    return e.suivant ? <span className="text-encre-2">Suivant{repasse}</span> : <span className="text-encre-3">À appeler{repasse}</span>;
   }
   if (e.etat === 'sautee') return <span className="text-encre-3">Sauté : numéro non autorisé</span>;
+  if (e.etat === 'retiree') {
+    const quand = e.retrait ? dateCourte(e.retrait.le).replace(' ', ' à ') : null;
+    const par = e.retrait?.par === 'mcp' ? ' par Claude Code' : '';
+    const texte =
+      e.retrait?.motif === 'fin-anticipee'
+        ? `Non appelé : campagne terminée${quand ? ` le ${quand}` : ''}${par}`
+        : `Retiré${quand ? ` le ${quand}` : ''}${par}`;
+    return <span className="text-encre-3">{texte}</span>;
+  }
   if (e.etat === 'en-appel' && (!e.appel || e.appel.statut === 'en-cours')) return <span>En appel</span>;
   if (!e.appel) return <span className="text-encre-3">Sans appel</span>;
   const etat = etatAppel(e.appel, { libellePerso: e.appel.libellePerso });
@@ -105,7 +128,7 @@ function Glyphe({ e, nombreEtapes }: { e: EntreeFile; nombreEtapes: number | nul
   const a = e.appel;
   if (!a) return null;
   const etat = a.statut === 'echec' ? 'echec' : a.statut === 'traitement' ? 'analyse' : a.etape === null ? 'sans-bilan' : 'bilan';
-  return <GlypheEtape etat={etat} etape={a.etape} nombre={nombreEtapes} rendezVous={issueEffective(a) === 'rendez-vous-pris'} />;
+  return <GlypheEtape etat={etat} etape={a.etape} nombre={nombreEtapes} rendezVous={a.issueSysteme === 'rendez-vous-pris'} />;
 }
 
 export function File({
@@ -114,15 +137,61 @@ export function File({
   slug,
   campagneId,
   filtreInitial,
+  gestes = false,
 }: {
   entrees: EntreeFile[];
   nombreEtapes: number | null;
   slug: string;
   /** Ajouté aux liens des appels (?depuis=) : la fiche d'appel revient à la campagne. */
-  campagneId?: string;
+  campagneId: string;
   filtreInitial?: string | undefined;
+  /** Sauter et Retirer sont proposés (campagne ni terminée ni en train de se terminer). */
+  gestes?: boolean;
 }) {
-  const depuis = campagneId ? `?depuis=${encodeURIComponent(`/campagnes/${campagneId}`)}` : '';
+  const depuis = `?depuis=${encodeURIComponent(`/campagnes/${campagneId}`)}`;
+  const [enCours, demarrer] = useTransition();
+  const [annonce, setAnnonce] = useState<{ texte: string; ton: 'neutre' | 'alerte' } | null>(null);
+  const derniereAAppeler = entrees.findLast((e) => e.etat === 'a-appeler')?.prospectId ?? null;
+
+  const geste = (e: EntreeFile, quoi: 'sauter' | 'retirer') =>
+    demarrer(async () => {
+      setAnnonce(null);
+      try {
+        if (quoi === 'sauter') {
+          const r = await sauterDansLaFile(campagneId, e.prospectId);
+          setAnnonce(r.ok ? { texte: `${e.nom} repasse en fin de file.`, ton: 'neutre' } : { texte: r.raison, ton: 'alerte' });
+        } else {
+          const r = await retirerDeLaFile(campagneId, e.prospectId);
+          setAnnonce(
+            r.ok
+              ? { texte: `${e.nom} est retiré de la file : il ne sera pas appelé dans cette campagne.${r.terminee ? ' Plus personne à appeler : la campagne est terminée.' : ''}`, ton: 'neutre' }
+              : { texte: r.raison, ton: 'alerte' },
+          );
+        }
+      } catch {
+        setAnnonce({ texte: 'Le geste n’a pas abouti : relis la page et réessaie.', ton: 'alerte' });
+      }
+    });
+
+  /** La ligne sélectionnée (j, k) ou qui porte le focus, si elle est encore à appeler. */
+  const entreeSelectionnee = () => {
+    const ligne = document.activeElement?.closest<HTMLElement>('[data-ligne]') ?? document.querySelector<HTMLElement>('#file-table [data-selectionnee]');
+    const id = ligne?.id.startsWith('file-') ? ligne.id.slice(5) : null;
+    return entrees.find((e) => e.prospectId === id && e.etat === 'a-appeler');
+  };
+  useRaccourcis([
+    {
+      touche: 's',
+      libelle: 'Sauter le prospect sélectionné',
+      groupe: 'Liste',
+      actif: gestes && !enCours,
+      action: () => {
+        const e = entreeSelectionnee();
+        if (!e) return false;
+        geste(e, 'sauter');
+      },
+    },
+  ]);
   const [filtre, setFiltre] = useState<Categorie | null>(filtreInitial && CLES.has(filtreInitial) ? (filtreInitial as Categorie) : null);
   const [texte, setTexte] = useState('');
   // Remonter la recherche la vide : elle garde sa saisie en propre.
@@ -178,6 +247,16 @@ export function File({
         <Recherche key={cleRecherche} placeholder="Chercher un prospect" libelle="Chercher dans la file" instantane={setTexte} />
       </div>
 
+      {annonce ? (
+        annonce.ton === 'alerte' ? (
+          <Message ton="alerte">{annonce.texte}</Message>
+        ) : (
+          <p role="status" className="text-sm text-encre-2">
+            {annonce.texte}
+          </p>
+        )
+      ) : null}
+
       {visibles.length === 0 ? (
         <EtatVide
           forme="filtre"
@@ -199,8 +278,11 @@ export function File({
         </EtatVide>
       ) : (
         <NavigationListe>
-          <div ref={table}>
-            <TableDense libelle="File de la campagne" colonnes="2.5rem minmax(0,1fr) 3.5rem 3.5rem 4.5rem minmax(9rem,16rem)">
+          <div ref={table} id="file-table">
+            <TableDense
+              libelle="File de la campagne"
+              colonnes={`2.5rem minmax(0,1fr) 3.5rem 3.5rem 4.5rem minmax(9rem,16rem)${gestes ? ' 8.5rem' : ''}`}
+            >
               <EnTeteTable>
                 <CelluleEnTete>Rang</CelluleEnTete>
                 <CelluleEnTete>Prospect</CelluleEnTete>
@@ -210,13 +292,18 @@ export function File({
                 </CelluleEnTete>
                 <CelluleEnTete masqueeMobile>Étape</CelluleEnTete>
                 <CelluleEnTete>Issue</CelluleEnTete>
+                {gestes ? (
+                  <CelluleEnTete>
+                    <span className="sr-only">Gestes</span>
+                  </CelluleEnTete>
+                ) : null}
               </EnTeteTable>
               <div role="rowgroup">
                 {visibles.map((e) => (
                   <LigneTable
                     key={e.prospectId}
                     id={`file-${e.prospectId}`}
-                    etat={e.etat === 'en-appel' ? 'vivante' : e.etat === 'sautee' ? 'attenuee' : 'normale'}
+                    etat={e.etat === 'en-appel' ? 'vivante' : e.etat === 'sautee' || e.etat === 'retiree' ? 'attenuee' : 'normale'}
                   >
                     <Cellule mono className="max-sm:order-1 max-sm:w-7">
                       {e.rang}
@@ -245,6 +332,32 @@ export function File({
                     <Cellule etat tronquee className="max-sm:order-5 max-sm:basis-full max-sm:pl-10 max-sm:text-sm">
                       <Issue e={e} />
                     </Cellule>
+                    {gestes ? (
+                      <Cellule className="max-sm:order-6 max-sm:basis-full max-sm:pl-10">
+                        {e.etat === 'a-appeler' ? (
+                          <span className="relative z-10 -mx-1.5 flex items-center gap-x-1">
+                            <Action
+                              ton="discret"
+                              disabled={enCours || e.prospectId === derniereAAppeler}
+                              title={e.prospectId === derniereAAppeler ? 'Déjà le dernier à appeler' : 'Repasse en fin de file, sans être appelé maintenant'}
+                              aria-label={`Sauter ${e.nom} : repasse en fin de file`}
+                              onClick={() => geste(e, 'sauter')}
+                            >
+                              Sauter
+                            </Action>
+                            <Action
+                              ton="discret"
+                              disabled={enCours}
+                              title="Ne sera pas appelé dans cette campagne"
+                              aria-label={`Retirer ${e.nom} de la file`}
+                              onClick={() => geste(e, 'retirer')}
+                            >
+                              Retirer
+                            </Action>
+                          </span>
+                        ) : null}
+                      </Cellule>
+                    ) : null}
                   </LigneTable>
                 ))}
               </div>
