@@ -1,8 +1,9 @@
 import 'server-only';
-import { type Campagne, type VariablesDeLAppel, creerCampagne, debuterAppel, mettreEnPause, prochaineAction, sauter, terminerAppel, TransitionInvalide } from '@autocalled/domain';
+import { type Campagne, type VariablesDeLAppel, creerCampagne, debuterAppel, demarrer, mettreEnPause, prochaineAction, sauter, terminerAppel, TransitionInvalide } from '@autocalled/domain';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { appels, campagnes } from '@/db/schema';
+import { rafraichirSiAncien } from './agenda';
 import { preparerAppel, simulerAppel } from './appels';
 import { jetonConversation } from './elevenlabs';
 import { commanderPont, reglagesDuPont, refusDuPont } from './pont';
@@ -75,6 +76,17 @@ export async function appelerSuivantNavigateur(campagneId: string): Promise<Appe
       };
     }
   });
+}
+
+/**
+ * Démarre (ou reprend) une campagne et renvoie sa ligne : à l'appelant d'enchaîner les appels, par
+ * `derouleSimulation` ou `appelerSuivantTelephone`. Lève `TransitionInvalide` si elle n'est ni prête ni en pause.
+ */
+export async function demarrerCampagne(campagneId: string): Promise<'navigateur' | 'simulation' | 'bluetooth' | 'twilio' | null> {
+  await avecCampagne(campagneId, async (c) => ({ campagne: demarrer(c), resultat: null }));
+  await rafraichirSiAncien();
+  const [ligne] = await db.select({ ligne: campagnes.ligne }).from(campagnes).where(eq(campagnes.id, campagneId));
+  return ligne?.ligne ?? null;
 }
 
 export async function clore(campagneId: string, appelId: string): Promise<void> {

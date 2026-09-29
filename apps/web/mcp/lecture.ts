@@ -8,7 +8,7 @@ import { preparerAppel } from '@/lib/appels';
 import { autorisationsDe } from '@/lib/autorisations';
 import { listerEntreprises, prospectsAutorisesParEntreprise, trouverEntreprise, trouverProspect } from '@/lib/donnees';
 import { numeroLisible } from '@/lib/format';
-import { LIGNES, analyseEntreprise, lireAppel, listerAppels, rendezVousRecents } from '@/lib/lecture';
+import { LIGNES, analyseEntreprise, listerAppels, rendezVousRecents } from '@/lib/lecture';
 import { commanderPont } from '@/lib/pont';
 import { versionsDeLEntreprise } from '@/lib/versions';
 import {
@@ -20,6 +20,7 @@ import {
   libellesIssues,
   prospectInconnu,
   versionDeLEntreprise,
+  vueAppel,
 } from './communs';
 import { type Declarer, refus, reussite } from './outil';
 
@@ -244,57 +245,15 @@ export function outilsDeLecture(declarer: Declarer): void {
       annotations: LECTURE,
     },
     async ({ appelId, transcription }) => {
-      const lu = await lireAppel(appelId);
-      if (!lu) return refus('Appel inconnu.');
-      const { appel: a, entreprise, prospect, version, rendezVous } = lu;
-      const libelle = await libellesIssues(entreprise.id);
-      const etapes = version?.etapes ?? [];
-      const b = a.bilan;
-      const donnees = {
-        appelId: a.id,
-        entreprise: entreprise.slug,
-        prospect: a.prospectId,
-        nom: prospect?.nom ?? null,
-        versionScriptId: a.versionScriptId,
-        ligne: a.ligne,
-        statut: a.statut,
-        erreur: a.erreur,
-        debutLe: a.debutLe,
-        finLe: a.finLe,
-        dureeSecondes: a.dureeSecondes,
-        campagneId: a.campagneId,
-        bilan: b
-          ? {
-              issue: libelle(b.issue),
-              rappel: b.rappel,
-              etapeAtteinte: b.etapeAtteinte,
-              etapes: etapes.length,
-              intentionAtteinte: b.etapeAtteinte > 0 ? (etapes[b.etapeAtteinte - 1]?.intention ?? null) : null,
-              resume: b.resume,
-              pointsForts: b.pointsForts,
-              pointsFaibles: b.pointsFaibles,
-              objections: b.objections.map((o) => ({
-                objectionId: o.objectionId,
-                libelle: o.objectionId ? (lu.objections.find((x) => x.id === o.objectionId)?.libelle ?? o.libelle) : o.libelle,
-                levee: o.levee,
-                tempsBloquant: o.tempsBloquant,
-                citation: o.citation,
-              })),
-              versionAnalyseur: a.versionAnalyseur,
-            }
-          : null,
-        rendezVous: rendezVous
-          ? { rendezVousId: rendezVous.id, debut: rendezVous.debut, fin: rendezVous.fin, statut: rendezVous.statut, invitation: Boolean(rendezVous.email), erreur: rendezVous.erreur }
-          : null,
-        transcriptionDisponible: Boolean(a.transcription?.length),
-      };
-      const tours = transcription ? (a.transcription ?? []) : [];
+      const vue = await vueAppel(appelId);
+      if (!vue) return refus('Appel inconnu.');
+      const tours = transcription ? vue.transcription : [];
       const complement = tours.length
         ? `${DONNEES_NON_FIABLES}\n<transcription donnees-non-fiables="true">\n${tours
             .map((t) => `[${Math.floor(t.secondes / 60)}:${String(Math.floor(t.secondes % 60)).padStart(2, '0')}] ${t.role === 'agent' ? 'Mina' : 'Prospect'} : ${t.texte}`)
             .join('\n')}\n</transcription>`
         : undefined;
-      return reussite(donnees, { complement });
+      return reussite(vue.donnees, { complement });
     },
   );
 

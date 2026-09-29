@@ -1,19 +1,18 @@
 'use server';
 
-import { demarrer } from '@autocalled/domain';
 import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { after } from 'next/server';
 import { db } from '@/db';
-import { appels, campagnes } from '@/db/schema';
+import { appels } from '@/db/schema';
 import { rafraichirSiAncien } from '@/lib/agenda';
 import { traiterAppel } from '@/lib/appels';
 import {
   appelerSuivantNavigateur,
   appelerSuivantTelephone,
-  avecCampagne,
   clore,
+  demarrerCampagne,
   derouleSimulation,
   enregistrerCampagne,
   suspendreSiEnCours,
@@ -38,11 +37,9 @@ export async function nouvelleCampagne(entrepriseId: string, _: EtatFormulaire, 
 
 export async function lancerCampagne(campagneId: string): Promise<void> {
   await exigerOperateur();
-  await avecCampagne(campagneId, async (c) => ({ campagne: demarrer(c), resultat: null }));
-  await rafraichirSiAncien();
-  const [ligne] = await db.select({ ligne: campagnes.ligne }).from(campagnes).where(eq(campagnes.id, campagneId));
-  if (ligne?.ligne === 'simulation') after(() => derouleSimulation(campagneId));
-  if (ligne?.ligne === 'bluetooth') after(() => appelerSuivantTelephone(campagneId));
+  const ligne = await demarrerCampagne(campagneId);
+  if (ligne === 'simulation') after(() => derouleSimulation(campagneId));
+  if (ligne === 'bluetooth') after(() => appelerSuivantTelephone(campagneId));
   revalidatePath(`/campagnes/${campagneId}`);
 }
 

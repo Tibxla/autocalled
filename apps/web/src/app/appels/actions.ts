@@ -6,11 +6,11 @@ import { revalidatePath } from 'next/cache';
 import { after } from 'next/server';
 import { db } from '@/db';
 import { appels } from '@/db/schema';
-import { analyserAppel, preparerAppel, simulerAppel, traiterAppel } from '@/lib/appels';
+import { appelerParTelephone, enregistrerAppelSimule, preparerAppel, reanalyser, simulerAppel, traiterAppel } from '@/lib/appels';
 import { rafraichirSiAncien } from '@/lib/agenda';
 import { jetonConversation } from '@/lib/elevenlabs';
 import { exigerOperateur } from '@/lib/garde';
-import { commanderPont, refusDuPont } from '@/lib/pont';
+import { commanderPont } from '@/lib/pont';
 
 export type DemarrageAppel =
   | { ok: true; appelId: string; jeton: string; variables: VariablesDeLAppel; motsCles: string[] }
@@ -44,10 +44,7 @@ export async function terminerAppelNavigateur(appelId: string): Promise<void> {
   after(() => traiterAppel(appelId));
 }
 
-/**
- * Ligne téléphone (ADR 0007) : vérifie l'autorisation, enregistre l'appel, puis demande au pont de composer.
- * La suite arrive par les routes /api/pont/… (conversation, outils d'agenda, fin).
- */
+/** Ligne téléphone (ADR 0007) : voir `appelerParTelephone`. */
 export async function demarrerAppelTelephone(
   entrepriseId: string,
   prospectId: string,
@@ -55,29 +52,7 @@ export async function demarrerAppelTelephone(
   campagneId: string | null = null,
 ): Promise<{ ok: true; appelId: string } | { ok: false; raison: string }> {
   await exigerOperateur();
-  const preparation = await preparerAppel(entrepriseId, prospectId, versionScriptId);
-  if (!preparation.ok) return preparation;
-  const refus = await refusDuPont();
-  if (refus) return { ok: false, raison: refus };
-
-  await rafraichirSiAncien();
-  const [appel] = await db
-    .insert(appels)
-    .values({ entrepriseId, prospectId, versionScriptId, campagneId, ligne: 'bluetooth', numero: preparation.numero })
-    .returning({ id: appels.id });
-  if (!appel) return { ok: false, raison: 'Impossible d’enregistrer l’appel.' };
-
-  const reponse = await commanderPont('/appels', {
-    appelId: appel.id,
-    numero: preparation.numero,
-    variables: preparation.variables,
-    motsCles: preparation.motsCles,
-  });
-  if (!reponse.ok) {
-    await db.update(appels).set({ statut: 'echec', erreur: reponse.raison, finLe: new Date() }).where(eq(appels.id, appel.id));
-    return { ok: false, raison: reponse.raison };
-  }
-  return { ok: true, appelId: appel.id };
+  return appelerParTelephone(entrepriseId, prospectId, versionScriptId, campagneId);
 }
 
 export async function raccrocherAppelTelephone(appelId: string): Promise<{ ok: true } | { ok: false; raison: string }> {
@@ -93,21 +68,15 @@ export async function lancerSimulation(
   campagneId: string | null = null,
 ): Promise<{ ok: true; appelId: string } | { ok: false; raison: string }> {
   await exigerOperateur();
-  const preparation = await preparerAppel(entrepriseId, prospectId, versionScriptId);
-  if (!preparation.ok) return preparation;
-  const [appel] = await db
-    .insert(appels)
-    .values({ entrepriseId, prospectId, versionScriptId, campagneId, ligne: 'simulation', numero: preparation.numero })
-    .returning({ id: appels.id });
-  if (!appel) return { ok: false, raison: 'Impossible d’enregistrer l’appel.' };
-  after(() => simulerAppel(appel.id, preparation.variables));
-  return { ok: true, appelId: appel.id };
+  const appel = await enregistrerAppelSimule(entrepriseId, prospectId, versionScriptId, campagneId);
+  if (!appel.ok) return appel;
+  after(() => simulerAppel(appel.appelId, appel.variables));
+  return { ok: true, appelId: appel.appelId };
 }
 
 /** Recalcule le bilan (nouvelle version de l'analyseur, ou analyse précédente en échec). */
 export async function relancerAnalyse(appelId: string): Promise<void> {
   await exigerOperateur();
-  const [appel] = await db.select({ transcription: appels.transcription }).from(appels).where(eq(appels.id, appelId));
-  after(() => (appel?.transcription ? analyserAppel(appelId) : traiterAppel(appelId)));
+  after(() => reanalyser(appelId));
   revalidatePath(`/appels/${appelId}`);
 }

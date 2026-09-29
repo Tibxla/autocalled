@@ -15,7 +15,9 @@ import { db } from '@/db';
 import { appels, entreprises, issuesPersonnalisees, objections, prospects, rendezVous, versionsScript } from '@/db/schema';
 import { VERSION_ANALYSEUR, analyser } from './analyseur';
 import { autorisationsDe } from './autorisations';
+import { rafraichirSiAncien } from './agenda';
 import { audioConversation, lireConversation, simulerConversation } from './elevenlabs';
+import { commanderPont, refusDuPont } from './pont';
 
 /** Dossier des enregistrements, hors dépôt (sauvegardé par Restic avec le reste du serveur). */
 export function dossierDonnees(): string {
@@ -77,6 +79,64 @@ export async function preparerAppel(entrepriseId: string, prospectId: string, ve
   // Noms propres de l'appel, pour que la reconnaissance vocale les entende bien.
   const motsCles = [...new Set([entreprise.nom, prospect.nom, ...prospect.nom.split(/\s+/), prospect.societe].filter((m): m is string => Boolean(m && m.length > 2)))].slice(0, 12);
   return { ok: true, numero: autorisation.numero, variables, entrepriseId, motsCles };
+}
+
+/**
+ * Ligne téléphone (ADR 0007) : vérifie l'autorisation et le plafond, enregistre l'appel, puis demande au pont
+ * de composer. La suite arrive par les routes /api/pont/… (conversation, outils d'agenda, fin).
+ */
+export async function appelerParTelephone(
+  entrepriseId: string,
+  prospectId: string,
+  versionScriptId: string,
+  campagneId: string | null = null,
+): Promise<{ ok: true; appelId: string } | { ok: false; raison: string }> {
+  const preparation = await preparerAppel(entrepriseId, prospectId, versionScriptId);
+  if (!preparation.ok) return preparation;
+  const refus = await refusDuPont();
+  if (refus) return { ok: false, raison: refus };
+
+  await rafraichirSiAncien();
+  const [appel] = await db
+    .insert(appels)
+    .values({ entrepriseId, prospectId, versionScriptId, campagneId, ligne: 'bluetooth', numero: preparation.numero })
+    .returning({ id: appels.id });
+  if (!appel) return { ok: false, raison: 'Impossible d’enregistrer l’appel.' };
+
+  const reponse = await commanderPont('/appels', {
+    appelId: appel.id,
+    numero: preparation.numero,
+    variables: preparation.variables,
+    motsCles: preparation.motsCles,
+  });
+  if (!reponse.ok) {
+    await db.update(appels).set({ statut: 'echec', erreur: reponse.raison, finLe: new Date() }).where(eq(appels.id, appel.id));
+    return { ok: false, raison: reponse.raison };
+  }
+  return { ok: true, appelId: appel.id };
+}
+
+/** Enregistre un appel simulé après le même contrôle d'autorisation ; la conversation se joue avec `simulerAppel`. */
+export async function enregistrerAppelSimule(
+  entrepriseId: string,
+  prospectId: string,
+  versionScriptId: string,
+  campagneId: string | null = null,
+): Promise<{ ok: true; appelId: string; variables: VariablesDeLAppel } | { ok: false; raison: string }> {
+  const preparation = await preparerAppel(entrepriseId, prospectId, versionScriptId);
+  if (!preparation.ok) return preparation;
+  const [appel] = await db
+    .insert(appels)
+    .values({ entrepriseId, prospectId, versionScriptId, campagneId, ligne: 'simulation', numero: preparation.numero })
+    .returning({ id: appels.id });
+  if (!appel) return { ok: false, raison: 'Impossible d’enregistrer l’appel.' };
+  return { ok: true, appelId: appel.id, variables: preparation.variables };
+}
+
+/** Recalcule le bilan : analyse seule si la transcription est là, sinon rapatriement complet. */
+export async function reanalyser(appelId: string): Promise<void> {
+  const [appel] = await db.select({ transcription: appels.transcription }).from(appels).where(eq(appels.id, appelId));
+  await (appel?.transcription ? analyserAppel(appelId) : traiterAppel(appelId));
 }
 
 /** Rapatrie la conversation terminée (transcription, durée, audio) puis lance l'analyse. */

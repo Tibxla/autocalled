@@ -7,17 +7,13 @@ export type Reponse = { erreur: boolean; texte: string; json: unknown; blocs: st
 /**
  * Un client MCP branché en mémoire sur le vrai serveur. `elicitation` simule l'opérateur devant Claude Code :
  * absente, le client ne déclare pas la capacité ; sinon il accepte, refuse ou annule chaque confirmation.
- * `moderne` négocie la révision 2026-07-28 (confirmation en plusieurs allers-retours) au lieu de la 2025.
  */
-export async function clientDeTest(options: { elicitation?: 'accepter' | 'refuser' | 'annuler'; moderne?: boolean } = {}) {
+export async function clientDeTest(options: { elicitation?: 'accepter' | 'refuser' | 'annuler' } = {}) {
   const [cote, coteServeur] = InMemoryTransport.createLinkedPair();
   const messages: string[] = [];
   const client = new Client(
     { name: 'test', version: '0' },
-    {
-      capabilities: options.elicitation ? { elicitation: { form: {} } } : {},
-      ...(options.moderne ? { versionNegotiation: { mode: 'auto' as const } } : {}),
-    },
+    { capabilities: options.elicitation ? { elicitation: { form: {} } } : {} },
   );
   if (options.elicitation) {
     const reponse = options.elicitation;

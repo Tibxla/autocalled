@@ -13,6 +13,7 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts', 'mcp/**/*.test.ts'],
     globalSetup: ['./test/migrer.ts'],
+    setupFiles: ['./test/garde-fous.ts'],
     env: { DATABASE_URL: urlBaseDeTest(), PONT_SECRET: 'secret-de-test', PONT_URL: 'http://127.0.0.1:9' },
     // Une seule base pour tous les fichiers : ils passent l'un après l'autre.
     fileParallelism: false,
