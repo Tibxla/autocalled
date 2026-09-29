@@ -102,7 +102,7 @@ Prérequis : Node 24, pnpm, Docker, Tailscale, et Claude Code connecté (il prod
 
 ```bash
 pnpm install
-cp .env.example .env           # puis remplir les valeurs
+cp .env.example .env && chmod 600 .env   # puis remplir les valeurs
 docker compose up -d           # Postgres, sur 127.0.0.1 seulement
 pnpm --filter @autocalled/web db:migrate
 pnpm agent create              # crée Mina chez ElevenLabs, à faire une fois

@@ -9,6 +9,11 @@ WorkingDirectory=@RACINE@/apps/pont
 ExecStart=@RACINE@/apps/pont/.venv/bin/python -u -m pont servir
 Restart=on-failure
 RestartSec=5
+# Journaux, enregistrements et plafond au seul compte du service ; aucune élévation (sudo, setuid) depuis le pont.
+UMask=0077
+NoNewPrivileges=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
 
 [Install]
 WantedBy=default.target

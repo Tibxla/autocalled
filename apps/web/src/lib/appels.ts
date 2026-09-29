@@ -203,9 +203,10 @@ export async function traiterAppel(appelId: string): Promise<void> {
     let audio: string | null = null;
     if (conversation.audio) {
       const dossier = join(dossierDonnees(), 'enregistrements');
-      await mkdir(dossier, { recursive: true });
+      // La voix du prospect : au seul compte du service.
+      await mkdir(dossier, { recursive: true, mode: 0o700 });
       audio = `enregistrements/${appelId}.mp3`;
-      await writeFile(join(dossierDonnees(), audio), Buffer.from(await audioConversation(appel.conversationId)));
+      await writeFile(join(dossierDonnees(), audio), Buffer.from(await audioConversation(appel.conversationId)), { mode: 0o600 });
     }
 
     await db
