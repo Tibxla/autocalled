@@ -74,6 +74,7 @@ Chaque choix qui surprendrait un lecteur est expliqué dans un ADR :
 | [0006](docs/adr/0006-authentification-par-identite-tailscale.md) | Authentification par l'identité Tailscale |
 | [0007](docs/adr/0007-pont-bluetooth-service-pilote-par-le-web.md) | Le pont Bluetooth est un service permanent, piloté par l'application |
 | [0008](docs/adr/0008-prise-de-main-par-websocket-direct.md) | Prendre la main : la voix de l'opérateur passe par un WebSocket direct vers le pont |
+| [0009](docs/adr/0009-serveur-mcp-local-sous-confirmation.md) | Piloter Autocalled depuis Claude Code : un serveur MCP local en stdio, sous confirmation de l'opérateur |
 
 La personnalité de Mina est du code : son prompt ([agent/prompt.md](agent/prompt.md)) et sa configuration sont versionnés ici, et `pnpm agent pull` / `pnpm agent push` les synchronisent avec ElevenLabs sans jamais écraser une modification distante non rapatriée.
 
@@ -121,7 +122,15 @@ Puis, dans l'interface, page **Téléphone** : saisir l'adresse Bluetooth du té
 
 L'agenda passe par le connecteur Google Agenda de Claude : rien à configurer si Claude Code y a accès. L'API Google directe est facultative (client OAuth « application Web », redirection vers `ORIGINE_APP/google/retour`).
 
-Tests : `pnpm test` (domaine et agenda), `pnpm typecheck`.
+Tests : `pnpm test`, `pnpm typecheck`. Les tests de l'application et du serveur MCP tournent sur une base `autocalled_test` du même Postgres, migrée et vidée par les tests eux-mêmes ; elle se crée une fois : `docker compose exec postgres createdb -U autocalled autocalled_test`. Aucun test n'appelle ElevenLabs ni `claude -p`, et le pont y est remplacé par un faux.
+
+## Piloter Autocalled depuis Claude Code
+
+Ouvert dans ce dépôt, sur le serveur, Claude Code trouve le serveur MCP d'Autocalled dans `.mcp.json` et propose de l'activer au démarrage. Il peut alors tout lire (entreprises, prospects, appels et bilans, analyse des versions, campagnes, état de la ligne et de l'agenda) et configurer (entreprises, objections, issues, scripts et versions, import de fiches, campagnes), dans le vocabulaire de [CONTEXT.md](CONTEXT.md).
+
+Ce qui fait sonner le téléphone, révoque un numéro, envoie une invitation à un prospect ou desserre les plafonds de la ligne attend ton accord : Claude Code affiche une question rédigée par le serveur (qui, quel numéro, quel script, quelle heure), et le modèle ne peut pas y répondre à ta place. En mode non interactif (`claude -p`), ces gestes sont refusés. Chaque appel d'outil est noté dans Réglages, « Journal de Claude Code ». Le prompt de Mina ne se modifie pas par ce chemin : il vit dans `agent/`. Le détail et les raisons sont dans l'[ADR 0009](docs/adr/0009-serveur-mcp-local-sous-confirmation.md).
+
+Pour ne plus être interrogé par Claude Code sur les lectures, ses treize outils de lecture (`lister_entreprises`, `lire_entreprise`, `lire_version_script`, `lister_prospects`, `lire_prospect`, `lister_appels`, `lire_appel`, `analyser_versions`, `lister_campagnes`, `lire_campagne`, `etat_ligne`, `etat_agenda`, `apercu_variables_appel`) peuvent aller dans la liste `allow` de tes réglages, préfixés `mcp__autocalled__`.
 
 ## Cadre légal
 
