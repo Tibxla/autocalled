@@ -1,6 +1,6 @@
 import 'server-only';
 import { ISSUES_SYSTEME, type IssueSysteme, type TourDeParole, statistiquesObjections, statistiquesParVersion } from '@autocalled/domain';
-import { type SQL, and, asc, desc, eq, ilike, isNotNull, ne, or, sql } from 'drizzle-orm';
+import { type SQL, and, asc, desc, eq, gte, ilike, isNotNull, ne, or, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { appels, entreprises, issuesPersonnalisees, journalMcp, objections, prospects, rendezVous, versionsScript } from '@/db/schema';
 import { RAPPEL_A_FAIRE } from './rappels';
@@ -333,12 +333,49 @@ export async function rendezVousRecents(limite = 20) {
     .limit(limite);
 }
 
-/** Les derniers appels d'outils du serveur MCP (ADR 0009), du plus récent au plus ancien, d'un seul outil si demandé. */
-export async function journalMcpRecent(limite = 30, filtres: { outil?: string } = {}) {
+/** Les derniers appels d'outils du serveur MCP (ADR 0009), du plus récent au plus ancien : d'un outil, d'un résultat, depuis une date. */
+export async function journalMcpRecent(
+  limite = 30,
+  filtres: { outil?: string; resultat?: 'ok' | 'refus' | 'erreur' | 'confirmation-demandee'; depuis?: Date } = {},
+) {
   return db
     .select()
     .from(journalMcp)
-    .where(filtres.outil ? eq(journalMcp.outil, filtres.outil) : undefined)
+    .where(
+      and(
+        filtres.outil ? eq(journalMcp.outil, filtres.outil) : undefined,
+        filtres.resultat ? eq(journalMcp.resultat, filtres.resultat) : undefined,
+        filtres.depuis ? gte(journalMcp.le, filtres.depuis) : undefined,
+      ),
+    )
     .orderBy(desc(journalMcp.le))
     .limit(limite);
+}
+
+export const STATUTS_RENDEZ_VOUS = ['a-creer', 'cree', 'echec'] as const;
+
+/**
+ * Les rendez-vous, du plus tardif au plus ancien, par pages (`avant` : identifiant du dernier lu), d'une entreprise
+ * et d'un statut si demandé : un rendez-vous en échec ancien se retrouve ainsi pour être recréé.
+ */
+export async function pageRendezVous(f: { entrepriseId?: string; statut?: (typeof STATUTS_RENDEZ_VOUS)[number]; limite: number; avant?: string }) {
+  const lignes = await db
+    .select({ rdv: rendezVous, prospect: prospects.nom, prospectId: appels.prospectId, appelId: appels.id, entreprise: entreprises.slug })
+    .from(rendezVous)
+    .innerJoin(appels, eq(appels.id, rendezVous.appelId))
+    .innerJoin(entreprises, eq(entreprises.id, appels.entrepriseId))
+    .leftJoin(prospects, JOINTURE_PROSPECT)
+    .where(
+      and(
+        f.entrepriseId ? eq(appels.entrepriseId, f.entrepriseId) : undefined,
+        f.statut ? eq(rendezVous.statut, f.statut) : undefined,
+        f.avant && FORME_UUID.test(f.avant)
+          ? sql`(${rendezVous.debut}, ${rendezVous.id}) < (select r.debut, r.id from rendez_vous r where r.id = ${f.avant})`
+          : undefined,
+      ),
+    )
+    .orderBy(desc(rendezVous.debut), desc(rendezVous.id))
+    .limit(f.limite + 1);
+  const page = lignes.slice(0, f.limite);
+  return { lignes: page, suivant: lignes.length > f.limite ? (page.at(-1)?.rdv.id ?? null) : null };
 }

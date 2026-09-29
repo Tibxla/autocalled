@@ -1,12 +1,12 @@
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { db } from '@/db';
-import { appels, campagnes, consentements, imports, prospects } from '@/db/schema';
+import { appels, campagnes, consentements, imports, prospects, rendezVous } from '@/db/schema';
 import { avecBaseDeTest } from '../../test/outils';
 import { entrepriseDeTest, fiche } from '../../test/fixtures';
 import { enregistrerCampagne } from './campagnes';
 import { creerScript } from './entreprises';
-import { consentementsDuNumero, importerFiches, modifierProspect, revoquerNumero, supprimerProspect, texteConsentementEnVigueur } from './prospects';
+import { consentementsDuNumero, FicheChangee, importerFiches, modifierProspect, revoquerNumero, supprimerProspect, texteConsentementEnVigueur } from './prospects';
 
 avecBaseDeTest();
 
@@ -113,6 +113,22 @@ describe('modifierProspect', () => {
     expect(await modifierProspect(e.id, 'julie', { role: 'Associée' }, { canal: 'mcp', connu: p!.majLe.toISOString() })).toMatchObject({ ok: false, conflit: expect.any(Object) });
     expect(await modifierProspect(e.id, 'personne', { role: 'x' }, { canal: 'mcp' })).toMatchObject({ ok: false });
   });
+
+  it('refait la comparaison sous verrou dans l’import : une fiche changée entre-temps n’est pas écrasée', async () => {
+    const e = await entrepriseDeTest();
+    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01')]);
+    const [lue] = await db.select().from(prospects);
+    // Un réimport arrive entre la lecture de la correction et son écriture.
+    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01', 'Contexte du réimport.')]);
+    const imports1 = await db.$count(imports);
+
+    await expect(importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 05')], 'mcp', { attendu: { prospectId: 'julie', majLe: lue!.majLe } })).rejects.toBeInstanceOf(FicheChangee);
+
+    const [apres] = await db.select().from(prospects);
+    expect(apres).toMatchObject({ telephone: '+33639980001', contexte: 'Contexte du réimport.' });
+    expect(await db.$count(imports)).toBe(imports1);
+    expect(await db.$count(consentements, eq(consentements.numero, '+33639980005'))).toBe(0);
+  });
 });
 
 describe('supprimerProspect', () => {
@@ -138,6 +154,21 @@ describe('supprimerProspect', () => {
     expect(await supprimerProspect(e.id, 'julie')).toMatchObject({ ok: false, raison: expect.stringContaining('retirer_de_la_file') });
     expect(await supprimerProspect(e.id, 'marc')).toMatchObject({ ok: false, raison: expect.stringContaining('en cours') });
     await db.update(campagnes).set({ statut: 'terminee' });
+    expect(await supprimerProspect(e.id, 'julie')).toMatchObject({ ok: true });
+  });
+
+  it('refuse un prospect dont un rendez-vous reste à inscrire dans Google Agenda (à créer, échec)', async () => {
+    const e = await entrepriseDeTest();
+    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01')]);
+    const { versionScriptId } = await creerScript(e.id, 'Découverte');
+    const [a] = await db.insert(appels).values({ entrepriseId: e.id, prospectId: 'julie', versionScriptId, ligne: 'bluetooth', numero: '+33639980001', statut: 'termine' }).returning();
+    const debut = new Date(Date.UTC(2026, 9, 1, 9));
+    const [r] = await db.insert(rendezVous).values({ appelId: a!.id, debut, fin: new Date(debut.getTime() + 1_800_000) }).returning();
+
+    expect(await supprimerProspect(e.id, 'julie')).toMatchObject({ ok: false, raison: expect.stringContaining('en cours d’inscription') });
+    await db.update(rendezVous).set({ statut: 'echec' }).where(eq(rendezVous.id, r!.id));
+    expect(await supprimerProspect(e.id, 'julie')).toMatchObject({ ok: false, raison: expect.stringContaining('recreer_evenement') });
+    await db.update(rendezVous).set({ statut: 'cree' }).where(eq(rendezVous.id, r!.id));
     expect(await supprimerProspect(e.id, 'julie')).toMatchObject({ ok: true });
   });
 });
