@@ -77,6 +77,26 @@ describe('gestes sur la file', () => {
     expect(await appeler('supprimer_campagne', { campagneId: lancee })).toMatchObject({ erreur: true, texte: expect.stringContaining('Seule une campagne prête') });
     expect(await db.$count(campagnes)).toBe(1);
   });
+
+  it('liste les campagnes de toutes les entreprises sans `entreprise`, avec leur identifiant', async () => {
+    const autre = await entrepriseDeTest('Autre fictive', 'autre-fictive');
+    await importerFiches(autre.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01')]);
+    const { versionScriptId: autreVersion } = await creerScript(autre.id, 'Relance');
+    const ici = await enregistrerCampagne(entrepriseId, { versionScriptId, ligne: 'simulation', prospects: ['julie'] });
+    const ailleurs = await enregistrerCampagne(autre.id, { versionScriptId: autreVersion, ligne: 'bluetooth', prospects: ['julie'] });
+    await db.update(campagnes).set({ statut: 'en-pause' }).where(eq(campagnes.id, ailleurs));
+    const { appeler } = await connecter();
+
+    const toutes = (await appeler('lister_campagnes')).json as { campagneId: string; entreprise: string; version: string }[];
+    expect(toutes.map((c) => [c.campagneId, c.entreprise, c.version]).sort()).toEqual(
+      [
+        [ici, 'gite-fictif', 'Découverte · v1'],
+        [ailleurs, 'autre-fictive', 'Relance · v1'],
+      ].sort(),
+    );
+    expect((await appeler('lister_campagnes', { statut: 'en-pause' })).json).toEqual([expect.objectContaining({ campagneId: ailleurs, entreprise: 'autre-fictive' })]);
+    expect(await appeler('lister_campagnes', { entreprise: 'inconnue' })).toMatchObject({ erreur: true });
+  });
 });
 
 describe('ajouter_a_la_campagne', () => {

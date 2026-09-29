@@ -1,7 +1,7 @@
 import { desc, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/db';
-import { appels, campagnes, journalMcp, versionsScript } from '@/db/schema';
+import { appels, campagnes, disponibilites, journalMcp, prospects, versionsScript } from '@/db/schema';
 import { enregistrerCampagne } from '@/lib/campagnes';
 import { basculerArchiveScript, creerScript } from '@/lib/entreprises';
 import { importerFiches, revoquerNumero } from '@/lib/prospects';
@@ -163,6 +163,45 @@ describe('lancer_campagne', () => {
     expect(await db.select({ statut: campagnes.statut }).from(campagnes).where(eq(campagnes.id, campagneId))).toEqual([{ statut: 'prete' }]);
     expect(pont.compositions()).toHaveLength(0);
   });
+
+  it('refuse une campagne prête dont le script a été archivé, sans rien demander ; une campagne en pause se reprend', async () => {
+    const telephone = await enregistrerCampagne(entrepriseId, { versionScriptId, ligne: 'bluetooth', prospects: ['julie'] });
+    const simulation = await enregistrerCampagne(entrepriseId, { versionScriptId, ligne: 'simulation', prospects: ['julie'] });
+    const [v] = await db.select({ scriptId: versionsScript.scriptId }).from(versionsScript);
+    await basculerArchiveScript(entrepriseId, v!.scriptId, true);
+    const { appeler, messages } = await connecter({ elicitation: 'refuser' });
+
+    for (const campagneId of [telephone, simulation]) {
+      expect(await appeler('lancer_campagne', { campagneId })).toMatchObject({ erreur: true, texte: expect.stringContaining('Ce script est archivé') });
+    }
+    expect(messages).toHaveLength(0);
+    expect((await db.select({ statut: campagnes.statut }).from(campagnes)).map((c) => c.statut)).toEqual(['prete', 'prete']);
+
+    await db.update(campagnes).set({ statut: 'en-pause' }).where(eq(campagnes.id, telephone));
+    await appeler('lancer_campagne', { campagneId: telephone });
+    expect(messages[0]).toMatch(/^Reprendre la campagne/);
+    expect(pont.compositions()).toHaveLength(0);
+  });
+
+  it('repose la question si un numéro de la file change entre la question et la réponse', async () => {
+    const campagneId = await enregistrerCampagne(entrepriseId, { versionScriptId, ligne: 'bluetooth', prospects: ['julie', 'marc'] });
+    const c = await connecter({ elicitation: 'accepter' });
+    const questions: string[] = [];
+    c.client.setRequestHandler('elicitation/create', async (requete) => {
+      questions.push(String(requete.params.message));
+      if (questions.length > 1) return { action: 'decline' };
+      // Pendant que l'opérateur lit, le numéro de Julie change (vers un autre numéro autorisé : mêmes comptes).
+      await db.update(prospects).set({ telephone: '+33639980002' }).where(eq(prospects.id, 'julie'));
+      return { action: 'accept', content: { confirme: true } };
+    });
+
+    const r = await c.appeler('lancer_campagne', { campagneId });
+
+    expect(questions).toHaveLength(2);
+    expect(r.erreur).toBe(true);
+    expect(pont.compositions()).toHaveLength(0);
+    expect(await db.select({ statut: campagnes.statut }).from(campagnes)).toEqual([{ statut: 'prete' }]);
+  });
 });
 
 describe('regler_ligne et raccrocher_appel', () => {
@@ -235,6 +274,21 @@ describe('ajouts à la ligne', () => {
     pont = await fauxPont({ etat: { appelEnCours: true } });
     expect(await appeler('reconnecter_telephone')).toMatchObject({ erreur: true, texte: expect.stringContaining('la reconnexion le couperait') });
     expect(pont.requetes.filter((r) => r.chemin === '/telephone/reconnecter')).toHaveLength(0);
+  });
+
+  it('relit l’agenda sans confirmation ; un échec garde l’ancienne copie et le dit', async () => {
+    const [avant] = await db.select().from(disponibilites);
+    const { appeler } = await connecter();
+
+    // Sans Google connecté, la relecture passe par claude -p, interdit dans les tests : elle échoue.
+    const r = await appeler('relire_agenda');
+
+    expect(r.json).toMatchObject({ source: 'mcp', plagesOccupees: 0, erreur: expect.stringContaining('claude -p est interdit') });
+    const [apres] = await db.select().from(disponibilites);
+    expect(apres?.synchroniseLe).toEqual(avant?.synchroniseLe);
+    expect(apres?.fenetreFin).toEqual(avant?.fenetreFin);
+    const [ligne] = await db.select().from(journalMcp).where(eq(journalMcp.outil, 'relire_agenda'));
+    expect(ligne).toMatchObject({ resultat: 'ok', confirmation: null });
   });
 
   it('ne relance pas une analyse déjà en cours', async () => {

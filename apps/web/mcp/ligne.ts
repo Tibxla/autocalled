@@ -51,7 +51,8 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
         const appel = await enregistrerAppelSimule(e.id, p.id, version.id);
         if (!appel.ok) return refus(appel.raison);
         await simulerAppel(appel.appelId, appel.variables);
-        return reussite((await vueAppel(appel.appelId))?.donnees ?? { appelId: appel.appelId });
+        const vue = await vueAppel(appel.appelId);
+        return reussite(vue?.donnees ?? { appelId: appel.appelId }, { complement: vue?.complement });
       }
 
       const plafond = await refusDuPont();
@@ -93,7 +94,7 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
     'lancer_campagne',
     {
       description:
-        'Lance (ou reprend) une campagne prête ou en pause. Ligne bluetooth : après confirmation de l’opérateur, le premier appel part, puis l’application enchaîne les suivants un à un. Ligne simulation : les appels simulés s’enchaînent dans un processus détaché (dix à trente minutes ; suivre avec lire_campagne). Une campagne sur la ligne navigateur se déroule dans l’interface.',
+        'Lance (ou reprend) une campagne prête ou en pause. Une campagne prête dont le script a été archivé ne se lance plus ; une campagne en pause garde sa version et se reprend. Ligne bluetooth : après confirmation de l’opérateur, le premier appel part, puis l’application enchaîne les suivants un à un. Ligne simulation : les appels simulés s’enchaînent dans un processus détaché (dix à trente minutes ; suivre avec lire_campagne). Une campagne sur la ligne navigateur se déroule dans l’interface.',
       entree: z.strictObject({ campagneId: z.uuid() }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
@@ -108,6 +109,10 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
       if (campagne.statut !== 'prete' && campagne.statut !== 'en-pause') {
         return refus(`Cette campagne est ${campagne.statut === 'en-cours' ? 'déjà en cours' : 'terminée'} : seule une campagne prête ou en pause se lance.`);
       }
+      const version = await versionDeLEntreprise(campagne.entrepriseId, campagne.versionScriptId);
+      // Archiver un script le sort des lancements : une campagne prête ne part plus. Une campagne en pause, déjà
+      // lancée, garde sa version et se reprend.
+      if (campagne.statut === 'prete' && version?.archive) return refus(SCRIPT_ARCHIVE);
       if (campagne.ligne === 'simulation') {
         try {
           await demarrerCampagne(campagneId);
@@ -134,8 +139,7 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
       const autorisations = await autorisationsDe(numeros.filter(Boolean));
       const aComposer = [...new Set(numeros.filter((n) => autorisations.get(n)?.autorise))];
       const autorises = numeros.filter((n) => autorisations.get(n)?.autorise).length;
-      const [version, reglages, parMcp] = await Promise.all([
-        versionDeLEntreprise(campagne.entrepriseId, campagne.versionScriptId),
+      const [reglages, parMcp] = await Promise.all([
         reglagesDuPont(),
         Promise.all(aComposer.map(ajoutParMcp)),
       ]);
@@ -147,7 +151,8 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
         serveur,
         ctx,
         `${campagne.statut === 'prete' ? 'Lancer' : 'Reprendre'} la campagne de ${c.entreprise} sur le téléphone passerelle : ${aAppeler.length} prospect${aAppeler.length > 1 ? 's' : ''} à appeler l’un après l’autre, dont ${autorises} au numéro autorisé à cet instant (les autres seront sautés), avec le script « ${version?.libelle ?? '?'} ».${origine} Nous sommes ${heureDeParis()}.${reglages ? ` Garde-fous : ${plafonds(reglages)} ; plafond atteint, la campagne se met en pause.` : ''}`,
-        ['lancer_campagne', campagneId, campagne.statut, aAppeler.map((x) => x.prospectId), autorises, ajoutsMcp.length],
+        // Les numéros entrent dans la clé : un numéro changé entre la question et la réponse fait reposer la question.
+        ['lancer_campagne', campagneId, campagne.statut, aAppeler.map((x) => x.prospectId), numeros, autorises, ajoutsMcp.length],
       );
       if (garde.etat === 'a-demander') return garde.issue;
       if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);
@@ -215,7 +220,8 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
   declarer(
     'relancer_analyse',
     {
-      description: 'Recalcule le bilan d’un appel (nouvelle version de l’analyseur, ou analyse en échec) et le renvoie. Passe par claude -p : une à deux minutes.',
+      description:
+        'Recalcule le bilan d’un appel (nouvelle version de l’analyseur, ou analyse en échec) et le renvoie comme lire_appel : le texte du bilan et les citations à part, balisés données non fiables. Passe par claude -p : une à deux minutes.',
       entree: z.strictObject({ appelId: z.uuid() }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: true },
     },
@@ -225,7 +231,8 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
       const pret = await preparerReanalyse(appelId);
       if (!pret.ok) return refus(pret.raison);
       await reanalyser(appelId);
-      return reussite((await vueAppel(appelId))?.donnees);
+      const vue = await vueAppel(appelId);
+      return reussite(vue?.donnees, { complement: vue?.complement });
     },
   );
 

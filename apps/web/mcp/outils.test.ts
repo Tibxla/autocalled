@@ -15,7 +15,7 @@ import { ERREUR_INTERNE } from './outil';
 
 avecBaseDeTest();
 
-/** Les 57 outils de la spécification (ADR 0010), par domaine. */
+/** Les 59 outils (ADR 0010, puis lire_consentements et lister_rendez_vous), par domaine. */
 const OUTILS = {
   assistante: [
     'lire_assistante',
@@ -31,7 +31,7 @@ const OUTILS = {
   objections: ['enregistrer_objection', 'archiver_objection', 'ordonner_objections'],
   issues: ['ajouter_issue', 'renommer_issue', 'archiver_issue'],
   scripts: ['creer_script', 'lire_version_script', 'creer_version_script', 'renommer_script', 'archiver_script'],
-  prospects: ['lister_prospects', 'lire_prospect', 'importer_fiches', 'modifier_prospect', 'supprimer_prospect', 'revoquer_numero', 'lire_texte_consentement'],
+  prospects: ['lister_prospects', 'lire_prospect', 'importer_fiches', 'modifier_prospect', 'supprimer_prospect', 'revoquer_numero', 'lire_texte_consentement', 'lire_consentements'],
   campagnes: [
     'lister_campagnes',
     'lire_campagne',
@@ -45,7 +45,7 @@ const OUTILS = {
     'terminer_campagne',
   ],
   appels: ['lister_appels', 'lire_appel', 'lancer_appel', 'raccrocher_appel', 'relancer_analyse', 'analyser_versions', 'rappels_du_jour', 'lire_journee', 'apercu_variables_appel'],
-  agenda: ['etat_agenda', 'relire_agenda', 'recreer_evenement'],
+  agenda: ['etat_agenda', 'lister_rendez_vous', 'relire_agenda', 'recreer_evenement'],
   ligne: ['etat_ligne', 'regler_ligne', 'reconnecter_telephone'],
   journal: ['lire_journal_mcp'],
 };
@@ -65,17 +65,17 @@ async function connecter(options: Parameters<typeof clientDeTest>[0] = {}) {
 }
 
 describe('liste des outils', () => {
-  it('expose exactement les 57 outils, et annonce les lectures, les destructions et le monde extérieur', async () => {
+  it('expose exactement les 59 outils, et annonce les lectures, les destructions et le monde extérieur', async () => {
     const { client: c } = await connecter();
     const { tools } = await c.listTools();
     const attendus = Object.values(OUTILS).flat();
 
-    expect(attendus).toHaveLength(57);
+    expect(attendus).toHaveLength(59);
     expect(tools.map((t) => t.name).sort()).toEqual([...attendus].sort());
     const avec = (indice: 'readOnlyHint' | 'destructiveHint' | 'openWorldHint') => tools.filter((t) => t.annotations?.[indice]).map((t) => t.name).sort();
     expect(avec('destructiveHint')).toEqual(['revoquer_numero', 'supprimer_entreprise', 'supprimer_prospect']);
     expect(avec('readOnlyHint')).toEqual(
-      expect.arrayContaining(['lire_assistante', 'historique_assistante', 'lister_appels', 'lire_journee', 'rappels_du_jour', 'lire_journal_mcp', 'lire_texte_consentement', 'etat_ligne']),
+      expect.arrayContaining(['lire_assistante', 'historique_assistante', 'lister_appels', 'lire_journee', 'rappels_du_jour', 'lire_journal_mcp', 'lire_texte_consentement', 'lire_consentements', 'lister_rendez_vous', 'etat_ligne']),
     );
     expect(avec('readOnlyHint')).not.toEqual(expect.arrayContaining(['modifier_assistante']));
     expect(avec('openWorldHint')).toEqual(expect.arrayContaining(['lire_assistante', 'pousser_assistante', 'rapatrier_assistante', 'reconnecter_telephone', 'lancer_appel']));
@@ -157,6 +157,8 @@ describe('gestes confirmés sans élicitation', () => {
         ['supprimer_prospect', { entreprise: 'gite-fictif', prospect: 'marc' }],
         ['supprimer_entreprise', { entreprise: 'vide-fictive' }],
         ['ajouter_a_la_campagne', { campagneId, prospects: ['marc'] }],
+        ['modifier_prospect', { entreprise: 'gite-fictif', prospect: 'julie', champs: { telephone: '06 39 98 00 09' } }],
+        ['importer_fiches', { entreprise: 'gite-fictif', fiches: [fiche('julie', 'Julie Fictive', '06 39 98 00 09')] }],
       ] as const) {
         expect(await appeler(outil, args), outil).toMatchObject({ erreur: true, texte: expect.stringContaining('à faire depuis l’interface') });
       }
@@ -170,7 +172,8 @@ describe('gestes confirmés sans élicitation', () => {
       expect((await db.select().from(campagnes))[0]?.entrees).toHaveLength(1);
       expect(faux.modifications).toBe(0);
       const journal = await db.select().from(journalMcp).where(eq(journalMcp.resultat, 'refus'));
-      expect(journal.filter((j) => j.confirmation === 'indisponible')).toHaveLength(5);
+      expect(journal.filter((j) => j.confirmation === 'indisponible')).toHaveLength(7);
+      expect((await db.select({ telephone: prospects.telephone }).from(prospects).where(eq(prospects.id, 'julie')))[0]?.telephone).toBe('+33639980001');
     } finally {
       await agent.effacer();
     }
@@ -186,5 +189,12 @@ describe('erreur interne', () => {
     expect(r).toMatchObject({ erreur: true, texte: ERREUR_INTERNE });
     const [ligne] = await db.select().from(journalMcp);
     expect(ligne).toMatchObject({ outil: 'lire_assistante', resultat: 'erreur', message: expect.stringContaining('/chemin/inexistant/agent') });
+
+    // Le journal relu par le modèle ne rend pas non plus ce détail.
+    const relu = await appeler('lire_journal_mcp', { resultat: 'erreur' });
+    expect(relu.texte).not.toContain('/chemin/inexistant');
+    expect(relu.json).toEqual([expect.objectContaining({ outil: 'lire_assistante', resultat: 'erreur', message: expect.stringContaining('Réglages') })]);
+    expect((await appeler('lire_journal_mcp', { resultat: 'refus' })).json).toEqual([]);
+    expect((await appeler('lire_journal_mcp', { depuis: new Date(Date.now() + 60_000).toISOString() })).json).toEqual([]);
   });
 });

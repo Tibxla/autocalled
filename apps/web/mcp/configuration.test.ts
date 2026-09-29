@@ -233,3 +233,28 @@ describe('supprimer_entreprise', () => {
     }
   });
 });
+
+describe('archiver_issue', () => {
+  it('archive puis désarchive une issue, refuse celle d’une autre entreprise, et journalise chaque geste', async () => {
+    const e = await entrepriseDeTest();
+    const autre = await entrepriseDeTest('Autre fictive', 'autre-fictive');
+    const [issue] = await db.insert(issuesPersonnalisees).values({ entrepriseId: e.id, libelle: 'Veut une plaquette', issueSysteme: 'refus' }).returning();
+    const [ailleurs] = await db.insert(issuesPersonnalisees).values({ entrepriseId: autre.id, libelle: 'Déjà équipé', issueSysteme: 'refus' }).returning();
+    const archivee = async (id: string) => (await db.select({ archivee: issuesPersonnalisees.archivee }).from(issuesPersonnalisees).where(eq(issuesPersonnalisees.id, id)))[0]?.archivee;
+
+    expect((await appeler('archiver_issue', { entreprise: 'gite-fictif', issueId: issue!.id, archivee: true })).json).toEqual({ issueId: issue!.id, archivee: true });
+    expect(await archivee(issue!.id)).toBe(true);
+    expect((await appeler('archiver_issue', { entreprise: 'gite-fictif', issueId: issue!.id, archivee: false })).json).toEqual({ issueId: issue!.id, archivee: false });
+    expect(await archivee(issue!.id)).toBe(false);
+
+    expect(await appeler('archiver_issue', { entreprise: 'gite-fictif', issueId: ailleurs!.id, archivee: true })).toMatchObject({
+      erreur: true,
+      texte: 'Cette issue n’existe pas dans cette entreprise.',
+    });
+    expect(await archivee(ailleurs!.id)).toBe(false);
+
+    const journal = await db.select().from(journalMcp).where(eq(journalMcp.outil, 'archiver_issue'));
+    expect(journal.map((j) => j.resultat).sort()).toEqual(['ok', 'ok', 'refus']);
+    expect(journal.find((j) => j.resultat === 'refus')?.arguments).toEqual({ entreprise: 'gite-fictif', issueId: ailleurs!.id, archivee: true });
+  });
+});

@@ -1,4 +1,4 @@
-import { ISSUES_SYSTEME, TransitionInvalide } from '@autocalled/domain';
+import { ISSUES_SYSTEME, TransitionInvalide, lireFiches } from '@autocalled/domain';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
@@ -7,17 +7,19 @@ import { campagnes, objections, prospects } from '@/db/schema';
 import { enregistrerCampagne, suspendreSiEnCours } from '@/lib/campagnes';
 import { trouverEntreprise } from '@/lib/donnees';
 import * as entreprise from '@/lib/entreprises';
-import { FICHIERS_MAX, importerFiches } from '@/lib/prospects';
+import { numeroLisible } from '@/lib/format';
+import { FICHIERS_MAX, filesTelephoneEnCours, importerFiches } from '@/lib/prospects';
 import { etapesSchema, ficheSchema, issueSchema, nomEntrepriseSchema, nomScriptSchema, objectionSchema, plagesSchema } from '@/lib/schemas';
 import { usageDuScript } from '@/lib/versions';
 import { champEntreprise, champVersion, entrepriseInconnue, SCRIPT_ARCHIVE, versionDeLEntreprise } from './communs';
-import { confirmer, refusDeConfirmation } from './confirmation';
+import { confirmer, heureDeParis, refusDeConfirmation } from './confirmation';
 import { type Declarer, refus, reussite } from './outil';
 
 /**
  * La configuration d'une entreprise (fiche, objections, issues, scripts), l'import des fiches prospect et la
  * préparation des campagnes. Toute écriture passe l'origine `mcp` en clair. Aucune ne fait sonner un téléphone ni
- * n'écrit à un prospect ; seule la suppression d'une entreprise vide, irréversible, demande une confirmation.
+ * n'écrit à un prospect, sauf un import qui change le numéro d'un prospect en file d'une campagne téléphone en
+ * cours : lui demande une confirmation, comme la suppression d'une entreprise vide, irréversible.
  */
 
 /** Écritures réversibles ou additives. */
@@ -285,7 +287,7 @@ export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): v
   declarer(
     'importer_fiches',
     {
-      description: `Importe des fiches prospect Markdown dans une entreprise (au plus ${FICHIERS_MAX}, 32 Ko chacune) : en-tête YAML (nom, telephone, societe, role, email) puis le contexte que l’assistante doit connaître. Le nom de fichier identifie le prospect ; réimporter met la fiche à jour. Demander l’import vaut attestation du texte de consentement en vigueur (lire_texte_consentement) : les numéros nouveaux sont enregistrés comme consentants, comme l’import de l’interface case cochée ; un numéro révoqué ne l’est jamais à nouveau.`,
+      description: `Importe des fiches prospect Markdown dans une entreprise (au plus ${FICHIERS_MAX}, 32 Ko chacune) : en-tête YAML (nom, telephone, societe, role, email) puis le contexte que l’assistante doit connaître. Le nom de fichier identifie le prospect ; réimporter met la fiche à jour. Demander l’import vaut attestation du texte de consentement en vigueur (lire_texte_consentement) : les numéros nouveaux sont enregistrés comme consentants, comme l’import de l’interface case cochée ; un numéro révoqué ne l’est jamais à nouveau. Seul un import qui change le numéro d’un prospect en file d’une campagne téléphone en cours demande la confirmation de l’opérateur.`,
       entree: z.strictObject({
         entreprise: champEntreprise,
         fiches: z
@@ -300,12 +302,41 @@ export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): v
         fiches: fiches.map((f) => ({ nomFichier: f.nomFichier, octets: Buffer.byteLength(f.contenu) })),
       }),
     },
-    async ({ entreprise: slug, fiches }) => {
+    async ({ entreprise: slug, fiches }, ctx) => {
       const e = await trouverEntreprise(slug);
       if (!e) return refus(entrepriseInconnue(slug));
+      // Un réimport qui change le numéro d'un prospect en file d'une campagne téléphone en cours fait sonner un autre
+      // téléphone sans autre question : ce cas seul demande l'accord de l'opérateur (le reste de l'import n'en demande pas).
+      const lues = lireFiches(fiches).fiches;
+      const actuels = lues.length
+        ? await db
+            .select({ id: prospects.id, nom: prospects.nom, telephone: prospects.telephone })
+            .from(prospects)
+            .where(and(eq(prospects.entrepriseId, e.id), inArray(prospects.id, lues.map((f) => f.id))))
+        : [];
+      const changes = lues.flatMap((f) => {
+        const avant = actuels.find((p) => p.id === f.id);
+        return avant && avant.telephone !== f.telephone ? [{ id: f.id, nom: avant.nom, avant: avant.telephone, apres: f.telephone as string }] : [];
+      });
+      const files = await filesTelephoneEnCours(e.id, changes.map((c) => c.id));
+      const enFile = changes.filter((c) => files.has(c.id)).map((c) => ({ ...c, campagnes: files.get(c.id)! }));
+      let confirmation: 'acceptee' | undefined;
+      if (enFile.length) {
+        const garde = await confirmer(
+          serveur,
+          ctx,
+          `Cet import change le numéro de ${enFile.length > 1 ? `${enFile.length} prospects qui attendent` : 'un prospect qui attend'} dans une campagne téléphone en cours (${e.nom}) : ${enFile
+            .map((c) => `${c.nom}, ${numeroLisible(c.avant)} → ${numeroLisible(c.apres)} (campagne ${c.campagnes.join(', ')})`)
+            .join(' ; ')}. Le nouveau numéro sera composé à son tour, sans autre question. Nous sommes ${heureDeParis()}.`,
+          ['importer_fiches', e.id, enFile.map((c) => [c.id, c.avant, c.apres, c.campagnes])],
+        );
+        if (garde.etat === 'a-demander') return garde.issue;
+        if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);
+        confirmation = 'acceptee';
+      }
       const rapport = await importerFiches(e.id, fiches, 'mcp');
-      if (rapport.etat === 'erreur') return refus(rapport.message);
-      return reussite(rapport);
+      if (rapport.etat === 'erreur') return refus(rapport.message, confirmation);
+      return reussite(rapport, { confirmation });
     },
   );
 
