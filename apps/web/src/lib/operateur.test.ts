@@ -29,7 +29,7 @@ describe('identiteAppelant', () => {
   it('en développement, l’identité simulée ne vaut que pour une requête locale directe', () => {
     vi.stubEnv('NODE_ENV', 'development');
     expect(identiteAppelant(entetes({ host: '127.0.0.1:3020' }))).toBe(OPERATEUR);
-    expect(identiteAppelant(entetes({ host: 'localhost:3020' }))).toBe(OPERATEUR);
+    expect(identiteAppelant(entetes({ host: 'localhost:3020', 'x-forwarded-host': 'localhost:3020', 'x-forwarded-for': '::1' }))).toBe(OPERATEUR);
     // Relayée par tailscale serve sans identité (nœud tagué, Funnel) : rien.
     expect(identiteAppelant(entetes({ host: HOTE, 'x-forwarded-for': '100.64.0.9' }))).toBeNull();
     expect(identiteAppelant(entetes({ host: '127.0.0.1:3020', 'x-forwarded-for': '100.64.0.9' }))).toBeNull();
@@ -45,6 +45,11 @@ describe('identiteAppelant', () => {
 describe('requeteLocaleDirecte', () => {
   it('vraie pour le pont qui appelle 127.0.0.1, fausse dès qu’un mandataire est passé', () => {
     expect(requeteLocaleDirecte(entetes({ host: '127.0.0.1:3020' }))).toBe(true);
+    // Ce que Next ajoute lui-même à une requête locale directe.
+    expect(requeteLocaleDirecte(entetes({ host: '127.0.0.1:3020', 'x-forwarded-host': '127.0.0.1:3020', 'x-forwarded-for': '127.0.0.1', 'x-forwarded-proto': 'http' }))).toBe(true);
+    expect(requeteLocaleDirecte(entetes({ host: '127.0.0.1:3020', 'x-forwarded-for': '::ffff:127.0.0.1' }))).toBe(true);
+    // tailscale serve : hôte du tailnet dans Host ou dans x-forwarded-host, ou adresse du tailnet.
+    expect(requeteLocaleDirecte(entetes({ host: '127.0.0.1:3020', 'x-forwarded-host': HOTE, 'x-forwarded-for': '127.0.0.1' }))).toBe(false);
     expect(requeteLocaleDirecte(entetes({ host: HOTE }))).toBe(false);
     expect(requeteLocaleDirecte(entetes({ host: '127.0.0.1:3020', 'x-forwarded-for': '100.64.0.2' }))).toBe(false);
     expect(requeteLocaleDirecte(entetes({ host: '127.0.0.1:3020', 'tailscale-user-login': OPERATEUR }))).toBe(false);

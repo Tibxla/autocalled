@@ -11,8 +11,8 @@
  */
 export const EN_TETE_IDENTITE = 'tailscale-user-login';
 
-/** En-têtes posés par un mandataire (`tailscale serve` ajoute au moins les `x-forwarded-*`). */
-const EN_TETES_MANDATAIRE = ['x-forwarded-for', 'x-forwarded-host', 'forwarded', 'tailscale-funnel-request'];
+/** En-têtes qu'aucune requête locale directe ne porte : Next ne les pose pas lui-même. */
+const EN_TETES_MANDATAIRE = ['forwarded', 'tailscale-funnel-request', EN_TETE_IDENTITE];
 
 /** Nom d'hôte sans port, en minuscules, crochets IPv6 compris (`[::1]`). */
 function nomDHote(hote: string): string {
@@ -44,10 +44,22 @@ export function hoteAutorise(entetes: Headers): boolean {
   return attendu !== null && hote === attendu;
 }
 
-/** Vrai si la requête arrive directement sur 127.0.0.1, sans passer par `tailscale serve` ni aucun mandataire. */
+const ADRESSES_LOCALES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+
+/**
+ * Vrai si la requête arrive directement sur 127.0.0.1, sans passer par `tailscale serve` ni aucun mandataire. Next
+ * complète lui-même `x-forwarded-host` (par l'hôte) et `x-forwarded-for` (par l'adresse de la connexion) quand ils
+ * manquent : pour une requête locale directe, ils restent locaux. Une requête relayée par `tailscale serve` porte
+ * l'hôte du tailnet (dans `Host` ou `x-forwarded-host`, sans quoi les actions serveur y échoueraient) ou l'adresse
+ * du tailnet de l'appareil (`x-forwarded-for`).
+ */
 export function requeteLocaleDirecte(entetes: Headers): boolean {
-  if (EN_TETES_MANDATAIRE.some((e) => entetes.has(e)) || entetes.has(EN_TETE_IDENTITE)) return false;
-  return estHoteLocal(entetes.get('host'));
+  if (EN_TETES_MANDATAIRE.some((e) => entetes.has(e))) return false;
+  if (!estHoteLocal(entetes.get('host'))) return false;
+  const hoteRelaye = entetes.get('x-forwarded-host');
+  if (hoteRelaye !== null && !estHoteLocal(hoteRelaye)) return false;
+  const adresses = entetes.get('x-forwarded-for');
+  return adresses === null || adresses.split(',').every((a) => ADRESSES_LOCALES.has(a.trim()));
 }
 
 /**
