@@ -72,6 +72,8 @@ export type EtatLigneServeur =
       appelId: string | null;
       /** Phrase du pont quand un appel de plus dépasserait le plafond, sinon null. */
       plafond: string | null;
+      /** Heure du prochain appel possible sous plafond (ms depuis l'epoch), quand le pont la donne. */
+      plafondJusqua?: number | null;
       reglages: ReglagesLigne | null;
     };
 
@@ -315,7 +317,7 @@ export async function campagnesDuJour(): Promise<CampagneJour[]> {
 export async function etatLigneServeur(): Promise<EtatLigneServeur> {
   const r = await commanderPont('/etat');
   if (!r.ok) return { joignable: false };
-  const c = r.corps as { connecte?: unknown; appelEnCours?: unknown; appelId?: unknown; plafond?: unknown; reglages?: unknown };
+  const c = r.corps as { connecte?: unknown; appelEnCours?: unknown; appelId?: unknown; plafond?: unknown; plafondJusqua?: unknown; reglages?: unknown };
   const reglages = c.reglages as Partial<ReglagesLigne> | undefined;
   return {
     joignable: true,
@@ -323,6 +325,7 @@ export async function etatLigneServeur(): Promise<EtatLigneServeur> {
     appelEnCours: Boolean(c.appelEnCours),
     appelId: typeof c.appelId === 'string' ? c.appelId : null,
     plafond: typeof c.plafond === 'string' ? c.plafond : null,
+    plafondJusqua: typeof c.plafond === 'string' && typeof c.plafondJusqua === 'number' ? c.plafondJusqua : null,
     reglages:
       reglages && typeof reglages.appelsParHeure === 'number' && typeof reglages.appelsParJour === 'number' && typeof reglages.pauseEntreAppelsS === 'number'
         ? { appelsParHeure: reglages.appelsParHeure, appelsParJour: reglages.appelsParJour, pauseEntreAppelsS: reglages.pauseEntreAppelsS }

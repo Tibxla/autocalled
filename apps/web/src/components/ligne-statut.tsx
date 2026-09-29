@@ -2,7 +2,9 @@
 
 import Link from 'next/link';
 import { useEffect } from 'react';
-import { useLigne, type EtatLigneClient } from './etat-ligne-telephone';
+import { useLigne, type CampagneLigne, type EtatLigneClient } from './etat-ligne-telephone';
+import { chrono, heure } from './format-appel';
+import { useHorloge } from './horloge';
 
 type Trait = 'pointille' | 'plein' | 'interrompu';
 
@@ -22,6 +24,17 @@ function affichage(e: EtatLigneClient): Affichage {
     case 'releve':
       return { trait: 'pointille', couleurTrait: 'stroke-trait', couleurTexte: 'text-encre-3', libelle: 'Relevé de la ligne…', court: '…', lien: null };
     case 'libre':
+      if (e.plafond) {
+        const prochain = e.plafond.jusqua ? ` · prochain appel à ${heure(new Date(e.plafond.jusqua))}` : '';
+        return {
+          trait: 'pointille',
+          couleurTrait: 'stroke-trait',
+          couleurTexte: 'text-encre-2',
+          libelle: `Plafond atteint${prochain}`,
+          court: 'Plafond',
+          lien: { href: '/telephone', aria: `Plafond d’appels atteint${prochain.replace(' · ', ', ')} : ${VERS_TELEPHONE}` },
+        };
+      }
       return {
         trait: 'pointille',
         couleurTrait: 'stroke-trait',
@@ -102,12 +115,19 @@ function TraitLigne({ largeur, trait, couleur, className }: { largeur: number; t
  * Plus jamais « Ligne libre » affirmé sans relevé.
  */
 export function LigneStatut() {
-  return <VueLigneStatut etat={useLigne()} />;
+  const etat = useLigne();
+  const decrocheLe = etat.etat === 'en-appel' && etat.ligne === 'telephone' ? (etat.decrocheLe ?? null) : null;
+  const maintenant = useHorloge(decrocheLe !== null);
+  return <VueLigneStatut etat={etat} maintenant={maintenant} />;
 }
 
-/** Rendu pur d'un état de ligne (démontrable sans pont). */
-export function VueLigneStatut({ etat }: { etat: EtatLigneClient }) {
+/**
+ * Rendu pur d'un état de ligne (démontrable sans pont). `maintenant` (0 avant le montage) fait battre le chrono
+ * d'un appel téléphone depuis son décroché : il sort de la région vivante, qui n'annoncerait sinon que lui.
+ */
+export function VueLigneStatut({ etat, maintenant = 0 }: { etat: EtatLigneClient; maintenant?: number }) {
   const a = affichage(etat);
+  const decrocheLe = etat.etat === 'en-appel' && etat.ligne === 'telephone' ? (etat.decrocheLe ?? null) : null;
   const contenu = (
     <>
       <TraitLigne largeur={56} trait={a.trait} couleur={a.couleurTrait} className="hidden sm:block" />
@@ -116,6 +136,11 @@ export function VueLigneStatut({ etat }: { etat: EtatLigneClient }) {
         <span className="hidden sm:inline">{a.libelle}</span>
         <span className="sm:hidden">{a.court}</span>
       </span>
+      {decrocheLe !== null && maintenant > 0 ? (
+        <span aria-hidden="true" className="font-mono text-sm text-antenne">
+          {chrono(Math.max(0, maintenant - decrocheLe))}
+        </span>
+      ) : null}
     </>
   );
   return (
@@ -157,4 +182,34 @@ export function TitreEnAppel() {
     };
   }, [enAppel]);
   return null;
+}
+
+/**
+ * La campagne qui tourne ou attend, vue de toute page : « Campagne Gîtes · 34/100 » ou « · suspendue », lien
+ * vers sa régie. Rien sans campagne ouverte. Masquée sous 1280 px, où la barre n’a pas la place (le nom se tronque avant).
+ */
+export function CampagneStatut() {
+  return <VueCampagneStatut campagne={useLigne().campagne} />;
+}
+
+export function VueCampagneStatut({ campagne: c }: { campagne: CampagneLigne | null }) {
+  if (!c) return null;
+  const suspendue = c.statut === 'en-pause';
+  return (
+    <Link
+      href={`/campagnes/${c.id}`}
+      aria-label={`Campagne ${c.entreprise}, ${suspendue ? 'suspendue' : 'en cours'}, ${c.traites} traités sur ${c.total} : ouvrir sa régie`}
+      className="-mx-1.5 hidden h-9 max-w-[18rem] min-w-0 items-center gap-1 rounded-[4px] px-1.5 text-sm whitespace-nowrap text-encre-3 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline xl:flex"
+    >
+      <span className="truncate">Campagne {c.entreprise}</span>
+      <span className="shrink-0">·</span>
+      {suspendue ? (
+        <span className="shrink-0">suspendue</span>
+      ) : (
+        <span className="shrink-0 font-mono text-encre-2">
+          {c.traites}/{c.total}
+        </span>
+      )}
+    </Link>
+  );
 }

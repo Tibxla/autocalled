@@ -8,6 +8,7 @@ import { usePriseDeMain, type EtatPrise } from '@/app/appels/[id]/prise-de-main'
 import { Action, LienAction } from './action';
 import { toucheAria, useRaccourcis } from './clavier';
 import { Confirmation, useConfirmation } from './confirmation';
+import { useLigne } from './etat-ligne-telephone';
 import { chrono as formatChrono, heure, numeroMasque, prenom } from './format-appel';
 import { useHorloge } from './horloge';
 import { lotDeNiveaux, TamponNiveaux } from './niveaux-direct';
@@ -841,6 +842,11 @@ export function BandeAppel({
   onTermine?: () => void;
 }) {
   const fil = useFilAppel(appelId, { suivre: statut === 'en-cours', ...(onTermine ? { onTermine } : {}) });
+  // Heure du décroché donnée par le pont (relevé de la ligne) : le chrono « en ligne » la reprend après un
+  // rechargement, avant même que le fil ne soit rejoué.
+  const ligne = useLigne();
+  const decrocheLigne = ligne.etat === 'en-appel' && ligne.ligne === 'telephone' && ligne.appelId === appelId ? (ligne.decrocheLe ?? null) : null;
+  const enLigneDepuis = fil.enLigneDepuis ?? decrocheLigne;
   const ecoute = useEcoute(appelId);
   const prise = usePriseDeMain(appelId);
   const maintenant = useHorloge(prise.etat === 'active');
@@ -863,8 +869,8 @@ export function BandeAppel({
 
   let chrono: VueBandeAppelProps['chrono'] = null;
   if (termine && finConnue) chrono = { libelle: `terminé à ${heure(new Date(finConnue))} · analyse`, depuis: finConnue };
-  else if (!termine && SONNE.has(fil.etat) && debutLe) chrono = { libelle: 'sonne depuis', depuis: Date.parse(debutLe) };
-  else if (!termine && fil.enLigneDepuis) chrono = { libelle: 'en ligne', depuis: fil.enLigneDepuis };
+  else if (!termine && SONNE.has(fil.etat) && !decrocheLigne && debutLe) chrono = { libelle: 'sonne depuis', depuis: Date.parse(debutLe) };
+  else if (!termine && enLigneDepuis) chrono = { libelle: 'en ligne', depuis: enLigneDepuis };
   else if (!termine && debutLe) chrono = { libelle: 'depuis la composition', depuis: Date.parse(debutLe) };
 
   return (

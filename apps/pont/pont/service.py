@@ -3,7 +3,7 @@
 N'écoute que sur 127.0.0.1. Chaque requête porte `Authorization: Bearer $PONT_SECRET`, et le pont
 présente le même secret à l'application quand il la rappelle (`$WEB_URL/api/pont/…`).
 
-    GET  /etat                        le téléphone passerelle et l'appel en cours
+    GET  /etat                        le téléphone passerelle, l'appel en cours (décroché), le plafond
     POST /appels                      {appelId, numero, variables, motsCles} : compose
     POST /appels/<id>/raccrocher
     GET  /appels/<id>/evenements      fil de l'appel en SSE (états, tours de parole), rejoué depuis le début ;
@@ -123,6 +123,18 @@ def lot_de_niveaux(releves: list[tuple[int, float, float]]) -> dict[str, Any]:
     }
 
 
+def etat_du_plafond(plafond: Plafond, maintenant: float | None = None) -> dict[str, Any]:
+    """`plafond` : la phrase du refus ou None ; `plafondJusqua` : l'heure (ms depuis l'epoch) du prochain appel possible."""
+    maintenant = maintenant or time.time()
+    prochain = plafond.prochain(maintenant)
+    return {"plafond": plafond.refus(maintenant), "plafondJusqua": int(prochain * 1000) if prochain else None}
+
+
+def decroche_le(appel: Any) -> int | None:
+    """L'heure du décroché (ms depuis l'epoch) : celle du premier état « active » du fil, lue sans rien modifier."""
+    return next((e.get("t") for e in list(appel.evenements) if e.get("type") == "etat" and e.get("etat") == "active"), None)
+
+
 class Service:
     def __init__(self, cles: dict[str, str], racine: Path):
         self._cles = cles
@@ -177,7 +189,8 @@ class Service:
         return {
             **dans_glib(self._telephone.etat),
             "appelId": en_cours,
-            "plafond": self._plafond.refus(),
+            **etat_du_plafond(self._plafond),
+            "decrocheLe": decroche_le(self._appels[en_cours]) if en_cours else None,
             "reglages": self._reglages.valeurs,
         }
 

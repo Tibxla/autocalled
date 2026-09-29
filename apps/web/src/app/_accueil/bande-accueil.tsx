@@ -156,7 +156,7 @@ function SansAppel({
       return (
         <Cadre
           etiquette="Ligne"
-          titre="Plafond atteint"
+          titre={ligne.joignable && ligne.plafondJusqua ? `Plafond atteint · prochain appel à ${heure(new Date(ligne.plafondJusqua))}` : 'Plafond atteint'}
           tonTitre="alerte"
           {...(s.campagne ? { contexte: `${identiteCampagne(s.campagne)} · ${s.campagne.statut === 'en-cours' ? 'en cours' : 'suspendue'}` } : {})}
           phrase={s.phrase}

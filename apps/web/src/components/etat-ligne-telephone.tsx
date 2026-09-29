@@ -15,18 +15,37 @@ export type EtatLigneClient =
   | { etat: 'inconnu' }
   | { etat: 'injoignable' }
   | { etat: 'deconnecte' }
-  | { etat: 'libre' }
-  | { etat: 'en-appel'; ligne: 'telephone'; appelId: string | null }
+  /** `plafond` : aucun appel ne part avant `jusqua` (ms depuis l'epoch, null si le pont ne la donne pas). */
+  | { etat: 'libre'; plafond?: { jusqua: number | null } | null }
+  /** `decrocheLe` : heure du décroché donnée par le pont (ms), pour un chrono qui survit au rechargement. */
+  | { etat: 'en-appel'; ligne: 'telephone'; appelId: string | null; decrocheLe?: number | null }
   | { etat: 'en-appel'; ligne: 'navigateur' };
 
-type Instantane = EtatLigneClient & { releveLe: number | null };
-type Reponse = { pont: boolean; connecte?: boolean; appelEnCours?: boolean; appelId?: string | null };
+/** La campagne qui tourne ou attend, vue de toute page (lib/ligne). */
+export interface CampagneLigne {
+  id: string;
+  entreprise: string;
+  statut: 'en-cours' | 'en-pause';
+  traites: number;
+  total: number;
+}
+
+type Instantane = EtatLigneClient & { releveLe: number | null; campagne: CampagneLigne | null };
+type Reponse = {
+  pont: boolean;
+  connecte?: boolean;
+  appelEnCours?: boolean;
+  appelId?: string | null;
+  decrocheLe?: number | null;
+  plafond?: { jusqua: number | null } | null;
+  campagne?: CampagneLigne | null;
+};
 
 const PERIODE_MS = 3000;
 /** Sans relevé réussi depuis ce délai (onglet visible), l'état n'est plus affirmé. */
 const PEREMPTION_MS = 10_000;
 
-const SERVEUR: Instantane = { etat: 'releve', releveLe: null };
+const SERVEUR: Instantane = { etat: 'releve', releveLe: null, campagne: null };
 let instantane: Instantane = SERVEUR;
 let dernierSucces: number | null = null;
 let visibleDepuis = 0;
@@ -36,24 +55,22 @@ const abonnes = new Set<() => void>();
 
 function depuisReponse(r: Reponse): EtatLigneClient {
   if (!r.pont) return { etat: 'injoignable' };
-  if (r.appelEnCours) return { etat: 'en-appel', ligne: 'telephone', appelId: r.appelId ?? null };
+  if (r.appelEnCours) return { etat: 'en-appel', ligne: 'telephone', appelId: r.appelId ?? null, decrocheLe: r.decrocheLe ?? null };
   if (!r.connecte) return { etat: 'deconnecte' };
-  return { etat: 'libre' };
+  return { etat: 'libre', plafond: r.plafond ?? null };
 }
 
-function identique(a: EtatLigneClient, b: EtatLigneClient): boolean {
-  if (a.etat !== b.etat) return false;
-  if (a.etat === 'en-appel' && b.etat === 'en-appel') {
-    if (a.ligne !== b.ligne) return false;
-    if (a.ligne === 'telephone' && b.ligne === 'telephone') return a.appelId === b.appelId;
-  }
-  return true;
+/** Comparaison de valeur, hors heure du relevé : des objets de quelques champs, relus toutes les 3 s. */
+function identique(a: EtatLigneClient & { campagne: CampagneLigne | null }, b: EtatLigneClient & { campagne: CampagneLigne | null }): boolean {
+  const sansReleve = (x: object) => JSON.stringify({ ...x, releveLe: null });
+  return sansReleve(a) === sansReleve(b);
 }
 
-function poser(suivant: EtatLigneClient, releveLe: number | null) {
+function poser(suivant: EtatLigneClient, releveLe: number | null, campagne: CampagneLigne | null = instantane.campagne) {
   // Même état et même relevé : l'instantané garde son identité, rien ne se redessine.
-  if (identique(instantane, suivant) && instantane.releveLe === releveLe) return;
-  instantane = { ...suivant, releveLe };
+  const prochain = { ...suivant, campagne };
+  if (identique(instantane, prochain) && instantane.releveLe === releveLe) return;
+  instantane = { ...prochain, releveLe };
   for (const a of abonnes) a();
 }
 
@@ -65,7 +82,7 @@ async function relever() {
     if (!r.ok) throw new Error(String(r.status));
     const corps = (await r.json()) as Reponse;
     dernierSucces = Date.now();
-    poser(depuisReponse(corps), dernierSucces);
+    poser(depuisReponse(corps), dernierSucces, corps.campagne ?? null);
   } catch {
     poser({ etat: 'inconnu' }, dernierSucces);
   } finally {
@@ -111,7 +128,7 @@ export function useLigne(): Instantane {
     () => SERVEUR,
   );
   const navigateur = useEtatLigne() === 'en-appel';
-  const releveLe = telephone.releveLe;
-  const enNavigateur = useMemo<Instantane>(() => ({ etat: 'en-appel', ligne: 'navigateur', releveLe }), [releveLe]);
+  const { releveLe, campagne } = telephone;
+  const enNavigateur = useMemo<Instantane>(() => ({ etat: 'en-appel', ligne: 'navigateur', releveLe, campagne }), [releveLe, campagne]);
   return navigateur ? enNavigateur : telephone;
 }
