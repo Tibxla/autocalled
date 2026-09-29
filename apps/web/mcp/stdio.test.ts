@@ -24,7 +24,9 @@ describe('serveur MCP en stdio', () => {
     const pont = await fauxPont();
     const racine = new URL('../../../', import.meta.url).pathname;
     const { command, args } = JSON.parse(readFileSync(`${racine}.mcp.json`, 'utf8')).mcpServers.autocalled as { command: string; args: string[] };
-    // `--env-file` ne remplace pas une variable déjà posée : la base et le pont restent ceux du test.
+    // `--env-file` ne remplace pas une variable déjà posée : la base et le pont restent ceux du test. Le reste de
+    // .env (clés ElevenLabs, jeton Claude) est chargé et les gardes de test/garde-fous.ts ne s'appliquent pas à ce
+    // processus : n'y appeler que des outils qui s'arrêtent avant ElevenLabs et `claude -p`.
     const transport = new StdioClientTransport({
       command,
       args,

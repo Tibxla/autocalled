@@ -57,6 +57,7 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
         serveur,
         ctx,
         `Appeler maintenant ${p.nom}${p.societe ? ` (${p.societe})` : ''} au ${numeroLisible(preparation.numero)}, pour ${e.nom}, avec le script « ${version.libelle} », depuis le téléphone passerelle. Nous sommes ${heureDeParis()}.${reglages ? ` Garde-fous de la ligne : ${plafonds(reglages)}.` : ''}`,
+        ['lancer_appel', e.id, p.id, version.id, preparation.numero],
       );
       if (garde.etat === 'a-demander') return garde.issue;
       if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);
@@ -132,6 +133,7 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
         serveur,
         ctx,
         `${campagne.statut === 'prete' ? 'Lancer' : 'Reprendre'} la campagne de ${c.entreprise} sur le téléphone passerelle : ${aAppeler.length} prospect${aAppeler.length > 1 ? 's' : ''} à appeler l’un après l’autre, dont ${autorises} au numéro autorisé à cet instant (les autres seront sautés), avec le script « ${version?.libelle ?? '?'} ». Nous sommes ${heureDeParis()}.${reglages ? ` Garde-fous : ${plafonds(reglages)} ; plafond atteint, la campagne se met en pause.` : ''}`,
+        ['lancer_campagne', campagneId, campagne.statut, aAppeler.map((x) => x.prospectId), autorises],
       );
       if (garde.etat === 'a-demander') return garde.issue;
       if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);
@@ -185,6 +187,7 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
           serveur,
           ctx,
           `Desserrer les garde-fous du téléphone passerelle : ${desserres.join(', ')}. Ils évitent les rafales d’appels qui font signaler un numéro comme démarchage.`,
+          ['regler_ligne', actuels, nouveaux],
         );
         if (garde.etat === 'a-demander') return garde.issue;
         if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);
@@ -258,6 +261,7 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
         serveur,
         ctx,
         `Créer dans Google Agenda la visio de ${r.prospect} (${r.entreprise}) du ${quand}${r.rdv.email ? `, et envoyer l’invitation à ${r.rdv.email}` : ', sans invité : aucun e-mail ne part'}.`,
+        ['recreer_evenement', rendezVousId, r.rdv.debut.toISOString(), r.rdv.email],
       );
       if (garde.etat === 'a-demander') return garde.issue;
       if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);

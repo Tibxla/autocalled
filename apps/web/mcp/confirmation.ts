@@ -14,8 +14,9 @@ import { type Issue, refus } from './outil';
  * L'outil rend `inputRequired(...)`, la forme du SDK v2 pour les deux révisions du protocole : en 2025 (celle
  * que sert le transport stdio), le SDK pose lui-même la question au client puis rappelle l'outil ; en 2026-07-28,
  * c'est le client qui rappelle l'outil avec la réponse. L'outil repasse donc depuis le début : il revérifie
- * tout, recalcule le message, et n'accepte la réponse que si elle porte sur ce message-là (empreinte gardée
- * dans `requestState`).
+ * tout, et n'accepte la réponse que si les faits qui portent la décision (`cle` : prospect, numéro, valeurs
+ * cibles…) n'ont pas bougé depuis la question (empreinte gardée dans `requestState`). Le message, lui, peut
+ * changer sans invalider l'accord : il rappelle l'heure, et l'opérateur peut mettre plus d'une minute à répondre.
  */
 
 const CLE = 'confirmation';
@@ -28,8 +29,8 @@ function formulaireAccepte(serveur: McpServer): boolean {
   return e !== undefined && (e.form !== undefined || e.url === undefined);
 }
 
-export function confirmer(serveur: McpServer, ctx: ServerContext, message: string): Garde {
-  const empreinte = createHash('sha256').update(message).digest('hex');
+export function confirmer(serveur: McpServer, ctx: ServerContext, message: string, cle: readonly unknown[]): Garde {
+  const empreinte = createHash('sha256').update(JSON.stringify(cle)).digest('hex');
   const reponse = inputResponse(ctx.mcpReq.inputResponses, CLE);
   if (reponse.kind !== 'missing' && ctx.mcpReq.requestState<string>() === empreinte) {
     const accord = reponse.kind === 'elicit' && reponse.action === 'accept' && reponse.content?.confirme === true;

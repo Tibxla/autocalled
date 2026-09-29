@@ -31,6 +31,7 @@ export function outilsDeProspects(declarer: Declarer, serveur: McpServer): void 
         serveur,
         ctx,
         `Révoquer définitivement le numéro ${numeroLisible(p.telephone)} de ${p.nom} (${e.nom}) : il ne sera plus jamais appelé${partages > 1 ? `, pour les ${partages} prospects qui le partagent` : ''}, et aucun import ne le réautorisera.`,
+        ['revoquer_numero', p.telephone, partages],
       );
       if (garde.etat === 'a-demander') return garde.issue;
       if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);

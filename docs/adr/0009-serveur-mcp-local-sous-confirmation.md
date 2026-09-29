@@ -16,7 +16,7 @@ Un import de fiches par le MCP vaut l'import de l'interface case cochée : l'op�
 ## Consequences
 
 - Un crochet `Elicitation` de Claude Code, configuré par l'utilisateur, peut répondre à sa place : c'est son choix, hors de portée du serveur.
-- Le SDK v2 sert en stdio la révision 2025 du protocole. Les outils rendent `inputRequired(...)`, que le SDK traduit en question au client ; la même forme servira telle quelle la révision 2026-07-28. L'accord n'est retenu que s'il porte sur le message recalculé à la reprise.
+- Le SDK v2 sert en stdio la révision 2025 du protocole. Les outils rendent `inputRequired(...)`, que le SDK traduit en question au client ; la même forme servira telle quelle la révision 2026-07-28. L'outil repasse depuis le début à la reprise, et l'accord n'est retenu que si les faits qui le portent (prospect, numéro, valeurs cibles) n'ont pas bougé entre-temps.
 - Un appel d'outil aux arguments invalides est refusé par le SDK avant l'outil : rien n'est fait, rien n'est journalisé.
 - Une campagne simulée lancée par le MCP dure plus qu'une session : elle tourne dans un processus détaché (`mcp/tache.ts`). Une campagne téléphone n'en a pas besoin : l'application enchaîne les appels à chaque fin d'appel.
 - Depuis un autre poste du tailnet, un `.mcp.json` local (non commité) lance la même commande par `ssh`.
