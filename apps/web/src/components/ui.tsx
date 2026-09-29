@@ -204,9 +204,26 @@ export function Compteur({ valeur, max, seuil = 0.8 }: { valeur: number; max: nu
 
 /* ------------------------------------------------------------------ filtres */
 
-export function Filtres({ libelle, children, className = '' }: { libelle: string; children: React.ReactNode; className?: string }) {
+/**
+ * Rangée de filtres. `rangee` : une seule ligne qui défile horizontalement quand elle déborde, au lieu de
+ * passer à la ligne (la recherche garde sa place à droite).
+ */
+export function Filtres({
+  libelle,
+  children,
+  className = '',
+  rangee = false,
+}: {
+  libelle: string;
+  children: React.ReactNode;
+  className?: string;
+  rangee?: boolean;
+}) {
+  const disposition = rangee
+    ? 'flex-nowrap overflow-x-auto overscroll-x-contain -m-0.5 p-0.5 [scrollbar-width:thin]'
+    : 'flex-wrap';
   return (
-    <div role="group" aria-label={libelle} className={`flex flex-wrap gap-x-[22px] gap-y-1 text-md ${className}`}>
+    <div role="group" aria-label={libelle} className={`flex gap-x-[22px] gap-y-1 text-md ${disposition} ${className}`}>
       {children}
     </div>
   );

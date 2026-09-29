@@ -17,7 +17,7 @@ export function BarreHaut() {
         </Link>
         <nav
           aria-label="Navigation principale"
-          className="order-last -mx-(--gouttiere) flex w-[calc(100%+2*var(--gouttiere))] gap-6 overflow-x-auto max-sm:gap-4 px-(--gouttiere) [scrollbar-width:none] sm:order-none sm:mx-0 sm:w-auto sm:overflow-visible sm:px-0"
+          className="order-last -mx-(--gouttiere) flex w-[calc(100%+2*var(--gouttiere))] gap-6 overflow-x-auto max-sm:gap-2.5 px-(--gouttiere) [scrollbar-width:none] sm:order-none sm:mx-0 sm:w-auto sm:overflow-visible sm:px-0"
         >
           <LienNav href="/" exact>
             Accueil

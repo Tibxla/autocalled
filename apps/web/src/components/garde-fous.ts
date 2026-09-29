@@ -49,6 +49,19 @@ export function dureeLisible(minutes: number): string {
 }
 
 /**
+ * Minutes entre le premier et le dernier de `n` appels au rythme le plus serré permis : un appel part au plus
+ * tôt `pause` après le précédent, et une heure après celui de `h` rangs plus tôt (plafond sur l'heure glissante,
+ * comme la ligne le compte). Exact à la seconde : pas d'arrondi à l'heure pleine.
+ */
+function minutesAvantDernier(n: number, h: number, pauseS: number): number {
+  const departs = [0];
+  for (let k = 1; k < n; k++) {
+    departs.push(Math.max(departs[k - 1]! + pauseS / 60, k >= h ? departs[k - h]! + 60 : 0));
+  }
+  return departs[n - 1] ?? 0;
+}
+
+/**
  * Durée minimale avant que le dernier appel parte : le plafond horaire autorise H appels par heure glissante
  * et la pause sépare deux appels ; la durée des appels eux-mêmes n'est pas comptée, d'où « au plus tôt ».
  * `passes24h` (appels déjà passés sur 24 h, d'après la base) indique quand le plafond du jour arrêtera la ligne.
@@ -70,7 +83,7 @@ export function estimation(p: { appels: number; reglages: ReglagesLigne; passes2
   if (n === 0) return { minutesAuPlusTot: 0, phrase: 'Aucun appel à passer.', arretApres: null };
   if (n === 1) return { minutesAuPlusTot: 0, phrase: `À ce rythme, cet appel peut partir tout de suite.${fin}`, arretApres };
 
-  const minutesAuPlusTot = Math.max(Math.floor((n - 1) / h) * 60, ((n - 1) * pause) / 60);
+  const minutesAuPlusTot = minutesAvantDernier(n, h, pause);
   return {
     minutesAuPlusTot,
     phrase: `À ce rythme, le dernier des ${n} appels partira au plus tôt dans ${dureeLisible(minutesAuPlusTot)}.${fin}`,

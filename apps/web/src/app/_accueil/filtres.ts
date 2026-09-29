@@ -1,20 +1,24 @@
 import { ISSUES_SYSTEME, type IssueSysteme } from '@autocalled/domain';
-import { issueEffective } from '../../components/format-appel';
+import { estNonCompose, issueEffective } from '../../components/format-appel';
 import type { AppelDuJour } from '@/lib/accueil';
 
 /**
  * Filtres et comptes des appels du jour. Les appels simulés sont à part : « Tous » ne les compte pas, le
- * filtre « Simulés » est exclusif. Chaque appel réel tombe dans une et une seule case (une des sept issues ou
- * « Sans bilan ») : la somme des cases fait « Tous ». Fonctions pures, testées.
+ * filtre « Simulés » est exclusif. Chaque appel réel tombe dans une et une seule case (une des sept issues,
+ * « Non composé » ou « Sans bilan ») : la somme des cases fait « Tous ». Fonctions pures, testées.
  */
 
-export type CleFiltre = IssueSysteme | 'sans-bilan';
-export const CLES_FILTRE: readonly CleFiltre[] = [...ISSUES_SYSTEME, 'sans-bilan'];
+export type CleFiltre = IssueSysteme | 'non-compose' | 'sans-bilan';
+export const CLES_FILTRE: readonly CleFiltre[] = [...ISSUES_SYSTEME, 'non-compose', 'sans-bilan'];
 
-type Classable = Pick<AppelDuJour, 'statut' | 'issue' | 'issueSysteme' | 'ligne'>;
+type Classable = Pick<AppelDuJour, 'statut' | 'issue' | 'issueSysteme' | 'ligne' | 'conversation'>;
 
-/** La case d'un appel : son issue effective quand il a abouti, sinon « Sans bilan ». */
+/**
+ * La case d'un appel : son issue effective quand il a abouti ; « Non composé » quand la ligne ne l'a pas
+ * composé (même mot que sa ligne dans le tableau) ; sinon « Sans bilan ».
+ */
 export function cleFiltre(a: Classable): CleFiltre {
+  if (estNonCompose({ statut: a.statut, conversationId: a.conversation ? 'oui' : null })) return 'non-compose';
   if (a.statut !== 'termine') return 'sans-bilan';
   return issueEffective(a) ?? 'sans-bilan';
 }

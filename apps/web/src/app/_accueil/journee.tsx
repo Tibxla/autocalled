@@ -7,7 +7,7 @@ import { memo, useMemo, useRef, useState } from 'react';
 import { Action, LienAction } from '@/components/action';
 import { NavigationListe } from '@/components/clavier';
 import { useLigne } from '@/components/etat-ligne-telephone';
-import { dateCourte, duree, etatAppel, heure, LIGNES_COURTES, prenom, type EtatAppelAffiche } from '@/components/format-appel';
+import { dateCourte, duree, etatAppel, heure, LIBELLE_NON_COMPOSE, LIGNES_COURTES, prenom, type EtatAppelAffiche } from '@/components/format-appel';
 import {
   Cellule,
   CelluleEnTete,
@@ -46,7 +46,7 @@ const TONS: Record<EtatAppelAffiche['ton'], string> = {
   'encre-3': 'text-encre-3',
 };
 
-const LIBELLES_FILTRE: Record<CleFiltre, string> = { ...LIBELLES_ISSUES, 'sans-bilan': 'Sans bilan' };
+const LIBELLES_FILTRE: Record<CleFiltre, string> = { ...LIBELLES_ISSUES, 'non-compose': LIBELLE_NON_COMPOSE, 'sans-bilan': 'Sans bilan' };
 
 const STATUTS: Record<CampagneJour['statut'], { libelle: string; classe: string }> = {
   prete: { libelle: 'prête', classe: 'text-encre-2' },
@@ -173,12 +173,14 @@ export function Journee({
           <EtatVide titre="Aucun appel aujourd’hui">Les appels de la journée s’afficheront ici, du plus récent au plus ancien.</EtatVide>
         ) : (
           <>
+            {/* Une seule rangée, recherche à droite : un filtre à compte nul disparaît (sauf Tous et le filtre actif) ;
+                ce qui déborde encore défile horizontalement. */}
             <div className="flex items-start gap-x-6 gap-y-3 pb-2.5 max-sm:flex-col-reverse">
-              <Filtres libelle="Filtrer par issue" className="min-w-0 flex-1">
+              <Filtres libelle="Filtrer par issue" rangee className="w-full min-w-0 flex-1">
                 <Filtre actif={filtres.issue === null && !filtres.simules} compte={comptes.tous} onClick={() => appliquer({ issue: null, simules: false })}>
                   Tous
                 </Filtre>
-                {CLES_FILTRE.map((cle) => (
+                {CLES_FILTRE.filter((cle) => comptes.parCle[cle] > 0 || filtres.issue === cle).map((cle) => (
                   <Filtre
                     key={cle}
                     actif={filtres.issue === cle}
@@ -188,9 +190,11 @@ export function Journee({
                     {LIBELLES_FILTRE[cle]}
                   </Filtre>
                 ))}
-                <Filtre actif={filtres.simules} compte={comptes.simules} onClick={() => appliquer({ issue: null, simules: !filtres.simules })}>
-                  Simulés
-                </Filtre>
+                {comptes.simules > 0 || filtres.simules ? (
+                  <Filtre actif={filtres.simules} compte={comptes.simules} onClick={() => appliquer({ issue: null, simules: !filtres.simules })}>
+                    Simulés
+                  </Filtre>
+                ) : null}
               </Filtres>
               {/* Entrée cherche dans les transcriptions à partir de 3 caractères ; en deçà, rien ne part. */}
               <Recherche
@@ -295,17 +299,17 @@ function EnTeteJournee({ appels, campagnes }: { appels: AppelDuJour[]; campagnes
             'aucun appel pour l’instant'
           ) : (
             <>
-              <span className="font-mono">{b.total}</span> {pluriel(b.total, 'appel', 'appels')} depuis <span className="font-mono">{b.premier ? heure(b.premier) : ''}</span>
+              <span className="font-mono">{b.total}</span>{'\u00a0'}{pluriel(b.total, 'appel', 'appels')} depuis <span className="font-mono">{b.premier ? heure(b.premier) : ''}</span>
               {' · '}
-              <span className="font-mono">{b.conversations}</span> {pluriel(b.conversations, 'conversation', 'conversations')}
+              <span className="font-mono">{b.conversations}</span>{'\u00a0'}{pluriel(b.conversations, 'conversation', 'conversations')}
               {' · '}
-              <span className="font-mono">{b.rendezVous}</span> rendez-vous
+              <span className="font-mono">{b.rendezVous}</span>{'\u00a0'}rendez-vous
             </>
           )}
           {b.simules > 0 ? (
             <>
               {' · '}
-              <span className="font-mono">{b.simules}</span> {pluriel(b.simules, 'appel simulé', 'appels simulés')} à part
+              <span className="font-mono">{b.simules}</span>{'\u00a0'}{pluriel(b.simules, 'appel simulé', 'appels simulés')} à part
             </>
           ) : null}
         </p>
@@ -322,8 +326,8 @@ function EnTeteJournee({ appels, campagnes }: { appels: AppelDuJour[]; campagnes
                   {LIGNES_COURTES[c.ligne] ?? c.ligne} ·{' '}
                   <span className="font-mono">
                     {c.comptes.traites}/{c.comptes.total}
-                  </span>{' '}
-                  traités · <span className={statut.classe}>{statut.libelle}</span>
+                  </span>
+                  {'\u00a0'}traités · <span className={statut.classe}>{statut.libelle}</span>
                 </Link>
               </li>
             );

@@ -1,6 +1,6 @@
 import { ISSUES_SYSTEME, LIBELLES_ISSUES, type IssueSysteme } from '@autocalled/domain';
 import { NavigationListe } from './clavier';
-import { cleJour, etatAppel, issueEffective, libelleJour, LIGNES_COURTES, type TonEtat } from './format-appel';
+import { cleJour, estNonCompose, etatAppel, issueEffective, LIBELLE_NON_COMPOSE, libelleJour, LIGNES_COURTES, type TonEtat } from './format-appel';
 import { Cellule, CelluleEnTete, Duree, EnTeteTable, GlypheEtape, Heure, LienLigne, LigneTable, TableDense } from './ui';
 
 /**
@@ -45,24 +45,32 @@ export interface LigneAppel {
 /* ------------------------------------------------------------------ filtre d'issue (liste et fiche) */
 
 export const CLE_SANS_BILAN = 'sans-bilan';
-export type CleFiltreIssue = IssueSysteme | typeof CLE_SANS_BILAN;
+export const CLE_NON_COMPOSE = 'non-compose';
+export type CleFiltreIssue = IssueSysteme | typeof CLE_NON_COMPOSE | typeof CLE_SANS_BILAN;
 
-/** Les huit filtres d'issue : ils partagent la fenêtre chargée (Tous = leur somme). */
+/** Les neuf filtres d'issue : ils partagent la fenêtre chargée (Tous = leur somme). */
 export const FILTRES_ISSUE: readonly { cle: CleFiltreIssue; libelle: string }[] = [
   ...ISSUES_SYSTEME.map((cle) => ({ cle, libelle: LIBELLES_ISSUES[cle] })),
+  { cle: CLE_NON_COMPOSE, libelle: LIBELLE_NON_COMPOSE },
   { cle: CLE_SANS_BILAN, libelle: 'Sans bilan' },
 ];
 
 export function estFiltreIssue(valeur: string | undefined): valeur is CleFiltreIssue {
-  return valeur === CLE_SANS_BILAN || (ISSUES_SYSTEME as readonly string[]).includes(valeur ?? '');
+  return valeur === CLE_SANS_BILAN || valeur === CLE_NON_COMPOSE || (ISSUES_SYSTEME as readonly string[]).includes(valeur ?? '');
 }
 
 /**
  * Le filtre d'issue d'un appel, par son issue effective : les non aboutis téléphone dont seule `issue` est
- * posée comptent enfin comme non aboutis ; tout le reste sans issue (en cours, analyse, échec) est « Sans bilan ».
+ * posée comptent enfin comme non aboutis. Sans issue, un appel que la ligne n'a pas composé a son filtre,
+ * du même nom que sa ligne (« Non composé ») ; le reste (en cours, analyse, analyse en échec) est « Sans bilan ».
  */
-export function cleFiltreIssue(a: { issueSysteme: IssueSysteme | null; issue?: string | null }): CleFiltreIssue {
-  return issueEffective(a) ?? CLE_SANS_BILAN;
+export function cleFiltreIssue(a: {
+  statut: string;
+  conversationId?: string | null;
+  issueSysteme: IssueSysteme | null;
+  issue?: string | null;
+}): CleFiltreIssue {
+  return issueEffective(a) ?? (estNonCompose(a) ? CLE_NON_COMPOSE : CLE_SANS_BILAN);
 }
 
 /* ------------------------------------------------------------------ rendu */

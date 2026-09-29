@@ -35,10 +35,11 @@ describe('desserre', () => {
 });
 
 describe('estimation', () => {
-  it('100 appels à 15 par heure, pause 5 s : au plus tôt dans 6 h', () => {
+  it('100 appels à 15 par heure, pause 5 s : six heures pleines, plus les pauses de la dernière heure', () => {
     const r = estimation({ appels: 100, reglages: { ...reglages, appelsParJour: 500 } });
-    expect(r.minutesAuPlusTot).toBe(360);
-    expect(r.phrase).toBe('À ce rythme, le dernier des 100 appels partira au plus tôt dans 6 h.');
+    // Le 100e appel part une heure après le 85e, … six heures après le 10e, lui-même 9 pauses de 5 s après le 1er.
+    expect(r.minutesAuPlusTot).toBeCloseTo(360.75);
+    expect(r.phrase).toBe('À ce rythme, le dernier des 100 appels partira au plus tôt dans 6 h 01.');
     expect(r.arretApres).toBeNull();
   });
 

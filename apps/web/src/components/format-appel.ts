@@ -133,6 +133,14 @@ export interface EtatAppelAffiche {
   detail?: string;
 }
 
+/** Même mot sur la ligne d'un appel et sur son filtre : l'opérateur retrouve ce qu'il a vu. */
+export const LIBELLE_NON_COMPOSE = 'Non composé';
+
+/** Un appel que la ligne n'a pas composé : en échec, sans conversation ouverte. */
+export function estNonCompose(a: { statut: string; conversationId?: string | null }): boolean {
+  return a.statut === 'echec' && !a.conversationId;
+}
+
 /** Au-delà, un appel encore « en cours » sans signe de vie n'est plus présenté comme en cours. */
 const DUREE_PLAUSIBLE_MS = 10 * 60 * 1000;
 
@@ -160,9 +168,9 @@ export function etatAppel(
   if (a.statut === 'echec') {
     const detail = a.erreur ? { detail: a.erreur } : {};
     // Graphite : l'échec se signale par son glyphe (point creux brique), pas par un libellé coloré.
-    return a.conversationId
-      ? { cle: 'analyse-echec', libelle: 'Analyse en échec', ton: 'encre-2', ...detail }
-      : { cle: 'pas-parti', libelle: 'Non composé', ton: 'encre-2', ...detail };
+    return estNonCompose(a)
+      ? { cle: 'pas-parti', libelle: LIBELLE_NON_COMPOSE, ton: 'encre-2', ...detail }
+      : { cle: 'analyse-echec', libelle: 'Analyse en échec', ton: 'encre-2', ...detail };
   }
   const issue = issueEffective(a);
   if (!issue) return { cle: 'sans-issue', libelle: 'Sans issue', ton: 'encre-3' };

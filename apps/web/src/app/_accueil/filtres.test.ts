@@ -38,20 +38,22 @@ const JOUR = [
   appel({ id: '4', statut: 'traitement', issue: null, issueSysteme: null }),
   appel({ id: '5', statut: 'echec', issue: null, issueSysteme: null }),
   appel({ id: '6', ligne: 'simulation' }),
+  appel({ id: '7', statut: 'echec', issue: null, issueSysteme: null, conversation: false }),
 ];
 
 describe('cleFiltre et comptes', () => {
-  it('issue effective, clé système des issues personnalisées, sans bilan', () => {
-    expect(JOUR.map(cleFiltre)).toEqual(['refus', 'non-abouti', 'rendez-vous-pris', 'sans-bilan', 'sans-bilan', 'refus']);
+  it('issue effective, clé système des issues personnalisées, non composé, sans bilan', () => {
+    expect(JOUR.map(cleFiltre)).toEqual(['refus', 'non-abouti', 'rendez-vous-pris', 'sans-bilan', 'sans-bilan', 'refus', 'non-compose']);
   });
 
   it('les simulés à part ; la somme des cases fait Tous', () => {
     const c = comptesFiltres(JOUR);
-    expect(c.tous).toBe(5);
+    expect(c.tous).toBe(6);
     expect(c.simules).toBe(1);
     expect(Object.values(c.parCle).reduce((s, n) => s + n, 0)).toBe(c.tous);
     expect(c.parCle.refus).toBe(1);
     expect(c.parCle['sans-bilan']).toBe(2);
+    expect(c.parCle['non-compose']).toBe(1);
     expect(c.parCle.interrompu).toBe(0);
   });
 });
@@ -83,6 +85,6 @@ describe('filtrerAppels', () => {
 
 describe('bilanJournee', () => {
   it('conversations = issue autre que non abouti ; rendez-vous ; simulés à part', () => {
-    expect(bilanJournee(JOUR)).toEqual({ total: 5, conversations: 2, rendezVous: 1, simules: 1, premier: '2026-09-29T08:00:00Z' });
+    expect(bilanJournee(JOUR)).toEqual({ total: 6, conversations: 2, rendezVous: 1, simules: 1, premier: '2026-09-29T08:00:00Z' });
   });
 });

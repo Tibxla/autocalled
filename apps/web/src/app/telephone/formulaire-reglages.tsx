@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState, type FormEvent } from 'react';
+import { useRaccourci } from '@/components/clavier';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
 import { BORNES, desserre, dureeLisible, estimation, validerReglages, type ReglagesLigne } from '@/components/garde-fous';
 import { Action, Message, Saisie } from '@/components/ui';
@@ -66,6 +67,19 @@ function phraseRythme(r: ReglagesLigne): string {
   return `À ce rythme, une campagne de ${VOLUME} appels se met en pause après ${pluriel(premiers, 'appel')} sur 24 heures glissantes.${suite}`;
 }
 
+/** Les nombres en Chivo Mono, les mots et les unités (h, min, s, appels) en Chivo. */
+function EnChasse({ texte }: { texte: string }) {
+  return texte.split(/(\d+)/).map((morceau, i) =>
+    i % 2 === 1 ? (
+      <span key={i} className="font-mono">
+        {morceau}
+      </span>
+    ) : (
+      morceau
+    ),
+  );
+}
+
 /** « de 15 à 40 appels par heure », pour chaque réglage qui desserre. */
 function changementsDesserres(avant: ReglagesLigne, apres: ReglagesLigne): string[] {
   const liste: string[] = [];
@@ -107,6 +121,20 @@ export function FormulaireReglages({ reglages, envoyer = enregistrerReglages }: 
   const valide = Object.keys(erreurs).length === 0;
   const desserrant = valide && desserre(reglages, saisis);
   const retour = etat.message && etat !== etatMasque ? etat : null;
+
+  // Ctrl Entrée, comme « Enregistrer la fiche » : depuis le formulaire seulement ; desserrer garde sa confirmation.
+  useRaccourci({
+    touche: 'Enter',
+    ctrl: true,
+    dansChamp: true,
+    libelle: 'Enregistrer les garde-fous',
+    actif: change && !enCours,
+    action: () => {
+      const f = proprietes.ref.current;
+      if (!f?.contains(document.activeElement)) return false;
+      f.requestSubmit();
+    },
+  });
 
   const surEnvoi = (e: FormEvent<HTMLFormElement>) => {
     if (!valide) {
@@ -162,10 +190,10 @@ export function FormulaireReglages({ reglages, envoyer = enregistrerReglages }: 
                     className="font-mono"
                   />
                 </span>
-                <span className="font-mono text-sm text-encre-3">{c.unite}</span>
+                <span className="text-sm text-encre-3">{c.unite}</span>
               </span>
               <p id={`${c.nom}-aide`} className="text-sm text-encre-3">
-                {`${min} à ${max}${c.unite === 's' ? ' s' : ''}, ${c.aide}`}
+                <EnChasse texte={`${min} à ${max}${c.unite === 's' ? ' s' : ''}, ${c.aide}`} />
               </p>
               {erreur ? (
                 <p id={`${c.nom}-erreur`} className="text-sm text-alerte">
@@ -178,7 +206,7 @@ export function FormulaireReglages({ reglages, envoyer = enregistrerReglages }: 
       </div>
 
       <p className="max-w-[62ch] text-sm text-encre-2" aria-live="polite">
-        {valide ? phraseRythme(saisis) : 'Corrige les valeurs pour voir le rythme qu’elles donnent.'}
+        {valide ? <EnChasse texte={phraseRythme(saisis)} /> : 'Corrige les valeurs pour voir le rythme qu’elles donnent.'}
       </p>
 
       {retour ? (
@@ -187,7 +215,15 @@ export function FormulaireReglages({ reglages, envoyer = enregistrerReglages }: 
 
       <div className="grid gap-3">
         <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-          <Action ref={bouton} type="submit" ton="fort" disabled={!change || enCours} enCours={enCours} libelleEnCours="Enregistrement…">
+          <Action
+            ref={bouton}
+            type="submit"
+            ton="fort"
+            touche="Ctrl Entrée"
+            disabled={!change || enCours}
+            enCours={enCours}
+            libelleEnCours="Enregistrement…"
+          >
             {desserrant ? 'Enregistrer et desserrer' : 'Enregistrer'}
           </Action>
           {change && !enCours ? (

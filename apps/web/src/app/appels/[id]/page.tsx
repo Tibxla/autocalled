@@ -111,15 +111,27 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
   const rendezVousPris = issue === 'rendez-vous-pris' || rdv !== null;
 
   const numero = numeroLisible(appel.numero);
+  // Chivo pour les mots, Chivo Mono pour date, heure, durée, identifiant, version et numéro.
+  const [jourSemaine, jourMois] = jourCourt(appel.debutLe).split(' ');
   const meta: React.ReactNode[] = [
     <span key="date">
-      {jourCourt(appel.debutLe)} {heure(appel.debutLe)}
+      {jourSemaine} <span className="font-mono">{jourMois}</span> <span className="font-mono">{heure(appel.debutLe)}</span>
     </span>,
   ];
-  if (appel.dureeSecondes) meta.push(<span key="duree">{duree(appel.dureeSecondes)}</span>);
+  if (appel.dureeSecondes) meta.push(<span key="duree" className="font-mono">{duree(appel.dureeSecondes)}</span>);
   meta.push(<span key="ligne">{LIGNES_LONGUES[appel.ligne] ?? appel.ligne}</span>);
-  if (appel.versionAgent) meta.push(<span key="mina">Mina {appel.versionAgent.slice(-6)}</span>);
-  if (version) meta.push(<span key="script">{`${script?.nom ?? 'Script'} v${version.numero}`}</span>);
+  if (appel.versionAgent)
+    meta.push(
+      <span key="mina">
+        Mina <span className="font-mono">{appel.versionAgent.slice(-6)}</span>
+      </span>,
+    );
+  if (version)
+    meta.push(
+      <span key="script">
+        {script?.nom ?? 'Script'} <span className="font-mono">v{version.numero}</span>
+      </span>,
+    );
   if (appel.campagneId && campagne)
     meta.push(
       <Link
@@ -127,11 +139,11 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
         href={`/campagnes/${appel.campagneId}`}
         className="decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline"
       >
-        Campagne du {FORMAT_JOUR_MOIS.format(campagne.creeLe)}
+        Campagne du <span className="font-mono">{FORMAT_JOUR_MOIS.format(campagne.creeLe)}</span>
       </Link>,
     );
   meta.push(
-    <span key="numero" title={numero}>
+    <span key="numero" title={numero} className="font-mono">
       {numeroMasque(numero)}
     </span>,
   );
@@ -382,7 +394,7 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
               {prospect?.societe || 'Fiche du prospect'}
             </Link>
           </p>
-          <p className="flex flex-wrap gap-x-2 font-mono text-sm text-encre-3">
+          <p className="flex flex-wrap gap-x-2 text-sm text-encre-3">
             {meta.map((m, i) => (
               <span key={i} className="inline-flex gap-x-2">
                 {i > 0 ? <span aria-hidden="true">·</span> : null}

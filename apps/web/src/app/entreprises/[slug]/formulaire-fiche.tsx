@@ -185,7 +185,13 @@ export function FormulaireFiche({ fiche }: { fiche: Fiche }) {
   ) : null;
 
   return (
-    <form {...proprietes} aria-label="Fiche de l’entreprise" className="grid gap-12">
+    // Marge basse de défilement égale à la hauteur de la barre collée (--barre) : un champ atteint au clavier
+    // s'arrête au-dessus de « Enregistrer la fiche », jamais dessous.
+    <form
+      {...proprietes}
+      aria-label="Fiche de l’entreprise"
+      className="grid gap-12 [--barre:4rem] [&_:is(input,textarea,select,summary)]:scroll-mb-(--barre)"
+    >
       <section aria-labelledby="titre-mina" className="grid max-w-[44rem] gap-6">
         <TitreSection id="titre-mina">Ce que Mina dit de l’entreprise</TitreSection>
         <Champ libelle="Nom" htmlFor="nom" erreur={e.nom}>
@@ -317,7 +323,8 @@ export function FormulaireFiche({ fiche }: { fiche: Fiche }) {
         </fieldset>
       </section>
 
-      <div className="sticky bottom-0 z-10 -mx-(--gouttiere) -mb-24 grid gap-2 border-t border-filet bg-fond px-(--gouttiere) py-3 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      {/* self-end : la barre garde la hauteur de son contenu au lieu de s'étirer sur sa rangée de grille. */}
+      <div className="sticky bottom-0 z-10 -mx-(--gouttiere) -mb-24 grid gap-2 self-end border-t border-filet bg-fond px-(--gouttiere) py-3 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {fautifs.length > 0 ? (
           <Message ton="alerte" className="max-w-[44rem]">
             {fautifs.length} {fautifs.length > 1 ? 'champs à corriger' : 'champ à corriger'} :{' '}
