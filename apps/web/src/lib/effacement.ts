@@ -344,8 +344,9 @@ export async function effacerPersonne(entrepriseId: string, prospectId: string, 
     }
 
     const appelIds = c.appels.map((a) => a.id);
-    // Les rendez-vous partent avec leurs appels (cascade) ; comptés avant.
-    if (appelIds.length) await tx.delete(appels).where(inArray(appels.id, appelIds));
+    // Les rendez-vous partent avec leurs appels (cascade) ; comptés avant. Par le prospect et non par les identifiants
+    // lus : un appel enregistré entre la lecture et ici part aussi.
+    await tx.delete(appels).where(and(eq(appels.entrepriseId, entrepriseId), eq(appels.prospectId, prospectId)));
     await tx.delete(prospects).where(and(eq(prospects.entrepriseId, entrepriseId), eq(prospects.id, prospectId)));
     const nConsentements = (await tx.delete(consentements).where(eq(consentements.numero, c.prospect.telephone)).returning({ id: consentements.id })).length;
 
