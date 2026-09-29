@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   type Consentement,
   type NumeroAutorise,
+  numerosAAutoriser,
   verifierAutorisation,
 } from './autorisation.ts';
 import { normaliserNumero } from './numero.ts';
@@ -84,6 +85,54 @@ describe('verifierAutorisation', () => {
     // Une ligne ne compose qu'un NumeroAutorise : une simple chaîne ne passe pas le typage.
     expectTypeOf<string>().not.toExtend<NumeroAutorise>();
     expectTypeOf(normaliserNumero('+33639980001')).not.toExtend<NumeroAutorise | null>();
+  });
+});
+
+describe('numerosAAutoriser', () => {
+  const n = (brut: string) => normaliserNumero(brut) ?? (() => { throw new Error(brut); })();
+  const a = n('+33639980001');
+  const b = n('+33639980002');
+  const c = n('+33639980003');
+
+  it('autorise un numéro jamais vu', () => {
+    expect(numerosAAutoriser([a], [])).toEqual({ aAutoriser: [a], dejaAutorises: [], revoques: [] });
+  });
+
+  it('laisse tel quel un numéro qui a déjà un consentement actif', () => {
+    expect(numerosAAutoriser([a], [{ numero: a, revoqueLe: null }])).toEqual({ aAutoriser: [], dejaAutorises: [a], revoques: [] });
+  });
+
+  it('ne réautorise jamais un numéro révoqué', () => {
+    const connus = [{ numero: a, revoqueLe: new Date('2026-09-20T00:00:00Z') }];
+
+    expect(numerosAAutoriser([a], connus)).toEqual({ aAutoriser: [], dejaAutorises: [], revoques: [a] });
+  });
+
+  it('garde un numéro révoqué même s’il a aussi un consentement actif', () => {
+    // Le texte promet que la personne ne sera « plus jamais appelée » : la révocation l'emporte.
+    const connus = [
+      { numero: a, revoqueLe: null },
+      { numero: a, revoqueLe: new Date('2026-09-20T00:00:00Z') },
+    ];
+
+    expect(numerosAAutoriser([a], connus)).toEqual({ aAutoriser: [], dejaAutorises: [], revoques: [a] });
+  });
+
+  it('compte une seule fois un numéro partagé par plusieurs fiches', () => {
+    expect(numerosAAutoriser([a, b, a], [{ numero: b, revoqueLe: null }])).toEqual({ aAutoriser: [a], dejaAutorises: [b], revoques: [] });
+  });
+
+  it('trie un import mêlé dans l’ordre des fiches', () => {
+    const connus = [
+      { numero: b, revoqueLe: new Date('2026-09-20T00:00:00Z') },
+      { numero: c, revoqueLe: null },
+    ];
+
+    expect(numerosAAutoriser([c, b, a], connus)).toEqual({ aAutoriser: [a], dejaAutorises: [c], revoques: [b] });
+  });
+
+  it('ignore les consentements d’autres numéros', () => {
+    expect(numerosAAutoriser([a], [{ numero: b, revoqueLe: new Date('2026-09-20T00:00:00Z') }]).aAutoriser).toEqual([a]);
   });
 });
 

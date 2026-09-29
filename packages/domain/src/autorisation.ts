@@ -47,3 +47,28 @@ export function verifierAutorisation(
   const revoque = duNumero.some((c) => c.revoqueLe !== null && c.revoqueLe <= maintenant);
   return { autorise: false, raison: revoque ? 'consentement-revoque' : 'aucun-consentement' };
 }
+
+export interface NumerosDUnImport {
+  aAutoriser: NumeroE164[];
+  dejaAutorises: NumeroE164[];
+  revoques: NumeroE164[];
+}
+
+/**
+ * Tri des numéros d'un import, à partir des consentements déjà en base pour ces numéros. Un numéro jamais
+ * vu reçoit le consentement de l'import ; un numéro qui en a déjà un le garde. Un numéro révoqué ne l'est
+ * jamais à nouveau par un import : le texte de consentement promet qu'il ne sera « plus jamais appelé ».
+ */
+export function numerosAAutoriser(
+  numeros: readonly NumeroE164[],
+  connus: readonly { numero: string; revoqueLe: Date | null }[],
+): NumerosDUnImport {
+  const tri: NumerosDUnImport = { aAutoriser: [], dejaAutorises: [], revoques: [] };
+  for (const numero of new Set(numeros)) {
+    const duNumero = connus.filter((c) => c.numero === numero);
+    if (duNumero.some((c) => c.revoqueLe !== null)) tri.revoques.push(numero);
+    else if (duNumero.length > 0) tri.dejaAutorises.push(numero);
+    else tri.aAutoriser.push(numero);
+  }
+  return tri;
+}
