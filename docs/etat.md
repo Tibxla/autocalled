@@ -16,7 +16,8 @@ Point de reprise pour la prochaine session de travail. À tenir à jour à chaqu
 - Assistante : son nom (Mina par défaut) et son premier message vivent en base et valent dès l'appel suivant ; chaque appel garde le nom sous lequel elle s'est présentée ; le prompt le reçoit par `assistante_nom` (ADR 0010). Réglages les montre en lecture seule.
 - Serveur MCP (ADR 0009 et 0010) : 61 outils, dont 21 de lecture, lisent et écrivent tout le produit, assistante comprise (nom, premier message, prompt, réglages, poussée et historique) ; appels, campagnes et gestes qui engagent passent par une question à l'opérateur (élicitation) ; chaque appel d'outil est journalisé (Réglages). Skill de projet `.claude/skills/autocalled`. Testé contre la base `autocalled_test` et un faux pont, test de fumée en stdio compris.
 - Sécurité (livraison du 29/09) : hôte vérifié, en-têtes anti-encadrement, routes du pont refusées hors de 127.0.0.1, identité simulée locale seulement, `claude -p` restreint, pont en E.164 seulement avec plafond à chaque composition et journal sans parole du prospect, fichiers en 0600 et services en `UMask=0077`.
-- Mise en service : `scripts/installer-services.sh` (service systemd utilisateur `autocalled-web`), puis `tailscale serve --https=8449`. Ligne téléphone : `scripts/installer-pont.sh` (service `autocalled-pont`).
+- Durée de conservation (ADR 0014) : chaque nuit, un appel de plus de `DUREE_CONSERVATION_MOIS` (12) perd enregistrements, transcription et texte du bilan (issue, étapes, objections gardées, analyse des versions inchangée), et le journal MCP ses lignes du même âge. `pnpm purger --essai` compte sans rien toucher.
+- Mise en service : `scripts/installer-services.sh` (service systemd utilisateur `autocalled-web`, minuteur `autocalled-purge.timer`), puis `tailscale serve --https=8449`. Ligne téléphone : `scripts/installer-pont.sh` (service `autocalled-pont`).
 
 ## Réglages de Mina retenus à l'écoute
 
@@ -31,8 +32,8 @@ La branche `livraison/mcp-securite` (worktree `autocalled-livraison`) n'est ni f
 
 1. Relire avec l'opérateur le texte de consentement v2 de la migration 0013 (il ne nomme plus l'assistante ; les consentements déjà donnés gardent la v1). Question juridique, avant tout le reste.
 2. Fusionner dans `main`, puis `pnpm install` (nouveau paquet `packages/agent`).
-3. `pnpm --filter @autocalled/web db:migrate` : applique 0013 (table `assistante`, historique des configurations, nom figé sur chaque appel).
-4. `scripts/installer-services.sh` : reconstruit l'interface et recopie le service durci.
+3. `pnpm --filter @autocalled/web db:migrate` : applique 0013 (table `assistante`, historique des configurations, nom figé sur chaque appel), 0014 (liste d'opposition, archivage) et 0015 (`purge_le`). Puis `pnpm purger --essai` : ce que la purge quotidienne, activée à l'étape suivante, supprimera.
+4. `scripts/installer-services.sh` : reconstruit l'interface, recopie le service durci et active `autocalled-purge.timer` (ADR 0014).
 5. `scripts/installer-pont.sh` hors appel en cours : dépendances épinglées, service durci, premier message venu de l'application, outil `etape_script`.
 6. Seulement ensuite, `pnpm agent push` en relisant la différence (prompt avec `assistante_nom`, outil `etape_script`, valeurs d'exemple), puis `pnpm agent status`. Poussé avant les étapes 4 et 5, le prompt cite une variable que personne n'envoie encore, et ElevenLabs refuse d'ouvrir la conversation.
 7. Contrôles : un appel simulé, un appel navigateur (l'étape s'affiche dans la bande), puis avec l'opérateur un appel téléphone réel ; dans Claude Code, un `pousser_assistante` sans changement (refus « rien à pousser ») et un `modifier_assistante` pour voir la question de confirmation.

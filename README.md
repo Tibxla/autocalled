@@ -90,6 +90,7 @@ Chaque choix qui surprendrait un lecteur est expliqué dans un ADR :
 | [0011](docs/adr/0011-rappel-date-par-l-analyse.md) | Un rappel convenu est daté par l'analyse, et fait dès le prochain appel |
 | [0012](docs/adr/0012-ecritures-concurrentes-comparees-a-ce-qui-a-ete-lu.md) | Écritures concurrentes : chacun compare à ce qu'il a lu, personne ne verrouille |
 | [0013](docs/adr/0013-archiver-ou-effacer-une-personne.md) | Retirer un prospect : l'archiver, ou effacer la personne en gardant l'empreinte de son numéro |
+| [0014](docs/adr/0014-duree-de-conservation.md) | Durée de conservation : après douze mois, un appel garde ses chiffres et perd ce qu'a dit la personne |
 
 La personnalité de l'assistante est du code : son prompt ([agent/prompt.md](agent/prompt.md)) et sa configuration sont versionnés ici, et `pnpm agent pull` / `pnpm agent push` les synchronisent avec ElevenLabs sans jamais écraser une modification distante non rapatriée ; `push` montre la différence et demande confirmation. Le serveur MCP peut aussi les modifier puis les pousser, après ton accord sur la différence (ADR 0010). Son nom (Mina par défaut) et son premier message vivent en base et valent dès l'appel suivant.
 
@@ -123,18 +124,20 @@ claude setup-token             # jeton longue durée à copier dans CLAUDE_CODE_
 docker compose up -d           # Postgres, sur 127.0.0.1 seulement
 pnpm --filter @autocalled/web db:migrate
 pnpm agent create              # crée Mina chez ElevenLabs, à faire une fois
-scripts/installer-services.sh  # construit et lance l'interface (service systemd utilisateur)
+scripts/installer-services.sh  # construit et lance l'interface, active la purge quotidienne (unités systemd utilisateur)
 sudo tailscale serve --bg --https=8449 http://127.0.0.1:3020
 ```
 
 `ORIGINE_APP` doit être l'adresse exacte servie par `tailscale serve` : l'application refuse tout autre nom d'hôte, et la prise de main toute autre origine.
+
+Chaque nuit, `autocalled-purge.timer` purge les appels commencés il y a plus de `DUREE_CONSERVATION_MOIS` (12 par défaut) : enregistrements, transcription et texte du bilan partent, l'issue, les étapes et les objections restent pour l'analyse ([ADR 0014](docs/adr/0014-duree-de-conservation.md)). `pnpm purger --essai` montre ce qui partirait sans rien toucher ; `pnpm purger` purge tout de suite. Le compte rendu est dans `journalctl --user -u autocalled-purge`.
 
 ### Mettre à jour
 
 L'ordre compte, parce que le prompt de l'assistante attend des variables que l'application et le pont envoient :
 
 1. `pnpm install`, puis `pnpm --filter @autocalled/web db:migrate` (relire d'abord une migration qui ajoute un texte de consentement).
-2. `scripts/installer-services.sh`, qui reconstruit et relance l'interface.
+2. `scripts/installer-services.sh`, qui reconstruit et relance l'interface, et recopie le minuteur de la purge.
 3. Si `apps/pont` a changé : `scripts/installer-pont.sh`, qui ne relance pas le pont pendant un appel.
 4. Seulement ensuite, si `agent/` a changé : `pnpm agent push`, qui montre la différence et demande confirmation, puis `pnpm agent status`. Poussé plus tôt, un prompt qui cite une variable que l'application n'envoie pas encore empêche ElevenLabs d'ouvrir la conversation.
 
@@ -168,10 +171,11 @@ Pour ne plus être interrogé par Claude Code sur les lectures, ses 21 outils de
 - **Pont** : il n'écoute que sur 127.0.0.1 et partage un secret avec l'application dans les deux sens ; ses routes (`/api/pont/…`) répondent 404 à toute requête relayée. La prise de main vérifie l'identité et l'origine. Il ne compose qu'un numéro au format international, et chaque composition passe par les plafonds.
 - **Numéros** : le serveur vérifie le numéro autorisé avant chaque appel, y compris à chaque tour d'une campagne ; un numéro révoqué ne se réautorise pas.
 - **Effacement** : effacer une personne (fiche prospect, confirmation en ligne) supprime ses appels, enregistrements, rendez-vous, consentement et mentions au journal ; seule reste l'empreinte de son numéro (HMAC au sel `SEL_OPPOSITION`, à poser dans le `.env` et à ne jamais changer), qui empêche de l'importer ou de l'appeler de nouveau ([ADR 0013](docs/adr/0013-archiver-ou-effacer-une-personne.md)).
+- **Conservation** : un appel de plus de douze mois (`DUREE_CONSERVATION_MOIS`) perd chaque nuit ses enregistrements, sa transcription et le texte de son bilan ; ses chiffres restent. Le journal de Claude Code perd ses lignes du même âge ; la liste d'opposition reste ([ADR 0014](docs/adr/0014-duree-de-conservation.md)).
 - **Textes de tiers** : une transcription est la parole d'un tiers. L'analyseur (`claude -p`) tourne sans outils, sans réglages ni mémoire, dans un dossier vide propre à l'appel ; le serveur MCP rend transcriptions, citations et fiches dans des blocs balisés comme données non fiables.
 - **Claude Code** : les gestes qui engagent (voir plus haut) attendent une question que seul l'opérateur peut accepter, liée à une empreinte signée à usage unique ; ils sont refusés en mode non interactif ; chaque appel d'outil est journalisé, et une erreur interne ne renvoie pas son détail au modèle.
 - **Fichiers** : `.env` en 600, services systemd utilisateur sans élévation de privilèges et en `UMask=0077`, enregistrements en 0600, journal du pont sans parole ni adresse du prospect.
-- **Risques acceptés** : un processus du compte de l'opérateur peut se faire passer pour lui sur 127.0.0.1 (il lit de toute façon le `.env`) ; l'effacement d'une personne laisse ses conversations chez ElevenLabs et ses copies dans les sauvegardes jusqu'à leur rotation ([améliorations futures](docs/future-improvements.md)).
+- **Risques acceptés** : un processus du compte de l'opérateur peut se faire passer pour lui sur 127.0.0.1 (il lit de toute façon le `.env`) ; l'effacement d'une personne comme la purge d'un appel ancien laissent ses conversations chez ElevenLabs et ses copies dans les sauvegardes jusqu'à leur rotation ([améliorations futures](docs/future-improvements.md)).
 
 ## Cadre légal
 

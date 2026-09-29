@@ -122,6 +122,14 @@ _Avoid_ : rappel programmé, tâche, échéance
 Ce que l'analyse produit après un appel : l'issue, l'étape atteinte, les objections apparues ou levées, un résumé et des points forts et faibles.
 _Avoid_ : récap, rapport, compte rendu, analyse
 
+**Durée de conservation** :
+Le temps pendant lequel un appel garde ce qu'a dit la personne : douze mois après son début, sauf réglage (`DUREE_CONSERVATION_MOIS`). Passé ce délai, l'appel est purgé la nuit suivante.
+_Avoid_ : rétention, archivage
+
+**Bilan purgé** :
+Ce qui reste du bilan d'un appel passé la durée de conservation : l'issue, l'étape atteinte et les objections, levées ou non avec leur temps CRAC. Le résumé, les citations, les points forts et faibles et le rappel tel qu'il a été dit sont effacés, comme l'enregistrement et la transcription. Les chiffres de l'analyse ne changent pas, et l'appel ne se réanalyse plus. Une purge n'est pas un effacement : la fiche, le numéro et le consentement restent.
+_Avoid_ : bilan archivé, bilan anonymisé, bilan effacé
+
 ## Agenda
 
 **Rendez-vous** :
