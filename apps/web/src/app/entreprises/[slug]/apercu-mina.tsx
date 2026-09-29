@@ -51,6 +51,8 @@ const REFUS: Record<string, string> = {
   'aucun-consentement': 'sans consentement',
   'consentement-revoque': 'révoqué',
   'numero-invalide': 'invalide',
+  'numero-efface': 'personne effacée',
+  'opposition-illisible': 'liste d’opposition illisible',
 };
 
 /**

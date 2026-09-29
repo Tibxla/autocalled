@@ -159,6 +159,13 @@ export const prospects = pgTable(
     contexte: text().notNull(),
     importId: uuid().references(() => imports.id),
     majLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Archivé (ADR 0013) : hors des listes par défaut et des choix de campagne, jamais appelé ni ajouté à une campagne
+     * tant qu'il l'est ; ses appels, bilans et le consentement de son numéro restent. Null : actif. Un réimport de la
+     * fiche ne le réactive pas.
+     */
+    archiveLe: timestamp({ withTimezone: true }),
+    archivePar: text().$type<Origine>(),
   },
   (t) => [primaryKey({ columns: [t.entrepriseId, t.id] })],
 );
@@ -321,4 +328,20 @@ export const versionsAssistante = pgTable('versions_assistante', {
   configuration: jsonb().$type<Record<string, unknown>>().notNull(),
   origine: text().$type<OrigineVersionAssistante>().notNull(),
   consigneLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Liste d'opposition (ADR 0013) : l'empreinte irréversible (HMAC-SHA256, sel `SEL_OPPOSITION` de l'installation) du
+ * numéro de chaque personne effacée. Le consentement disparaît avec la personne ; l'interdiction de la rappeler reste :
+ * `autorisationsDe` et l'import consultent cette table. Aucune donnée personnelle en clair. La ligne `temoin` porte
+ * l'empreinte d'une constante : si le sel change ou manque, elle ne se retrouve plus et plus rien n'est composé.
+ */
+export const oppositions = pgTable('oppositions', {
+  empreinte: text().primaryKey(),
+  temoin: boolean().notNull().default(false),
+  le: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  /** Par où l'effacement a été demandé ; null pour le témoin. */
+  par: text().$type<Origine>(),
+  /** Ce que l'effacement a supprimé, en comptes seulement (appels, fichiers, rendez-vous…). */
+  bilan: jsonb().$type<Record<string, number>>(),
 });
