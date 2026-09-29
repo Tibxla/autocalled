@@ -19,7 +19,8 @@ import { Touche } from './touche';
  * - Pages : N nouvelle entreprise, objection, script ou campagne (ouvre, n'écrit pas) ; I importer (volet) ;
  *   V nouvelle version ; R relire (Téléphone) ; 1 à 8 onglets d'entreprise ; j et k élément suivant et
  *   précédent sur une fiche ; lecteur d'un appel terminé : Espace, ← →, ↑ ↓, Échap.
- * - Globaux : ? aide, / recherche, g puis h, e, a, t, r.
+ * - Globaux : ? aide, / recherche (puis ↓ vers les résultats), g puis h, e, a, t, r (retenus par la garde
+ *   de sortie pendant un appel navigateur).
  * - Jamais de touche seule pour Raccrocher, Lancer, Reprendre, Suspendre, Révoquer, Oublier, Archiver,
  *   Réanalyser, Importer, Enregistrer, Appeler.
  */
@@ -98,6 +99,21 @@ export function inscrireRecherche(champ: HTMLInputElement): () => void {
   };
 }
 
+/* ------------------------------------------------------------------ garde de navigation */
+
+let gardeNavigation: ((destination: string) => void) | null = null;
+
+/**
+ * Pendant un appel navigateur, GardeSortie inscrit ici sa confirmation : les séquences « g puis… », qui
+ * passent par router.push sans clic, la demandent au lieu de quitter la page. Renvoie de quoi la retirer.
+ */
+export function inscrireGardeNavigation(garde: (destination: string) => void): () => void {
+  gardeNavigation = garde;
+  return () => {
+    if (gardeNavigation === garde) gardeNavigation = null;
+  };
+}
+
 /* ------------------------------------------------------------------ aide (magasin) */
 
 type EtatAide = { ouverte: boolean; entrees: readonly Raccourci[] };
@@ -146,8 +162,12 @@ function useAide(): EtatAide {
 
 /* ------------------------------------------------------------------ gestionnaire */
 
+/** Ce qu'Entrée active nativement : liens compris. */
 const ACTIVABLES =
   'button, a[href], summary, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [role="radio"], [role="switch"], [role="menuitem"], [role="option"], input[type="checkbox"], input[type="radio"], input[type="button"], input[type="submit"], input[type="reset"], input[type="file"], input[type="range"]';
+/** Ce qu'Espace active nativement : jamais un lien (Espace sur un lien fait défiler la page, rien d'autre). */
+const ACTIVABLES_ESPACE =
+  'button, summary, [role="button"], [role="checkbox"], [role="radio"], [role="switch"], [role="menuitem"], [role="option"], input[type="checkbox"], input[type="radio"], input[type="button"], input[type="submit"], input[type="reset"], input[type="file"], input[type="range"]';
 const TEXTUELS_NON = new Set(['checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'range', 'color', 'image', 'hidden']);
 
 function estChamp(cible: Element | null): boolean {
@@ -157,8 +177,8 @@ function estChamp(cible: Element | null): boolean {
   return cible instanceof HTMLElement && cible.isContentEditable;
 }
 
-function estActivable(cible: Element | null): boolean {
-  return Boolean(cible?.closest(ACTIVABLES));
+function estActivable(cible: Element | null, selecteur = ACTIVABLES): boolean {
+  return Boolean(cible?.closest(selecteur));
 }
 
 function correspond(r: Raccourci, e: KeyboardEvent): boolean {
@@ -177,6 +197,7 @@ function surTouche(e: KeyboardEvent) {
   const cible = e.target instanceof Element ? e.target : null;
   const dansChamp = estChamp(cible);
   const activable = estActivable(cible);
+  const activableEspace = estActivable(cible, ACTIVABLES_ESPACE);
   const ctrl = e.ctrlKey || e.metaKey;
 
   const actifs = raccourcisActifs();
@@ -194,7 +215,9 @@ function surTouche(e: KeyboardEvent) {
     if (e.repeat && !r.repetition) continue;
     if (Boolean(r.ctrl) !== ctrl) continue;
     if (dansChamp && !r.dansChamp) continue;
-    if (activable && (e.key === ' ' || e.key === 'Enter')) continue;
+    // L'activation native d'un élément focalisé passe avant un raccourci.
+    if (e.key === ' ' && activableEspace) continue;
+    if (e.key === 'Enter' && activable) continue;
     if (!correspond(r, e)) continue;
     if (r.action(e) === false) continue;
     e.preventDefault();
@@ -211,6 +234,11 @@ function surTouche(e: KeyboardEvent) {
 /** Pose l'écouteur unique et les raccourcis globaux (aide, recherche, navigation « g puis… »). */
 export function FournisseurClavier({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const aller = (destination: string) => {
+    if (location.pathname === destination) return;
+    if (gardeNavigation) gardeNavigation(destination);
+    else router.push(destination);
+  };
 
   useEffect(() => {
     document.addEventListener('keydown', surTouche);
@@ -231,11 +259,11 @@ export function FournisseurClavier({ children }: { children: React.ReactNode }) 
         champ.select();
       },
     },
-    { touche: 'h', sequence: 'g', libelle: 'Aller à l’accueil', groupe: 'Navigation', couche: 'global', action: () => router.push('/') },
-    { touche: 'e', sequence: 'g', libelle: 'Aller aux entreprises', groupe: 'Navigation', couche: 'global', action: () => router.push('/entreprises') },
-    { touche: 'a', sequence: 'g', libelle: 'Aller aux appels', groupe: 'Navigation', couche: 'global', action: () => router.push('/appels') },
-    { touche: 't', sequence: 'g', libelle: 'Aller au téléphone', groupe: 'Navigation', couche: 'global', action: () => router.push('/telephone') },
-    { touche: 'r', sequence: 'g', libelle: 'Aller aux réglages', groupe: 'Navigation', couche: 'global', action: () => router.push('/reglages') },
+    { touche: 'h', sequence: 'g', libelle: 'Aller à l’accueil', groupe: 'Navigation', couche: 'global', action: () => aller('/') },
+    { touche: 'e', sequence: 'g', libelle: 'Aller aux entreprises', groupe: 'Navigation', couche: 'global', action: () => aller('/entreprises') },
+    { touche: 'a', sequence: 'g', libelle: 'Aller aux appels', groupe: 'Navigation', couche: 'global', action: () => aller('/appels') },
+    { touche: 't', sequence: 'g', libelle: 'Aller au téléphone', groupe: 'Navigation', couche: 'global', action: () => aller('/telephone') },
+    { touche: 'r', sequence: 'g', libelle: 'Aller aux réglages', groupe: 'Navigation', couche: 'global', action: () => aller('/reglages') },
   ]);
 
   return <>{children}</>;
@@ -259,6 +287,22 @@ function ecrireSession(cle: string, valeur: string) {
   } catch {
     // stockage indisponible (navigation privée, bloqué) : la liste ne retrouvera pas sa ligne, rien de plus
   }
+}
+
+/**
+ * Met le focus sur la première ligne d'une liste (NavigationListe) de la page, et la sélectionne. Pour
+ * passer du champ de recherche aux résultats par ↓. Renvoie false s'il n'y a aucune ligne.
+ */
+export function focaliserPremiereLigne(): boolean {
+  const lien = document.querySelector<HTMLAnchorElement>('[data-navigation-liste] [data-lien-ligne]');
+  if (!lien) return false;
+  const racine = lien.closest('[data-navigation-liste]');
+  for (const l of racine?.querySelectorAll('[data-selectionnee]') ?? []) l.removeAttribute('data-selectionnee');
+  const ligne = lien.closest<HTMLElement>('[data-ligne]') ?? lien;
+  ligne.setAttribute('data-selectionnee', '');
+  lien.focus({ preventScroll: true });
+  ligne.scrollIntoView({ block: 'nearest' });
+  return true;
 }
 
 /**
@@ -346,7 +390,7 @@ export function NavigationListe({ children, memoriser }: { children: React.React
   };
 
   return (
-    <div ref={conteneur} onFocus={surFocus}>
+    <div ref={conteneur} onFocus={surFocus} data-navigation-liste="">
       {children}
     </div>
   );

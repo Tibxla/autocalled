@@ -227,10 +227,11 @@ export function File({
                         {e.societe ? <span className="text-encre-3"> · {e.societe}</span> : null}
                       </LienLigne>
                     </Cellule>
-                    <Cellule mono masqueeMobile>
+                    {/* Sous 640 px, heure et durée restent sur la ligne du nom ; l'issue passe dessous. */}
+                    <Cellule mono className="max-sm:order-3">
                       {e.appel ? <Heure date={e.appel.debutLe} /> : null}
                     </Cellule>
-                    <Cellule mono align="droite" masqueeMobile>
+                    <Cellule mono align="droite" className="max-sm:order-4 max-sm:ml-3">
                       <Duree secondes={e.appel?.dureeSecondes} />
                     </Cellule>
                     <Cellule masqueeMobile className="flex items-center gap-2">
@@ -241,7 +242,7 @@ export function File({
                         </span>
                       ) : null}
                     </Cellule>
-                    <Cellule etat tronquee className="max-sm:order-3 max-sm:basis-full max-sm:pl-10 max-sm:text-sm">
+                    <Cellule etat tronquee className="max-sm:order-5 max-sm:basis-full max-sm:pl-10 max-sm:text-sm">
                       <Issue e={e} />
                     </Cellule>
                   </LigneTable>

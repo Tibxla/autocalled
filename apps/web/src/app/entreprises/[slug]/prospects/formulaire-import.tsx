@@ -24,6 +24,18 @@ Très présente sur Instagram, répond elle-même aux avis Google.
 Piste : parler du coût de la commission, pas du design du site.
 `;
 
+/** Mêmes bornes que le serveur (lib/prospects.ts), qui garde sa propre validation : ici, on prévient avant l'envoi. */
+const FICHIERS_MAX = 100;
+const TAILLE_MAX = 32 * 1024;
+
+type Choix = { nom: string; refus: string | null };
+
+function verifier(fichier: File): Choix {
+  if (!/\.md$/i.test(fichier.name)) return { nom: fichier.name, refus: 'pas un fichier .md' };
+  if (fichier.size > TAILLE_MAX) return { nom: fichier.name, refus: 'dépasse 32 Ko' };
+  return { nom: fichier.name, refus: null };
+}
+
 function pluriel(n: number, mot: string, pluriel = `${mot}s`): string {
   return `${n} ${n > 1 ? pluriel : mot}`;
 }
@@ -91,7 +103,11 @@ export function FormulaireImport({
   const { etat: rapport, enCours, proprietes } = useFormulaire<RapportImport>(importerFiches.bind(null, entrepriseId), { etat: 'vide' }, {
     estSucces: (r) => r.etat === 'fait',
   });
-  const [noms, setNoms] = useState<string[]>([]);
+  const [choix, setChoix] = useState<Choix[]>([]);
+  const noms = choix.map((c) => c.nom);
+  const ecartes = choix.filter((c) => c.refus !== null);
+  const tropNombreux = choix.length > FICHIERS_MAX;
+  const invalide = ecartes.length > 0 || tropNombreux;
   const [survol, setSurvol] = useState(false);
   const [copie, setCopie] = useState<'copie' | 'impossible' | null>(null);
   const champ = useRef<HTMLInputElement>(null);
@@ -104,13 +120,13 @@ export function FormulaireImport({
   const [rapportVu, setRapportVu] = useState(rapport);
   if (rapport !== rapportVu) {
     setRapportVu(rapport);
-    if (rapport.etat === 'fait') setNoms([]);
+    if (rapport.etat === 'fait') setChoix([]);
   }
   useEffect(() => {
     if (rapport.etat === 'fait') proprietes.ref.current?.reset();
   }, [rapport, proprietes.ref]);
 
-  const choisir = (fichiers: FileList | null) => setNoms([...(fichiers ?? [])].map((f) => f.name));
+  const choisir = (fichiers: FileList | null) => setChoix([...(fichiers ?? [])].map(verifier));
 
   const copier = async () => {
     try {
@@ -152,6 +168,20 @@ export function FormulaireImport({
           ) : (
             <span className="font-mono text-xs leading-5 break-all text-encre-2">{noms.join(', ')}</span>
           )}
+          {tropNombreux ? (
+            <span className="text-sm text-alerte">
+              {pluriel(choix.length, 'fichier')} : {FICHIERS_MAX} au plus par import.
+            </span>
+          ) : null}
+          {ecartes.length > 0 ? (
+            <ul aria-label="Fichiers écartés" className="grid gap-0.5 text-sm text-alerte">
+              {ecartes.map((c) => (
+                <li key={c.nom}>
+                  <span className="font-mono break-all">{c.nom}</span> : {c.refus}
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <input
             ref={champ}
             type="file"
@@ -173,10 +203,11 @@ export function FormulaireImport({
         </label>
 
         <div className="-mx-1.5 flex flex-wrap items-center gap-x-4">
-          <Action ton="fort" type="submit" disabled={noms.length === 0 || enCours} enCours={enCours} libelleEnCours="Import…">
+          <Action ton="fort" type="submit" disabled={noms.length === 0 || invalide || enCours} enCours={enCours} libelleEnCours="Import…">
             {noms.length === 0 ? 'Importer des fiches' : `Importer ${pluriel(noms.length, 'fiche')}`}
           </Action>
           {noms.length === 0 ? <span className="px-1.5 text-sm text-encre-3">Choisis d’abord des fichiers.</span> : null}
+          {invalide ? <span className="px-1.5 text-sm text-encre-3">Choisis de nouveau les fichiers, sans ceux qui sont écartés.</span> : null}
         </div>
 
         {rapport.etat === 'erreur' ? <Message ton="alerte">{rapport.message}</Message> : null}

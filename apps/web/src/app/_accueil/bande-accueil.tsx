@@ -159,9 +159,18 @@ function SansAppel({
           phrase={
             s.raison === 'injoignable'
               ? 'Aucun appel ne peut partir par le téléphone passerelle : le service de la ligne ne répond pas.'
-              : 'Hors de portée ou Bluetooth coupé : aucun appel ne peut partir.'
+              : 'Hors de portée ou Bluetooth coupé : aucun appel ne peut partir par le téléphone.'
           }
-          detail="La ligne navigateur reste disponible pour une démo."
+          detail={
+            <span className="inline-flex flex-wrap items-center justify-center gap-x-3">
+              La ligne navigateur et les appels simulés restent disponibles.
+              {s.entrepriseSlug ? (
+                <LienAction ton="discret" href={`/entreprises/${s.entrepriseSlug}/prospects`} className="-my-1.5">
+                  Ouvrir les prospects
+                </LienAction>
+              ) : null}
+            </span>
+          }
           actions={
             <LienAction ton="fort" href="/telephone">
               Ouvrir Téléphone

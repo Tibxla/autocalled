@@ -90,6 +90,8 @@ export function FormulaireCampagne({
   const visible = (p: ProspectCampagne) =>
     (filtre === null || dansFiltre(p, filtre)) && (recherche === '' || sansAccents(`${p.nom} ${p.societe ?? ''}`).includes(recherche));
   const visibles = prospects.filter(visible);
+  // Cochés mais masqués par un filtre ou la recherche : ils partent quand même, le bouton le dit.
+  const cochesMasques = prospects.filter((p) => coches.has(p.id) && !visible(p)).length;
   const cochables = visibles.filter((p) => p.autorisation?.autorise);
   const autorises = prospects.filter((p) => p.autorisation?.autorise).length;
 
@@ -210,6 +212,11 @@ export function FormulaireCampagne({
         <Action ton="fort" type="submit" disabled={coches.size === 0 || enCours} enCours={enCours} libelleEnCours="Création…">
           Créer la campagne · {coches.size} prospect{coches.size > 1 ? 's' : ''}
         </Action>
+        {cochesMasques > 0 ? (
+          <span className="px-1.5 text-sm text-encre-2">
+            dont <span className="font-mono">{cochesMasques}</span> hors du filtre
+          </span>
+        ) : null}
         <span className="px-1.5 text-sm text-encre-3">Rien ne sonne avant que tu la lances.</span>
       </div>
     </form>

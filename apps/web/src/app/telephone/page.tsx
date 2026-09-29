@@ -108,7 +108,7 @@ export default async function PageTelephone() {
   else if (!telephone.connecte)
     verdict = {
       ton: 'alerte',
-      texte: 'Téléphone pas connecté : hors de portée ou Bluetooth coupé',
+      texte: 'Téléphone passerelle déconnecté : hors de portée ou Bluetooth coupé',
     };
   else if (telephone.plafond) verdict = verdictPlafond(telephone.plafond);
   else verdict = { ton: 'encre', texte: 'Prête à appeler' };

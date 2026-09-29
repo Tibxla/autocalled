@@ -1,6 +1,9 @@
+import { and, eq, isNull, ne, or, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { heure, jourCourt } from '@/components/format-appel';
 import { EnTetePage, LigneDefinition, Message, Page, TitreSection } from '@/components/ui';
+import { db } from '@/db';
+import { appels, rendezVous } from '@/db/schema';
 import { calendrierConfigure, etatAgenda } from '@/lib/agenda';
 import { clientGoogle, connexion } from '@/lib/google';
 import { journalMcpRecent, rendezVousRecents } from '@/lib/lecture';
@@ -33,14 +36,34 @@ function ilYA(minutes: number): string {
 
 const SECTION = 'grid scroll-mt-[calc(var(--hauteur-barre)+16px)] gap-5';
 
+/**
+ * Appels réels dont l'issue dit Rendez-vous pris sans aucune réservation liée dans l'agenda : Appels les compte
+ * parmi les rendez-vous, cette page ne les montrerait pas. Même issue effective que le filtre d'Appels.
+ */
+async function rendezVousSansReservation(): Promise<number> {
+  const [ligne] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(appels)
+    .leftJoin(rendezVous, eq(rendezVous.appelId, appels.id))
+    .where(
+      and(
+        isNull(rendezVous.appelId),
+        ne(appels.ligne, 'simulation'),
+        or(eq(appels.issueSysteme, 'rendez-vous-pris'), and(isNull(appels.issueSysteme), eq(appels.issue, 'rendez-vous-pris'))),
+      ),
+    );
+  return Number(ligne?.n ?? 0);
+}
+
 export default async function PageReglages({ searchParams }: { searchParams: Promise<{ google?: string }> }) {
   const { google } = await searchParams;
-  const [client, api, etat, rdvs, journal] = await Promise.all([
+  const [client, api, etat, rdvs, journal, sansReservation] = await Promise.all([
     clientGoogle(),
     connexion(),
     etatAgenda(),
     rendezVousRecents(),
     journalMcpRecent(100),
+    rendezVousSansReservation(),
   ]);
   const maintenant = new Date();
   const calendrier = calendrierConfigure();
@@ -165,7 +188,7 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
 
         <section id="rendez-vous" aria-labelledby="titre-rendez-vous" className={SECTION}>
           <TitreSection id="titre-rendez-vous">Rendez-vous pris par Mina</TitreSection>
-          <RendezVousMina rdvs={rdvs} maintenant={maintenant} limite={RENDEZ_VOUS_LUS} />
+          <RendezVousMina rdvs={rdvs} maintenant={maintenant} limite={RENDEZ_VOUS_LUS} sansReservation={sansReservation} />
         </section>
 
         <section id="claude-code" aria-labelledby="titre-claude-code" className={SECTION}>

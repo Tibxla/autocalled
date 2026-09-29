@@ -9,7 +9,7 @@ import type { EtatFormulaire } from '@/lib/formulaire';
 import { ajouterIssue } from '../actions';
 
 /**
- * « Ajouter une précision » sous une issue système : un seul champ, déjà rattaché (issueSysteme en champ
+ * « Ajouter une issue personnalisée » sous une issue système : un seul champ, déjà rattaché (issueSysteme en champ
  * caché, lu par l'action dans le FormData). Entrée ajoute, Échap referme ; un refus garde la saisie.
  */
 export function AjoutPrecision({ entrepriseId, issueSysteme, libelleIssue }: { entrepriseId: string; issueSysteme: IssueSysteme; libelleIssue: string }) {
@@ -30,13 +30,13 @@ export function AjoutPrecision({ entrepriseId, issueSysteme, libelleIssue }: { e
           ref={bouton}
           ton="discret"
           aria-expanded={false}
-          aria-label={`Ajouter une précision à « ${libelleIssue} »`}
+          aria-label={`Ajouter une issue personnalisée à « ${libelleIssue} »`}
           onClick={() => {
             setAnnonce(null);
             setOuvert(true);
           }}
         >
-          Ajouter une précision
+          Ajouter une issue personnalisée
         </Action>
         <span role="status" className="text-sm text-encre-3">
           {annonce}
@@ -87,7 +87,7 @@ function FormulairePrecision({
 
   useRaccourci({
     touche: 'Escape',
-    libelle: 'Annuler la précision',
+    libelle: 'Annuler l’issue personnalisée',
     dansChamp: true,
     actif: !enCours,
     action: () => {
@@ -97,11 +97,11 @@ function FormulairePrecision({
   });
 
   return (
-    <form {...proprietes} aria-label={`Nouvelle précision de « ${libelleIssue} »`} className="grid gap-1 pt-1">
+    <form {...proprietes} aria-label={`Nouvelle issue personnalisée de « ${libelleIssue} »`} className="grid gap-1 pt-1">
       <input type="hidden" name="issueSysteme" value={issueSysteme} />
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
         <label htmlFor={id} className="sr-only">
-          Précision de « {libelleIssue} »
+          Issue personnalisée de « {libelleIssue} »
         </label>
         <Saisie
           ref={saisie}

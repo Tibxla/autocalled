@@ -51,7 +51,7 @@ function affichage(e: EtatLigneClient): Affichage {
         couleurTexte: 'text-alerte',
         libelle: 'Téléphone déconnecté',
         court: 'Déconnecté',
-        lien: { href: '/telephone', aria: `Téléphone déconnecté : ${VERS_TELEPHONE}` },
+        lien: { href: '/telephone', aria: `Téléphone passerelle déconnecté : ${VERS_TELEPHONE}` },
       };
     case 'injoignable':
       return {

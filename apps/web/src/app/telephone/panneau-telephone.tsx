@@ -288,8 +288,7 @@ export function DetailTelephone({ telephone }: { telephone: EtatTelephone }) {
         </>
       ) : (
         <LigneDefinition intitule="Connexion">
-          <span className="text-encre-2">Pas connecté : hors de portée, ou Bluetooth coupé.</span>
-          <span className="block text-sm text-encre-3">Réseau, signal et batterie se liront à sa reconnexion.</span>
+          <span className="text-encre-2">Réseau, signal et batterie se liront à sa reconnexion.</span>
         </LigneDefinition>
       )}
     </dl>

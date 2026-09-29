@@ -3,13 +3,15 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useEtatLigne } from '@/lib/etat-ligne';
+import { inscrireGardeNavigation } from './clavier';
 import { Confirmation, useConfirmation } from './confirmation';
 
 /**
  * Pendant un appel sur la ligne navigateur, la conversation vit dans la page : la quitter coupe l'appel.
  * Un clic sur un lien interne vers une autre page est retenu (capture, avant le Link de Next qui s'arrête
  * sur un clic déjà annulé) et une confirmation s'ouvre sous la barre. Fermer l'onglet déclenche l'alerte
- * du navigateur. L'appel téléphone n'est pas concerné : il vit dans le pont.
+ * du navigateur. Les séquences clavier « g puis… » passent par la même confirmation. L'appel téléphone
+ * n'est pas concerné : il vit dans le pont.
  */
 export function GardeSortie() {
   const router = useRouter();
@@ -32,9 +34,14 @@ export function GardeSortie() {
     const avantDepart = (e: BeforeUnloadEvent) => e.preventDefault();
     document.addEventListener('click', clic, true);
     window.addEventListener('beforeunload', avantDepart);
+    const retirerGarde = inscrireGardeNavigation((destination) => {
+      setCible(destination);
+      ouvrir(null);
+    });
     return () => {
       document.removeEventListener('click', clic, true);
       window.removeEventListener('beforeunload', avantDepart);
+      retirerGarde();
     };
   }, [enAppel, ouvrir]);
 

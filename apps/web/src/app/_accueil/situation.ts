@@ -3,13 +3,14 @@ import type { AppelDuJour, AppelVivant, CampagneJour, EtatLigneServeur } from '@
 /**
  * Ce que montre la bande du haut de l'accueil quand elle ne suit pas un appel, ou qu'elle en suit un.
  * Une seule situation à la fois, par priorité : appel téléphone vivant (appelId donné par la ligne, jamais le
- * seul statut en base) > ligne coupée > plafond > fin d'appel (moins de 15 min) > campagne entre deux appels
- * > campagne suspendue > campagne prête > ligne libre. Fonction pure, testée.
+ * seul statut en base) > fin d'appel (moins de 15 min, toutes lignes) > campagne en cours hors téléphone
+ * > ligne coupée > plafond > campagne entre deux appels > campagne suspendue > campagne prête > ligne libre.
+ * Fonction pure, testée.
  */
 
 export type Situation =
   | { type: 'appel'; appelId: string | null; appel: AppelVivant | null }
-  | { type: 'ligne-coupee'; raison: 'injoignable' | 'deconnecte'; campagne: CampagneJour | null }
+  | { type: 'ligne-coupee'; raison: 'injoignable' | 'deconnecte'; campagne: CampagneJour | null; entrepriseSlug: string | null }
   | { type: 'plafond'; phrase: string; campagne: CampagneJour | null }
   | { type: 'fin-appel'; appel: AppelDuJour; bloquee: boolean }
   | { type: 'campagne-entre-deux'; campagne: CampagneJour }
@@ -77,14 +78,9 @@ export function situationAccueil(e: {
     return { type: 'appel', appelId: ligne.appelId, appel };
   }
 
-  // 2. Ligne coupée.
-  if (!ligne.joignable) return { type: 'ligne-coupee', raison: 'injoignable', campagne: campagneTelephoneOuverte(campagnes) };
-  if (!ligne.connecte) return { type: 'ligne-coupee', raison: 'deconnecte', campagne: campagneTelephoneOuverte(campagnes) };
-
-  // 3. Plafond atteint.
-  if (ligne.plafond) return { type: 'plafond', phrase: ligne.plafond, campagne: campagneTelephoneOuverte(campagnes) };
-
-  // 4. Fin d'appel : le dernier appel terminé du jour, s'il a fini il y a moins de 15 min.
+  // 2. Fin d'appel, toutes lignes : le dernier appel terminé du jour, s'il a fini il y a moins de 15 min.
+  // Elle passe avant l'état de la ligne : le bilan d'une démo en ligne navigateur tombe même téléphone coupé
+  // (la barre du haut dit déjà l'état de la ligne).
   const dernierFini = appels.find((a) => a.statut !== 'en-cours');
   const plusRecent = appels[0];
   if (dernierFini && plusRecent === dernierFini) {
@@ -94,20 +90,31 @@ export function situationAccueil(e: {
     }
   }
 
-  // 5 à 7. Campagnes, la plus récente d'abord.
+  // 3. Une campagne qui tourne sans le téléphone (navigateur, simulation) : la ligne coupée ne la gêne pas.
   const enCours = campagnes.find((c) => c.statut === 'en-cours');
+  if (enCours && !TELEPHONE.has(enCours.ligne)) return { type: 'campagne-entre-deux', campagne: enCours };
+
+  // 4. Ligne coupée, avec l'entreprise de la démo de secours (ligne navigateur).
+  const entrepriseSlug = appels[0]?.entrepriseSlug ?? campagnes[0]?.entrepriseSlug ?? null;
+  if (!ligne.joignable) return { type: 'ligne-coupee', raison: 'injoignable', campagne: campagneTelephoneOuverte(campagnes), entrepriseSlug };
+  if (!ligne.connecte) return { type: 'ligne-coupee', raison: 'deconnecte', campagne: campagneTelephoneOuverte(campagnes), entrepriseSlug };
+
+  // 5. Plafond atteint.
+  if (ligne.plafond) return { type: 'plafond', phrase: ligne.plafond, campagne: campagneTelephoneOuverte(campagnes) };
+
+  // 6 à 8. Campagnes, la plus récente d'abord.
   if (enCours) return { type: 'campagne-entre-deux', campagne: enCours };
   const suspendue = campagnes.find((c) => c.statut === 'en-pause');
   if (suspendue) return { type: 'campagne-suspendue', campagne: suspendue, raison: raisonSuspension(suspendue, ligne) };
   const prete = campagnes.find((c) => c.statut === 'prete');
   if (prete) return { type: 'campagne-prete', campagne: prete };
 
-  // 8. Ligne libre.
+  // 9. Ligne libre.
   const dernier = appels[0] ?? null;
   return {
     type: 'libre',
     dernier,
     premiereUtilisation: e.premiereUtilisation,
-    entrepriseSlug: dernier?.entrepriseSlug ?? campagnes[0]?.entrepriseSlug ?? null,
+    entrepriseSlug,
   };
 }

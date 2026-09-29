@@ -4,6 +4,7 @@ import type { StatutCampagne } from '@autocalled/domain';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { AppelEnDirect } from '@/components/appel-en-direct';
+import { appelFini, appelLance, decompteAttendu, ENCHAINEMENT_INITIAL, type EtatEnchainement } from '@/components/enchainement-campagne';
 import { BandeAppel, type IdentiteAppel } from '@/components/bande-appel';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
 import type { ReglagesLigne } from '@/components/garde-fous';
@@ -389,16 +390,17 @@ function RegieNavigateur(props: ProprietesRegie) {
   const { campagneId, statut, entrepriseId, versionScriptId, prochain, restants, appelOuvertNavigateur, raison, recapitulatif } = props;
   const router = useRouter();
   const { erreur, enCours, agir } = useGeste();
-  // Premier geste de l'opérateur dans cette page : sans lui, aucun appel ne part (ni au chargement, ni au retour).
-  const [geste, setGeste] = useState(false);
+  // Premier geste de l'opérateur dans cette page : sans lui, aucun appel ne part (ni au chargement, ni au
+  // retour, ni derrière une connexion ratée).
+  const [enchainement, setEnchainement] = useState<EtatEnchainement>(ENCHAINEMENT_INITIAL);
+  const geste = enchainement.geste;
+  const setGeste = (valeur: boolean) => setEnchainement((e) => ({ ...e, geste: valeur, echec: valeur ? null : e.echec }));
   // Le prospect de l'appel qui vit dans cette page, gardé ici : un rafraîchissement ne le démonte pas.
   const [direct, setDirect] = useState<Prochain | null>(null);
   const [appelId, setAppelId] = useState<string | null>(null);
-  const [dernier, setDernier] = useState<string | null>(null);
 
   const appeler = (p: Prochain) => {
-    setGeste(true);
-    setDernier(p.id);
+    setEnchainement((e) => appelLance(e, p.id));
     setDirect(p);
   };
 
@@ -422,7 +424,8 @@ function RegieNavigateur(props: ProprietesRegie) {
             return r;
           }}
           clore={(id) => cloreAppelDeCampagne(campagneId, id)}
-          onFin={() => {
+          onFin={(_id, fin) => {
+            setEnchainement((e) => appelFini(e, fin));
             setDirect(null);
             setAppelId(null);
             router.refresh();
@@ -498,6 +501,11 @@ function RegieNavigateur(props: ProprietesRegie) {
   } else if (!geste) {
     corps = (
       <>
+        {enchainement.echec ? (
+          <Message ton="alerte" titre="L’appel a été clos sans conversation : rien ne part avant que tu appelles de nouveau.">
+            {enchainement.echec}
+          </Message>
+        ) : null}
         <div className="grid gap-1">
           <p className="text-lg text-balance">
             <span className="text-encre-3">Prochain : </span>
@@ -513,7 +521,7 @@ function RegieNavigateur(props: ProprietesRegie) {
         </Actions>
       </>
     );
-  } else if (prochain.id !== dernier) {
+  } else if (decompteAttendu(enchainement, prochain.id)) {
     corps = (
       <>
         <Decompte key={prochain.id} nom={prochain.nom} onFini={() => appeler(prochain)} onArreter={() => setGeste(false)} />
@@ -538,9 +546,23 @@ function RegieNavigateur(props: ProprietesRegie) {
 function Decompte({ nom, onFini, onArreter }: { nom: string; onFini: () => void; onArreter: () => void }) {
   const [reste, setReste] = useState(PAUSE_SECONDES);
   const fin = useRef(onFini);
+  const arret = useRef(onArreter);
   useEffect(() => {
     fin.current = onFini;
+    arret.current = onArreter;
   });
+  // Échap arrête le décompte d'où qu'il vienne, champ de recherche compris : écouté en capture, avant le
+  // champ qui l'emploierait à se vider. Arrêter est le geste sûr.
+  useEffect(() => {
+    const surEchap = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.isComposing) return;
+      e.preventDefault();
+      e.stopPropagation();
+      arret.current();
+    };
+    document.addEventListener('keydown', surEchap, true);
+    return () => document.removeEventListener('keydown', surEchap, true);
+  }, []);
   useEffect(() => {
     if (reste === 0) {
       fin.current();

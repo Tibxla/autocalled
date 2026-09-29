@@ -134,7 +134,7 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
   const libellesPerso = new Map(perso.map((x) => [`perso:${x.id}`, x.libelle]));
   const avecRendezVous = new Set(rdv.map((r) => r.appelId));
 
-  const lignes: (LigneAppel & { filtre: CleFiltreIssue })[] = fenetre.map(({ appel, prospect, entreprise }) => {
+  const toutes: (LigneAppel & { filtre: CleFiltreIssue })[] = fenetre.map(({ appel, prospect, entreprise }) => {
     const cleIssue = appel.issue ?? appel.bilan?.issue ?? null;
     const nom = prospect ?? appel.prospectId;
     return {
@@ -160,6 +160,10 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
     };
   });
 
+  // Sans ligne choisie, seuls les appels réels comptent (CONTEXT.md) : les simulés sont à part, sous « Simulés ».
+  const lignes = ligne ? toutes : toutes.filter((l) => l.ligne !== 'simulation');
+  const simulesMasques = toutes.length - lignes.length;
+
   const comptes = new Map<CleFiltreIssue, number>();
   for (const l of lignes) comptes.set(l.filtre, (comptes.get(l.filtre) ?? 0) + 1);
   const affichees = issue ? lignes.filter((l) => l.filtre === issue) : lignes;
@@ -172,10 +176,20 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
 
   return (
     <Page>
-      <EnTetePage titre="Appels" compte={affichees.length} sousTitre="Du plus récent au plus ancien." />
+      <EnTetePage
+        titre="Appels"
+        compte={affichees.length}
+        sousTitre={
+          ligne === 'simulation'
+            ? 'Appels simulés, du plus récent au plus ancien ; ils ne comptent dans aucun chiffre.'
+            : 'Appels réels, du plus récent au plus ancien ; les simulés sont à part.'
+        }
+      />
 
       <div className="grid gap-2.5 border-b border-filet pb-3">
-        <Filtres libelle={pleine ? `Issue, sur les ${n} derniers appels` : 'Issue'}>
+        <Filtres
+          libelle={`Issue, ${ligne === 'simulation' ? 'appels simulés' : 'appels réels'}${pleine ? `, parmi les ${n} derniers appels` : ''}`}
+        >
           <Filtre actif={!issue} compte={lignes.length} href={lienAvec('/appels', parametres, { issue: null })}>
             Tous
           </Filtre>
@@ -188,7 +202,7 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
         <div className="flex flex-wrap items-center gap-x-10 gap-y-2 text-sm">
           <Filtres libelle="Ligne" className="text-sm!">
             <Filtre actif={!ligne} href={lienAvec('/appels', parametres, { ligne: null, n: null })}>
-              Toutes
+              Réels
             </Filtre>
             {lignesProposees.map((l) => (
               <Filtre key={l.valeur} actif={ligne === l.valeur} href={lienAvec('/appels', parametres, { ligne: l.valeur, n: null })}>
@@ -235,6 +249,13 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
             }
           >
             {q ? `Rien ne contient « ${q} » dans les noms, les sociétés, les résumés ni les transcriptions.` : null}
+          </EtatVide>
+        ) : simulesMasques > 0 ? (
+          <EtatVide
+            titre="Aucun appel réel pour l’instant."
+            action={<LienAction href={lienAvec('/appels', parametres, { ligne: 'simulation', n: null })}>Voir les appels simulés</LienAction>}
+          >
+            Les appels simulés ne comptent pas parmi les appels réels.
           </EtatVide>
         ) : (
           <EtatVide titre="Aucun appel pour l’instant." action={<LienAction href="/entreprises">Voir les entreprises</LienAction>}>

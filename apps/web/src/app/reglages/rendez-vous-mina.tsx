@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { heure, jourCourt } from '@/components/format-appel';
-import { EtatVide } from '@/components/ui';
+import { EtatVide, LienAction } from '@/components/ui';
 import { BoutonRecreer } from './boutons-agenda';
 
 /**
@@ -33,13 +33,39 @@ function depuis(minutes: number): string {
   return `${Math.floor(heures / 24)} jours`;
 }
 
-export function RendezVousMina({ rdvs, maintenant, limite }: { rdvs: LigneRendezVous[]; maintenant: Date; limite: number }) {
+export function RendezVousMina({
+  rdvs,
+  maintenant,
+  limite,
+  sansReservation = 0,
+}: {
+  rdvs: LigneRendezVous[];
+  maintenant: Date;
+  limite: number;
+  /** Appels réels à l'issue Rendez-vous pris sans aucune réservation dans l'agenda. */
+  sansReservation?: number;
+}) {
+  const ecart =
+    sansReservation > 0 ? (
+      <p className="flex flex-wrap items-center gap-x-3 text-sm text-encre-2">
+        <span>
+          <span className="font-mono">{sansReservation}</span>{' '}
+          {sansReservation > 1 ? 'appels ont l’issue Rendez-vous pris' : 'appel a l’issue Rendez-vous pris'} sans réservation dans l’agenda.
+        </span>
+        <LienAction ton="discret" href="/appels?issue=rendez-vous-pris" className="-my-1.5">
+          Voir ces appels
+        </LienAction>
+      </p>
+    ) : null;
   if (rdvs.length === 0) {
     return (
-      <EtatVide titre="Mina n’a pris aucun rendez-vous pour l’instant.">
-        Quand un prospect accepte un créneau pendant un appel, le rendez-vous apparaît ici et part dans l’agenda, avec l’invitation à son
-        adresse.
-      </EtatVide>
+      <div className="grid gap-3">
+        <EtatVide titre="Aucun rendez-vous réservé dans l’agenda pour l’instant.">
+          Quand un prospect accepte un créneau pendant un appel, le rendez-vous apparaît ici et part dans l’agenda, avec l’invitation à son
+          adresse.
+        </EtatVide>
+        {ecart}
+      </div>
     );
   }
   // La lecture arrive du plus tardif au plus ancien : les prochains d'abord pour « À venir ».
@@ -50,6 +76,7 @@ export function RendezVousMina({ rdvs, maintenant, limite }: { rdvs: LigneRendez
       <Groupe titre="À venir" lignes={aVenir} maintenant={maintenant} vide="Aucun rendez-vous à venir." />
       {passes.length ? <Groupe titre="Passés" lignes={passes} maintenant={maintenant} /> : null}
       {rdvs.length >= limite ? <p className="text-sm text-encre-3">Les {limite} rendez-vous les plus récents.</p> : null}
+      {ecart}
     </div>
   );
 }

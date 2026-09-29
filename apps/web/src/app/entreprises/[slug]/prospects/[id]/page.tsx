@@ -7,6 +7,8 @@ import { dateCourte, etatAppel, issueEffective } from '@/components/format-appel
 import { Chevron, EtatVide, LienAction, Page, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { appels, consentements, issuesPersonnalisees, prospects, rendezVous, versionsScript } from '@/db/schema';
+import { ligneBloquee } from '@/app/_accueil/situation';
+import { etatLigneServeur } from '@/lib/accueil';
 import { rafraichirSiAncien } from '@/lib/agenda';
 import { preparerAppel } from '@/lib/appels';
 import { autorisationsDe } from '@/lib/autorisations';
@@ -15,7 +17,7 @@ import { entrepriseParSlug, prospectParId } from '@/lib/pages';
 import { reglagesDuPont } from '@/lib/pont';
 import { versionsDeLEntreprise } from '@/lib/versions';
 import { BoutonRevoquer } from './bouton-revoquer';
-import { NumeroMasquable, PanneauAppel, type PlafondsLigne } from './panneau-appel';
+import { NumeroMasquable, PanneauAppel, type BlocageTelephone, type PlafondsLigne } from './panneau-appel';
 
 export const metadata: Metadata = { title: 'Prospect' };
 
@@ -39,6 +41,28 @@ async function lirePlafonds(): Promise<PlafondsLigne> {
     return { reglages, passes24h };
   } catch {
     return { reglages: null, passes24h: null };
+  } finally {
+    clearTimeout(minuterie);
+  }
+}
+
+/**
+ * Pourquoi aucun appel ne peut partir par le téléphone passerelle, ou null (ligne prête, ou trop lente à
+ * répondre : le serveur garde sa propre vérification au moment d'appeler). Lecture seule, sans bloquer la fiche.
+ */
+async function lireBlocageTelephone(): Promise<BlocageTelephone | null> {
+  let minuterie: ReturnType<typeof setTimeout> | undefined;
+  const attente = new Promise<null>((resoudre) => {
+    minuterie = setTimeout(() => resoudre(null), 1500);
+  });
+  try {
+    const etat = await Promise.race([etatLigneServeur(), attente]);
+    if (!etat) return null;
+    const texte = ligneBloquee(etat);
+    if (!texte) return null;
+    return { texte, court: !etat.joignable ? 'injoignable' : !etat.connecte ? 'déconnecté' : 'plafond atteint' };
+  } catch {
+    return null;
   } finally {
     clearTimeout(minuterie);
   }
@@ -249,6 +273,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
             numero={lisible}
             blocage={blocage}
             plafonds={lirePlafonds()}
+            telephoneBloque={lireBlocageTelephone()}
           />
           <BoutonRevoquer numero={prospect.telephone} lisible={lisible} partages={partages} autorise={autorise} />
         </aside>

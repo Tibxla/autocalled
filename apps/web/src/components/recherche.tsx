@@ -3,7 +3,7 @@
 import Form from 'next/form';
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useRef, useState } from 'react';
-import { inscrireRecherche } from './clavier';
+import { focaliserPremiereLigne, inscrireRecherche, useRaccourci } from './clavier';
 import { Touche } from './touche';
 import { lienAvec } from './url';
 
@@ -12,6 +12,7 @@ import { lienAvec } from './url';
  * la base avec `?q=`. `instantane` filtre en plus à chaque frappe une liste déjà chargée en entier.
  * « / » partout y met le focus (le dernier champ monté gagne) ; Échap vide le champ puis, si la recherche
  * était appliquée côté serveur, retire le paramètre de l'URL ; champ vide, Échap rend le focus à la page.
+ * ↓ passe aux résultats : la première ligne de la liste de la page (NavigationListe) prend le focus.
  * `longueurMin` : Entrée ne part vers le serveur qu'à partir de ce nombre de caractères. `scroll={false}` :
  * la page ne remonte pas après la recherche. `sansFormulaire` : champ seul, sans <form> ni nom, pour vivre
  * dans un autre formulaire (Entrée n'y soumet rien) ; il suppose `instantane`.
@@ -56,6 +57,15 @@ export function Recherche({
     if (!champ.current) return;
     return inscrireRecherche(champ.current);
   }, []);
+
+  // Depuis le champ, ↓ mène aux résultats (sans passer par tous les filtres au Tab).
+  useRaccourci({
+    touche: 'ArrowDown',
+    libelle: 'Aller aux résultats de la recherche',
+    groupe: 'Liste',
+    dansChamp: true,
+    action: (e) => e.target === champ.current && focaliserPremiereLigne(),
+  });
 
   const seulementLocal = Boolean(instantane) && action === undefined;
   // next/form ne respecte preventDefault que si onSubmit est fourni.

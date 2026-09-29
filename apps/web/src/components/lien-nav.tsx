@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useRef } from 'react';
 
 function correspond(chemin: string, prefixe: string): boolean {
   return chemin === prefixe || chemin.startsWith(`${prefixe}/`);
@@ -30,8 +31,23 @@ export function LienNav({
   const chemin = usePathname();
   const actif = exact ? chemin === href : correspond(chemin, href) || aussi.some((p) => correspond(chemin, p));
   const taille = variante === 'onglet' ? 'h-9 text-sm pointer-coarse:h-11' : 'h-10 text-md';
+
+  // Navigation principale qui défile (sous 640 px) : le lien actif est amené dans la vue du bandeau, sans
+  // faire défiler la page. Les onglets d'entreprise le font eux-mêmes.
+  const lien = useRef<HTMLAnchorElement>(null);
+  useEffect(() => {
+    const el = lien.current;
+    const bandeau = el?.parentElement;
+    if (variante !== 'principale' || !actif || !el || !bandeau || bandeau.scrollWidth <= bandeau.clientWidth) return;
+    const r = el.getBoundingClientRect();
+    const b = bandeau.getBoundingClientRect();
+    if (r.right > b.right) bandeau.scrollLeft += r.right - b.right + 16;
+    else if (r.left < b.left) bandeau.scrollLeft -= b.left - r.left + 16;
+  }, [actif, variante]);
+
   return (
     <Link
+      ref={lien}
       href={href}
       aria-current={actif ? 'page' : undefined}
       className={`relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-encre-3 transition-colors duration-150 hover:text-encre-2 aria-[current=page]:text-encre ${taille} after:absolute after:inset-x-0 after:top-[calc(50%+11px)] after:h-px after:bg-souligne after:opacity-0 hover:after:opacity-100 aria-[current=page]:after:h-[1.5px] aria-[current=page]:after:bg-encre aria-[current=page]:after:opacity-100`}

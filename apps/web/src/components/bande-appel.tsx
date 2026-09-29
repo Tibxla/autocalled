@@ -382,6 +382,8 @@ export interface VueBandeAppelProps {
   condensee?: boolean;
   /** Démonstration : une confirmation déjà ouverte. */
   confirmationInitiale?: 'prise' | 'raccrochage' | null;
+  /** Fil perdu mais appel encore « en cours » en base : Raccrocher reste proposé (le pont a pu redémarrer). */
+  raccrochageSiPerdu?: boolean;
 }
 
 function Chrono({ chrono, maintenant, enLigne, etat }: { chrono: VueBandeAppelProps['chrono']; maintenant: number; enLigne: boolean; etat: string }) {
@@ -423,6 +425,7 @@ export function VueBandeAppel({
   raccourcis = true,
   condensee = false,
   confirmationInitiale = null,
+  raccrochageSiPerdu = false,
 }: VueBandeAppelProps) {
   const etat = termine ? 'termine' : etatFil;
   const enLigne = !termine && !perdu && etat !== 'termine' && etat !== 'disconnected';
@@ -453,6 +456,7 @@ export function VueBandeAppel({
   const voirPrise = telephone && enLigne && EN_LIGNE.has(etat) && (prise.etat === 'repos' || prise.etat === 'erreur');
   const voirMicro = telephone && enLigne && prise.etat === 'active';
   const voirRaccrocher = telephone && enLigne;
+  const raccrocherPerdu = telephone && perdu && !termine && raccrochageSiPerdu;
 
   const basculerEcoute = () => (ecoute.active ? onArreterEcoute() : onEcouter());
   const ouvrirPrise = () => confirmationPrise.ouvrir(boutonPrise.current);
@@ -495,7 +499,14 @@ export function VueBandeAppel({
   const boutons = telephone ? (
     <div className="-mx-1.5 flex flex-wrap items-center gap-x-1 gap-y-1 max-sm:grid max-sm:w-full max-sm:grid-cols-2 max-sm:[&_.touche]:hidden max-sm:[&>button]:h-11 max-sm:[&>button]:justify-center">
       {voirEcoute ? (
-        <Action touche="E" aria-keyshortcuts={raccourcis ? toucheAria('e') : undefined} onClick={basculerEcoute} aria-pressed={ecoute.active}>
+        <Action
+          touche="E"
+          aria-keyshortcuts={raccourcis ? toucheAria('e') : undefined}
+          onClick={basculerEcoute}
+          // Un clic souris ne laisse pas le focus ici : Espace (prendre la main) ne recliquerait pas l'écoute.
+          onMouseDown={(e) => e.preventDefault()}
+          aria-pressed={ecoute.active}
+        >
           {ecoute.active ? 'Arrêter l’écoute' : 'Écouter'}
         </Action>
       ) : null}
@@ -505,7 +516,13 @@ export function VueBandeAppel({
         </Action>
       ) : null}
       {voirMicro ? (
-        <Action touche="M" aria-keyshortcuts={raccourcis ? toucheAria('m') : undefined} onClick={onBasculerMicro} aria-pressed={prise.muet}>
+        <Action
+          touche="M"
+          aria-keyshortcuts={raccourcis ? toucheAria('m') : undefined}
+          onClick={onBasculerMicro}
+          onMouseDown={(e) => e.preventDefault()}
+          aria-pressed={prise.muet}
+        >
           {prise.muet ? 'Réactiver mon micro' : 'Couper mon micro'}
         </Action>
       ) : null}
@@ -568,7 +585,7 @@ export function VueBandeAppel({
           </Confirmation>
         ) : null}
         <Confirmation
-          ouverte={raccrochageOuvert && enLigne}
+          ouverte={raccrochageOuvert && (enLigne || raccrocherPerdu)}
           question={`Raccrocher l’appel de ${nomProspect} ?`}
           libelleConfirmer="Raccrocher"
           libelleAnnuler="Continuer l’appel"
@@ -611,7 +628,13 @@ export function VueBandeAppel({
           <div role="status" className="grid justify-items-start gap-1.5 rounded-md bg-surface px-3.5 py-3 text-sm text-encre-2">
             <p>Le fil de cet appel ne répond plus (ligne arrêtée ou redémarrée).</p>
             {!conversation ? <p className="text-encre-3">Rien à rapatrier : la conversation n’a pas été ouverte.</p> : null}
+            {raccrocherPerdu ? <p>Si le téléphone sonne encore, raccroche d’ici.</p> : null}
             <div className="-mx-1.5 flex flex-wrap gap-x-4">
+              {raccrocherPerdu ? (
+                <Action ref={boutonRaccrocher} ton="alerte" onClick={ouvrirRaccrochage} aria-expanded={raccrochageOuvert}>
+                  Raccrocher
+                </Action>
+              ) : null}
               {conversation && onRapatrier ? (
                 <Action ton="fort" onClick={onRapatrier} enCours={rapatriementEnCours} libelleEnCours="Rapatriement…" disabled={rapatriementEnCours}>
                   Rapatrier la conversation et le bilan
@@ -813,6 +836,7 @@ export function BandeAppel({
       conversation={conversation}
       raccourcis={raccourcis}
       condensee={condensee}
+      raccrochageSiPerdu={statut === 'en-cours'}
       rapatriementEnCours={rapatriementEnCours}
       onEcouter={() => void ecoute.demarrer()}
       onArreterEcoute={ecoute.arreter}

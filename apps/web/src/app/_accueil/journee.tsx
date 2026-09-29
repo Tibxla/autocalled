@@ -474,7 +474,9 @@ const LigneAppel = memo(function LigneAppel({
             ? 'vivant'
             : 'sans-bilan';
   const qui = extrait ? (extrait.role === 'agent' ? 'Mina' : prenom(a.prospect)) : '';
-  const resume = extrait ? `${qui} : ${extrait.avant}${extrait.terme}${extrait.apres}` : (a.resume ?? etat.detail ?? '');
+  // Un appel non composé : l'erreur de la ligne, précédée de ce qu'elle veut dire pour l'opérateur.
+  const detail = etat.detail ? (etat.cle === 'pas-parti' ? `La ligne n’a pas composé : ${etat.detail}` : etat.detail) : '';
+  const resume = extrait ? `${qui} : ${extrait.avant}${extrait.terme}${extrait.apres}` : (a.resume ?? detail);
   const lieu = [a.prospect, a.societe].filter(Boolean).join(' · ');
 
   return (

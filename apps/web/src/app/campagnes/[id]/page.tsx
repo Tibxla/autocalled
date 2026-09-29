@@ -25,7 +25,8 @@ const PHRASES_LIGNE: Record<string, string> = {
   twilio: 'Téléphone (Twilio)',
 };
 
-const TON_STATUT = { prete: 'text-encre-2', 'en-cours': 'text-antenne', 'en-pause': 'text-encre-2', terminee: 'text-encre-3' } as const;
+/** L'antenne est réservée à ce qui vit : « En cours » ne la prend que si un appel de la campagne est en ligne. */
+const TON_STATUT = { prete: 'text-encre-2', 'en-cours': 'text-encre', 'en-pause': 'text-encre-2', terminee: 'text-encre-3' } as const;
 
 /** Borne des « dernières 24 heures » (hors composant : l'heure se lit ici, jamais pendant un rendu). */
 function ilYA24Heures(): Date {
@@ -210,7 +211,12 @@ export default async function PageCampagne({
         retour={{ href: `/entreprises/${entreprise.slug}/campagnes`, libelle: `${entreprise.nom} · Campagnes` }}
         action={
           <p className="flex items-baseline gap-3 text-md">
-            <span className={`font-medium ${TON_STATUT[campagne.statut]}`}>{STATUTS_CAMPAGNE[campagne.statut]}</span>
+            {/* Terminée : le bloc « Campagne terminée » le dit déjà, l'en-tête garde le seul compte. */}
+            {campagne.statut === 'terminee' ? null : (
+              <span className={`font-medium ${campagne.statut === 'en-cours' && comptes.enAppel > 0 ? 'text-antenne' : TON_STATUT[campagne.statut]}`}>
+                {STATUTS_CAMPAGNE[campagne.statut]}
+              </span>
+            )}
             <span className="font-mono text-encre-3">
               <span aria-hidden="true">
                 {comptes.traites}/{comptes.total}
@@ -362,7 +368,8 @@ function BilanCampagne({
           </div>
         ) : null}
       </dl>
-      {piste.length > 0 ? (
+      {/* Sans conversation, la frise ne montrerait que des traits minimaux : la phrase suffit. */}
+      {piste.length > 0 && aboutis > 0 ? (
         <figure className="grid gap-1.5">
           <div aria-hidden="true" className="flex min-h-6 flex-wrap items-end gap-[3px] border-b border-filet-2">
             {piste.map((a) => (

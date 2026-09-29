@@ -181,8 +181,11 @@ export default async function PageScript({
                     >
                       v{v.numero}
                     </span>
-                    <span className="text-xs text-encre-3">
-                      <span className="font-mono">{c?.conversations ?? 0}</span> conv. · <span className="font-mono">{c?.rendezVous ?? 0}</span> RDV ·{' '}
+                    <span className="grid text-xs text-encre-3">
+                      <span>
+                        <span className="font-mono">{c?.conversations ?? 0}</span> {(c?.conversations ?? 0) > 1 ? 'conversations' : 'conversation'} ·{' '}
+                        <span className="font-mono">{c?.rendezVous ?? 0}</span> rendez-vous
+                      </span>
                       <time dateTime={v.creeLe.toISOString()} className="font-mono">
                         {JOUR_MOIS.format(v.creeLe)}
                       </time>
@@ -198,7 +201,7 @@ export default async function PageScript({
           <div className="grid gap-0.5 text-sm text-encre-2">
             {gardes.map((g) => (
               <p key={`${g.statut}-${g.numero}`}>
-                <span className={g.statut === 'en-cours' ? 'text-antenne' : ''}>{g.statut === 'en-cours' ? 'La campagne en cours' : 'La campagne suspendue'}</span>{' '}
+                <span className="text-encre">{g.statut === 'en-cours' ? 'La campagne en cours' : 'La campagne suspendue'}</span>{' '}
                 garde la <span className="font-mono">v{g.numero}</span> : une nouvelle version ne la change pas.
               </p>
             ))}

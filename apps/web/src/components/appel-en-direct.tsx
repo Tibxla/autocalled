@@ -18,8 +18,11 @@ interface Proprietes {
   prospectNom: string;
   versionScriptId: string;
   campagneId?: string | null;
-  /** Appelé quand l'appel est fini ; par défaut, on ouvre la page de l'appel. */
-  onFin?: (appelId: string) => void;
+  /**
+   * Appelé quand l'appel est fini ; par défaut, on ouvre la page de l'appel. `echec` porte le message quand
+   * la connexion à Mina a raté : l'appel a été clos sans conversation, rien ne doit s'enchaîner derrière.
+   */
+  onFin?: (appelId: string, fin?: { echec: string }) => void;
   /** Démarre dès l'affichage (enchaînement d'une campagne). */
   demarrageAuto?: boolean;
   /** Remplace l'ouverture et la clôture par défaut (une campagne passe par sa propre machine à états). */
@@ -85,7 +88,7 @@ function Conversation({
       appelId.current = null;
       if (!id) return;
       void (clore ?? terminerAppelNavigateur)(id)
-        .then(() => onFin?.(id))
+        .then(() => onFin?.(id, { echec: message }))
         .catch(() => undefined);
     },
     [changerPhase, clore, onFin],

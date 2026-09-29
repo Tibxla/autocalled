@@ -85,7 +85,7 @@ export function LecteurAppel({
 }) {
   const lecteur = useRef<HTMLAudioElement>(null);
   const conteneur = useRef<HTMLDivElement>(null);
-  const repliques = useRef<(HTMLLIElement | null)[]>([]);
+  const repliques = useRef<(HTMLButtonElement | null)[]>([]);
   const defilementAuto = useRef(0);
   const defilementManuel = useRef(0);
   const positionneeSurRecherche = useRef(false);
@@ -213,7 +213,7 @@ export function LecteurAppel({
     },
   ]);
 
-  const surToucheReplique = (e: React.KeyboardEvent<HTMLLIElement>, i: number) => {
+  const surToucheReplique = (e: React.KeyboardEvent<HTMLButtonElement>, i: number) => {
     const suivant =
       e.key === 'ArrowDown' ? i + 1 : e.key === 'ArrowUp' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? transcription.length - 1 : null;
     if (suivant !== null) {
@@ -368,35 +368,39 @@ export function LecteurAppel({
               const mina = t.role === 'agent';
               const actuelle = i === courante;
               return (
-                <li
-                  key={i}
-                  ref={(el) => {
-                    repliques.current[i] = el;
-                  }}
-                  tabIndex={i === tabulable ? 0 : -1}
-                  aria-current={actuelle ? 'true' : undefined}
-                  onClick={() => aller(i)}
-                  onKeyDown={(e) => surToucheReplique(e, i)}
-                  onFocus={() => setTabulable(i)}
-                  className={`focus-interne grid cursor-pointer grid-cols-[3rem_minmax(0,1fr)] gap-x-3 rounded-[4px] px-2 py-2 transition-colors duration-150 hover:bg-survol ${
-                    actuelle ? 'bg-survol' : ''
-                  } ${i === surlignee ? 'bg-survol shadow-[inset_0_0_0_1px_var(--filet-fort)]' : ''}`}
-                >
-                  <span className="pt-0.5 font-mono text-xs text-encre-3">{horodatage(t.secondes)}</span>
-                  <div className="grid min-w-0 gap-0.5">
-                    <span className={`text-md font-semibold ${mina ? 'text-antenne' : 'text-encre'}`}>{mina ? 'Mina' : nomProspect}</span>
-                    <p className="max-w-[68ch] text-base text-encre-2">
-                      {morceaux(t.texte, recherche).map((m, j) =>
-                        m.trouve ? (
-                          <mark key={j} className="rounded-[2px] bg-filet-2 text-encre">
-                            {m.texte}
-                          </mark>
-                        ) : (
-                          <span key={j}>{m.texte}</span>
-                        ),
-                      )}
-                    </p>
-                  </div>
+                <li key={i} aria-current={actuelle ? 'true' : undefined}>
+                  <button
+                    type="button"
+                    ref={(el) => {
+                      repliques.current[i] = el;
+                    }}
+                    tabIndex={i === tabulable ? 0 : -1}
+                    onClick={() => aller(i)}
+                    onKeyDown={(e) => surToucheReplique(e, i)}
+                    onFocus={() => setTabulable(i)}
+                    className={`focus-interne grid w-full cursor-pointer grid-cols-[3rem_minmax(0,1fr)] gap-x-3 rounded-[4px] px-2 py-2 text-left transition-colors duration-150 hover:bg-survol ${
+                      actuelle ? 'bg-survol' : ''
+                    } ${i === surlignee ? 'bg-survol shadow-[inset_0_0_0_1px_var(--filet-fort)]' : ''}`}
+                  >
+                    <span className="pt-0.5 font-mono text-xs text-encre-3">
+                      {audioDispo ? <span className="sr-only">Lire depuis </span> : null}
+                      {horodatage(t.secondes)}
+                    </span>
+                    <span className="grid min-w-0 gap-0.5">
+                      <span className={`text-md font-semibold ${mina ? 'text-antenne' : 'text-encre'}`}>{mina ? 'Mina' : nomProspect}</span>
+                      <span className="block max-w-[68ch] text-base text-encre-2">
+                        {morceaux(t.texte, recherche).map((m, j) =>
+                          m.trouve ? (
+                            <mark key={j} className="rounded-[2px] bg-filet-2 text-encre">
+                              {m.texte}
+                            </mark>
+                          ) : (
+                            <span key={j}>{m.texte}</span>
+                          ),
+                        )}
+                      </span>
+                    </span>
+                  </button>
                 </li>
               );
             })}

@@ -163,8 +163,9 @@ export function EditeurVersion({
     libelle: `Enregistrer comme v${prochainNumero}`,
     actif: !enCours && !confirmation.ouverte,
     action: () => {
+      // Comme la soumission native : seulement depuis le formulaire lui-même.
       const f = proprietes.ref.current;
-      if (!f) return false;
+      if (!f?.contains(document.activeElement)) return false;
       f.requestSubmit();
     },
   });

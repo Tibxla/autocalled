@@ -119,7 +119,7 @@ describe('etatAppel', () => {
   it('distingue un appel pas parti d’une analyse en échec', () => {
     expect(etatAppel({ ...base, statut: 'echec', erreur: 'Ligne occupée.' }, { maintenant })).toEqual({
       cle: 'pas-parti',
-      libelle: 'Pas parti',
+      libelle: 'Non composé',
       ton: 'alerte',
       detail: 'Ligne occupée.',
     });

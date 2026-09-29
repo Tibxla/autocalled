@@ -9,7 +9,7 @@ import { AppelEnDirect } from '@/components/appel-en-direct';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
 import { numeroMasque, prenom as prenomDe } from '@/components/format-appel';
 import type { ReglagesLigne } from '@/components/garde-fous';
-import { Action, Message, Selection } from '@/components/ui';
+import { Action, LienAction, Message, Selection } from '@/components/ui';
 
 /**
  * Appeler un prospect depuis sa fiche : une version, une ligne, et une action dont la forme suit la gravité.
@@ -27,6 +27,37 @@ const LIGNES: { valeur: Ligne; libelle: string; aide: string }[] = [
 ];
 
 export type PlafondsLigne = { reglages: ReglagesLigne | null; passes24h: number | null };
+/** Pourquoi le téléphone passerelle ne peut rien composer : phrase complète, et version courte pour le choix de ligne. */
+export type BlocageTelephone = { texte: string; court: string };
+
+/** « · déconnecté » après « Téléphone » dans le choix de ligne, quand la ligne ne peut rien composer. */
+function SuffixeTelephone({ promesse }: { promesse: Promise<BlocageTelephone | null> }) {
+  const bloque = use(promesse);
+  return bloque ? <span className="font-normal text-encre-3">&nbsp;· {bloque.court}</span> : null;
+}
+
+/** Le geste « Appeler le 06… », désactivé avec sa raison quand le téléphone passerelle ne peut rien composer. */
+function GesteTelephone({
+  promesse,
+  children,
+}: {
+  promesse: Promise<BlocageTelephone | null>;
+  children: (bloque: boolean) => React.ReactNode;
+}) {
+  const bloque = use(promesse);
+  if (!bloque) return <>{children(false)}</>;
+  return (
+    <>
+      {children(true)}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        <p className="text-sm text-alerte">{bloque.texte} Aucun appel ne peut partir par le téléphone.</p>
+        <LienAction ton="discret" href="/telephone" className="-mx-1.5">
+          Ouvrir Téléphone
+        </LienAction>
+      </div>
+    </>
+  );
+}
 
 /** Le numéro masqué pour l'écran partagé ; « Afficher le numéro » le montre en clair, sans rien écrire. */
 export function NumeroMasquable({ lisible }: { lisible: string }) {
@@ -58,6 +89,7 @@ export function PanneauAppel({
   numero,
   blocage = null,
   plafonds,
+  telephoneBloque,
 }: {
   entrepriseId: string;
   prospectId: string;
@@ -70,6 +102,8 @@ export function PanneauAppel({
   blocage?: { texte: string; lien?: { href: string; libelle: string } } | null;
   /** Plafonds de la ligne téléphone, lus sans bloquer la page (le pont peut tarder). */
   plafonds: Promise<PlafondsLigne>;
+  /** Pourquoi le téléphone passerelle ne peut rien composer, ou null ; lu sans bloquer la page. */
+  telephoneBloque: Promise<BlocageTelephone | null>;
 }) {
   const router = useRouter();
   const idAide = useId();
@@ -146,6 +180,11 @@ export function PanneauAppel({
                 className="sr-only"
               />
               {l.libelle}
+              {l.valeur === 'telephone' ? (
+                <Suspense fallback={null}>
+                  <SuffixeTelephone promesse={telephoneBloque} />
+                </Suspense>
+              ) : null}
             </label>
           ))}
         </div>
@@ -169,11 +208,30 @@ export function PanneauAppel({
         </div>
       ) : (
         <div className="grid gap-3">
-          <div className="-mx-1.5">
-            <Action ton="fort" disabled={enCours} aria-expanded={confirmation.ouverte} onClick={(e) => confirmation.ouvrir(e.currentTarget)}>
-              Appeler le {numeroMasque(numero)}
-            </Action>
-          </div>
+          <Suspense
+            fallback={
+              <div className="-mx-1.5">
+                <Action ton="fort" disabled enCours libelleEnCours="Lecture de la ligne…">
+                  Appeler le {numeroMasque(numero)}
+                </Action>
+              </div>
+            }
+          >
+            <GesteTelephone promesse={telephoneBloque}>
+              {(bloque) => (
+                <div className="-mx-1.5">
+                  <Action
+                    ton="fort"
+                    disabled={enCours || bloque}
+                    aria-expanded={confirmation.ouverte}
+                    onClick={(e) => confirmation.ouvrir(e.currentTarget)}
+                  >
+                    Appeler le {numeroMasque(numero)}
+                  </Action>
+                </div>
+              )}
+            </GesteTelephone>
+          </Suspense>
           <Confirmation
             ouverte={confirmation.ouverte}
             question={`Appeler ${prospectNom} sur le téléphone passerelle ?`}

@@ -138,6 +138,9 @@ export function FormulaireFiche({ fiche }: { fiche: Fiche }) {
   };
   const compteur = (cle: ChampLimite) => <Compteur valeur={longueurs[cle]} max={LIMITES[cle]} />;
 
+  // L'aide des visios cite la valeur saisie : ce que Mina annoncera vraiment.
+  const [interlocuteur, setInterlocuteur] = useState(fiche.interlocuteur);
+
   const [plages, setPlages] = useState<Plage[]>(() =>
     NOMS_JOURS.map((_, i) => {
       const p = fiche.plagesRendezVous.find((x) => x.jour === i + 1);
@@ -163,8 +166,9 @@ export function FormulaireFiche({ fiche }: { fiche: Fiche }) {
     libelle: 'Enregistrer la fiche',
     actif: !enCours,
     action: () => {
+      // Comme la soumission native : seulement depuis le formulaire lui-même.
       const f = proprietes.ref.current;
-      if (!f) return false;
+      if (!f?.contains(document.activeElement)) return false;
       f.requestSubmit();
     },
   });
@@ -222,9 +226,22 @@ export function FormulaireFiche({ fiche }: { fiche: Fiche }) {
           libelle="Avec qui ont lieu les visios"
           htmlFor="interlocuteur"
           erreur={e.interlocuteur}
-          aide="Mina l’annonce au prospect : « un échange en visio avec Camille »."
+          aide={
+            interlocuteur.trim()
+              ? `Mina l’annonce au prospect : « une visio avec ${interlocuteur.trim()} ».`
+              : 'Champ vide : Mina parlera d’une visio avec un membre de l’équipe.'
+          }
         >
-          <Saisie id="interlocuteur" name="interlocuteur" defaultValue={fiche.interlocuteur} placeholder="Prénom" maxLength={60} autoComplete="off" className="max-w-[20rem]" />
+          <Saisie
+            id="interlocuteur"
+            name="interlocuteur"
+            defaultValue={fiche.interlocuteur}
+            onInput={(ev) => setInterlocuteur(ev.currentTarget.value)}
+            placeholder="Prénom"
+            maxLength={60}
+            autoComplete="off"
+            className="max-w-[20rem]"
+          />
         </Champ>
         <div className="grid gap-6 sm:grid-cols-3">
           <Champ libelle="Durée" htmlFor="dureeRendezVousMinutes" erreur={e.dureeRendezVousMinutes}>

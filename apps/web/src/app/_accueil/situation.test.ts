@@ -85,22 +85,53 @@ describe('situationAccueil : priorités', () => {
 
   it('ligne injoignable, puis téléphone déconnecté, avant le plafond', () => {
     const c = campagne({ statut: 'en-pause' });
-    expect(situationAccueil({ ...base, ligne: { joignable: false }, campagnes: [c] })).toEqual({ type: 'ligne-coupee', raison: 'injoignable', campagne: c });
+    expect(situationAccueil({ ...base, ligne: { joignable: false }, campagnes: [c] })).toEqual({ type: 'ligne-coupee', raison: 'injoignable', campagne: c, entrepriseSlug: 'atelier-vitrine' });
     expect(situationAccueil({ ...base, ligne: { ...LIBRE, connecte: false, plafond: 'x' } })).toEqual({
       type: 'ligne-coupee',
       raison: 'deconnecte',
       campagne: null,
+      entrepriseSlug: null,
     });
   });
 
   it('la ligne coupée ne rappelle que les campagnes téléphone ouvertes', () => {
-    const s = situationAccueil({ ...base, ligne: { joignable: false }, campagnes: [campagne({ ligne: 'simulation', statut: 'en-cours' })] });
-    expect(s).toEqual({ type: 'ligne-coupee', raison: 'injoignable', campagne: null });
+    const s = situationAccueil({ ...base, ligne: { joignable: false }, campagnes: [campagne({ ligne: 'simulation', statut: 'en-pause' })] });
+    expect(s).toEqual({ type: 'ligne-coupee', raison: 'injoignable', campagne: null, entrepriseSlug: 'atelier-vitrine' });
   });
 
-  it('plafond avant la fin d’appel', () => {
-    const s = situationAccueil({ ...base, ligne: { ...LIBRE, plafond: 'Plafond de 15 appels par heure atteint.' }, appels: [appel({ finLe: il(60_000) })] });
-    expect(s).toEqual({ type: 'plafond', phrase: 'Plafond de 15 appels par heure atteint.', campagne: null });
+  it('ligne déconnectée et campagne navigateur en cours : la campagne passe avant', () => {
+    const c = campagne({ ligne: 'navigateur', statut: 'en-cours' });
+    const s = situationAccueil({ ...base, ligne: { ...LIBRE, connecte: false }, campagnes: [c] });
+    expect(s).toEqual({ type: 'campagne-entre-deux', campagne: c });
+  });
+
+  it('ligne injoignable et campagne simulée en cours : la campagne passe avant', () => {
+    const c = campagne({ ligne: 'simulation', statut: 'en-cours' });
+    expect(situationAccueil({ ...base, ligne: { joignable: false }, campagnes: [c] })).toEqual({ type: 'campagne-entre-deux', campagne: c });
+  });
+
+  it('ligne déconnectée et campagne téléphone en cours : la ligne coupée passe avant', () => {
+    const c = campagne({ ligne: 'bluetooth', statut: 'en-cours' });
+    const s = situationAccueil({ ...base, ligne: { ...LIBRE, connecte: false }, campagnes: [c] });
+    expect(s).toEqual({ type: 'ligne-coupee', raison: 'deconnecte', campagne: c, entrepriseSlug: 'atelier-vitrine' });
+  });
+
+  it('ligne déconnectée et appel navigateur fini il y a 2 min : fin d’appel', () => {
+    const a = appel({ ligne: 'navigateur', finLe: il(2 * 60_000) });
+    const s = situationAccueil({ ...base, ligne: { ...LIBRE, connecte: false }, appels: [a] });
+    expect(s).toEqual({ type: 'fin-appel', appel: a, bloquee: false });
+  });
+
+  it('fin d’appel avant le plafond', () => {
+    const a = appel({ finLe: il(60_000) });
+    const s = situationAccueil({ ...base, ligne: { ...LIBRE, plafond: 'Plafond de 15 appels par heure atteint.' }, appels: [a] });
+    expect(s).toEqual({ type: 'fin-appel', appel: a, bloquee: false });
+  });
+
+  it('plafond avant une campagne téléphone en cours', () => {
+    const c = campagne({ statut: 'en-cours' });
+    const s = situationAccueil({ ...base, ligne: { ...LIBRE, plafond: 'Plafond de 15 appels par heure atteint.' }, campagnes: [c] });
+    expect(s).toEqual({ type: 'plafond', phrase: 'Plafond de 15 appels par heure atteint.', campagne: c });
   });
 
   it('fin d’appel dans la fenêtre de 15 min, avant une campagne en cours', () => {

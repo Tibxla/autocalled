@@ -221,6 +221,9 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
           {perso && issue ? <span className="text-md text-encre-3">{LIBELLES_ISSUES[issue as IssueSysteme]}</span> : null}
         </div>
         {bilan?.rappel ? <p className="text-base text-encre-2">Rappel convenu : {bilan.rappel}</p> : null}
+        {rendezVousPris && !rdv ? (
+          <p className="text-sm text-encre-3">Aucun rendez-vous réservé dans l’agenda pour cet appel : seul le bilan le dit.</p>
+        ) : null}
         {bilan && etapes.length ? (
           <div className="grid gap-1.5">
             <p className="text-sm text-encre-3">

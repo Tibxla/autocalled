@@ -90,14 +90,16 @@ export default async function LayoutEntreprise({ params, children }: { params: P
     },
   ];
   if (campagne) {
-    const { traites, total } = comptesCampagne(campagne.entrees);
+    const { traites, total, enAppel } = comptesCampagne(campagne.entrees);
     const enCours = campagne.statut === 'en-cours';
+    // L'antenne seulement quand un appel de la campagne est en ligne, pas entre deux appels.
+    const vivante = enCours && enAppel > 0;
     etat.push({
       cle: 'campagne',
       contenu: (
         <Link
           href={`/campagnes/${campagne.id}`}
-          className={`underline decoration-souligne underline-offset-4 hover:text-encre ${enCours ? 'text-antenne' : 'text-encre-2'}`}
+          className={`underline decoration-souligne underline-offset-4 hover:text-encre ${vivante ? 'text-antenne' : enCours ? 'text-encre' : 'text-encre-2'}`}
         >
           {enCours ? 'Campagne en cours' : 'Campagne suspendue'} ·{' '}
           <span className="font-mono">
