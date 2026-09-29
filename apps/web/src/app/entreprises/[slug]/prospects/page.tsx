@@ -6,6 +6,7 @@ import { Page } from '@/components/ui';
 import { db } from '@/db';
 import { appels, issuesPersonnalisees, prospects, textesConsentement } from '@/db/schema';
 import { autorisationsDe } from '@/lib/autorisations';
+import { decoderRapport } from '@/lib/effacement';
 import { numeroLisible } from '@/lib/format';
 import { appelTelephoneVivant } from '@/lib/ligne-vivante';
 import { entrepriseParSlug } from '@/lib/pages';
@@ -23,7 +24,7 @@ export default async function PageProspects({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ filtre?: string | string[]; import?: string | string[] }>;
+  searchParams: Promise<{ filtre?: string | string[]; import?: string | string[]; efface?: string | string[] }>;
 }) {
   const [{ slug }, recherche] = await Promise.all([params, searchParams]);
   const entreprise = await entrepriseParSlug(slug);
@@ -97,10 +98,13 @@ export default async function PageProspects({
           }
         : null,
       rappel: rappelDe(p.id),
+      archive: p.archiveLe !== null,
     };
   });
 
   const filtre = typeof recherche.filtre === 'string' ? recherche.filtre : undefined;
+  // Compte rendu d'un effacement fait depuis la fiche (des comptes, sans nom) ; illisible, il est ignoré.
+  const rapport = typeof recherche.efface === 'string' ? decoderRapport(recherche.efface) : null;
 
   return (
     <Page largeur="pleine">
@@ -111,6 +115,7 @@ export default async function PageProspects({
         prospects={lignes}
         filtreInitial={filtre}
         importOuvert={recherche.import === '1'}
+        rapportInitial={rapport}
       />
     </Page>
   );

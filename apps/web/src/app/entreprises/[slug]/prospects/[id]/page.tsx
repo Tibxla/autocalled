@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { AjoutClaudeCode } from '@/components/ajout-claude-code';
@@ -13,6 +13,7 @@ import type { EtatLigneServeur } from '@/lib/accueil';
 import { rafraichirSiAncien } from '@/lib/agenda';
 import { preparerAppel } from '@/lib/appels';
 import { autorisationsDe } from '@/lib/autorisations';
+import { inventaireEffacement, phrasesEffacement } from '@/lib/effacement';
 import { numeroLisible } from '@/lib/format';
 import { appelIdVivant, etatLigneBorne } from '@/lib/ligne-vivante';
 import { assistantePourLaPage, entrepriseParSlug, prospectParId } from '@/lib/pages';
@@ -21,6 +22,7 @@ import { rappelEnAttente } from '@/lib/rappels';
 import { reglagesDuPont } from '@/lib/pont';
 import { versionsDeLEntreprise } from '@/lib/versions';
 import { BoutonRevoquer } from './bouton-revoquer';
+import { GestesProspect } from './gestes-prospect';
 import { NumeroMasquable, PanneauAppel, type BlocageTelephone, type PlafondsLigne } from './panneau-appel';
 
 export const metadata: Metadata = { title: 'Prospect' };
@@ -75,7 +77,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
   const { nom: nomAssistante } = await assistantePourLaPage();
   // L'agenda se relit dès l'ouverture de la fiche : il sera à jour quand l'assistante proposera des créneaux.
   await rafraichirSiAncien();
-  const [autorisations, partages, toutesVersions, historique, [derniereRevocation], ordre, issuesPerso, ajoutMcp] = await Promise.all([
+  const [autorisations, partages, toutesVersions, historique, [derniereRevocation], ordre, issuesPerso, ajoutMcp, inventaire] = await Promise.all([
     autorisationsDe([prospect.telephone]),
     db.$count(prospects, and(eq(prospects.entrepriseId, entreprise.id), eq(prospects.telephone, prospect.telephone))),
     versionsDeLEntreprise(entreprise.id),
@@ -90,10 +92,11 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
       .where(and(eq(consentements.numero, prospect.telephone), isNotNull(consentements.revoqueLe)))
       .orderBy(desc(consentements.revoqueLe))
       .limit(1),
+    // L'ordre de la liste : les archivés n'y sont pas, sauf celui qu'on regarde.
     db
       .select({ id: prospects.id })
       .from(prospects)
-      .where(eq(prospects.entrepriseId, entreprise.id))
+      .where(and(eq(prospects.entrepriseId, entreprise.id), or(isNull(prospects.archiveLe), eq(prospects.id, prospect.id))))
       .orderBy(asc(prospects.nom), asc(prospects.id)),
     db
       .select({ id: issuesPersonnalisees.id, libelle: issuesPersonnalisees.libelle })
@@ -101,6 +104,8 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
       .where(eq(issuesPersonnalisees.entrepriseId, entreprise.id)),
     // Consentement entré par le serveur MCP (ADR 0009) : rappelé sur la fiche et dans la confirmation d'appel.
     ajoutParMcp(prospect.telephone),
+    // Ce qu'un effacement supprimerait, pour la confirmation en ligne.
+    inventaireEffacement(entreprise.id, prospect.id),
   ]);
   // Les scripts archivés ne sont plus proposés au lancement.
   const versions = toutesVersions.filter((v) => !v.scriptArchive);
@@ -111,7 +116,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
   const base = `/entreprises/${slug}/prospects`;
 
   // Ce que l'assistante recevra au début de l'appel (lecture seule, avec la première version proposée).
-  const preparation = autorise && versions[0] ? await preparerAppel(entreprise.id, prospect.id, versions[0].id) : null;
+  const preparation = autorise && !prospect.archiveLe && versions[0] ? await preparerAppel(entreprise.id, prospect.id, versions[0].id) : null;
 
   // Précédent et suivant, dans l'ordre alphabétique de la liste.
   const rang = ordre.findIndex((p) => p.id === prospect.id);
@@ -156,14 +161,20 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
   const retard = rappel?.rappelLe ? rappelEnRetard(rappel.rappelLe, rappel.quand, maintenant) : false;
 
   let blocage: { texte: string; lien?: { href: string; libelle: string } } | null = null;
-  if (!autorise) {
+  if (prospect.archiveLe) {
+    blocage = { texte: 'Prospect archivé : il n’est plus appelé. Réactive-le pour l’appeler.' };
+  } else if (!autorise) {
     const raison = autorisation && !autorisation.autorise ? autorisation.raison : 'aucun-consentement';
     blocage =
       raison === 'consentement-revoque'
         ? { texte: `Numéro révoqué${revocation ? ` le ${JOUR_MOIS.format(revocation)}` : ''} : il ne sera plus jamais composé.` }
-        : raison === 'numero-invalide'
-          ? { texte: 'Numéro invalide : corrige-le dans la fiche puis réimporte-la.', lien: { href: `${base}?import=1`, libelle: 'Importer des fiches' } }
-          : { texte: 'Pas de consentement : réimporte la fiche en cochant l’attestation.', lien: { href: `${base}?import=1`, libelle: 'Importer des fiches' } };
+        : raison === 'numero-efface'
+          ? { texte: 'Numéro d’une personne effacée à sa demande : il ne sera plus jamais composé.' }
+          : raison === 'opposition-illisible'
+            ? { texte: 'La liste d’opposition ne se lit plus (SEL_OPPOSITION manque ou a changé dans le .env) : aucun numéro n’est composé.' }
+            : raison === 'numero-invalide'
+              ? { texte: 'Numéro invalide : corrige-le dans la fiche puis réimporte-la.', lien: { href: `${base}?import=1`, libelle: 'Importer des fiches' } }
+              : { texte: 'Pas de consentement : réimporte la fiche en cochant l’attestation.', lien: { href: `${base}?import=1`, libelle: 'Importer des fiches' } };
   } else if (versions.length === 0) {
     blocage = {
       texte: toutesVersions.length > 0 ? 'Tous les scripts sont archivés : réactives-en un ou crées-en un dans Scripts.' : 'Aucun script : crées-en un dans Scripts.',
@@ -180,6 +191,12 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
           </Link>
           <h2 className="text-lg font-semibold tracking-[-0.01em]">{prospect.nom}</h2>
           {prospect.role || prospect.societe ? <p className="text-md text-encre-2">{[prospect.role, prospect.societe].filter(Boolean).join(', ')}</p> : null}
+          {prospect.archiveLe ? (
+            <p className="max-w-[68ch] pt-1 text-sm text-encre-2">
+              Archivé le <span className="font-mono">{JOUR_MOIS.format(prospect.archiveLe)}</span> : plus proposé pour un appel ni une campagne. Ses appels
+              et son consentement restent.
+            </p>
+          ) : null}
           {dernier && etatDernier ? (
             <p className="flex flex-wrap gap-x-4 gap-y-0.5 pt-1 text-sm text-encre-3">
               <Link href={`/appels/${dernier.id}?depuis=${encodeURIComponent(`${base}/${prospect.id}`)}`} className="decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline">
@@ -312,6 +329,15 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
             telephoneBloque={lireBlocageTelephone(lectureLigne)}
           />
           <BoutonRevoquer numero={prospect.telephone} lisible={lisible} partages={partages} autorise={autorise} />
+          {inventaire ? (
+            <GestesProspect
+              entrepriseId={entreprise.id}
+              prospectId={prospect.id}
+              nom={prospect.nom}
+              archive={Boolean(prospect.archiveLe)}
+              effacement={{ ...phrasesEffacement(inventaire, undefined, { numeroInsecable: true }), obstacle: inventaire.obstacle }}
+            />
+          ) : null}
         </aside>
       </div>
     </Page>

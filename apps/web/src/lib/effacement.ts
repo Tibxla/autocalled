@@ -4,6 +4,7 @@ import { join, normalize, sep } from 'node:path';
 import { supprimerEvenement } from '@autocalled/agenda';
 import type { EntreeCampagne } from '@autocalled/domain';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import { db } from '@/db';
 import { appels, campagnes, consentements, entreprises, journalMcp, type Origine, prospects, rendezVous } from '@/db/schema';
 import { DUREE_MAX_ANALYSE_S, dossierDonnees } from './appels';
@@ -420,9 +421,15 @@ const pluriel = (n: number, un: string, plusieurs: string) => `${n} ${n > 1 ? pl
 /**
  * Ce que dit la confirmation d'un effacement, en phrases, d'après l'inventaire : ce qui sera effacé, puis ce qui
  * reste et ce qu'il faudra finir à la main. Une seule rédaction pour l'interface et le serveur MCP. `champ` met en
- * forme les noms venus de la base (le MCP les coupe et les nettoie).
+ * forme les noms venus de la base (le MCP les coupe et les nettoie) ; l'interface garde le numéro d'un seul tenant.
  */
-export function phrasesEffacement(inv: InventaireEffacement, champ: (texte: string) => string = (t) => t): { efface: string[]; reste: string[] } {
+export function phrasesEffacement(
+  inv: InventaireEffacement,
+  champ: (texte: string) => string = (t) => t,
+  o: { numeroInsecable?: boolean } = {},
+): { efface: string[]; reste: string[] } {
+  // À l'écran, le numéro ne se coupe pas en fin de ligne.
+  const numero = o.numeroInsecable ? inv.prospect.numeroLisible.replace(/ /g, '\u00a0') : inv.prospect.numeroLisible;
   const efface = [
     `sa fiche (${champ(`${inv.prospect.id}.md`)} : nom, société, rôle, e-mail, contexte)`,
     inv.appels
@@ -446,7 +453,7 @@ export function phrasesEffacement(inv: InventaireEffacement, champ: (texte: stri
   ];
   const aLaMain = inv.evenements.filter((e) => !e.supprimable).length;
   const reste = [
-    `Seule reste l’empreinte irréversible du numéro ${inv.prospect.numeroLisible} dans la liste d’opposition : il ne sera plus jamais appelé ni importé.`,
+    `Seule reste l’empreinte irréversible du numéro ${numero} dans la liste d’opposition : il ne sera plus jamais appelé ni importé.`,
     ...(inv.autresPorteurs.length
       ? [
           `Ce numéro est aussi celui de ${inv.autresPorteurs.map((a) => `${champ(a.nom)} (${champ(a.entrepriseNom)})`).join(', ')} : ${
@@ -461,4 +468,48 @@ export function phrasesEffacement(inv: InventaireEffacement, champ: (texte: stri
     'Irréversible : rien de tout cela ne pourra être retrouvé.',
   ];
   return { efface, reste };
+}
+
+/* ------------------------------------------------------------------ rapport pour l'interface */
+
+/**
+ * Ce que l'interface montre après un effacement : des comptes et ce qui reste à finir à la main, sans nom ni numéro.
+ * Depuis la fiche, il voyage dans l'adresse de la liste (la fiche n'existe plus) : rien de personnel n'y entre.
+ */
+export interface RapportEffacement {
+  efface: ResultatEffacement['efface'];
+  fichiersEnEchec: string[];
+  evenementsASupprimer: { debut: string }[];
+  conversationsElevenLabs: string[];
+  autresPorteurs: { entreprise: string; prospect: string }[];
+}
+
+export function rapportEffacement(r: ResultatEffacement): RapportEffacement {
+  return {
+    efface: r.efface,
+    fichiersEnEchec: r.fichiersEnEchec,
+    evenementsASupprimer: r.evenementsASupprimer.map((e) => ({ debut: e.debut })),
+    conversationsElevenLabs: r.conversationsElevenLabs,
+    autresPorteurs: r.autresPorteurs.map((a) => ({ entreprise: a.entreprise, prospect: a.prospect })),
+  };
+}
+
+const schemaRapport = z.object({
+  efface: z.record(z.string(), z.number().int().min(0).max(1_000_000)),
+  fichiersEnEchec: z.array(z.string().max(200)).max(1000),
+  evenementsASupprimer: z.array(z.object({ debut: z.iso.datetime() })).max(1000),
+  conversationsElevenLabs: z.array(z.string().max(200)).max(1000),
+  autresPorteurs: z.array(z.object({ entreprise: z.string().max(200), prospect: z.string().max(200) })).max(1000),
+});
+
+export const encoderRapport = (r: RapportEffacement) => Buffer.from(JSON.stringify(r)).toString('base64url');
+
+/** Le rapport relu depuis l'adresse, ou null s'il est illisible (adresse retouchée, tronquée). */
+export function decoderRapport(brut: string): RapportEffacement | null {
+  try {
+    const lu = schemaRapport.safeParse(JSON.parse(Buffer.from(brut, 'base64url').toString('utf8')));
+    return lu.success ? (lu.data as RapportEffacement) : null;
+  } catch {
+    return null;
+  }
 }

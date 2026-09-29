@@ -73,6 +73,7 @@ function Rapport({ rapport }: { rapport: Extract<RapportImport, { etat: 'fait' }
         <LigneRapport libelle={pluriel(rapport.crees.length, 'créée', 'créées')} ids={rapport.crees} />
         <LigneRapport libelle={pluriel(rapport.misAJour.length, 'mise à jour', 'mises à jour')} ids={rapport.misAJour} />
         <LigneRapport libelle={pluriel(rapport.inchanges.length, 'inchangée', 'inchangées')} ids={rapport.inchanges} />
+        <LigneRapport libelle={rapport.archives.length > 1 ? 'Restent archivés' : 'Reste archivé'} ids={rapport.archives} />
         {rapport.numerosAutorises > 0 ? (
           <li className="border-b border-filet py-2 text-encre-2">
             {pluriel(rapport.numerosAutorises, 'numéro autorisé', 'numéros autorisés')} par cet import.
