@@ -3,6 +3,7 @@ import { ISSUES_SYSTEME } from '@autocalled/domain';
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -201,6 +202,11 @@ export const appels = pgTable('appels', {
   conversationId: text().unique(),
   /** Version de l'agent ElevenLabs qui a parlé : les bilans comparent aussi cela. */
   versionAgent: text(),
+  /**
+   * Le nom sous lequel l'assistante s'est présentée, figé au lancement : transcriptions et bilans gardent le nom
+   * de leur époque après un renommage. Null seulement pour une ligne écrite sans lui ; on lit alors le nom actuel.
+   */
+  assistanteNom: text(),
   statut: statutAppel().notNull().default('en-cours'),
   debutLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
   finLe: timestamp({ withTimezone: true }),
@@ -279,4 +285,40 @@ export const journalMcp = pgTable('journal_mcp', {
   message: text(),
   /** Pour les gestes confirmés par l'opérateur : ce qu'il a répondu, ou `indisponible` sans élicitation. */
   confirmation: text().$type<'acceptee' | 'refusee' | 'indisponible'>(),
+});
+
+/**
+ * Ce que l'application envoie à l'assistante avec chaque appel, sans poussée vers ElevenLabs : son nom (variable
+ * `assistante_nom`) et son premier message, la phrase dite quand le prospect se tait au décroché. Une seule ligne ;
+ * absente, les valeurs par défaut valent (lib/assistante.ts).
+ */
+export const assistante = pgTable(
+  'assistante',
+  {
+    id: integer().primaryKey().default(1),
+    nom: text().notNull().default('Mina'),
+    premierMessage: text().notNull().default('Allô ?'),
+    modifieLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    modifiePar: text().$type<Origine>(),
+  },
+  (t) => [check('assistante_une_seule_ligne', sql`${t.id} = 1`)],
+);
+
+/** D'où vient un instantané de la configuration ElevenLabs : poussée par le MCP, ligne de commande, tableau de bord. */
+export type OrigineVersionAssistante = 'mcp' | 'cli' | 'distante';
+
+/**
+ * Instantanés de la configuration ElevenLabs de l'assistante (champs gérés par `agent/`), consignés à chaque poussée
+ * ou rapatriement par le MCP. `appels.version_agent` y renvoie : on sait avec quel prompt un appel a été passé.
+ */
+export const versionsAssistante = pgTable('versions_assistante', {
+  id: uuid().primaryKey().defaultRandom(),
+  /** Le `version_id` d'ElevenLabs (agtvrsn_…). */
+  versionId: text().notNull().unique(),
+  empreinte: text().notNull(),
+  prompt: text().notNull(),
+  /** Les champs gérés, sans le prompt. */
+  configuration: jsonb().$type<Record<string, unknown>>().notNull(),
+  origine: text().$type<OrigineVersionAssistante>().notNull(),
+  consigneLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
