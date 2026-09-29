@@ -6,9 +6,9 @@ import { useLigne, type CampagneLigne, type EtatLigneClient } from './etat-ligne
 import { chrono, heure } from './format-appel';
 import { useHorloge } from './horloge';
 
-type Trait = 'pointille' | 'plein' | 'interrompu';
+export type Trait = 'pointille' | 'plein' | 'interrompu';
 
-interface Affichage {
+export interface AffichageLigne {
   trait: Trait;
   couleurTrait: string;
   couleurTexte: string;
@@ -19,7 +19,8 @@ interface Affichage {
 
 const VERS_TELEPHONE = 'ouvrir la page Téléphone';
 
-function affichage(e: EtatLigneClient): Affichage {
+/** Ce que la barre montre d'un état de ligne : forme et couleur du trait, libellés long et court, lien. */
+export function affichageLigne(e: EtatLigneClient): AffichageLigne {
   switch (e.etat) {
     case 'releve':
       return { trait: 'pointille', couleurTrait: 'stroke-trait', couleurTexte: 'text-encre-3', libelle: 'Relevé de la ligne…', court: '…', lien: null };
@@ -90,7 +91,8 @@ function affichage(e: EtatLigneClient): Affichage {
 /** Interrompu : une coupure franche au milieu (10 px sur 56, 5 px sur 16), qui ne se confond pas avec le plein d'un appel. */
 const TIRETS: Record<Trait, string | undefined> = { pointille: '2 4', plein: undefined, interrompu: '20 10 26' };
 
-function TraitLigne({ largeur, trait, couleur, className }: { largeur: number; trait: Trait; couleur: string; className: string }) {
+/** Le trait de la ligne d'état (56 px dans la barre, 16 px sur mobile et au-dessus de « Téléphone » dans la barre du bas). */
+export function TraitLigne({ largeur, trait, couleur, className = '' }: { largeur: number; trait: Trait; couleur: string; className?: string }) {
   const tirets = largeur < 56 && trait === 'interrompu' ? '5 5 6' : TIRETS[trait];
   return (
     <svg width={largeur} height="16" viewBox={`0 0 ${largeur} 16`} aria-hidden="true" className={`shrink-0 overflow-visible ${className}`}>
@@ -126,7 +128,7 @@ export function LigneStatut() {
  * d'un appel téléphone depuis son décroché : il sort de la région vivante, qui n'annoncerait sinon que lui.
  */
 export function VueLigneStatut({ etat, maintenant = 0 }: { etat: EtatLigneClient; maintenant?: number }) {
-  const a = affichage(etat);
+  const a = affichageLigne(etat);
   const decrocheLe = etat.etat === 'en-appel' && etat.ligne === 'telephone' ? (etat.decrocheLe ?? null) : null;
   const contenu = (
     <>
@@ -149,7 +151,7 @@ export function VueLigneStatut({ etat, maintenant = 0 }: { etat: EtatLigneClient
         <Link
           href={a.lien.href}
           aria-label={a.lien.aria}
-          className="-mx-1.5 flex h-9 items-center gap-2.5 rounded-[4px] px-1.5 hover:[&_.libelle]:underline [&_.libelle]:decoration-souligne [&_.libelle]:underline-offset-4 pointer-coarse:h-11"
+          className="-mx-1.5 flex h-9 items-center gap-2.5 rounded-[4px] px-1.5 hover:[&_.libelle]:underline [&_.libelle]:decoration-souligne [&_.libelle]:underline-offset-4 pointer-coarse:h-11 pointer-coarse:[&_.libelle]:underline pointer-coarse:active:bg-survol"
         >
           {contenu}
         </Link>
@@ -186,7 +188,8 @@ export function TitreEnAppel() {
 
 /**
  * La campagne qui tourne ou attend, vue de toute page : « Campagne Gîtes · 34/100 » ou « · suspendue », lien
- * vers sa régie. Rien sans campagne ouverte. Sous 1280 px, où la barre n’a pas la place du nom, seul le compte reste (« 12/14 »).
+ * vers sa régie. Rien sans campagne ouverte. De 640 à 1280 px, où la barre n’a pas la place du nom, seul le
+ * compte reste (« 12/14 ») ; sous 640 px, où la navigation est descendue, « Campagne 12/14 ». 44 px au doigt.
  */
 export function CampagneStatut() {
   return <VueCampagneStatut campagne={useLigne().campagne} />;
@@ -199,8 +202,9 @@ export function VueCampagneStatut({ campagne: c }: { campagne: CampagneLigne | n
     <Link
       href={`/campagnes/${c.id}`}
       aria-label={`Campagne ${c.entreprise}, ${suspendue ? 'suspendue' : 'en cours'}, ${c.traites} traités sur ${c.total} : ouvrir sa régie`}
-      className="-mx-1.5 flex h-9 max-w-[18rem] min-w-0 items-center gap-1 rounded-[4px] px-1.5 text-sm whitespace-nowrap text-encre-3 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline"
+      className="-mx-1.5 flex h-9 max-w-[18rem] min-w-0 items-center gap-1 rounded-[4px] px-1.5 text-sm whitespace-nowrap text-encre-3 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline pointer-coarse:h-11 pointer-coarse:underline pointer-coarse:active:bg-survol"
     >
+      <span className="shrink-0 sm:hidden">Campagne</span>
       <span className="hidden truncate xl:inline">Campagne {c.entreprise}</span>
       <span className="hidden shrink-0 xl:inline">·</span>
       {suspendue ? (

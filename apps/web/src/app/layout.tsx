@@ -4,6 +4,7 @@ import { FournisseurAssistante } from '@/components/assistante';
 import { BarreHaut } from '@/components/barre-haut';
 import { AideRaccourcis, FournisseurClavier } from '@/components/clavier';
 import { GardeSortie } from '@/components/garde-sortie';
+import { NavBas } from '@/components/nav-bas';
 import { ASSISTANTE_PAR_DEFAUT } from '@/lib/assistante';
 import { assistantePourLaPage } from '@/lib/pages';
 import './globals.css';
@@ -20,9 +21,15 @@ export const metadata: Metadata = {
   title: { default: 'Autocalled', template: '%s · Autocalled' },
   description: 'Régie de l’assistante vocale de prospection.',
   robots: { index: false, follow: false },
+  // Installable sur l'écran d'accueil (manifest.ts, apple-icon.tsx) ; barre d'état noire : le contenu reste
+  // dessous, sans marge de sécurité en haut à gérer.
+  appleWebApp: { capable: true, title: 'Autocalled', statusBarStyle: 'black' },
 };
 
-export const viewport: Viewport = { themeColor: '#121110', colorScheme: 'dark' };
+// viewport-fit=cover : les gouttières et la barre du bas tiennent compte des zones de sécurité (globals.css).
+// resizes-content : le clavier de l'écran réduit la page, les barres collées en bas restent au-dessus de lui.
+// Jamais de maximum-scale ni de user-scalable : les champs passent à 16 px au doigt pour éviter le zoom au focus.
+export const viewport: Viewport = { themeColor: '#121110', colorScheme: 'dark', viewportFit: 'cover', interactiveWidget: 'resizes-content' };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // Base injoignable : le layout tient (la page montrera son erreur), avec le nom par défaut.
@@ -40,9 +47,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </a>
             <BarreHaut />
             <GardeSortie />
-            <main id="contenu" tabIndex={-1} className="px-(--gouttiere) pb-24 focus:outline-none">
+            <main id="contenu" tabIndex={-1} className="px-(--gouttiere) pb-(--fin-de-page) focus:outline-none">
               {children}
             </main>
+            <NavBas />
             <AideRaccourcis />
           </FournisseurClavier>
         </FournisseurAssistante>
