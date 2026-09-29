@@ -153,7 +153,7 @@ _Avoid_ : takeover, transfert, reprise
 ## Pilotage par Claude Code
 
 **Confirmation** :
-L'accord que l'opérateur donne lui-même, sur une question rédigée par le serveur, avant un geste qui fait sonner un téléphone, révoque un numéro, supprime une fiche, envoie une invitation, desserre un garde-fou ou change ce que l'assistante dit au prospect. Le modèle ne peut pas y répondre à sa place. Les freins (raccrocher, suspendre, retirer de la file) n'en demandent pas.
+L'accord que l'opérateur donne lui-même, sur une question rédigée par le serveur, avant un geste qui fait sonner un téléphone, révoque un numéro, supprime une fiche, envoie une invitation, desserre un garde-fou ou change ce que l'assistante dit au prospect. Le modèle ne peut pas y répondre à sa place. Les freins (raccrocher, suspendre, retirer de la file, terminer une campagne, resserrer un garde-fou) n'en demandent pas ; l'interface demande tout de même une confirmation en ligne avant de retirer un prospect ou de terminer une campagne, deux gestes qui ne se défont pas.
 _Avoid_ : validation, approbation, consentement
 
 **Journal de Claude Code** :
