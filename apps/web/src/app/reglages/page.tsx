@@ -5,8 +5,10 @@ import { EnTetePage, LigneDefinition, Message, Page, TitreSection } from '@/comp
 import { db } from '@/db';
 import { appels, rendezVous } from '@/db/schema';
 import { calendrierConfigure, etatAgenda } from '@/lib/agenda';
+import { derniereVersionAssistante } from '@/lib/assistante';
 import { clientGoogle, connexion } from '@/lib/google';
 import { journalMcpRecent, rendezVousRecents } from '@/lib/lecture';
+import { assistantePourLaPage } from '@/lib/pages';
 import { BoutonDeconnecter } from './bouton-deconnecter';
 import { BoutonRelire } from './boutons-agenda';
 import { JournalClaudeCode } from './journal-claude-code';
@@ -34,6 +36,13 @@ function ilYA(minutes: number): string {
   return `il y a ${Math.floor(heures / 24)} jours`;
 }
 
+/** D'où vient la dernière configuration ElevenLabs consignée (versions_assistante). */
+const ORIGINE_CONFIGURATION = {
+  mcp: 'poussée par Claude Code',
+  cli: 'poussée en ligne de commande',
+  distante: 'rapatriée du tableau de bord ElevenLabs',
+} as const;
+
 const SECTION = 'grid scroll-mt-[calc(var(--hauteur-barre)+16px)] gap-5';
 
 /**
@@ -57,14 +66,17 @@ async function rendezVousSansReservation(): Promise<number> {
 
 export default async function PageReglages({ searchParams }: { searchParams: Promise<{ google?: string }> }) {
   const { google } = await searchParams;
-  const [client, api, etat, rdvs, journal, sansReservation] = await Promise.all([
+  const [client, api, etat, rdvs, journal, sansReservation, assistante, configuration] = await Promise.all([
     clientGoogle(),
     connexion(),
     etatAgenda(),
     rendezVousRecents(),
     journalMcpRecent(100),
     rendezVousSansReservation(),
+    assistantePourLaPage(),
+    derniereVersionAssistante(),
   ]);
+  const { nom } = assistante;
   const maintenant = new Date();
   const calendrier = calendrierConfigure();
   const age = etat ? Math.max(0, Math.floor((maintenant.getTime() - etat.synchroniseLe.getTime()) / 60_000)) : null;
@@ -72,9 +84,10 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
 
   return (
     <Page largeur="lecture">
-      <EnTetePage titre="Réglages" sousTitre="L’agenda lu par Mina, les rendez-vous qu’elle a pris, et ce que Claude Code a fait." />
+      <EnTetePage titre="Réglages" sousTitre={`${nom}, l’agenda qu’elle lit, les rendez-vous qu’elle a pris, et ce que Claude Code a fait.`} />
       <div className="grid max-w-[48rem] gap-12">
         <nav aria-label="Sections de la page" className="-mt-2 flex flex-wrap gap-x-[22px] gap-y-1 text-md">
+          <Ancre href="#assistante">Assistante</Ancre>
           <Ancre href="#agenda">Agenda</Ancre>
           <Ancre href="#rendez-vous" compte={rdvs.length}>
             Rendez-vous
@@ -84,10 +97,59 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
           </Ancre>
         </nav>
 
+        <section id="assistante" aria-labelledby="titre-assistante" className={SECTION}>
+          <TitreSection id="titre-assistante">Assistante</TitreSection>
+          <p className="max-w-[62ch] text-sm text-encre-2">
+            Son nom et sa première phrase valent dès l’appel suivant. Son prompt, sa voix et son tour de parole partent chez ElevenLabs par
+            une poussée. Tout se règle depuis Claude Code, qui demande ton accord avant que rien ne change pour les prospects.
+          </p>
+          <dl className="border-t border-filet">
+            <LigneDefinition intitule="Nom">{nom}</LigneDefinition>
+            <LigneDefinition intitule="Premier message">
+              « {assistante.premierMessage} »
+              <span className="block text-sm text-encre-3">Ce qu’elle dit quand le prospect se tait au décroché.</span>
+            </LigneDefinition>
+            <LigneDefinition intitule="Dernière modification">
+              {assistante.modifieLe ? (
+                <>
+                  <time dateTime={assistante.modifieLe.toISOString()} className="font-mono text-sm">
+                    {jourCourt(assistante.modifieLe)} {heure(assistante.modifieLe)}
+                  </time>
+                  {assistante.modifiePar ? (
+                    <span className="text-encre-3"> · {assistante.modifiePar === 'mcp' ? 'par Claude Code' : 'dans l’interface'}</span>
+                  ) : null}
+                </>
+              ) : (
+                <span className="text-encre-2">valeurs par défaut</span>
+              )}
+            </LigneDefinition>
+            <LigneDefinition intitule="Configuration ElevenLabs">
+              {configuration ? (
+                <>
+                  <span className="font-mono text-sm">{configuration.versionId.slice(-8)}</span>
+                  <span className="text-encre-3"> · {ORIGINE_CONFIGURATION[configuration.origine]}</span>
+                  <span className="block text-sm text-encre-3">
+                    Consignée le{' '}
+                    <time dateTime={configuration.consigneLe.toISOString()} className="font-mono">
+                      {jourCourt(configuration.consigneLe)} {heure(configuration.consigneLe)}
+                    </time>
+                    .
+                  </span>
+                </>
+              ) : (
+                <span className="text-encre-2">
+                  aucune consignée
+                  <span className="block text-sm text-encre-3">Elle le sera à la première poussée par Claude Code.</span>
+                </span>
+              )}
+            </LigneDefinition>
+          </dl>
+        </section>
+
         <section id="agenda" aria-labelledby="titre-agenda" className={SECTION}>
           <TitreSection id="titre-agenda">Agenda</TitreSection>
           <p className="max-w-[62ch] text-sm text-encre-2">
-            Mina propose des créneaux libres sur l’ensemble de tes calendriers. L’agenda est relu avant les appels (toutes les dix minutes
+            {nom} propose des créneaux libres sur l’ensemble de tes calendriers. L’agenda est relu avant les appels (toutes les dix minutes
             au plus) ; un rendez-vous réservé pendant un appel est inscrit dans Google juste après.
           </p>
           <dl className="border-t border-filet">
@@ -187,7 +249,7 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
         </section>
 
         <section id="rendez-vous" aria-labelledby="titre-rendez-vous" className={SECTION}>
-          <TitreSection id="titre-rendez-vous">Rendez-vous pris par Mina</TitreSection>
+          <TitreSection id="titre-rendez-vous">Rendez-vous pris par {nom}</TitreSection>
           <RendezVousMina rdvs={rdvs} maintenant={maintenant} limite={RENDEZ_VOUS_LUS} sansReservation={sansReservation} />
         </section>
 
