@@ -16,6 +16,7 @@ from gi.repository import GLib
 
 from .audio import Pont, temps_de_reponse
 from .ofono import Telephone, dans_glib
+from .plafond import Plafond
 
 SILENCE_AU_DECROCHE_S = 2.0  # sans voix du prospect passé ce délai, l'assistante ouvre par son premier message
 PREMIER_MESSAGE_PAR_DEFAUT = "Allô ?"
@@ -132,12 +133,15 @@ class Appel:
         nom: str,
         rappels: Rappels,
         premier_message: str = PREMIER_MESSAGE_PAR_DEFAUT,
+        plafond: Plafond | None = None,
     ):
         self._telephone = telephone
+        self._plafond = plafond
+        self._annule = False
         self._numero = numero
         self._premier_message = premier_message_valide(premier_message)
         self._rappels = rappels
-        dossier.mkdir(parents=True, exist_ok=True)
+        dossier.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.journal = Journal(dossier / f"{nom}.log")
         self._enregistrement = str(dossier / f"{nom}.wav")
         self._pont = Pont(self._enregistrement, self.journal)
@@ -209,11 +213,28 @@ class Appel:
     # --- commandes -------------------------------------------------------------------------------
 
     def lancer(self) -> None:
-        """Depuis le thread GLib."""
+        """Depuis le thread GLib. Chaque composition compte au plafond, recomposition comprise : une ligne dont le
+        canal son manque à chaque appel ne doit pas passer deux fois plus d'appels que le plafond affiché."""
+        if self._annule:
+            self.journal("composition annulée : le service a déjà répondu que l'appel n'était pas parti")
+            with self._nouveau:
+                self._termine.set()
+                self._nouveau.notify_all()
+            return
+        if self._plafond is not None:
+            if raison := self._plafond.refus():
+                if self._tentatives == 0:
+                    raise RuntimeError(raison)
+                self.journal("recomposition refusée :", raison)
+                threading.Thread(target=self._terminer, args=("plafond atteint",), daemon=True).start()
+                return
+            self._plafond.compter()
         self._tentatives += 1
         self.journal("composition du", self._numero[:4] + "…" + self._numero[-2:])
         self._telephone.composer(self._numero, self, self._composition_echouee)
         self._en_ligne = True
+        if self._annule:  # annulé pendant la composition : raccrocher aussitôt
+            self._telephone.raccrocher()
         self._conversation.precharger_url()
         self._evenement("etat", {"etat": "composition"})
         GLib.timeout_add(int(DELAI_CANAL_SON_S * 1000), self._verifier_canal)
@@ -244,6 +265,13 @@ class Appel:
     @property
     def main_prise(self) -> bool:
         return self._prise_en_main is not None
+
+    def annuler(self) -> None:
+        """Le service a répondu en échec alors que la composition était déjà programmée (boucle D-Bus trop lente) :
+        elle ne doit pas partir, ou doit être raccrochée si elle est partie entre-temps."""
+        self._annule = True
+        if self._en_ligne:
+            self._telephone.raccrocher()
 
     def raccrocher(self) -> None:
         self.journal("raccrochage demandé")
@@ -345,13 +373,16 @@ class Appel:
         self._conversation.start_session()
 
     def _tour(self, role: str, texte: str) -> None:
-        self.journal("assistante :" if role == "agent" else "prospect :", texte)
+        # Le texte part dans le fil de l'appel, pas au journal : celui-ci finit aussi dans journald, et la parole du
+        # prospect n'a rien à y faire (l'application garde la transcription, et elle seule s'efface).
+        self.journal("assistante :" if role == "agent" else "prospect :", f"{len(texte)} caractères")
         self._evenement("tour", {"role": role, "texte": texte})
 
     def _outil(self, nom: str) -> Callable[[dict[str, Any]], str]:
         def executer(parametres: dict[str, Any]) -> str:
             utiles = {k: v for k, v in parametres.items() if k != "tool_call_id"}
-            self.journal("outil", nom, utiles)
+            # Les clés seulement : les valeurs (adresse e-mail dictée…) sont des données du prospect.
+            self.journal("outil", nom, sorted(utiles))
             return self._rappels.outil(nom, utiles)
 
         return executer

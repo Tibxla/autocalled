@@ -1,6 +1,8 @@
 /**
  * Imprime en JSON ce qu'il faut au pont Bluetooth pour appeler un prospect :
- * { numero, variables, motsCles }, vérifié par `preparerAppel` (numéro autorisé, variables de Mina).
+ * { numero, variables, motsCles, prepareLe }, vérifié par `preparerAppel` (numéro autorisé, variables de Mina).
+ * La sortie contient des données personnelles (numéro, contexte de la fiche) : le pont ne l'accepte que dix
+ * minutes après `prepareLe` et l'efface après usage.
  *
  *   cd apps/web && node --env-file=../../.env --conditions=react-server --import ./scripts/resolution.ts \
  *     scripts/variables-appel.ts <prospectId> [versionScriptId]
@@ -38,5 +40,5 @@ if (!preparation.ok) {
   process.exit(1);
 }
 const { numero, variables, motsCles, entrepriseId } = preparation;
-console.log(JSON.stringify({ entrepriseId, prospectId, versionScriptId: versionId, numero, variables, motsCles }));
+console.log(JSON.stringify({ entrepriseId, prospectId, versionScriptId: versionId, numero, variables, motsCles, prepareLe: Date.now() }));
 process.exit(0);

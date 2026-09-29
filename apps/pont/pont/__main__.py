@@ -3,7 +3,9 @@
     .venv/bin/python -m pont servir
         le service permanent, piloté par l'application (ADR 0007) ; installé par scripts/installer-pont.sh
 
-Diagnostic, service arrêté (un seul programme peut tenir l'agent audio d'oFono) :
+Diagnostic, service arrêté (un seul programme peut tenir l'agent audio d'oFono). Le fichier de préparation contient
+le numéro et le contexte du prospect (données personnelles) : il ne vaut que dix minutes, le consentement étant
+vérifié au moment où il est produit, et il est effacé après usage.
 
     cd apps/web && node --env-file=../../.env --conditions=react-server --import ./scripts/resolution.ts \\
         scripts/variables-appel.ts <prospectId> > ../../data/variables.json
@@ -28,6 +30,9 @@ from gi.repository import GLib, GLibUnix
 
 from .appel import Appel, Journal
 from .ofono import Telephone
+from .plafond import Plafond
+from .reglages import Reglages
+from .service import numero_valide, preparer_dossier
 
 RACINE = Path(__file__).resolve().parents[3]
 
@@ -72,8 +77,35 @@ def _boucle_et_telephone() -> tuple[GLib.MainLoop, Telephone, Journal]:
     return GLib.MainLoop(), telephone, journal
 
 
+FRAICHEUR_PREPARATION_S = 600
+
+
+def lire_preparation(fichier: str, maintenant: float | None = None) -> dict[str, Any]:
+    """Le fichier produit par scripts/variables-appel.ts, s'il date de moins de dix minutes, puis effacé : le
+    consentement se vérifie juste avant de composer, jamais en avance (un numéro peut avoir été révoqué depuis)."""
+    chemin = Path(fichier)
+    preparation = json.loads(chemin.read_text())
+    prepare_le = preparation.get("prepareLe")
+    if not isinstance(prepare_le, (int, float)):
+        raise SystemExit("préparation sans date (prepareLe) : la refaire avec scripts/variables-appel.ts")
+    age = (maintenant or time.time()) - prepare_le / 1000
+    if not 0 <= age <= FRAICHEUR_PREPARATION_S:
+        raise SystemExit("préparation de plus de dix minutes : la refaire, le consentement doit être vérifié juste avant l'appel")
+    if not numero_valide(preparation.get("numero")):
+        raise SystemExit("numéro illisible dans la préparation")
+    chemin.unlink(missing_ok=True)
+    return preparation
+
+
 def appeler(fichier_variables: str) -> int:
-    preparation = json.loads(Path(fichier_variables).read_text())
+    preparation = lire_preparation(fichier_variables)
+    cles = lire_cles()
+    dossier = RACINE / "data" / "pont"
+    preparer_dossier(dossier)
+    reglages = Reglages(dossier / "reglages.json", cles)
+    plafond = Plafond(dossier / "historique-appels.json", reglages.valeurs["appelsParHeure"], reglages.valeurs["appelsParJour"])
+    if raison := plafond.refus():
+        raise SystemExit(raison)
     boucle, telephone, _ = _boucle_et_telephone()
     rappels = RappelsLocaux()
     appel = Appel(
@@ -81,10 +113,11 @@ def appeler(fichier_variables: str) -> int:
         preparation["numero"],
         preparation["variables"],
         preparation.get("motsCles", []),
-        lire_cles(),
-        RACINE / "data" / "pont",
+        cles,
+        dossier,
         "appel-" + time.strftime("%Y%m%d-%H%M%S"),
         rappels,
+        plafond=plafond,
     )
     rappels.journal = appel.journal
     appel.lancer()
@@ -110,7 +143,7 @@ def tester_son(fichier_variables: str, fichier_son: str) -> int:
     son16 = soxr.resample(son, taux, 16000) if taux != 16000 else son
     son16 = (son16 / GAIN_SORTIE).clip(-32768, 32767).astype("<i2").tobytes()  # le pont réapplique le gain
 
-    numero = json.loads(Path(fichier_variables).read_text())["numero"]
+    numero = lire_preparation(fichier_variables)["numero"]
     boucle, telephone, journal = _boucle_et_telephone()
     pont = Pont(str(RACINE / "data" / "pont" / "test-son-enregistrement.wav"), journal)
 
@@ -145,6 +178,7 @@ def tester_son(fichier_variables: str, fichier_son: str) -> int:
 
 
 def main() -> int:
+    os.umask(0o077)  # journaux et enregistrements d'appels : au seul compte qui lance le pont
     arguments = sys.argv[1:]
     if arguments == ["servir"]:
         from .service import servir

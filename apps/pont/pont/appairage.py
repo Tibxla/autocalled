@@ -43,15 +43,17 @@ class _Agent(dbus.service.Object):
     def AuthorizeService(self, appareil, uuid):
         self._verifier(appareil)
 
+    # Appairage hérité (code PIN) : refusé. Un code fixe n'authentifie rien, et tout téléphone récent passe par
+    # l'appairage sécurisé (comparaison de code, RequestConfirmation).
     @dbus.service.method("org.bluez.Agent1", in_signature="o", out_signature="s")
     def RequestPinCode(self, appareil):
-        self._verifier(appareil)
-        return "0000"
+        self._a.journal("appairage par code PIN refusé :", str(appareil).rsplit("/", 1)[-1])
+        raise _Refus("appairage hérité refusé")
 
     @dbus.service.method("org.bluez.Agent1", in_signature="o", out_signature="u")
     def RequestPasskey(self, appareil):
-        self._verifier(appareil)
-        return dbus.UInt32(0)
+        self._a.journal("appairage par code saisi refusé :", str(appareil).rsplit("/", 1)[-1])
+        raise _Refus("appairage hérité refusé")
 
     @dbus.service.method("org.bluez.Agent1", in_signature="ouq", out_signature="")
     def DisplayPasskey(self, appareil, code, saisi):
