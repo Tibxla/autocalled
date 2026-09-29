@@ -6,7 +6,7 @@ import { z } from 'zod';
 import * as entreprise from '@/lib/entreprises';
 import { type EtatFormulaire, type ResultatAction, erreursDeZod } from '@/lib/formulaire';
 import { exigerOperateur } from '@/lib/garde';
-import { JOURS, etapesSchema, ficheSchema, issueSchema, nomScriptSchema, objectionSchema, plagesSchema } from '@/lib/schemas';
+import { JOURS, ficheSchema, issueSchema, nomScriptSchema, objectionSchema, plagesSchema, verifierEtapes } from '@/lib/schemas';
 
 export async function enregistrerFiche(
   entrepriseId: string,
@@ -91,6 +91,11 @@ export async function creerScript(entrepriseId: string, slug: string, _: EtatFor
   redirect(`/entreprises/${slug}/scripts/${scriptId}`);
 }
 
+/**
+ * Nouvelle version d'un script depuis l'éditeur. Les étapes vides sont ignorées ; toutes les erreurs sont
+ * renvoyées, chacune sous la clé `rang:champ` (rang de l'étape dans le formulaire, à partir de 0), avec la
+ * position que voit l'opérateur, et les erreurs de la liste elle-même sous `etapes`.
+ */
 export async function creerVersion(
   entrepriseId: string,
   scriptId: string,
@@ -98,22 +103,10 @@ export async function creerVersion(
   donnees: FormData,
 ): Promise<EtatFormulaire> {
   await exigerOperateur();
-  const intentions = donnees.getAll('intention').map(String);
-  const exemples = donnees.getAll('exemples').map(String);
-  const saisie = etapesSchema.safeParse(
-    intentions
-      .map((intention, i) => ({
-        intention,
-        exemples: (exemples[i] ?? '')
-          .split('\n')
-          .map((l) => l.trim())
-          .filter(Boolean),
-      }))
-      .filter((e) => e.intention.trim() || e.exemples.length),
-  );
-  if (!saisie.success) return { erreurs: { etapes: saisie.error.issues[0]?.message ?? 'Étapes invalides.' } };
+  const verification = verifierEtapes(donnees.getAll('intention').map(String), donnees.getAll('exemples').map(String));
+  if (!verification.ok) return { erreurs: verification.erreurs };
 
-  const version = await entreprise.creerVersion(entrepriseId, scriptId, saisie.data);
+  const version = await entreprise.creerVersion(entrepriseId, scriptId, verification.etapes);
   if (!version.ok) return { message: version.raison };
   revalidatePath('/entreprises', 'layout');
   return { ok: true, message: 'Nouvelle version enregistrée.' };

@@ -78,6 +78,20 @@ export function EditeurVersion({
     if (etat?.ok) onEnregistree();
   }, [etat, onEnregistree]);
 
+  // Refus : chaque erreur du serveur (clé « rang:champ », rang dans l'ordre envoyé) revient sous le champ de
+  // son étape, une fois par réponse (ajustement pendant le rendu, sans effet).
+  const [reponseLue, setReponseLue] = useState(etat);
+  if (reponseLue !== etat) {
+    setReponseLue(etat);
+    const parEtape: Erreurs = {};
+    for (const [cle, message] of Object.entries(etat?.erreurs ?? {})) {
+      const [rangEnvoye, champ] = cle.split(':');
+      const ligne = actives[Number(rangEnvoye)];
+      if (ligne && (champ === 'intention' || champ === 'exemples')) parEtape[`${ligne.cle}:${champ}`] = message;
+    }
+    if (Object.keys(parEtape).length > 0) setErreurs(parEtape);
+  }
+
   const toucher = () => proprietes.onInput();
   const changer = (cle: string, changement: Partial<Ligne>) => {
     setLignes((l) => l.map((x) => (x.cle === cle ? { ...x, ...changement } : x)));
@@ -171,7 +185,13 @@ export function EditeurVersion({
   });
 
   const abandonner = () => (modifie ? confirmation.ouvrir() : onFermer());
-  const refusServeur = etat && !etat.ok ? (etat.erreurs?.etapes ?? etat.message ?? null) : null;
+  const erreursEtapes = Object.keys(etat?.erreurs ?? {}).filter((cle) => cle.includes(':')).length;
+  const refusServeur =
+    etat && !etat.ok
+      ? (etat.erreurs?.etapes ??
+        etat.message ??
+        (erreursEtapes > 0 ? `${erreursEtapes > 1 ? `${erreursEtapes} erreurs` : 'Une erreur'} à corriger dans les étapes : rien n’a été enregistré.` : null))
+      : null;
 
   return (
     <form {...proprietes} onSubmit={envoyer} aria-label={`Nouvelle version v${prochainNumero}`} className="grid gap-4">
