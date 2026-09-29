@@ -179,7 +179,7 @@
     },
     "tts": {
       "voice_id": "ebRwkdEFVZIx2A6YucFh",
-      "model_id": "eleven_v3_conversational",
+      "model_id": "eleven_v4_turbo",
       "stability": 0.45,
       "similarity_boost": 0.8,
       "speed": 1

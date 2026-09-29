@@ -12,7 +12,7 @@ Point de reprise pour la prochaine session de travail. À tenir à jour à chaqu
 ## Réglages de Mina retenus à l'écoute
 
 - Cerveau `glm-45-air-fp8` (≈ 0,2 s avant la première réponse), préféré à Qwen et à Gemini.
-- Voix « Stella » en `eleven_v3_conversational` (≈ 0,14 s avant le premier son).
+- Voix « Stella » en `eleven_v4_turbo` depuis le 29/09 (0,15 s avant le premier son, contre 0,18 s pour `eleven_v3_conversational` et 1 s pour `eleven_v4`, mesurés sur la même phrase) ; à confirmer à l'écoute sur un appel.
 - Tour spéculatif désactivé ; acquiescements et hésitations françaises ne l'interrompent pas.
 - Synchronisation de la configuration : `pnpm agent pull | push | status` (le verrou suit le numéro de version ElevenLabs).
 
