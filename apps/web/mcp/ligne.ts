@@ -1,10 +1,10 @@
 import { TransitionInvalide } from '@autocalled/domain';
 import type { McpServer } from '@modelcontextprotocol/server';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/db';
-import { appels, campagnes, entreprises, prospects } from '@/db/schema';
-import { etatAgenda, synchroniserAgenda } from '@/lib/agenda';
+import { appels, campagnes, entreprises, prospects, rendezVous } from '@/db/schema';
+import { creerEvenementDuRendezVous, etatAgenda, synchroniserAgenda } from '@/lib/agenda';
 import { appelerParTelephone, enregistrerAppelSimule, preparerAppel, reanalyser, simulerAppel } from '@/lib/appels';
 import { autorisationsDe } from '@/lib/autorisations';
 import { appelerSuivantTelephone, demarrerCampagne } from '@/lib/campagnes';
@@ -14,15 +14,16 @@ import { commanderPont, type ReglagesLigne, refusDuPont, reglagesDuPont } from '
 import { champEntreprise, champProspect, champVersion, entrepriseInconnue, prospectInconnu, versionDeLEntreprise, vueAppel } from './communs';
 import { confirmer, heureDeParis, refusDeConfirmation } from './confirmation';
 import { type Declarer, refus, reussite } from './outil';
+import { type Detacher, detacherTache } from './tache';
 
 /**
  * La ligne réelle : appels, campagnes, réglages du pont, analyse et agenda. Ce qui fait sonner le téléphone
- * passe par `confirmer` ; les freins (raccrocher, suspendre, baisser un plafond) jamais.
+ * ou écrit à un prospect passe par `confirmer` ; les freins (raccrocher, suspendre, baisser un plafond) jamais.
  */
 
 const plafonds = (r: ReglagesLigne) => `${r.appelsParHeure} appels par heure et ${r.appelsParJour} par jour, ${r.pauseEntreAppelsS} s de pause entre deux appels de campagne`;
 
-export function outilsDeLigne(declarer: Declarer, serveur: McpServer): void {
+export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: Detacher = detacherTache): void {
   declarer(
     'lancer_appel',
     {
@@ -86,7 +87,7 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer): void {
     'lancer_campagne',
     {
       description:
-        'Lance (ou reprend) une campagne prête ou en pause. Ligne bluetooth : après confirmation de l’opérateur, le premier appel part, puis l’application enchaîne les suivants un à un. Une campagne sur la ligne navigateur se déroule dans l’interface.',
+        'Lance (ou reprend) une campagne prête ou en pause. Ligne bluetooth : après confirmation de l’opérateur, le premier appel part, puis l’application enchaîne les suivants un à un. Ligne simulation : les appels simulés s’enchaînent dans un processus détaché (dix à trente minutes ; suivre avec lire_campagne). Une campagne sur la ligne navigateur se déroule dans l’interface.',
       entree: z.strictObject({ campagneId: z.uuid() }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
@@ -101,8 +102,19 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer): void {
       if (campagne.statut !== 'prete' && campagne.statut !== 'en-pause') {
         return refus(`Cette campagne est ${campagne.statut === 'en-cours' ? 'déjà en cours' : 'terminée'} : seule une campagne prête ou en pause se lance.`);
       }
+      if (campagne.ligne === 'simulation') {
+        try {
+          await demarrerCampagne(campagneId);
+        } catch (erreur) {
+          if (erreur instanceof TransitionInvalide) return refus(erreur.message);
+          throw erreur;
+        }
+        // Elle dure plus longtemps qu'une session : un processus à part la mène à son terme.
+        detacher('derouler-simulation', campagneId);
+        return reussite({ campagneId, statut: 'en-cours', suivi: 'lire_campagne montre l’avancement ; suspendre_campagne l’arrête après l’appel en cours.' });
+      }
       if (campagne.ligne !== 'bluetooth') {
-        return refus('Cette campagne ne passe pas par le téléphone passerelle : lance-la depuis l’interface (page de la campagne).');
+        return refus('Cette campagne se déroule dans le navigateur de l’opérateur : lance-la depuis l’interface (page de la campagne).');
       }
 
       const plafond = await refusDuPont();
@@ -219,5 +231,41 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer): void {
         : refus('L’agenda n’a pas pu être lu.');
     },
   );
-}
 
+  declarer(
+    'recreer_evenement',
+    {
+      description:
+        'Recrée dans Google Agenda l’événement d’un rendez-vous dont la création a échoué ; si le prospect a donné son adresse, Google lui envoie l’invitation. Demande la confirmation de l’opérateur.',
+      entree: z.strictObject({ rendezVousId: z.uuid() }),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    },
+    async ({ rendezVousId }, ctx) => {
+      const [r] = await db
+        .select({ rdv: rendezVous, prospect: prospects.nom, entreprise: entreprises.nom, fuseau: entreprises.fuseau })
+        .from(rendezVous)
+        .innerJoin(appels, eq(appels.id, rendezVous.appelId))
+        .innerJoin(entreprises, eq(entreprises.id, appels.entrepriseId))
+        .innerJoin(prospects, and(eq(prospects.entrepriseId, appels.entrepriseId), eq(prospects.id, appels.prospectId)))
+        .where(eq(rendezVous.id, rendezVousId));
+      if (!r) return refus('Rendez-vous inconnu.');
+      // Comme le bouton de Réglages : seul un échec se recrée (« à créer » peut être en cours, un doublon partirait).
+      if (r.rdv.statut !== 'echec') {
+        return refus(r.rdv.statut === 'cree' ? 'L’événement de ce rendez-vous est déjà dans l’agenda.' : 'L’événement de ce rendez-vous est en cours de création.');
+      }
+      const quand = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'full', timeStyle: 'short', timeZone: r.fuseau }).format(r.rdv.debut);
+      const garde = confirmer(
+        serveur,
+        ctx,
+        `Créer dans Google Agenda la visio de ${r.prospect} (${r.entreprise}) du ${quand}${r.rdv.email ? `, et envoyer l’invitation à ${r.rdv.email}` : ', sans invité : aucun e-mail ne part'}.`,
+      );
+      if (garde.etat === 'a-demander') return garde.issue;
+      if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);
+      await creerEvenementDuRendezVous(rendezVousId);
+      const [apres] = await db.select().from(rendezVous).where(eq(rendezVous.id, rendezVousId));
+      return apres?.statut === 'cree'
+        ? reussite({ rendezVousId, statut: apres.statut, lienVisio: apres.lienVisio }, { confirmation: 'acceptee' })
+        : refus(`La création a encore échoué : ${apres?.erreur ?? 'erreur inconnue'}`, 'acceptee');
+    },
+  );
+}

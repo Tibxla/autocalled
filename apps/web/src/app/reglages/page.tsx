@@ -3,13 +3,21 @@ import Link from 'next/link';
 import { EnTetePage, Message, TitreSection } from '@/components/ui';
 import { calendrierConfigure, etatAgenda } from '@/lib/agenda';
 import { clientGoogle, connexion } from '@/lib/google';
-import { rendezVousRecents } from '@/lib/lecture';
+import { journalMcpRecent, rendezVousRecents } from '@/lib/lecture';
 import { BoutonDeconnecter } from './bouton-deconnecter';
 import { BoutonRecreer, BoutonRelire } from './boutons-agenda';
 
 export const metadata: Metadata = { title: 'Réglages' };
 
 const date = new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' });
+
+const RESULTATS: Record<string, string> = {
+  ok: 'fait',
+  refus: 'refusé',
+  erreur: 'erreur',
+  'confirmation-demandee': 'confirmation demandée',
+};
+const CONFIRMATIONS: Record<string, string> = { acceptee: 'accord de l’opérateur', refusee: 'refus de l’opérateur', indisponible: 'confirmation impossible' };
 
 const MESSAGES: Record<string, string> = {
   connecte: 'L’API Google Agenda est connectée.',
@@ -19,11 +27,12 @@ const MESSAGES: Record<string, string> = {
 
 export default async function PageReglages({ searchParams }: { searchParams: Promise<{ google?: string }> }) {
   const { google } = await searchParams;
-  const [client, api, etat, rdvs] = await Promise.all([
+  const [client, api, etat, rdvs, journal] = await Promise.all([
     clientGoogle(),
     connexion(),
     etatAgenda(),
     rendezVousRecents(),
+    journalMcpRecent(),
   ]);
 
   return (
@@ -92,6 +101,31 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
                   </span>
                   {rdv.email ? <span className="col-span-3 -mt-2 font-mono text-sm text-encre-3">{rdv.email}</span> : null}
                   {rdv.erreur ? <span className="col-span-3 text-sm text-antenne">{rdv.erreur}</span> : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="grid gap-3">
+          <TitreSection>Journal de Claude Code</TitreSection>
+          <p className="max-w-[62ch] text-sm text-encre-2">
+            Ce que Claude Code a lu et fait par le serveur MCP (<span className="font-mono">.mcp.json</span>), du plus récent au plus ancien. Les
+            gestes qui font sonner le téléphone ou écrivent à un prospect attendent ton accord dans Claude Code.
+          </p>
+          {journal.length === 0 ? (
+            <p className="text-sm text-encre-3">Aucun appel d’outil pour l’instant.</p>
+          ) : (
+            <ul>
+              {journal.map((j) => (
+                <li key={j.id} className="grid grid-cols-[8.5rem_minmax(0,1fr)_auto] items-baseline gap-4 border-b border-filet py-2.5">
+                  <span className="font-mono text-sm">{date.format(j.le)}</span>
+                  <span className="truncate font-mono text-sm">{j.outil}</span>
+                  <span className={`text-sm ${j.resultat === 'ok' ? 'text-encre-3' : 'text-antenne'}`}>
+                    {RESULTATS[j.resultat] ?? j.resultat}
+                    {j.confirmation ? ` · ${CONFIRMATIONS[j.confirmation] ?? j.confirmation}` : ''}
+                  </span>
+                  {j.message && j.resultat !== 'ok' ? <span className="col-span-3 -mt-1 text-sm text-encre-3">{j.message}</span> : null}
                 </li>
               ))}
             </ul>

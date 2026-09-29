@@ -1,6 +1,7 @@
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { creerServeur } from '../mcp/serveur';
+import type { Detacher } from '../mcp/tache';
 
 export type Reponse = { erreur: boolean; texte: string; json: unknown; blocs: string[] };
 
@@ -8,7 +9,7 @@ export type Reponse = { erreur: boolean; texte: string; json: unknown; blocs: st
  * Un client MCP branché en mémoire sur le vrai serveur. `elicitation` simule l'opérateur devant Claude Code :
  * absente, le client ne déclare pas la capacité ; sinon il accepte, refuse ou annule chaque confirmation.
  */
-export async function clientDeTest(options: { elicitation?: 'accepter' | 'refuser' | 'annuler' } = {}) {
+export async function clientDeTest(options: { elicitation?: 'accepter' | 'refuser' | 'annuler'; detacher?: Detacher } = {}) {
   const [cote, coteServeur] = InMemoryTransport.createLinkedPair();
   const messages: string[] = [];
   const client = new Client(
@@ -23,7 +24,8 @@ export async function clientDeTest(options: { elicitation?: 'accepter' | 'refuse
       return { action: reponse === 'refuser' ? 'decline' : 'cancel' };
     });
   }
-  await creerServeur().connect(coteServeur);
+  // Par défaut, aucun processus détaché ne part d'un test : la tâche est seulement notée.
+  await creerServeur({ detacher: options.detacher ?? (() => {}) }).connect(coteServeur);
   await client.connect(cote);
 
   async function appeler(nom: string, args: Record<string, unknown> = {}): Promise<Reponse> {

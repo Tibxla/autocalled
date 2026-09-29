@@ -2,7 +2,7 @@ import 'server-only';
 import { ISSUES_SYSTEME, type IssueSysteme, statistiquesObjections, statistiquesParVersion } from '@autocalled/domain';
 import { type SQL, and, desc, eq, ilike, isNotNull, or, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { appels, entreprises, issuesPersonnalisees, objections, prospects, rendezVous, versionsScript } from '@/db/schema';
+import { appels, entreprises, issuesPersonnalisees, journalMcp, objections, prospects, rendezVous, versionsScript } from '@/db/schema';
 import { versionsDeLEntreprise } from './versions';
 
 /** Lectures partagées par les pages et le serveur MCP : une seule requête pour deux lecteurs. */
@@ -104,4 +104,9 @@ export async function rendezVousRecents(limite = 20) {
     .leftJoin(prospects, and(eq(prospects.entrepriseId, appels.entrepriseId), eq(prospects.id, appels.prospectId)))
     .orderBy(desc(rendezVous.debut))
     .limit(limite);
+}
+
+/** Les derniers appels d'outils du serveur MCP (ADR 0009), du plus récent au plus ancien. */
+export async function journalMcpRecent(limite = 30) {
+  return db.select().from(journalMcp).orderBy(desc(journalMcp.le)).limit(limite);
 }
