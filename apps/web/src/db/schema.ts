@@ -13,6 +13,12 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+/**
+ * Qui a écrit en dernier une donnée que l'opérateur édite aussi : l'interface ou le serveur MCP (Claude Code).
+ * Null pour les lignes antérieures à la colonne, dont l'origine n'est pas connue.
+ */
+export type Origine = 'interface' | 'mcp';
+
 export const issueSysteme = pgEnum('issue_systeme', ISSUES_SYSTEME as unknown as [IssueSysteme, ...IssueSysteme[]]);
 
 export const entreprises = pgTable('entreprises', {
@@ -32,6 +38,9 @@ export const entreprises = pgTable('entreprises', {
   horizonJours: integer().notNull().default(14),
   fuseau: text().notNull().default('Europe/Paris'),
   creeLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  /** Dernier enregistrement de la fiche : un formulaire ouvert avant refuse d'écraser ce qu'il n'a pas vu. */
+  modifieLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  modifiePar: text().$type<Origine>(),
 });
 
 /** Une objection garde son identité d'un appel à l'autre : on l'archive, on ne la supprime pas. */
@@ -49,6 +58,9 @@ export const objections = pgTable(
     controler: text().notNull().default(''),
     ordre: integer().notNull().default(0),
     archivee: boolean().notNull().default(false),
+    /** Dernière écriture du texte ou de l'archivage (pas de l'ordre) : garde contre les modifications concurrentes. */
+    modifieLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    modifiePar: text().$type<Origine>(),
   },
 );
 
@@ -68,6 +80,8 @@ export const scripts = pgTable('scripts', {
     .notNull()
     .references(() => entreprises.id, { onDelete: 'cascade' }),
   nom: text().notNull(),
+  /** Un script archivé sort des choix de lancement ; ses versions et ses appels restent. */
+  archive: boolean().notNull().default(false),
   creeLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -87,6 +101,7 @@ export const versionsScript = pgTable(
     numero: integer().notNull(),
     etapes: jsonb().$type<Etape[]>().notNull(),
     creeLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    creePar: text().$type<Origine>(),
   },
   (t) => [unique().on(t.scriptId, t.numero)],
 );

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useCallback, useRef, useState } from 'react';
+import { startTransition, useCallback, useRef, useState } from 'react';
 import { Action, LienAction } from '@/components/ui';
 import type { Etape } from '@/db/schema';
 import { EditeurVersion } from './editeur-version';
@@ -50,6 +50,10 @@ export function EspaceVersion({
     setEdition(false);
     requestAnimationFrame(() => bouton.current?.focus());
   }, []);
+  const recharger = useCallback(() => {
+    setEdition(false);
+    startTransition(() => router.refresh());
+  }, [router]);
   const enregistree = useCallback(() => {
     setEdition(false);
     setAnnonce(`La v${prochain} est enregistrée. Les campagnes déjà lancées gardent leur version.`);
@@ -72,6 +76,7 @@ export function EspaceVersion({
           prochainNumero={prochain}
           onFermer={fermer}
           onEnregistree={enregistree}
+          onRecharger={recharger}
         />
       ) : (
         <>

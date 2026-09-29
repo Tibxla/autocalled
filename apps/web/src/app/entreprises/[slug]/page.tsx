@@ -25,7 +25,12 @@ export default async function PageFiche({ params }: { params: Promise<{ slug: st
   return (
     <Page>
       <div className="pb-8">
-        <ApercuMina entrepriseId={entreprise.id} prospects={listeProspects} versions={versions.map((v) => ({ id: v.id, libelle: v.libelle }))} />
+        <ApercuMina
+          entrepriseId={entreprise.id}
+          prospects={listeProspects}
+          versions={versions.map((v) => ({ id: v.id, libelle: v.libelle }))}
+          revision={entreprise.modifieLe.toISOString()}
+        />
       </div>
       <FormulaireFiche key={entreprise.id} fiche={entreprise} />
     </Page>

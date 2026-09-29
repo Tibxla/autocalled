@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useRaccourci } from '@/components/clavier';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
+import { ChampConnu, MessageConflit } from '@/components/conflit';
 import { Action, Champ, Message, Saisie, ZoneTexte } from '@/components/ui';
 import { useFormulaire } from '@/components/use-formulaire';
 import type { Etape } from '@/db/schema';
@@ -45,14 +46,18 @@ export function EditeurVersion({
   prochainNumero,
   onFermer,
   onEnregistree,
+  onRecharger,
 }: {
   entrepriseId: string;
   scriptId: string;
   etapes: Etape[];
   origine: number;
+  /** Le numéro suivant la dernière version connue : la garde de concurrence renvoie `prochainNumero - 1`. */
   prochainNumero: number;
   onFermer: () => void;
   onEnregistree: () => void;
+  /** Après un refus pour une version créée ailleurs : ferme l'éditeur et relit la page. */
+  onRecharger: () => void;
 }) {
   const { etat, enCours, modifie, proprietes } = useFormulaire<EtatFormulaire>(creerVersion.bind(null, entrepriseId, scriptId), null, {
     avertirSiQuitte: true,
@@ -195,6 +200,7 @@ export function EditeurVersion({
 
   return (
     <form {...proprietes} onSubmit={envoyer} aria-label={`Nouvelle version v${prochainNumero}`} className="grid gap-4">
+      <ChampConnu valeur={String(prochainNumero - 1)} />
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
         <p className="text-sm text-encre-3">
           À partir de la <span className="font-mono">v{origine}</span> : l’enregistrement crée la{' '}
@@ -289,7 +295,18 @@ export function EditeurVersion({
       </div>
 
       {erreurGenerale ? <Message ton="alerte">{erreurGenerale}</Message> : null}
-      {refusServeur ? <Message ton="alerte">{refusServeur}</Message> : null}
+      {etat?.conflit && etat.message ? (
+        <MessageConflit
+          message={etat.message}
+          jeton={etat.conflit.jeton}
+          onRecharger={onRecharger}
+          libelleEcraser={`Enregistrer quand même comme v${Number(etat.conflit.jeton) + 1}`}
+          explication={`Recharger ferme l’éditeur et montre la v${etat.conflit.jeton} ; enregistrer quand même crée la v${Number(etat.conflit.jeton) + 1} avec ta saisie.`}
+          desactive={enCours || confirmation.ouverte}
+        />
+      ) : refusServeur ? (
+        <Message ton="alerte">{refusServeur}</Message>
+      ) : null}
 
       <div className="sticky bottom-0 z-10 -mx-(--gouttiere) grid gap-2 border-t border-filet bg-fond px-(--gouttiere) py-3">
         <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">

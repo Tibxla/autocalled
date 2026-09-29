@@ -5,9 +5,13 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { type ApercuVariables, apercuVariablesAppel } from '@/lib/apercu';
 import * as entreprise from '@/lib/entreprises';
-import { type EtatFormulaire, type ResultatAction, erreursDeZod } from '@/lib/formulaire';
+import { type EtatFormulaire, type ResultatAction, erreursDeZod, jetonConnu } from '@/lib/formulaire';
 import { exigerOperateur } from '@/lib/garde';
 import { JOURS, ficheSchema, issueSchema, nomScriptSchema, objectionSchema, plagesSchema, verifierEtapes } from '@/lib/schemas';
+
+function refusDeFormulaire(refus: entreprise.Refus | entreprise.Conflit): EtatFormulaire {
+  return 'conflit' in refus ? { message: refus.raison, conflit: { jeton: refus.conflit.jeton } } : { message: refus.raison };
+}
 
 export async function enregistrerFiche(
   entrepriseId: string,
@@ -27,7 +31,9 @@ export async function enregistrerFiche(
   );
   if (!plages.success) return { erreurs: { plages: plages.error.issues[0]?.message ?? 'Plages invalides.' } };
 
-  await entreprise.enregistrerFiche(entrepriseId, saisie.data, plages.data);
+  const resultat = await entreprise.enregistrerFiche(entrepriseId, saisie.data, plages.data, { origine: 'interface', connu: jetonConnu(donnees) });
+  // Refus ou conflit : pas de revalidation, la saisie reste telle quelle face à la page ouverte.
+  if (!resultat.ok) return refusDeFormulaire(resultat);
   revalidatePath('/entreprises', 'layout');
   return { ok: true, message: 'Fiche enregistrée.' };
 }
@@ -42,8 +48,8 @@ export async function enregistrerObjection(
   const saisie = objectionSchema.safeParse(Object.fromEntries(donnees));
   if (!saisie.success) return { erreurs: erreursDeZod(saisie.error) };
 
-  const resultat = await entreprise.enregistrerObjection(entrepriseId, objectionId, saisie.data);
-  if (!resultat.ok) return { message: resultat.raison };
+  const resultat = await entreprise.enregistrerObjection(entrepriseId, objectionId, saisie.data, { origine: 'interface', connu: jetonConnu(donnees) });
+  if (!resultat.ok) return refusDeFormulaire(resultat);
   revalidatePath('/entreprises', 'layout');
   return { ok: true, message: objectionId ? 'Objection enregistrée.' : 'Objection ajoutée.' };
 }
@@ -54,7 +60,7 @@ export async function basculerArchiveObjection(
   archivee: boolean,
 ): Promise<ResultatAction<{ archivee: boolean }>> {
   await exigerOperateur();
-  if (!(await entreprise.basculerArchiveObjection(entrepriseId, objectionId, archivee))) {
+  if (!(await entreprise.basculerArchiveObjection(entrepriseId, objectionId, archivee, 'interface'))) {
     return { ok: false, raison: 'Cette objection n’existe plus dans cette entreprise.' };
   }
   revalidatePath('/entreprises', 'layout');
@@ -107,8 +113,8 @@ export async function creerVersion(
   const verification = verifierEtapes(donnees.getAll('intention').map(String), donnees.getAll('exemples').map(String));
   if (!verification.ok) return { erreurs: verification.erreurs };
 
-  const version = await entreprise.creerVersion(entrepriseId, scriptId, verification.etapes);
-  if (!version.ok) return { message: version.raison };
+  const version = await entreprise.creerVersion(entrepriseId, scriptId, verification.etapes, { origine: 'interface', connu: jetonConnu(donnees) });
+  if (!version.ok) return refusDeFormulaire(version);
   revalidatePath('/entreprises', 'layout');
   return { ok: true, message: 'Nouvelle version enregistrée.' };
 }
