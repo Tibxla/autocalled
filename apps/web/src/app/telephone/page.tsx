@@ -9,6 +9,7 @@ import { commanderPont, type ReglagesLigne } from '@/lib/pont';
 import type { Appairage, EtatTelephone } from './actions';
 import { FormulaireReglages } from './formulaire-reglages';
 import { ActionReconnecter, PanneauTelephone } from './panneau-telephone';
+import { AIDE_RECONNEXION, reconnexionTelephone } from './reconnexion';
 import { ReleveEtat } from './releve-etat';
 
 export const metadata: Metadata = { title: 'Téléphone' };
@@ -33,8 +34,6 @@ type Verdict = {
   texte: string;
   lien?: string;
   detail?: string;
-  /** Téléphone connu mais déconnecté : « Reconnecter le téléphone » sous le verdict. */
-  reconnecter?: boolean;
 };
 
 const TONS: Record<Verdict['ton'], string> = {
@@ -119,7 +118,6 @@ export default async function PageTelephone() {
     verdict = {
       ton: 'alerte',
       texte: 'Téléphone passerelle déconnecté\u00a0: hors de portée ou Bluetooth coupé',
-      reconnecter: true,
     };
   else if (telephone.plafond) verdict = verdictPlafond(telephone.plafond);
   else verdict = { ton: 'encre', texte: 'Prête à appeler' };
@@ -148,9 +146,10 @@ export default async function PageTelephone() {
               <span className="text-sm text-encre-3">suivi, écoute, prise de main</span>
             </div>
           ) : null}
-          {verdict.reconnecter ? (
+          {/* Téléphone appairé, aucun appel : la reconnexion reste en tête, même dit connecté (liaison figée par la veille). */}
+          {reconnexionTelephone(telephone) ? (
             <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-              <ActionReconnecter />
+              <ActionReconnecter ton={telephone?.connecte ? 'discret' : 'fort'} aide={AIDE_RECONNEXION} />
             </div>
           ) : null}
           <ReleveEtat luA={luA} />
