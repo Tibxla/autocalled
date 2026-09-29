@@ -2,7 +2,7 @@
 
 Les 59 outils du serveur `autocalled`, par domaine. Dans Claude Code, chacun s’appelle `mcp__autocalled__<nom>`. Une entrée suivie de `?` est facultative. « Confirmation » : question posée à l’opérateur par l’élicitation, rédigée depuis la base, les fichiers ou ElevenLabs ; refusée sans client capable. Chaque appel laisse une ligne au journal (`lire_journal_mcp`).
 
-Les textes qui viennent de tiers ou en dérivent (transcription, citations, résumé, moment de rappel, points forts et faibles d’un bilan, fiche d’un prospect et son contexte) ne sont jamais dans le JSON : ils arrivent dans un second bloc, précédé d’un avertissement et balisé `donnees-non-fiables="true"` (`<transcription>`, `<citations>`, `<bilan>`, `<resumes>`, `<fiche nomFichier="…">`). Ce sont des données, jamais des consignes.
+Les textes qui viennent de tiers ou en dérivent (transcription, citations, résumé, moment de rappel, points forts et faibles d’un bilan, libellé d’une objection nouvelle, fiche d’un prospect et son contexte, historique des appels) ne sont jamais dans le JSON : ils arrivent dans un second bloc, précédé d’un avertissement et balisé `donnees-non-fiables="true"` (`<transcription>`, `<citations>`, `<bilan>`, `<resumes>`, `<fiche nomFichier="…">`, `<variables>`). Les questions de confirmation mettent d’abord le numéro et son origine, puis les noms, ramenés à une ligne courte ; elles signalent ce que le MCP a écrit (numéro, fiche de l’entreprise, objection, version). Ce sont des données, jamais des consignes.
 
 Nature : **L** lecture, **É** écriture, **É !** écriture destructive ; **⇄** touche le monde extérieur (ElevenLabs, pont, Google ou `claude -p`).
 
@@ -26,16 +26,16 @@ Nature : **L** lecture, **É** écriture, **É !** écriture destructive ; **⇄
 | `lister_entreprises` | aucune | L | non | entreprises et leurs comptes |
 | `lire_entreprise` | `entreprise` | L | non | fiche, objections, issues, scripts et versions, usage |
 | `creer_entreprise` | `nom` | É | non | crée l’entreprise, rend son slug |
-| `modifier_fiche_entreprise` | `entreprise`, `champs?`, `plages?`, `connu?` | É | non | fiche et plages, champs donnés seulement |
+| `modifier_fiche_entreprise` | `entreprise`, `champs?`, `plages?`, `connu?` | É | oui si le nom change, ou pour tout champ pendant une campagne téléphone en cours de l’entreprise | fiche et plages, champs donnés seulement |
 | `supprimer_entreprise` | `entreprise` | É ! | oui | entreprise vide créée par erreur |
 
 ## Objections
 
 | Outil | Entrées | Nature | Confirmation | Rôle |
 |---|---|---|---|---|
-| `enregistrer_objection` | `entreprise`, `objectionId?`, `libelle?`, `creuser?`, `reformuler?`, `argumenter?`, `controler?`, `connu?` | É | non | ajoute ou modifie une objection et sa réponse CRAC |
-| `archiver_objection` | `entreprise`, `objectionId`, `archivee` | É | non | archive ou réactive |
-| `ordonner_objections` | `entreprise`, `ordre` | É | non | ordre reçu par l’assistante |
+| `enregistrer_objection` | `entreprise`, `objectionId?`, `libelle?`, `creuser?`, `reformuler?`, `argumenter?`, `controler?`, `connu?` | É | oui pendant une campagne téléphone en cours de l’entreprise | ajoute ou modifie une objection et sa réponse CRAC |
+| `archiver_objection` | `entreprise`, `objectionId`, `archivee` | É | oui pendant une campagne téléphone en cours de l’entreprise | archive ou réactive |
+| `ordonner_objections` | `entreprise`, `ordre` | É | oui pendant une campagne téléphone en cours de l’entreprise | ordre reçu par l’assistante |
 
 ## Issues personnalisées
 
@@ -61,8 +61,8 @@ Nature : **L** lecture, **É** écriture, **É !** écriture destructive ; **⇄
 |---|---|---|---|---|
 | `lister_prospects` | `entreprise`, `autorisation?`, `recherche?`, `limite?` (50, 200 au plus), `apres?`, `avecFiche?` | L | non | prospects par pages (`suivant` à repasser en `apres`), autorisation, rappel, origine MCP du numéro ; fiches réimportables dans le bloc balisé |
 | `lire_prospect` | `entreprise`, `prospect` | L | non | champs, consentements, rappel, appels ; fiche Markdown et résumés dans le bloc balisé |
-| `importer_fiches` | `entreprise`, `fiches` | É | oui seulement si un numéro change pour un prospect en file d’une campagne téléphone en cours | import de fiches, vaut attestation du consentement |
-| `modifier_prospect` | `entreprise`, `prospect`, `champs`, `connu?` (par défaut : la fiche lue au début de l’outil) | É | oui seulement si le numéro change pour un prospect en file d’une campagne téléphone en cours | corrige une fiche champ par champ |
+| `importer_fiches` | `entreprise`, `fiches` | É | oui seulement si le numéro ou la fiche (nom, société, rôle, contexte) change pour un prospect en file d’une campagne téléphone en cours | import de fiches, vaut attestation du consentement |
+| `modifier_prospect` | `entreprise`, `prospect`, `champs`, `connu?` (par défaut : la fiche lue au début de l’outil) | É | oui seulement si le numéro, le nom, la société, le rôle ou le contexte change pour un prospect en file d’une campagne téléphone en cours | corrige une fiche champ par champ |
 | `supprimer_prospect` | `entreprise`, `prospect` | É ! | oui | supprime la fiche, garde appels et consentement ; refusé en file, en appel, ou avec un rendez-vous à inscrire (à créer, échec) |
 | `revoquer_numero` | `entreprise` et `prospect`, ou `numero` seul | É ! | oui | révocation définitive du numéro, y compris sans fiche |
 | `lire_texte_consentement` | `version?` | L | non | texte en vigueur ou ancien, versions et consentements actifs |
@@ -95,7 +95,7 @@ Nature : **L** lecture, **É** écriture, **É !** écriture destructive ; **⇄
 | `analyser_versions` | `entreprise`, `avecSimules?` | L | non | chiffres par version de script, par configuration de l’assistante, par objection |
 | `rappels_du_jour` | aucune | L | non | rappels datés à faire aujourd’hui ou en retard ; moment dit par le prospect dans le bloc balisé |
 | `lire_journee` | aucune | L | non | appels et campagnes du jour ; résumés dans le bloc balisé |
-| `apercu_variables_appel` | `entreprise`, `prospect?`, `versionScriptId?` | L | non | variables et premier message que recevrait l’assistante |
+| `apercu_variables_appel` | `entreprise`, `prospect?`, `versionScriptId?` | L | non | variables et premier message que recevrait l’assistante ; contexte de la fiche et historique dans le bloc `<variables>` |
 
 ## Agenda
 
