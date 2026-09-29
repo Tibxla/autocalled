@@ -1,7 +1,9 @@
 """Réglages de la ligne téléphone, modifiables depuis l'application (page Téléphone).
 
-Gardés par le pont dans son dossier de données : c'est lui qui applique le plafond, même si
-l'application se trompe. Les valeurs de `.env` ne servent que de valeurs par défaut.
+Gardés par le pont dans son dossier de données : c'est lui qui applique le plafond (appels par heure et
+par jour, chaque composition comptée), même si l'application se trompe. La pause entre deux appels, elle,
+est appliquée par l'application entre deux appels d'une campagne (route de fin) ; le pont ne fait que la
+garder. Les valeurs de `.env` ne servent que de valeurs par défaut.
 """
 import json
 from pathlib import Path
