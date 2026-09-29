@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useId, useRef, useState, useTransition } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, useTransition } from 'react';
 import { raccrocherAppelTelephone, relancerAnalyse } from '@/app/appels/actions';
 import { usePriseDeMain, type EtatPrise } from '@/app/appels/[id]/prise-de-main';
 import { Action, LienAction } from './action';
@@ -10,6 +10,8 @@ import { toucheAria, useRaccourcis } from './clavier';
 import { Confirmation, useConfirmation } from './confirmation';
 import { chrono as formatChrono, heure, numeroMasque, prenom } from './format-appel';
 import { useHorloge } from './horloge';
+import { lotDeNiveaux, TamponNiveaux } from './niveaux-direct';
+import { OndeDirect } from './onde-direct';
 
 /**
  * Bande d'un appel téléphone en cours, commune à l'accueil, à la fiche d'appel et à la régie de campagne.
@@ -32,13 +34,22 @@ export interface TourDirect {
 export function useFilAppel(
   appelId: string,
   { suivre, onTermine }: { suivre: boolean; onTermine?: () => void },
-): { etat: string; tours: TourDirect[]; perdu: boolean; termineLe: number | null; enLigneDepuis: number | null } {
+): {
+  etat: string;
+  tours: TourDirect[];
+  perdu: boolean;
+  termineLe: number | null;
+  enLigneDepuis: number | null;
+  /** Niveaux des deux voix relayés par le pont ; null tant qu'aucun n'est arrivé (pont ancien, pas encore décroché). */
+  niveaux: TamponNiveaux | null;
+} {
   const router = useRouter();
   const [etat, setEtat] = useState('composition');
   const [tours, setTours] = useState<TourDirect[]>([]);
   const [perdu, setPerdu] = useState(false);
   const [termineLe, setTermineLe] = useState<number | null>(null);
   const [enLigneDepuis, setEnLigneDepuis] = useState<number | null>(null);
+  const [niveaux, setNiveaux] = useState<TamponNiveaux | null>(null);
   const surTermine = useRef(onTermine);
   useEffect(() => {
     surTermine.current = onTermine;
@@ -51,13 +62,26 @@ export function useFilAppel(
     // l'état précédent est resté affiché au moins une seconde.
     let affichageDepuis = Date.now();
     let activeVu = false;
+    // Les niveaux (20 par seconde) vont dans un tampon lu par l'onde à chaque image, pas dans l'état React.
+    const tampon = new TamponNiveaux();
+    let niveauxAnnonces = false;
     source.onmessage = (m) => {
-      const e = JSON.parse(m.data) as { type: string; etat?: string; role?: TourDirect['role']; texte?: string };
-      if (e.type === 'etat' && e.etat) {
+      const e = JSON.parse(m.data) as { type: string; etat?: string; role?: TourDirect['role']; texte?: string; t?: number };
+      if (e.type === 'niveaux') {
+        const lot = lotDeNiveaux(e);
+        if (!lot) return;
+        tampon.ajouter(lot, Date.now());
+        if (!niveauxAnnonces) {
+          niveauxAnnonces = true;
+          setNiveaux(tampon);
+        }
+      } else if (e.type === 'etat' && e.etat) {
         const maintenant = Date.now();
         if (e.etat === 'active' && !activeVu) {
           activeVu = true;
-          setEnLigneDepuis(maintenant - affichageDepuis >= 1000 ? maintenant : null);
+          // Rejouée à la connexion, la mise en ligne n'est pas observée : l'heure du pont (même machine que
+          // l'application) la date, s'il la donne.
+          setEnLigneDepuis(maintenant - affichageDepuis >= 1000 ? maintenant : typeof e.t === 'number' ? e.t : null);
         }
         affichageDepuis = maintenant;
         setEtat(e.etat);
@@ -79,10 +103,13 @@ export function useFilAppel(
       setPerdu(true);
       router.refresh();
     };
-    return () => source.close();
+    return () => {
+      source.close();
+      setNiveaux(null);
+    };
   }, [appelId, router, suivre]);
 
-  return { etat, tours, perdu, termineLe, enLigneDepuis };
+  return { etat, tours, perdu, termineLe, enLigneDepuis, niveaux };
 }
 
 /* ------------------------------------------------------------------ écoute */
@@ -198,6 +225,25 @@ export function useEcoute(appelId: string): {
   return { active, erreur, demarrer, arreter, niveau };
 }
 
+/* ------------------------------------------------------------------ mouvement réduit */
+
+const REQUETE_REDUIT = '(prefers-reduced-motion: reduce)';
+
+function abonnerReduit(rappel: () => void) {
+  const requete = matchMedia(REQUETE_REDUIT);
+  requete.addEventListener('change', rappel);
+  return () => requete.removeEventListener('change', rappel);
+}
+
+/** Préférence de mouvement réduit, suivie en direct ; faux côté serveur et à l'hydratation. */
+function useMouvementReduit(): boolean {
+  return useSyncExternalStore(
+    abonnerReduit,
+    () => matchMedia(REQUETE_REDUIT).matches,
+    () => false,
+  );
+}
+
 /* ------------------------------------------------------------------ textes */
 
 const LIBELLES_ETAT: Record<string, string> = {
@@ -243,10 +289,11 @@ const ECART_SEGMENT = 6;
 const MOTS_PAR_SECONDE = 2.6;
 
 /**
- * L'onde honnête : le pont n'envoie aucun niveau audio par voix, seulement des états et des tours. Chaque tour
- * devient un segment, une barre par mot, dont la hauteur suit la longueur du mot : Mina au-dessus de l'axe en
- * antenne, le prospect dessous. La dernière réplique de Mina s'anime pendant sa durée estimée, puis se fige ;
- * pendant l'écoute, elle suit le niveau du son (une seule piste : le flux mélange les deux voix).
+ * La piste des tours, quand l'onde des niveaux ne s'affiche pas (pont sans niveaux, écoute ouverte, mouvement
+ * réduit, appel terminé). Chaque tour devient un segment, une barre par mot, dont la hauteur suit la longueur du
+ * mot : Mina au-dessus de l'axe en antenne, le prospect dessous. La dernière réplique de Mina s'anime pendant sa
+ * durée estimée, puis se fige ; pendant l'écoute, elle suit le niveau du son (une seule piste : le flux mélange
+ * les deux voix).
  */
 export function PisteParole({ tours, niveau, actif, hauteur = 40 }: { tours: TourDirect[]; niveau?: () => number; actif: boolean; hauteur?: number }) {
   const cadre = useRef<HTMLDivElement>(null);
@@ -358,6 +405,8 @@ export interface VueBandeAppelProps {
   tours: TourDirect[];
   chrono: { libelle: string; depuis: number } | null;
   ecoute: { active: boolean; erreur: string | null; niveau?: () => number };
+  /** Niveaux des deux voix relayés par le pont : l'onde s'en nourrit tant que l'écoute est fermée. */
+  niveaux?: TamponNiveaux | null;
   prise: { etat: EtatPrise; erreur: string | null; muet: boolean; depuis?: number | null };
   raccrochage: { enCours: boolean; erreur: string | null };
   /** Statut traitement : fil figé, contrôles retirés. */
@@ -408,6 +457,7 @@ export function VueBandeAppel({
   tours,
   chrono,
   ecoute,
+  niveaux = null,
   prise,
   raccrochage,
   termine = null,
@@ -431,6 +481,7 @@ export function VueBandeAppel({
   const enLigne = !termine && !perdu && etat !== 'termine' && etat !== 'disconnected';
   const vivant = enLigne && EN_LIGNE.has(etat);
   const maintenant = useHorloge(Boolean(chrono) || prise.etat === 'active');
+  const reduit = useMouvementReduit();
   const nomProspect = libelleProspect ?? (identite ? prenom(identite.prospect) : 'Prospect');
 
   const confirmationPrise = useConfirmation();
@@ -653,8 +704,13 @@ export function VueBandeAppel({
           {dernierTour ? `${dernierTour.role === 'agent' ? 'Mina' : nomProspect} : ${dernierTour.texte}` : ''}
         </p>
 
-        {/* Rangée 3 : la piste de parole, ou l'onde de la ligne navigateur. */}
-        {onde ?? (tours.length > 0 || enLigne ? <PisteParole tours={tours} actif={enLigne} {...(ecoute.active && ecoute.niveau ? { niveau: ecoute.niveau } : {})} /> : null)}
+        {/* Rangée 3 : l'onde (ligne navigateur, ou niveaux du pont écoute fermée), sinon la piste de parole. */}
+        {onde ??
+          (enLigne && niveaux && !ecoute.active && !reduit ? (
+            <OndeDirect niveaux={niveaux} actif />
+          ) : tours.length > 0 || enLigne ? (
+            <PisteParole tours={tours} actif={enLigne} {...(ecoute.active && ecoute.niveau ? { niveau: ecoute.niveau } : {})} />
+          ) : null)}
 
         {/* Fil complet : toujours sur la fiche, avec T sur la bande. */}
         {filOuvert && tours.length > 0 ? <Fil tours={tours} nomProspect={nomProspect} /> : null}
@@ -812,6 +868,7 @@ export function BandeAppel({
       tours={fil.tours}
       chrono={chrono}
       ecoute={{ active: ecoute.active, erreur: ecoute.erreur, niveau: ecoute.niveau }}
+      niveaux={fil.niveaux}
       prise={{ etat: prise.etat, erreur: prise.erreur, muet: prise.muet, depuis: priseDepuis }}
       raccrochage={{ enCours: raccrochageEnCours, erreur: erreurRaccrochage }}
       termine={termine}
