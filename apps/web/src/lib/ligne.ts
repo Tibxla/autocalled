@@ -41,7 +41,7 @@ export async function campagneOuverte(): Promise<CampagneBarre | null> {
       entreprise: entreprises.nom,
       statut: campagnes.statut,
       total: sql<number>`jsonb_array_length(${campagnes.entrees})`.mapWith(Number),
-      traites: sql<number>`(select count(*) from jsonb_array_elements(${campagnes.entrees}) e where e->>'etat' in ('appelee', 'sautee'))`.mapWith(
+      traites: sql<number>`(select count(*) from jsonb_array_elements(${campagnes.entrees}) e where e->>'etat' in ('appelee', 'sautee', 'retiree'))`.mapWith(
         Number,
       ),
     })

@@ -151,7 +151,9 @@ describe('comptesCampagne', () => {
         { prospectId: 'b', etat: 'en-appel', appelId: 'x' },
         { prospectId: 'c', etat: 'appelee', appelId: 'y' },
         { prospectId: 'd', etat: 'sautee', raisonSaut: 'numero-non-autorise' },
+        { prospectId: 'e', etat: 'retiree', motif: 'retrait', le: '2026-09-29T10:00:00.000Z', par: 'interface' },
+        { prospectId: 'f', etat: 'a-appeler', sauts: 2 },
       ]),
-    ).toEqual({ total: 4, aAppeler: 1, enAppel: 1, appelees: 1, sautees: 1, traites: 2 });
+    ).toEqual({ total: 6, aAppeler: 2, enAppel: 1, appelees: 1, sautees: 1, retirees: 1, traites: 3 });
   });
 });

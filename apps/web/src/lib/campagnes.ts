@@ -1,11 +1,30 @@
 import 'server-only';
-import { type Campagne, type VariablesDeLAppel, creerCampagne, debuterAppel, demarrer, mettreEnPause, prochaineAction, sauter, terminerAppel, TransitionInvalide } from '@autocalled/domain';
-import { eq, sql } from 'drizzle-orm';
+import {
+  type Campagne,
+  type OrigineGeste,
+  type VariablesDeLAppel,
+  ajouterProspects,
+  creerCampagne,
+  debuterAppel,
+  demarrer,
+  finDemandee,
+  mettreEnPause,
+  prochaineAction,
+  reporter,
+  retirer,
+  sauter,
+  terminerAppel,
+  terminerAvantLaFin,
+  TransitionInvalide,
+} from '@autocalled/domain';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { appels, campagnes } from '@/db/schema';
+import { appels, campagnes, prospects, scripts, versionsScript } from '@/db/schema';
 import { rafraichirSiAncien } from './agenda';
 import { preparerAppel, simulerAppel } from './appels';
+import { autorisationsDe } from './autorisations';
 import { jetonConversation } from './elevenlabs';
+import type { ResultatAction } from './formulaire';
 import { commanderPont, reglagesDuPont, refusDuPont } from './pont';
 import type { SaisieCampagne } from './schemas';
 
@@ -40,17 +59,21 @@ export async function avecCampagne<T>(
 
 export type AppelSuivant =
   | { type: 'appel'; appelId: string; prospectId: string; jeton: string; variables: Record<string, string>; motsCles: string[] }
-  | { type: 'attente' };
+  | { type: 'attente'; raison?: string };
 
 /**
  * Ligne navigateur : passe au prochain prospect autorisé, en sautant ceux dont le numéro ne l'est
- * plus à cet instant, et ouvre la conversation.
+ * plus à cet instant, et ouvre la conversation. `attendu` : le prospect que la page affiche ; si la file a
+ * changé entre-temps (Sauter, Retirer), rien ne part et la raison le dit.
  */
-export async function appelerSuivantNavigateur(campagneId: string): Promise<AppelSuivant> {
+export async function appelerSuivantNavigateur(campagneId: string, attendu?: string): Promise<AppelSuivant> {
   return avecCampagne<AppelSuivant>(campagneId, async (campagne, tx) => {
     for (;;) {
       const action = prochaineAction(campagne);
       if (action.type !== 'appeler') return { campagne, resultat: { type: 'attente' } };
+      if (attendu !== undefined && action.prospectId !== attendu) {
+        return { campagne, resultat: { type: 'attente', raison: 'La file a changé : le prochain prospect n’est plus celui affiché. Rien n’est parti.' } };
+      }
       const preparation = await preparerAppel(campagne.entrepriseId, action.prospectId, campagne.versionScriptId);
       if (!preparation.ok) {
         campagne = sauter(campagne, action.prospectId, 'numero-non-autorise');
@@ -201,3 +224,134 @@ export async function suspendreSiEnCours(campagneId: string): Promise<void> {
 
 /** Nombre d'appels d'une campagne par état, pour la liste. */
 export const resumeEntrees = sql<string>`jsonb_path_query_array(${campagnes.entrees}, '$[*].etat')`;
+
+/* ------------------------------------------------------------------ gestes sur la file */
+
+const FILE_CHANGEE = 'La campagne a changé entre-temps : relis la page.';
+const FORME_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const INTROUVABLE = 'Campagne introuvable.';
+
+/**
+ * Un geste de l'opérateur sur la file, sous le verrou de `avecCampagne`. Les refus attendus reviennent en
+ * phrase (`ResultatAction`) ; une transition refusée par le domaine malgré les contrôles dit que la campagne a
+ * changé entre-temps.
+ */
+async function gesteSurLaFile<T extends object>(
+  campagneId: string,
+  geste: (campagne: Campagne, tx: Transaction) => Promise<ResultatAction<T> | { campagne: Campagne; resultat: ResultatAction<T> }>,
+): Promise<ResultatAction<T>> {
+  if (!FORME_UUID.test(campagneId)) return { ok: false, raison: INTROUVABLE };
+  try {
+    return await avecCampagne<ResultatAction<T>>(campagneId, async (campagne, tx) => {
+      const issue = await geste(campagne, tx);
+      return 'campagne' in issue ? issue : { campagne, resultat: issue };
+    });
+  } catch (erreur) {
+    if (!(erreur instanceof TransitionInvalide)) throw erreur;
+    return { ok: false, raison: erreur.message === 'campagne introuvable' ? INTROUVABLE : FILE_CHANGEE };
+  }
+}
+
+/** Pourquoi ce prospect ne peut plus bouger dans la file, ou null s'il est encore à appeler. */
+function refusEntree(campagne: Campagne, prospectId: string): string | null {
+  if (campagne.statut === 'terminee') return 'La campagne est terminée : sa file ne bouge plus.';
+  const entree = campagne.entrees.find((e) => e.prospectId === prospectId);
+  if (!entree) return 'Ce prospect n’est pas dans la file de cette campagne.';
+  if (entree.etat === 'en-appel') return 'Ce prospect est en appel : l’appel va à son terme.';
+  if (entree.etat !== 'a-appeler') return 'Ce prospect n’est plus à appeler dans cette campagne.';
+  return null;
+}
+
+/**
+ * « Sauter » : le prospect repasse en fin de file, sans être appelé maintenant. N'appelle personne ; une
+ * campagne en cours enchaîne sur le suivant comme d'habitude.
+ */
+export async function sauterProspect(campagneId: string, prospectId: string): Promise<ResultatAction> {
+  return gesteSurLaFile(campagneId, async (campagne) => {
+    const refus = refusEntree(campagne, prospectId);
+    if (refus) return { ok: false, raison: refus };
+    const rang = campagne.entrees.findIndex((e) => e.prospectId === prospectId);
+    if (!campagne.entrees.slice(rang + 1).some((e) => e.etat === 'a-appeler')) {
+      return { ok: false, raison: 'C’est déjà le dernier prospect à appeler : il reste à sa place.' };
+    }
+    return { campagne: reporter(campagne, prospectId), resultat: { ok: true } };
+  });
+}
+
+/**
+ * Retire un prospect de la file : il ne sera pas appelé dans cette campagne. L'entrée reste, avec l'heure et
+ * l'origine du geste. Retirer le dernier prospect restant termine la campagne (après l'appel en cours s'il y en a un).
+ */
+export async function retirerProspect(
+  campagneId: string,
+  prospectId: string,
+  origine: OrigineGeste = 'interface',
+): Promise<ResultatAction<{ terminee: boolean }>> {
+  return gesteSurLaFile<{ terminee: boolean }>(campagneId, async (campagne) => {
+    const refus = refusEntree(campagne, prospectId);
+    if (refus) return { ok: false, raison: refus };
+    const apres = retirer(campagne, prospectId, { le: new Date().toISOString(), par: origine });
+    return { campagne: apres, resultat: { ok: true, terminee: apres.statut === 'terminee' } };
+  });
+}
+
+/**
+ * Ajoute des prospects en fin de file d'une campagne non terminée, avec les gardes du lancement : prospects de
+ * l'entreprise, numéro autorisé à cet instant, script non archivé, aucun doublon. Tout ou rien : un seul
+ * prospect refusé et rien n'est ajouté, la raison les nomme.
+ */
+export async function ajouterALaCampagne(campagneId: string, prospectIds: readonly string[]): Promise<ResultatAction<{ ajoutes: number }>> {
+  const ids = [...new Set(prospectIds)];
+  if (ids.length === 0) return { ok: false, raison: 'Choisis au moins un prospect.' };
+  if (!FORME_UUID.test(campagneId)) return { ok: false, raison: INTROUVABLE };
+  const [ligne] = await db
+    .select({ entrepriseId: campagnes.entrepriseId, archive: scripts.archive })
+    .from(campagnes)
+    .innerJoin(versionsScript, eq(versionsScript.id, campagnes.versionScriptId))
+    .innerJoin(scripts, eq(scripts.id, versionsScript.scriptId))
+    .where(eq(campagnes.id, campagneId));
+  if (!ligne) return { ok: false, raison: INTROUVABLE };
+  if (ligne.archive) {
+    return { ok: false, raison: 'Le script de cette campagne est archivé : réactive-le dans Scripts, ou lance une nouvelle campagne sur un autre script.' };
+  }
+  const trouves = await db
+    .select({ id: prospects.id, nom: prospects.nom, telephone: prospects.telephone })
+    .from(prospects)
+    .where(and(eq(prospects.entrepriseId, ligne.entrepriseId), inArray(prospects.id, ids)));
+  const inconnus = ids.filter((id) => !trouves.some((p) => p.id === id));
+  if (inconnus.length) return { ok: false, raison: `Prospect introuvable dans cette entreprise : ${inconnus.join(', ')}. Rien n’a été ajouté.` };
+  const autorisations = await autorisationsDe(trouves.map((p) => p.telephone));
+  const nonAutorises = trouves.filter((p) => !autorisations.get(p.telephone)?.autorise);
+  if (nonAutorises.length) {
+    return { ok: false, raison: `Numéro non autorisé : ${nonAutorises.map((p) => p.nom).join(', ')}. Rien n’a été ajouté.` };
+  }
+  const nom = new Map(trouves.map((p) => [p.id, p.nom]));
+
+  return gesteSurLaFile<{ ajoutes: number }>(campagneId, async (campagne) => {
+    if (campagne.statut === 'terminee') return { ok: false, raison: 'La campagne est terminée : lance-en une nouvelle pour appeler ces prospects.' };
+    if (finDemandee(campagne)) return { ok: false, raison: 'La campagne se termine après l’appel en cours : plus rien ne s’y ajoute.' };
+    const deja = ids.filter((id) => campagne.entrees.some((e) => e.prospectId === id));
+    if (deja.length) return { ok: false, raison: `Déjà dans la file : ${deja.map((id) => nom.get(id) ?? id).join(', ')}. Rien n’a été ajouté.` };
+    return { campagne: ajouterProspects(campagne, ids), resultat: { ok: true, ajoutes: ids.length } };
+  });
+}
+
+/**
+ * Termine une campagne avant la fin : chaque prospect encore à appeler est retiré (trace gardée). Aucun appel
+ * n'est coupé : sans appel en cours, la campagne est terminée tout de suite (`immediate`) ; sinon l'appel va à
+ * son terme et la campagne se termine avec lui (`apres-appel`), sans enchaîner.
+ */
+export async function terminerCampagne(
+  campagneId: string,
+  origine: OrigineGeste = 'interface',
+): Promise<ResultatAction<{ fin: 'immediate' | 'apres-appel' }>> {
+  return gesteSurLaFile<{ fin: 'immediate' | 'apres-appel' }>(campagneId, async (campagne) => {
+    if (campagne.statut === 'terminee') return { ok: false, raison: 'La campagne est déjà terminée.' };
+    if (finDemandee(campagne)) return { ok: false, raison: 'La campagne se termine déjà à la fin de l’appel en cours.' };
+    if (!campagne.entrees.some((e) => e.etat === 'a-appeler')) {
+      return { ok: false, raison: 'Plus aucun prospect à appeler : la campagne se termine d’elle-même à la fin de l’appel en cours.' };
+    }
+    const apres = terminerAvantLaFin(campagne, { le: new Date().toISOString(), par: origine });
+    return { campagne: apres, resultat: { ok: true, fin: apres.statut === 'terminee' ? 'immediate' : 'apres-appel' } };
+  });
+}

@@ -1,3 +1,4 @@
+import { finDemandee } from '@autocalled/domain';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { comptesCampagne, dateCourte, etatAppel, STATUTS_CAMPAGNE } from '@/components/format-appel';
@@ -152,7 +153,7 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
                       {ligne.libelle}
                     </Cellule>
                     <Cellule etat className={`max-sm:order-2 ${TON_STATUT[c.statut]}`}>
-                      {STATUTS_CAMPAGNE[c.statut]}
+                      {finDemandee(c) ? 'Se termine' : STATUTS_CAMPAGNE[c.statut]}
                     </Cellule>
                     <Cellule mono align="droite" className="max-sm:order-3">
                       <span aria-hidden="true">

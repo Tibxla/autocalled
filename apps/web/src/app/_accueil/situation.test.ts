@@ -43,7 +43,7 @@ function campagne(p: Partial<CampagneJour> = {}): CampagneJour {
     ligne: 'bluetooth',
     statut: 'prete',
     creeLe: il(60 * 60_000),
-    comptes: { total: 100, aAppeler: 66, enAppel: 0, appelees: 30, sautees: 4, traites: 34 },
+    comptes: { total: 100, aAppeler: 66, enAppel: 0, appelees: 30, sautees: 4, retirees: 0, traites: 34 },
     prochain: { nom: 'Marc Dupont', societe: 'Boulangerie Dupont' },
     dernierAppel: null,
     ...p,

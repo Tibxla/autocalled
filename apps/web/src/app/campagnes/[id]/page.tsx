@@ -1,8 +1,8 @@
-import { ISSUES_SYSTEME, LIBELLES_ISSUES, type IssueSysteme } from '@autocalled/domain';
-import { and, eq, gte } from 'drizzle-orm';
+import { finDemandee, ISSUES_SYSTEME, LIBELLES_ISSUES, type IssueSysteme } from '@autocalled/domain';
+import { and, desc, eq, gte } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { comptesCampagne, dateCourte, duree, numeroMasque, STATUTS_CAMPAGNE } from '@/components/format-appel';
+import { comptesCampagne, dateCourte, duree, etatAppel, numeroMasque, STATUTS_CAMPAGNE } from '@/components/format-appel';
 import { EnTetePage, GlypheEtape, LienAction, Page, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { appels, campagnes, entreprises, issuesPersonnalisees, prospects, versionsScript } from '@/db/schema';
@@ -12,6 +12,7 @@ import { numeroLisible } from '@/lib/format';
 import { commanderPont } from '@/lib/pont';
 import { ajoutParMcp } from '@/lib/prospects';
 import { versionsDeLEntreprise } from '@/lib/versions';
+import { SectionFile, type ProspectAjoutable } from './ajout-prospects';
 import { File, type EntreeFile } from './file';
 import type { ProspectRecapitulatif } from './recapitulatif';
 import { Regie, type EtatPont, type RaisonSuspension } from './regie';
@@ -124,6 +125,7 @@ export default async function PageCampagne({
   const libelleVersion = versions.find((v) => v.id === campagne.versionScriptId)?.libelle ?? 'Version supprimée';
   const nombreEtapes = version?.etapes.length ?? null;
   const comptes = comptesCampagne(campagne.entrees);
+  const seTermine = finDemandee(campagne);
   const ouvert = campagne.entrees.find((e) => e.etat === 'en-appel');
   const prochaineEntree = campagne.entrees.find((e) => e.etat === 'a-appeler');
   const prochainProspect = prochaineEntree ? prospectDe.get(prochaineEntree.prospectId) : undefined;
@@ -190,6 +192,8 @@ export default async function PageCampagne({
       societe: p?.societe ?? null,
       etat: e.etat,
       suivant: e.prospectId === prochain?.id && campagne.statut !== 'terminee',
+      sauts: e.etat === 'a-appeler' ? (e.sauts ?? 0) : 0,
+      retrait: e.etat === 'retiree' ? { motif: e.motif, le: e.le, par: e.par } : null,
       appel: a
         ? {
             id: a.id,
@@ -207,6 +211,49 @@ export default async function PageCampagne({
         : null,
     };
   });
+
+  // Ajouter des prospects : ceux de l'entreprise au numéro autorisé et absents de la file, avec leur dernier appel.
+  let ajoutables: ProspectAjoutable[] | null = null;
+  let blocageAjout: string | null = null;
+  if (campagne.statut !== 'terminee') {
+    const dansLaFile = new Set(campagne.entrees.map((e) => e.prospectId));
+    const candidats = listeProspects.filter((p) => !dansLaFile.has(p.id)).sort((a, b) => a.nom.localeCompare(b.nom, 'fr') || a.id.localeCompare(b.id));
+    const [autorisations, derniers] = await Promise.all([
+      autorisationsDe(candidats.map((p) => p.telephone)),
+      db
+        .selectDistinctOn([appels.prospectId], {
+          prospectId: appels.prospectId,
+          debutLe: appels.debutLe,
+          statut: appels.statut,
+          ligne: appels.ligne,
+          issue: appels.issue,
+          issueSysteme: appels.issueSysteme,
+          erreur: appels.erreur,
+          conversationId: appels.conversationId,
+        })
+        .from(appels)
+        .where(eq(appels.entrepriseId, campagne.entrepriseId))
+        .orderBy(appels.prospectId, desc(appels.debutLe)),
+    ]);
+    const dernierDe = new Map(derniers.map((d) => [d.prospectId, d]));
+    ajoutables = candidats
+      .filter((p) => autorisations.get(p.telephone)?.autorise)
+      .map((p) => {
+        const d = dernierDe.get(p.id);
+        return {
+          id: p.id,
+          nom: p.nom,
+          societe: p.societe,
+          derniere: d ? { cle: d.issueSysteme, libelle: etatAppel(d, { libellePerso: d.issue ? libellePerso.get(d.issue) : null }).libelle } : null,
+        };
+      });
+    const scriptArchive = versions.find((v) => v.id === campagne.versionScriptId)?.scriptArchive ?? false;
+    blocageAjout = seTermine
+      ? 'La campagne se termine à la fin de l’appel en cours : plus rien ne s’y ajoute.'
+      : scriptArchive
+        ? 'Le script de cette campagne est archivé : réactive-le dans Scripts pour y ajouter des prospects, ou lance une nouvelle campagne.'
+        : null;
+  }
 
   return (
     <Page largeur="pleine">
@@ -252,12 +299,15 @@ export default async function PageCampagne({
           passes24h={passes24h}
           raison={campagne.statut === 'en-pause' ? raisonSuspension({ enAppel: comptes.enAppel > 0, dernierEchec, pont }) : null}
           recapitulatif={recapitulatif}
+          seTermine={seTermine}
         />
 
         {campagne.statut === 'terminee' ? (
           <BilanCampagne
             appels={listeAppels}
             sautes={comptes.sautees}
+            retires={comptes.retirees}
+            finAnticipee={finAnticipee(campagne.entrees)}
             nombreEtapes={nombreEtapes}
             ordre={campagne.entrees.flatMap((e) => ('appelId' in e ? [e.appelId] : []))}
             slug={entreprise.slug}
@@ -265,27 +315,33 @@ export default async function PageCampagne({
           />
         ) : null}
 
-        <section aria-labelledby="titre-file" className="grid grid-cols-1">
-          <TitreSection id="titre-file" compte={comptes.total}>
-            File
-          </TitreSection>
+        <SectionFile campagneId={campagne.id} compte={comptes.total} ajoutables={ajoutables} blocage={blocageAjout}>
           <File
             entrees={entreesFile}
             nombreEtapes={nombreEtapes}
             slug={entreprise.slug}
             campagneId={campagne.id}
             filtreInitial={typeof filtreFile === 'string' ? filtreFile : undefined}
+            gestes={campagne.statut !== 'terminee' && !seTermine}
           />
-        </section>
+        </SectionFile>
       </div>
     </Page>
   );
+}
+
+/** Quand et par où la campagne a été terminée avant la fin, d'après les entrées qu'elle a retirées. */
+function finAnticipee(entrees: typeof campagnes.$inferSelect.entrees): { le: string; par: 'interface' | 'mcp' } | null {
+  const e = entrees.find((x) => x.etat === 'retiree' && x.motif === 'fin-anticipee');
+  return e?.etat === 'retiree' ? { le: e.le, par: e.par } : null;
 }
 
 /** Ce qu'a donné une campagne terminée, calculé sur la page à partir de ses appels. */
 function BilanCampagne({
   appels: liste,
   sautes,
+  retires,
+  finAnticipee: fin,
   nombreEtapes,
   ordre,
   slug,
@@ -300,6 +356,8 @@ function BilanCampagne({
     bilan: { etapeAtteinte: number } | null;
   }[];
   sautes: number;
+  retires: number;
+  finAnticipee: { le: string; par: 'interface' | 'mcp' } | null;
   nombreEtapes: number | null;
   ordre: string[];
   slug: string;
@@ -328,7 +386,9 @@ function BilanCampagne({
     phrase =
       sautes > 0
         ? `Aucun appel passé : ${sautes} prospect${sautes > 1 ? 's' : ''} sauté${sautes > 1 ? 's' : ''}, numéro non autorisé.`
-        : 'Aucun appel passé.';
+        : retires > 0
+          ? `Aucun appel passé : ${retires} prospect${retires > 1 ? 's' : ''} retiré${retires > 1 ? 's' : ''} de la file.`
+          : 'Aucun appel passé.';
   } else if (aboutis === 0) {
     phrase = `Aucune conversation sur ${liste.length} ${mot}.`;
   } else {
@@ -343,6 +403,12 @@ function BilanCampagne({
       </TitreSection>
       <div className="grid gap-1">
         <p className="text-lg font-medium">{phrase}</p>
+        {fin ? (
+          <p className="text-sm text-encre-3">
+            Terminée avant la fin le <span className="font-mono">{dateCourte(fin.le).replace(' ', ' à ')}</span>
+            {fin.par === 'mcp' ? ' par Claude Code' : ''} : les prospects restants n’ont pas été appelés.
+          </p>
+        ) : null}
         {aboutis > 0 && aboutis < 10 ? (
           <p className="text-sm text-encre-3">Pas de taux sous 10 conversations : il ne voudrait rien dire.</p>
         ) : null}
@@ -364,6 +430,12 @@ function BilanCampagne({
           <div className="flex items-baseline gap-2">
             <dt className="text-encre-2">Sautés</dt>
             <dd className="font-mono text-encre-3">{sautes}</dd>
+          </div>
+        ) : null}
+        {retires > 0 ? (
+          <div className="flex items-baseline gap-2">
+            <dt className="text-encre-2">Retirés</dt>
+            <dd className="font-mono text-encre-3">{retires}</dd>
           </div>
         ) : null}
         {secondes > 0 ? (

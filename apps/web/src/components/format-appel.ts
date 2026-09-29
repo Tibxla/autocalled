@@ -203,24 +203,27 @@ export const STATUTS_CAMPAGNE: Record<StatutCampagne, string> = {
   terminee: 'Terminée',
 };
 
-/** Comptes d'une campagne : `traites` = appelés + sautés. */
+/** Comptes d'une campagne : `traites` = appelés, sautés (numéro non autorisé) et retirés, tout ce qui a quitté la file. */
 export function comptesCampagne(entrees: readonly EntreeCampagne[]): {
   total: number;
   aAppeler: number;
   enAppel: number;
   appelees: number;
   sautees: number;
+  retirees: number;
   traites: number;
 } {
   let aAppeler = 0;
   let enAppel = 0;
   let appelees = 0;
   let sautees = 0;
+  let retirees = 0;
   for (const e of entrees) {
     if (e.etat === 'a-appeler') aAppeler += 1;
     else if (e.etat === 'en-appel') enAppel += 1;
     else if (e.etat === 'appelee') appelees += 1;
-    else sautees += 1;
+    else if (e.etat === 'sautee') sautees += 1;
+    else retirees += 1;
   }
-  return { total: entrees.length, aAppeler, enAppel, appelees, sautees, traites: appelees + sautees };
+  return { total: entrees.length, aAppeler, enAppel, appelees, sautees, retirees, traites: appelees + sautees + retirees };
 }
