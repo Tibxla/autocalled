@@ -9,6 +9,7 @@ import { cleFiltreIssue, estFiltreIssue } from '@/components/liste-appels';
 import { EtatVide, GlypheEtape, LienAction, Message, Page, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { campagnes, scripts } from '@/db/schema';
+import { DUREE_MAX_ANALYSE_S } from '@/lib/appels';
 import { numeroLisible } from '@/lib/format';
 import { LIGNES, type Ligne, listerAppels, lireAppel } from '@/lib/lecture';
 import { Actualisation, Ecoule } from './actualisation';
@@ -19,8 +20,6 @@ import { SuiviTelephone } from './suivi-telephone';
 const lire = cache(lireAppel);
 const FORME_ID = /^[0-9a-f-]{36}$/;
 
-/** Au-delà, une analyse qui n'a pas abouti est déclarée bloquée. */
-const ANALYSE_MAX_S = 5 * 60;
 /** Au-delà, un appel navigateur ou simulé encore « en cours » n'est plus présenté comme vivant. */
 const VIE_MAX_S = 10 * 60;
 
@@ -101,8 +100,9 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
   const enDirect = appel.statut === 'en-cours';
   const telephone = appel.ligne === 'bluetooth';
   const age = ecouleDepuis(appel.debutLe);
-  const ageAnalyse = ecouleDepuis(appel.finLe ?? appel.debutLe);
-  const analyseBloquee = appel.statut === 'traitement' && ageAnalyse > ANALYSE_MAX_S;
+  const debutAnalyse = appel.traitementLe ?? appel.finLe ?? appel.debutLe;
+  const ageAnalyse = ecouleDepuis(debutAnalyse);
+  const analyseBloquee = appel.statut === 'traitement' && ageAnalyse > DUREE_MAX_ANALYSE_S;
 
   const issue = appel.issueSysteme;
   const cleIssue = bilan?.issue ?? appel.issue ?? null;
@@ -153,7 +153,7 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
   const suivant = proches.suivant ? lienVoisin(proches.suivant, retour.href, q) : null;
 
   const rapatrier = (ton: 'fort' | 'normal' = 'fort') => (
-    <BoutonRelancer appelId={appel.id} libelle="Rapatrier la conversation et le bilan" ton={ton} suivre statut={appel.statut} />
+    <BoutonRelancer appelId={appel.id} libelle="Rapatrier la conversation et le bilan" ton={ton} />
   );
 
   // Le suivi direct : même place et même clé pour en-cours puis traitement (le fil survit au rapatriement).
@@ -198,10 +198,10 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
     if (!telephone)
       etatDirect = (
         <Message ton="neutre">
-          Rapatriement et analyse en cours · <Ecoule depuis={(appel.finLe ?? appel.debutLe).toISOString()} />
+          Rapatriement et analyse en cours · <Ecoule depuis={debutAnalyse.toISOString()} />
         </Message>
       );
-    actualisation = <Actualisation secondes={3} dureeMaxSecondes={Math.max(3, Math.ceil(ANALYSE_MAX_S - ageAnalyse))} />;
+    actualisation = <Actualisation secondes={3} dureeMaxSecondes={Math.max(3, Math.ceil(DUREE_MAX_ANALYSE_S - ageAnalyse))} />;
   } else if (appel.statut === 'echec' && !appel.conversationId) {
     etatDirect = (
       <Message ton="alerte" action={<LienAction href="/telephone">Voir la ligne</LienAction>}>
@@ -212,7 +212,7 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
     etatDirect = (
       <Message ton="alerte" titre={`L’analyse a échoué : ${appel.erreur ?? 'aucune raison enregistrée.'}`}>
         <div className="-mx-1.5 pt-1.5">
-          <BoutonRelancer appelId={appel.id} libelle="Relancer l’analyse" ton="fort" suivre statut={appel.statut} />
+          <BoutonRelancer appelId={appel.id} libelle="Relancer l’analyse" ton="fort" />
         </div>
       </Message>
     );
@@ -354,8 +354,6 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
             appelId={appel.id}
             libelle="Réanalyser ce bilan"
             ton="discret"
-            suivre
-            statut={appel.statut}
             confirmer={{
               question: 'Remplacer ce bilan par une nouvelle analyse ?',
               texte: 'L’analyse relit la transcription et remplace l’issue, le résumé et les objections.',

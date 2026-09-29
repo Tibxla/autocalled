@@ -187,6 +187,8 @@ export const appels = pgTable('appels', {
   statut: statutAppel().notNull().default('en-cours'),
   debutLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
   finLe: timestamp({ withTimezone: true }),
+  /** Dernier passage en `traitement` (fin d'appel ou relance) : l'âge d'une analyse se mesure de là, pas de `finLe`. */
+  traitementLe: timestamp({ withTimezone: true }),
   dureeSecondes: integer(),
   transcription: jsonb().$type<TourDeParole[]>(),
   /** Chemin relatif de l'enregistrement dans le dossier de données, hors dépôt. */
