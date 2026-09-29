@@ -74,6 +74,23 @@ export const issueSchema = z.object({
 });
 export type SaisieIssue = z.infer<typeof issueSchema>;
 
+/**
+ * Correction d'une fiche prospect, champ par champ (`null` efface un champ facultatif). Les bornes fines (numéro
+ * normalisé, adresse, contexte de 500 mots au plus) sont celles de l'import : la fiche corrigée passe par `lireFiche`.
+ */
+export const patchFicheSchema = z
+  .strictObject({
+    nom: chaine('Donne le nom du prospect.').min(1, 'Donne le nom du prospect.').max(120, 'Cent vingt caractères au plus.'),
+    societe: texte(120).nullable(),
+    role: texte(120).nullable(),
+    telephone: chaine('Donne un numéro de téléphone.').min(1, 'Donne un numéro de téléphone.').max(40, 'Quarante caractères au plus.'),
+    email: texte(200).nullable(),
+    contexte: z.string({ error: 'Un texte est attendu.' }).max(32 * 1024, 'La fiche entière tient en 32 Ko.'),
+  })
+  .partial()
+  .refine((p) => Object.values(p).some((v) => v !== undefined), 'Donne au moins un champ à corriger.');
+export type PatchFiche = z.infer<typeof patchFicheSchema>;
+
 export const nomScriptSchema = chaine('Donne un nom au script.').min(2, 'Deux lettres au moins.').max(80, 'Quatre-vingts caractères au plus.');
 
 /** Limites d'une version de script. */

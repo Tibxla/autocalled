@@ -1,9 +1,9 @@
 import 'server-only';
 import { etapesIdentiques } from '@autocalled/domain';
-import { and, asc, desc, eq, max } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, max } from 'drizzle-orm';
 import { cleJour, heure, jourCourt } from '@/components/format-appel';
 import { db } from '@/db';
-import { entreprises, issuesPersonnalisees, objections, type Origine, scripts, versionsScript } from '@/db/schema';
+import { appels, campagnes, entreprises, imports, issuesPersonnalisees, objections, type Origine, prospects, scripts, versionsScript } from '@/db/schema';
 import type { Fiche, Plages, SaisieIssue, SaisieObjection } from './schemas';
 import { slugifier } from './slug';
 
@@ -26,8 +26,8 @@ export interface Ecriture {
 }
 
 /**
- * Sans précision, l'écriture vient du serveur MCP : c'est aujourd'hui le seul appelant qui ne dit pas qui il est
- * (l'interface passe toujours `{ origine: 'interface' }`). Ce défaut disparaîtra quand le MCP passera la sienne.
+ * Sans précision, l'écriture est attribuée au serveur MCP. Défaut gardé pour la compatibilité seulement : le MCP
+ * et l'interface passent désormais toujours leur origine en clair.
  */
 const PAR_MCP: Ecriture = { origine: 'mcp' };
 
@@ -53,6 +53,48 @@ function conflitSi(connu: string | null | undefined, actuel: { modifieLe: Date; 
     raison: `${sujet} ${auteurEtMoment(actuel.modifieLe, actuel.modifiePar)}, depuis que tu l’as ouverte.`,
     conflit: { le: actuel.modifieLe, origine: actuel.modifiePar, jeton: actuel.modifieLe.toISOString() },
   };
+}
+
+/**
+ * Supprime une entreprise créée par erreur, avec sa fiche, ses objections, ses issues personnalisées, ses scripts et
+ * leurs versions. Refusée dès qu'elle a un prospect, un import (les consentements y renvoient), un appel ou une
+ * campagne : c'est de l'historique. L'appelant obtient l'accord de l'opérateur avant : rien ne se récupère.
+ */
+export async function supprimerEntrepriseVide(
+  entrepriseId: string,
+): Promise<{ ok: true; supprime: { objections: number; issues: number; scripts: number; versions: number } } | Refus> {
+  return db.transaction(async (tx) => {
+    const [e] = await tx.select({ id: entreprises.id }).from(entreprises).where(eq(entreprises.id, entrepriseId)).for('update');
+    if (!e) return { ok: false as const, raison: 'Cette entreprise n’existe plus.' };
+    const [nProspects, nImports, nAppels, nCampagnes] = await Promise.all([
+      tx.$count(prospects, eq(prospects.entrepriseId, entrepriseId)),
+      tx.$count(imports, eq(imports.entrepriseId, entrepriseId)),
+      tx.$count(appels, eq(appels.entrepriseId, entrepriseId)),
+      tx.$count(campagnes, eq(campagnes.entrepriseId, entrepriseId)),
+    ]);
+    const bloquants = [
+      nProspects && `${nProspects} prospect${nProspects > 1 ? 's' : ''}`,
+      nImports && `${nImports} import${nImports > 1 ? 's' : ''}`,
+      nAppels && `${nAppels} appel${nAppels > 1 ? 's' : ''}`,
+      nCampagnes && `${nCampagnes} campagne${nCampagnes > 1 ? 's' : ''}`,
+    ].filter(Boolean);
+    if (bloquants.length) {
+      return {
+        ok: false as const,
+        raison: `Cette entreprise a un historique (${bloquants.join(', ')}) : elle ne se supprime pas. Seule une entreprise vide, créée par erreur, se supprime.`,
+      };
+    }
+    const idsScripts = tx.select({ id: scripts.id }).from(scripts).where(eq(scripts.entrepriseId, entrepriseId));
+    const [nObjections, nIssues, nScripts, nVersions] = await Promise.all([
+      tx.$count(objections, eq(objections.entrepriseId, entrepriseId)),
+      tx.$count(issuesPersonnalisees, eq(issuesPersonnalisees.entrepriseId, entrepriseId)),
+      tx.$count(scripts, eq(scripts.entrepriseId, entrepriseId)),
+      tx.$count(versionsScript, inArray(versionsScript.scriptId, idsScripts)),
+    ]);
+    // Les objections, issues, scripts et versions partent en cascade.
+    await tx.delete(entreprises).where(eq(entreprises.id, entrepriseId));
+    return { ok: true as const, supprime: { objections: nObjections, issues: nIssues, scripts: nScripts, versions: nVersions } };
+  });
 }
 
 export async function creerEntreprise(nom: string): Promise<{ ok: true; id: string; slug: string } | Refus> {
@@ -151,7 +193,7 @@ export async function basculerArchiveObjection(
 
 /**
  * Monte (-1) ou descend (+1) une objection d'un rang parmi les objections actives : c'est l'ordre dans lequel
- * Mina les reçoit. Toute la liste est renumérotée de 1 à n (les archivées gardent leur place relative). Le
+ * l’assistante les reçoit. Toute la liste est renumérotée de 1 à n (les archivées gardent leur place relative). Le
  * réordonnancement ne compte pas comme une modification de l'objection (`modifieLe` inchangé) : l'opérateur
  * ne doit pas entrer en conflit avec son propre formulaire ouvert. Renvoie la nouvelle position (à partir de 1).
  */
@@ -185,6 +227,39 @@ export async function deplacerObjection(entrepriseId: string, objectionId: strin
   });
 }
 
+/**
+ * Donne tout l'ordre des objections actives d'un coup : `ids` doit être exactement l'ensemble des objections actives
+ * de l'entreprise. Les archivées passent après, dans leur ordre relatif. Comme `deplacerObjection`, l'ordre ne
+ * compte pas comme une modification de l'objection (`modifieLe` inchangé).
+ */
+export async function ordonnerObjections(entrepriseId: string, ids: readonly string[]): Promise<{ ok: true } | Refus> {
+  return db.transaction(async (tx) => {
+    const liste = await tx
+      .select({ id: objections.id, ordre: objections.ordre, archivee: objections.archivee })
+      .from(objections)
+      .where(eq(objections.entrepriseId, entrepriseId))
+      .orderBy(asc(objections.ordre), asc(objections.id))
+      .for('update');
+    const actives = liste.filter((o) => !o.archivee);
+    if (new Set(ids).size !== ids.length) return { ok: false as const, raison: 'Une objection apparaît deux fois dans l’ordre donné.' };
+    const inconnues = ids.filter((id) => !actives.some((o) => o.id === id));
+    const oubliees = actives.filter((o) => !ids.includes(o.id));
+    if (inconnues.length || oubliees.length) {
+      return {
+        ok: false as const,
+        raison: `L’ordre doit contenir exactement les ${actives.length} objections actives de l’entreprise${
+          inconnues.length ? ` (inconnues ou archivées : ${inconnues.join(', ')})` : ''
+        }${oubliees.length ? ` (manquantes : ${oubliees.map((o) => o.id).join(', ')})` : ''}.`,
+      };
+    }
+    const nouvelle = [...ids, ...liste.filter((o) => o.archivee).map((o) => o.id)];
+    for (const [i, id] of nouvelle.entries()) {
+      if (liste.find((o) => o.id === id)?.ordre !== i + 1) await tx.update(objections).set({ ordre: i + 1 }).where(eq(objections.id, id));
+    }
+    return { ok: true as const };
+  });
+}
+
 export async function ajouterIssue(entrepriseId: string, saisie: SaisieIssue): Promise<string> {
   const [creee] = await db
     .insert(issuesPersonnalisees)
@@ -192,6 +267,19 @@ export async function ajouterIssue(entrepriseId: string, saisie: SaisieIssue): P
     .returning({ id: issuesPersonnalisees.id });
   if (!creee) throw new Error('création de l’issue impossible');
   return creee.id;
+}
+
+/**
+ * Corrige le libellé d'une issue personnalisée. Son issue système de rattachement reste figée : les chiffres passés
+ * seraient réécrits. False si elle n'existe pas dans cette entreprise.
+ */
+export async function renommerIssue(entrepriseId: string, issueId: string, libelle: string): Promise<boolean> {
+  const touchees = await db
+    .update(issuesPersonnalisees)
+    .set({ libelle })
+    .where(and(eq(issuesPersonnalisees.id, issueId), eq(issuesPersonnalisees.entrepriseId, entrepriseId)))
+    .returning({ id: issuesPersonnalisees.id });
+  return touchees.length > 0;
 }
 
 export async function basculerArchiveIssue(entrepriseId: string, issueId: string, archivee: boolean): Promise<boolean> {
@@ -203,21 +291,28 @@ export async function basculerArchiveIssue(entrepriseId: string, issueId: string
   return touchees.length > 0;
 }
 
-const ETAPES_INITIALES = [
+export const ETAPES_INITIALES: Etapes = [
   { intention: 'Accroche : se présenter et demander deux minutes.', exemples: [] },
   { intention: 'Qualification : comprendre comment le prospect travaille aujourd’hui.', exemples: [] },
   { intention: 'Pitch : relier l’offre à ce qu’il vient de dire, en une phrase.', exemples: [] },
   { intention: 'Rendez-vous : proposer un premier échange.', exemples: [] },
 ];
 
-/** Un script naît avec une version 1 aux quatre étapes de départ. */
-export async function creerScript(entrepriseId: string, nom: string): Promise<{ scriptId: string; versionScriptId: string }> {
+/**
+ * Un script naît avec une version 1 : les étapes données, sinon les quatre intentions de départ que l'éditeur de
+ * l'interface ouvre aussitôt. Le serveur MCP donne toujours ses étapes (pas de script de base généré).
+ */
+export async function creerScript(
+  entrepriseId: string,
+  nom: string,
+  etapes: Etapes = ETAPES_INITIALES,
+): Promise<{ scriptId: string; versionScriptId: string }> {
   return db.transaction(async (tx) => {
     const [script] = await tx.insert(scripts).values({ entrepriseId, nom }).returning({ id: scripts.id });
     if (!script) throw new Error('création du script impossible');
     const [version] = await tx
       .insert(versionsScript)
-      .values({ scriptId: script.id, numero: 1, etapes: ETAPES_INITIALES })
+      .values({ scriptId: script.id, numero: 1, etapes })
       .returning({ id: versionsScript.id });
     if (!version) throw new Error('création de la version impossible');
     return { scriptId: script.id, versionScriptId: version.id };

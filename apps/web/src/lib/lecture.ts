@@ -265,6 +265,9 @@ export async function lireAppel(id: string) {
   return { appel, entreprise, prospect: prospect ?? null, version: version ?? null, objections: listeObjections, personnalisees, rendezVous: rdv ?? null };
 }
 
+/** Les versions d'agent ElevenLabs commencent par agtvrsn_ : aucune ne se confond avec ce repère. */
+const VERSION_AGENT_INCONNUE = 'inconnue';
+
 /**
  * Chiffres de l'écran d'analyse : par version de script (dans l'ordre des scripts, la plus récente d'abord)
  * et par objection. Les appels simulés sont exclus sauf demande, et toujours comptés à part.
@@ -272,7 +275,13 @@ export async function lireAppel(id: string) {
 export async function analyseEntreprise(entrepriseId: string, avecSimules: boolean) {
   const [lignes, versions, listeObjections] = await Promise.all([
     db
-      .select({ ligne: appels.ligne, versionScriptId: appels.versionScriptId, issueSysteme: appels.issueSysteme, bilan: appels.bilan })
+      .select({
+        ligne: appels.ligne,
+        versionScriptId: appels.versionScriptId,
+        versionAgent: appels.versionAgent,
+        issueSysteme: appels.issueSysteme,
+        bilan: appels.bilan,
+      })
       .from(appels)
       .where(and(eq(appels.entrepriseId, entrepriseId), eq(appels.statut, 'termine'), isNotNull(appels.issueSysteme))),
     versionsDeLEntreprise(entrepriseId),
@@ -284,6 +293,7 @@ export async function analyseEntreprise(entrepriseId: string, avecSimules: boole
     .filter((l) => avecSimules || l.ligne !== 'simulation')
     .map((l) => ({
       versionScriptId: l.versionScriptId,
+      versionAgent: l.versionAgent,
       issueSysteme: l.issueSysteme as IssueSysteme,
       etapeAtteinte: l.bilan?.etapeAtteinte ?? 0,
       objections: l.bilan?.objections ?? [],
@@ -291,9 +301,15 @@ export async function analyseEntreprise(entrepriseId: string, avecSimules: boole
   const parVersion = statistiquesParVersion(retenus).sort(
     (a, b) => versions.findIndex((v) => v.id === a.versionScriptId) - versions.findIndex((v) => v.id === b.versionScriptId),
   );
+  // Mêmes chiffres, regroupés par configuration de l'assistante (version de l'agent ElevenLabs) : la mesure qui
+  // boucle un réglage du prompt. `versionScriptId` porte ici la version de l'agent, « inconnue » sans elle.
+  const parVersionAssistante = statistiquesParVersion(retenus.map((r) => ({ ...r, versionScriptId: r.versionAgent ?? VERSION_AGENT_INCONNUE }))).map(
+    ({ versionScriptId, ...chiffres }) => ({ versionAgent: versionScriptId === VERSION_AGENT_INCONNUE ? null : versionScriptId, ...chiffres }),
+  );
   return {
     simules,
     parVersion,
+    parVersionAssistante,
     parObjection: statistiquesObjections(retenus),
     libelleVersion: (id: string) => versions.find((v) => v.id === id)?.libelle ?? 'Version supprimée',
     libelleObjection: (id: string | null) =>
@@ -301,7 +317,7 @@ export async function analyseEntreprise(entrepriseId: string, avecSimules: boole
   };
 }
 
-/** Les derniers rendez-vous réservés par Mina, avec l'état de leur événement Google. */
+/** Les derniers rendez-vous réservés par l’assistante, avec l'état de leur événement Google. */
 export async function rendezVousRecents(limite = 20) {
   return db
     .select({ rdv: rendezVous, prospect: prospects.nom, appelId: appels.id })
@@ -312,7 +328,12 @@ export async function rendezVousRecents(limite = 20) {
     .limit(limite);
 }
 
-/** Les derniers appels d'outils du serveur MCP (ADR 0009), du plus récent au plus ancien. */
-export async function journalMcpRecent(limite = 30) {
-  return db.select().from(journalMcp).orderBy(desc(journalMcp.le)).limit(limite);
+/** Les derniers appels d'outils du serveur MCP (ADR 0009), du plus récent au plus ancien, d'un seul outil si demandé. */
+export async function journalMcpRecent(limite = 30, filtres: { outil?: string } = {}) {
+  return db
+    .select()
+    .from(journalMcp)
+    .where(filtres.outil ? eq(journalMcp.outil, filtres.outil) : undefined)
+    .orderBy(desc(journalMcp.le))
+    .limit(limite);
 }

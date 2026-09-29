@@ -238,6 +238,22 @@ export async function suspendreSiEnCours(campagneId: string): Promise<void> {
   }
 }
 
+/**
+ * Supprime une campagne prête : rien n'a été appelé, elle se recrée en un geste (autre version, autre ligne).
+ * Une campagne lancée, même terminée, est de l'historique et ne se supprime pas.
+ */
+export async function supprimerCampagnePrete(campagneId: string): Promise<ResultatAction> {
+  if (!FORME_UUID.test(campagneId)) return { ok: false, raison: INTROUVABLE };
+  return db.transaction(async (tx) => {
+    const [c] = await tx.select({ statut: campagnes.statut }).from(campagnes).where(eq(campagnes.id, campagneId)).for('update');
+    if (!c) return { ok: false as const, raison: INTROUVABLE };
+    if (c.statut !== 'prete') return { ok: false as const, raison: 'Seule une campagne prête (jamais lancée) se supprime : une campagne lancée est de l’historique. terminer_campagne l’arrête.' };
+    if (await tx.$count(appels, eq(appels.campagneId, campagneId))) return { ok: false as const, raison: 'Cette campagne a déjà des appels : elle ne se supprime pas.' };
+    await tx.delete(campagnes).where(eq(campagnes.id, campagneId));
+    return { ok: true as const };
+  });
+}
+
 /** Nombre d'appels d'une campagne par état, pour la liste. */
 export const resumeEntrees = sql<string>`jsonb_path_query_array(${campagnes.entrees}, '$[*].etat')`;
 

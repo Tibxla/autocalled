@@ -47,6 +47,17 @@ export async function refusDuPont(): Promise<string | null> {
 }
 
 /**
+ * Relance la liaison Bluetooth du téléphone passerelle (liaison figée, téléphone revenu à portée). Ne compose rien ;
+ * refusé pendant un appel, que la relance couperait.
+ */
+export async function reconnecterTelephone(): Promise<ReponsePont> {
+  const etat = await commanderPont('/etat');
+  if (!etat.ok) return etat;
+  if (etat.corps.appelEnCours) return { ok: false, raison: 'Un appel est en cours sur le téléphone : la reconnexion le couperait. Attends qu’il finisse.' };
+  return commanderPont('/telephone/reconnecter', {});
+}
+
+/**
  * Relaie un flux du pont (fil d'un appel, écoute) à l'opérateur. Ces routes restent derrière l'identité
  * Tailscale : le navigateur ne parle jamais directement au pont.
  */

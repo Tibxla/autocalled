@@ -1,9 +1,19 @@
 import 'server-only';
-import { type FicheProspect, type FichierImporte, type NumeroE164, fusionnerFiches, lireFiches, numerosAAutoriser } from '@autocalled/domain';
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import {
+  ecrireFiche,
+  type FicheProspect,
+  type FichierImporte,
+  type NumeroE164,
+  fusionnerFiches,
+  lireFiches,
+  numerosAAutoriser,
+} from '@autocalled/domain';
+import { and, count, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { consentements, imports, prospects, textesConsentement } from '@/db/schema';
+import { appels, campagnes, consentements, imports, prospects, textesConsentement } from '@/db/schema';
+import type { Conflit, Refus } from './entreprises';
 import { numeroLisible } from './format';
+import type { PatchFiche } from './schemas';
 
 export const FICHIERS_MAX = 100;
 export const TAILLE_MAX = 32 * 1024;
@@ -105,4 +115,109 @@ export async function ajoutParMcp(numero: string): Promise<Date | null> {
     .orderBy(desc(consentements.accordeLe))
     .limit(1);
   return ligne?.le ?? null;
+}
+
+/** Le texte de consentement que tout nouvel import fait accepter : la dernière version en base. */
+export async function texteConsentementEnVigueur(): Promise<{ version: number; texte: string } | null> {
+  const [texte] = await db
+    .select({ version: textesConsentement.version, texte: textesConsentement.texte })
+    .from(textesConsentement)
+    .orderBy(desc(textesConsentement.version))
+    .limit(1);
+  return texte ?? null;
+}
+
+/** Les consentements d'un numéro, du plus récent au plus ancien, avec la porte d'entrée de leur import. */
+export async function consentementsDuNumero(
+  numero: string,
+): Promise<{ accordeLe: Date; revoqueLe: Date | null; texteVersion: number; canal: 'interface' | 'mcp' }[]> {
+  return db
+    .select({ accordeLe: consentements.accordeLe, revoqueLe: consentements.revoqueLe, texteVersion: consentements.texteVersion, canal: imports.canal })
+    .from(consentements)
+    .innerJoin(imports, eq(imports.id, consentements.importId))
+    .where(eq(consentements.numero, numero))
+    .orderBy(desc(consentements.accordeLe));
+}
+
+/**
+ * Corrige la fiche d'un prospect par la machinerie de l'import d'une seule fiche : mêmes contrôles (numéro
+ * normalisé, adresse, contexte), une ligne `imports` au canal donné, consentement du nouveau numéro sauf s'il est
+ * révoqué. Refusé si la fiche a changé depuis `connu` (son `majLe` lu, en ISO). L'identifiant ne change jamais.
+ */
+export async function modifierProspect(
+  entrepriseId: string,
+  prospectId: string,
+  champs: PatchFiche,
+  o: { canal: 'interface' | 'mcp'; connu?: string | null },
+): Promise<{ ok: true; rapport: Extract<RapportImport, { etat: 'fait' }> } | Refus | Conflit> {
+  const [actuel] = await db
+    .select()
+    .from(prospects)
+    .where(and(eq(prospects.entrepriseId, entrepriseId), eq(prospects.id, prospectId)));
+  if (!actuel) return { ok: false, raison: 'Ce prospect n’existe pas dans cette entreprise.' };
+  if (o.connu != null && Date.parse(o.connu) !== actuel.majLe.getTime()) {
+    return {
+      ok: false,
+      raison: 'La fiche a changé depuis ta lecture (import ou autre correction) : relis-la avant de la corriger.',
+      conflit: { le: actuel.majLe, origine: null, jeton: actuel.majLe.toISOString() },
+    };
+  }
+  const corrige = (patch: string | null | undefined, avant: string | null) => (patch === undefined ? avant : patch?.trim() || null);
+  const fiche = {
+    id: actuel.id,
+    nom: champs.nom?.trim() ?? actuel.nom,
+    societe: corrige(champs.societe, actuel.societe),
+    role: corrige(champs.role, actuel.role),
+    telephone: (champs.telephone?.trim() ?? actuel.telephone) as NumeroE164,
+    email: corrige(champs.email, actuel.email),
+    contexte: champs.contexte === undefined ? actuel.contexte : champs.contexte.trim(),
+  };
+  const inchangee = (['nom', 'societe', 'role', 'telephone', 'email', 'contexte'] as const).every((c) => fiche[c] === actuel[c]);
+  if (inchangee) return { ok: false, raison: 'Ces champs ne changent rien à la fiche.' };
+  const rapport = await importerFiches(entrepriseId, [ecrireFiche(fiche)], o.canal);
+  if (rapport.etat === 'erreur') return { ok: false, raison: rapport.message };
+  if (rapport.etat === 'vide') return { ok: false, raison: 'Rien à enregistrer.' };
+  const refus = rapport.refus[0];
+  if (refus) return { ok: false, raison: `Fiche refusée, rien n’est écrit : ${refus.erreurs.join(' ; ')}.` };
+  return { ok: true, rapport };
+}
+
+/**
+ * Supprime la fiche d'un prospect. Ses appels et bilans restent, rattachés par l'identifiant (un réimport du même
+ * fichier les retrouve), et le consentement de son numéro reste : `revoquerNumero` pour ne plus jamais l'appeler.
+ * Refusé tant qu'il attend dans la file d'une campagne non terminée ou qu'un appel avec lui est en cours.
+ */
+export async function supprimerProspect(entrepriseId: string, prospectId: string): Promise<{ ok: true; appelsGardes: number } | Refus> {
+  return db.transaction(async (tx) => {
+    const [p] = await tx
+      .select({ id: prospects.id })
+      .from(prospects)
+      .where(and(eq(prospects.entrepriseId, entrepriseId), eq(prospects.id, prospectId)))
+      .for('update');
+    if (!p) return { ok: false as const, raison: 'Ce prospect n’existe pas dans cette entreprise.' };
+    const enFile = await tx
+      .select({ id: campagnes.id })
+      .from(campagnes)
+      .where(
+        and(
+          eq(campagnes.entrepriseId, entrepriseId),
+          ne(campagnes.statut, 'terminee'),
+          sql`exists (select 1 from jsonb_array_elements(${campagnes.entrees}) e where e->>'prospectId' = ${prospectId} and e->>'etat' in ('a-appeler', 'en-appel'))`,
+        ),
+      );
+    if (enFile.length) {
+      return {
+        ok: false as const,
+        raison: `Ce prospect attend dans la file de ${enFile.length > 1 ? `${enFile.length} campagnes` : 'la campagne'} ${enFile.map((c) => c.id).join(', ')} : retire-le d’abord (retirer_de_la_file).`,
+      };
+    }
+    const [enCours] = await tx
+      .select({ n: count() })
+      .from(appels)
+      .where(and(eq(appels.entrepriseId, entrepriseId), eq(appels.prospectId, prospectId), eq(appels.statut, 'en-cours')));
+    if (enCours && Number(enCours.n) > 0) return { ok: false as const, raison: 'Un appel avec ce prospect est en cours : attends qu’il finisse.' };
+    const appelsGardes = await tx.$count(appels, and(eq(appels.entrepriseId, entrepriseId), eq(appels.prospectId, prospectId)));
+    await tx.delete(prospects).where(and(eq(prospects.entrepriseId, entrepriseId), eq(prospects.id, prospectId)));
+    return { ok: true as const, appelsGardes };
+  });
 }

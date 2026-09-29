@@ -1,10 +1,12 @@
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { db } from '@/db';
-import { consentements, imports, prospects } from '@/db/schema';
+import { appels, campagnes, consentements, imports, prospects } from '@/db/schema';
 import { avecBaseDeTest } from '../../test/outils';
 import { entrepriseDeTest, fiche } from '../../test/fixtures';
-import { importerFiches, revoquerNumero } from './prospects';
+import { enregistrerCampagne } from './campagnes';
+import { creerScript } from './entreprises';
+import { consentementsDuNumero, importerFiches, modifierProspect, revoquerNumero, supprimerProspect, texteConsentementEnVigueur } from './prospects';
 
 avecBaseDeTest();
 
@@ -72,5 +74,81 @@ describe('revoquerNumero', () => {
 
     expect(await revoquerNumero('+33639980001')).toBe(1);
     expect(await revoquerNumero('+33639980001')).toBe(0);
+  });
+});
+
+describe('modifierProspect', () => {
+  it('corrige un champ, efface un facultatif, et garde le reste', async () => {
+    const e = await entrepriseDeTest();
+    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01', 'Contexte de départ.')]);
+
+    const r = await modifierProspect(e.id, 'julie', { role: 'Gérante', societe: null }, { canal: 'mcp' });
+
+    expect(r).toMatchObject({ ok: true, rapport: { misAJour: ['julie'], numerosAutorises: 0 } });
+    const [p] = await db.select().from(prospects);
+    expect(p).toMatchObject({ nom: 'Julie Fictive', role: 'Gérante', societe: null, contexte: 'Contexte de départ.', telephone: '+33639980001' });
+    expect((await db.select({ canal: imports.canal }).from(imports)).map((i) => i.canal)).toEqual(['interface', 'mcp']);
+  });
+
+  it('autorise un nouveau numéro, jamais un numéro révoqué', async () => {
+    const e = await entrepriseDeTest();
+    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01'), fiche('marc', 'Marc Fictif', '06 39 98 00 09')]);
+    await revoquerNumero('+33639980009');
+
+    expect(await modifierProspect(e.id, 'julie', { telephone: '06 39 98 00 02' }, { canal: 'mcp' })).toMatchObject({ ok: true, rapport: { numerosAutorises: 1 } });
+    expect(await modifierProspect(e.id, 'julie', { telephone: '06 39 98 00 09' }, { canal: 'mcp' })).toMatchObject({
+      ok: true,
+      rapport: { numerosAutorises: 0, numerosRevoques: ['06 39 98 00 09'] },
+    });
+  });
+
+  it('refuse une fiche invalide, une fiche inchangée ou relue avant une autre écriture', async () => {
+    const e = await entrepriseDeTest();
+    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01')]);
+    const [p] = await db.select().from(prospects);
+
+    expect(await modifierProspect(e.id, 'julie', { telephone: 'pas un numéro' }, { canal: 'mcp' })).toMatchObject({ ok: false, raison: expect.stringContaining('telephone invalide') });
+    expect(await modifierProspect(e.id, 'julie', { nom: 'Julie Fictive' }, { canal: 'mcp' })).toEqual({ ok: false, raison: 'Ces champs ne changent rien à la fiche.' });
+    await modifierProspect(e.id, 'julie', { role: 'Gérante' }, { canal: 'mcp' });
+    expect(await modifierProspect(e.id, 'julie', { role: 'Associée' }, { canal: 'mcp', connu: p!.majLe.toISOString() })).toMatchObject({ ok: false, conflit: expect.any(Object) });
+    expect(await modifierProspect(e.id, 'personne', { role: 'x' }, { canal: 'mcp' })).toMatchObject({ ok: false });
+  });
+});
+
+describe('supprimerProspect', () => {
+  it('efface la fiche, garde ses appels et le consentement du numéro', async () => {
+    const e = await entrepriseDeTest();
+    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01')]);
+    const { versionScriptId } = await creerScript(e.id, 'Découverte');
+    await db.insert(appels).values({ entrepriseId: e.id, prospectId: 'julie', versionScriptId, ligne: 'simulation', numero: '+33639980001', statut: 'termine' });
+
+    expect(await supprimerProspect(e.id, 'julie')).toEqual({ ok: true, appelsGardes: 1 });
+    expect(await db.$count(prospects)).toBe(0);
+    expect(await db.$count(appels)).toBe(1);
+    expect(await db.$count(consentements)).toBe(1);
+  });
+
+  it('refuse un prospect en file d’une campagne non terminée, ou en appel', async () => {
+    const e = await entrepriseDeTest();
+    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01'), fiche('marc', 'Marc Fictif', '06 39 98 00 02')]);
+    const { versionScriptId } = await creerScript(e.id, 'Découverte');
+    await enregistrerCampagne(e.id, { versionScriptId, ligne: 'simulation', prospects: ['julie'] });
+    await db.insert(appels).values({ entrepriseId: e.id, prospectId: 'marc', versionScriptId, ligne: 'bluetooth', numero: '+33639980002' });
+
+    expect(await supprimerProspect(e.id, 'julie')).toMatchObject({ ok: false, raison: expect.stringContaining('retirer_de_la_file') });
+    expect(await supprimerProspect(e.id, 'marc')).toMatchObject({ ok: false, raison: expect.stringContaining('en cours') });
+    await db.update(campagnes).set({ statut: 'terminee' });
+    expect(await supprimerProspect(e.id, 'julie')).toMatchObject({ ok: true });
+  });
+});
+
+describe('consentements', () => {
+  it('rend le texte en vigueur et l’historique d’un numéro avec son canal', async () => {
+    const e = await entrepriseDeTest();
+    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01')], 'mcp');
+    await revoquerNumero('+33639980001');
+
+    expect(await texteConsentementEnVigueur()).toMatchObject({ version: 2, texte: expect.stringContaining('assistante vocale IA') });
+    expect(await consentementsDuNumero('+33639980001')).toEqual([{ accordeLe: expect.any(Date), revoqueLe: expect.any(Date), texteVersion: 2, canal: 'mcp' }]);
   });
 });

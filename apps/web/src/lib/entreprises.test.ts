@@ -1,9 +1,9 @@
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { db } from '@/db';
-import { appels, campagnes, entreprises, objections, scripts, versionsScript } from '@/db/schema';
+import { appels, campagnes, entreprises, issuesPersonnalisees, objections, scripts, versionsScript } from '@/db/schema';
 import { avecBaseDeTest } from '../../test/outils';
-import { entrepriseDeTest } from '../../test/fixtures';
+import { entrepriseDeTest, fiche } from '../../test/fixtures';
 import { apercuVariablesAppel } from './apercu';
 import {
   basculerArchiveObjection,
@@ -11,11 +11,16 @@ import {
   creerEntreprise,
   creerScript,
   creerVersion,
+  ajouterIssue,
   deplacerObjection,
   enregistrerFiche,
   enregistrerObjection,
+  ordonnerObjections,
+  renommerIssue,
   renommerScript,
+  supprimerEntrepriseVide,
 } from './entreprises';
+import { importerFiches } from './prospects';
 import { usageDuScript, versionsDeLEntreprise, versionsLancables } from './versions';
 import type { Fiche } from './schemas';
 
@@ -284,5 +289,85 @@ describe('renommer et archiver un script', () => {
     ]);
 
     expect(await usageDuScript(scriptId)).toEqual({ campagnes: 1, appelsEnCours: 1 });
+  });
+});
+
+describe('creerScript avec ses étapes', () => {
+  it('pose les étapes données en version 1, sans les intentions de départ', async () => {
+    const e = await entrepriseDeTest();
+    const etapes = [{ intention: 'Accroche : se présenter.', exemples: ['Bonjour !'] }];
+
+    const { versionScriptId } = await creerScript(e.id, 'Découverte', etapes);
+
+    const [v] = await db.select().from(versionsScript).where(eq(versionsScript.id, versionScriptId));
+    expect(v).toMatchObject({ numero: 1, etapes });
+  });
+});
+
+describe('ordonnerObjections', () => {
+  it('pose l’ordre des actives, range les archivées après, sans toucher modifieLe', async () => {
+    const e = await entrepriseDeTest();
+    const ids: string[] = [];
+    for (const libelle of ['Pas le temps', 'Trop cher', 'Déjà équipé']) {
+      const r = await enregistrerObjection(e.id, null, { libelle, ...crac }, { origine: 'mcp' });
+      if (r.ok) ids.push(r.id);
+    }
+    const [a, b, c] = ids as [string, string, string];
+    await basculerArchiveObjection(e.id, a, true, 'mcp');
+    const avant = await db.select({ id: objections.id, modifieLe: objections.modifieLe }).from(objections);
+
+    expect(await ordonnerObjections(e.id, [c, b])).toEqual({ ok: true });
+
+    const apres = await db.select().from(objections).where(eq(objections.entrepriseId, e.id));
+    expect(apres.sort((x, y) => x.ordre - y.ordre).map((o) => o.id)).toEqual([c, b, a]);
+    expect(apres.map((o) => [o.id, o.modifieLe.getTime()]).sort()).toEqual(avant.map((o) => [o.id, o.modifieLe.getTime()]).sort());
+  });
+
+  it('refuse un ordre incomplet, doublé ou qui cite une archivée', async () => {
+    const e = await entrepriseDeTest();
+    const r1 = await enregistrerObjection(e.id, null, { libelle: 'Pas le temps', ...crac }, { origine: 'mcp' });
+    const r2 = await enregistrerObjection(e.id, null, { libelle: 'Trop cher', ...crac }, { origine: 'mcp' });
+    if (!r1.ok || !r2.ok) throw new Error('objections non créées');
+    await basculerArchiveObjection(e.id, r2.id, true, 'mcp');
+
+    expect(await ordonnerObjections(e.id, [])).toMatchObject({ ok: false, raison: expect.stringContaining('exactement les 1 objections actives') });
+    expect(await ordonnerObjections(e.id, [r1.id, r1.id])).toMatchObject({ ok: false });
+    expect(await ordonnerObjections(e.id, [r1.id, r2.id])).toMatchObject({ ok: false, raison: expect.stringContaining('archivées') });
+  });
+});
+
+describe('renommerIssue', () => {
+  it('corrige le libellé sans toucher au rattachement, dans l’entreprise seulement', async () => {
+    const e = await entrepriseDeTest();
+    const autre = await entrepriseDeTest('Autre fictive', 'autre-fictive');
+    const id = await ajouterIssue(e.id, { libelle: 'Brochure', issueSysteme: 'envoi-informations' });
+
+    expect(await renommerIssue(autre.id, id, 'Pirate')).toBe(false);
+    expect(await renommerIssue(e.id, id, 'Brochure envoyée')).toBe(true);
+    expect(await db.select({ libelle: issuesPersonnalisees.libelle, issueSysteme: issuesPersonnalisees.issueSysteme }).from(issuesPersonnalisees)).toEqual([
+      { libelle: 'Brochure envoyée', issueSysteme: 'envoi-informations' },
+    ]);
+  });
+});
+
+describe('supprimerEntrepriseVide', () => {
+  it('supprime une entreprise sans historique, avec sa configuration', async () => {
+    const e = await entrepriseDeTest();
+    await enregistrerObjection(e.id, null, { libelle: 'Pas le temps', ...crac }, { origine: 'mcp' });
+    await ajouterIssue(e.id, { libelle: 'Brochure', issueSysteme: 'envoi-informations' });
+    const { scriptId } = await creerScript(e.id, 'Découverte');
+    await creerVersion(e.id, scriptId, [{ intention: 'Autre accroche', exemples: [] }], { origine: 'mcp' });
+
+    expect(await supprimerEntrepriseVide(e.id)).toEqual({ ok: true, supprime: { objections: 1, issues: 1, scripts: 1, versions: 2 } });
+    expect(await db.$count(entreprises)).toBe(0);
+    expect(await db.$count(versionsScript)).toBe(0);
+  });
+
+  it('refuse une entreprise qui a des prospects ou des imports', async () => {
+    const e = await entrepriseDeTest();
+    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01')]);
+
+    expect(await supprimerEntrepriseVide(e.id)).toMatchObject({ ok: false, raison: expect.stringContaining('1 prospect, 1 import') });
+    expect(await db.$count(entreprises)).toBe(1);
   });
 });
