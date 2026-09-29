@@ -34,7 +34,7 @@ export function CreationEntreprise({ compte }: { compte: number }) {
           </>
         }
         action={
-          <Action ref={bouton} touche="N" raccourci="n" aria-expanded={montree} onClick={ouvrir} className="-mr-1.5">
+          <Action ref={bouton} ton="fort" touche="N" raccourci="n" aria-expanded={montree} onClick={ouvrir} className="-mr-1.5">
             Nouvelle entreprise
           </Action>
         }

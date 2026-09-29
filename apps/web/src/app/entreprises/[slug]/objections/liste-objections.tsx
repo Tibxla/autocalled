@@ -158,7 +158,7 @@ export function ListeObjections({
           id="titre-objections"
           compte={actives.length}
           action={
-            <Action ref={bouton} touche="N" raccourci="n" aria-expanded={formulaireOuvert} onClick={ouvrirNouvelle} className="-mr-1.5">
+            <Action ref={bouton} ton="fort" touche="N" raccourci="n" aria-expanded={formulaireOuvert} onClick={ouvrirNouvelle} className="-mr-1.5">
               Nouvelle objection
             </Action>
           }

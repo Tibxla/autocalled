@@ -117,7 +117,7 @@ function Formulaire({
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <Action
             type="submit"
-            ton={nouvelle ? 'fort' : 'normal'}
+            ton="fort"
             touche="Ctrl Entrée"
             enCours={enCours}
             libelleEnCours="Enregistrement…"

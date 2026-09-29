@@ -83,7 +83,7 @@ export function EspaceVersion({
           <div className="-mx-1.5 flex flex-wrap items-center gap-x-5 gap-y-1">
             <Action
               ref={bouton}
-              ton={derniere ? 'fort' : 'normal'}
+              ton="fort"
               touche="V"
               raccourci="v"
               libelleRaccourci={derniere ? 'Nouvelle version' : `Repartir de la v${numeroAffiche}`}
