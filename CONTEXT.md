@@ -37,8 +37,16 @@ Une conversation téléphonique entre l'assistante et un prospect, lancée par l
 _Avoid_ : call, conversation, session
 
 **Assistante** :
-L'agent vocal IA unique qui passe tous les appels, nommé Mina, avec une personnalité et une voix fixes ; elle se présente comme l'assistante de l'entreprise représentée et parle comme une humaine.
+L'agent vocal IA unique qui passe tous les appels, sous un nom choisi par l'opérateur (Mina par défaut), avec une personnalité et une voix fixes ; elle se présente comme l'assistante de l'entreprise représentée et parle comme une humaine. Chaque appel garde le nom sous lequel elle s'est présentée.
 _Avoid_ : agent, bot, IA, voicebot
+
+**Premier message** :
+La phrase que l'assistante dit quand le prospect se tait au décroché (« Allô ? » par défaut). Réglé en base avec son nom, il vaut dès l'appel suivant ; quand le prospect parle le premier, c'est le prompt qui décide de la réponse.
+_Avoid_ : accroche, message d'accueil, first message
+
+**Configuration de l'assistante** :
+Son prompt et ses réglages ElevenLabs (modèle, voix, tour de parole, relances de silence, durée maximale), versionnés dans `agent/` et envoyés à ElevenLabs par une poussée confirmée par l'opérateur ; chaque poussée par le serveur MCP est consignée, et chaque appel garde la version qui a parlé. Le nom et le premier message n'en font pas partie : ils vivent en base.
+_Avoid_ : persona, paramètres de l'agent
 
 **Objection** :
 Réticence type d'un prospect envers une entreprise (« on a déjà un site », « c'est combien ? », « ça ne m'intéresse pas »), accompagnée de sa réponse CRAC. Appartient à une entreprise et garde une identité stable d'un appel à l'autre, pour qu'on puisse suivre si elle est levée.
