@@ -24,4 +24,11 @@ describe('filtres de la liste des appels lus dans l’URL', () => {
     expect(lireFiltresAppels({ periode: 'tout' }).parametres.periode).toBeUndefined();
     expect(lireFiltresAppels({ issue: 'non-compose' }).filtres.issue).toBe('non-compose');
   });
+
+  it('rappels à faire : « 1 » seulement, et le filtre d’issue s’efface', () => {
+    const { parametres, filtres } = lireFiltresAppels({ rappels: '1', issue: 'refus' });
+    expect(parametres).toMatchObject({ rappels: '1', issue: undefined });
+    expect(filtres).toEqual({ reels: true, rappels: true });
+    expect(lireFiltresAppels({ rappels: 'oui' }).filtres).toEqual({ reels: true });
+  });
 });

@@ -1,6 +1,7 @@
-import { asc, desc, eq, sql } from 'drizzle-orm';
+import type { RappelDate } from '@autocalled/domain';
+import { and, asc, desc, eq, ne, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
-import { dateCourte, etatAppel } from '@/components/format-appel';
+import { dateCourte, etatAppel, quandRappeler } from '@/components/format-appel';
 import { Page } from '@/components/ui';
 import { db } from '@/db';
 import { appels, issuesPersonnalisees, prospects, textesConsentement } from '@/db/schema';
@@ -11,6 +12,11 @@ import { ListeProspects, type LigneProspect } from './liste-prospects';
 
 export const metadata: Metadata = { title: 'Prospects' };
 
+/** L'heure se lit hors du rendu. */
+function lireMaintenant(): Date {
+  return new Date();
+}
+
 export default async function PageProspects({
   params,
   searchParams,
@@ -20,7 +26,7 @@ export default async function PageProspects({
 }) {
   const [{ slug }, recherche] = await Promise.all([params, searchParams]);
   const entreprise = await entrepriseParSlug(slug);
-  const [liste, [texte], derniers, issuesPerso] = await Promise.all([
+  const [liste, [texte], derniers, derniersReels, issuesPerso] = await Promise.all([
     db.select().from(prospects).where(eq(prospects.entrepriseId, entreprise.id)).orderBy(asc(prospects.nom), asc(prospects.id)),
     db.select().from(textesConsentement).orderBy(desc(textesConsentement.version)).limit(1),
     // Le dernier appel de chaque prospect, en une requête.
@@ -34,10 +40,21 @@ export default async function PageProspects({
         issueSysteme: appels.issueSysteme,
         erreur: appels.erreur,
         conversationId: appels.conversationId,
-        rappel: sql<string | null>`${appels.bilan}->>'rappel'`,
       })
       .from(appels)
       .where(eq(appels.entrepriseId, entreprise.id))
+      .orderBy(appels.prospectId, desc(appels.debutLe)),
+    // Le dernier appel hors simulation : rappel convenu, il est à faire (tout appel plus récent le fait).
+    db
+      .selectDistinctOn([appels.prospectId], {
+        prospectId: appels.prospectId,
+        issueSysteme: appels.issueSysteme,
+        rappelLe: appels.rappelLe,
+        quand: sql<RappelDate | null>`${appels.bilan}->'rappelLe'`,
+        texte: sql<string | null>`${appels.bilan}->>'rappel'`,
+      })
+      .from(appels)
+      .where(and(eq(appels.entrepriseId, entreprise.id), ne(appels.ligne, 'simulation')))
       .orderBy(appels.prospectId, desc(appels.debutLe)),
     db
       .select({ id: issuesPersonnalisees.id, libelle: issuesPersonnalisees.libelle })
@@ -46,6 +63,14 @@ export default async function PageProspects({
   ]);
   const autorisations = await autorisationsDe(liste.map((p) => p.telephone));
   const dernierDe = new Map(derniers.map((d) => [d.prospectId, d]));
+  const dernierReelDe = new Map(derniersReels.map((d) => [d.prospectId, d]));
+  const maintenant = lireMaintenant();
+  const phraseRappel = (prospectId: string): string | null => {
+    const r = dernierReelDe.get(prospectId);
+    if (r?.issueSysteme !== 'rappel-convenu') return null;
+    if (!r.rappelLe) return r.texte ?? 'moment non précisé';
+    return `${quandRappeler(r.rappelLe, r.quand, maintenant)}${r.texte ? ` (« ${r.texte} »)` : ''}`;
+  };
   const libellePerso = new Map(issuesPerso.map((i) => [`perso:${i.id}`, i.libelle]));
 
   const lignes: LigneProspect[] = liste.map((p) => {
@@ -61,7 +86,7 @@ export default async function PageProspects({
       dernier: d
         ? { date: dateCourte(d.debutLe).split(' ')[0] ?? '', libelle: etatAppel(d, { libellePerso: d.issue ? libellePerso.get(d.issue) : null }).libelle }
         : null,
-      rappel: d && d.statut === 'termine' && d.issueSysteme === 'rappel-convenu' ? (d.rappel ?? 'moment non précisé') : null,
+      rappel: phraseRappel(p.id),
     };
   });
 

@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   ISSUES_SYSTEME,
+  instantDuRappel,
   LIBELLES_ISSUES,
   type NumeroAutorise,
   SENS_ISSUES,
@@ -236,6 +237,7 @@ export async function analyserAppel(appelId: string): Promise<void> {
         objectionIds: listeObjections.map((o) => o.id),
         issues,
         rendezVousReserve: Boolean(rdv),
+        debutAppel: appel.debutLe,
       },
       entreprise: entreprise.nom,
       etapes: version.etapes.map((e) => e.intention),
@@ -249,6 +251,8 @@ export async function analyserAppel(appelId: string): Promise<void> {
         bilan,
         issue: bilan.issue,
         issueSysteme: issues.find((i) => i.cle === bilan.issue)?.systeme ?? null,
+        // Réécrit à chaque analyse : une réanalyse qui n'est plus un rappel daté l'efface.
+        rappelLe: bilan.rappelLe ? instantDuRappel(bilan.rappelLe) : null,
         versionAnalyseur: VERSION_ANALYSEUR,
         statut: 'termine',
       })

@@ -1,7 +1,9 @@
 import type { Bilan, EntreeCampagne, IssueSysteme, PlageHoraire, StatutCampagne, TourDeParole } from '@autocalled/domain';
 import { ISSUES_SYSTEME } from '@autocalled/domain';
+import { sql } from 'drizzle-orm';
 import {
   boolean,
+  index,
   integer,
   jsonb,
   pgEnum,
@@ -211,9 +213,14 @@ export const appels = pgTable('appels', {
   bilan: jsonb().$type<Bilan>(),
   issue: text(),
   issueSysteme: issueSysteme(),
+  /**
+   * L'instant du rappel convenu, tiré du bilan (`bilan.rappelLe`, heure de Paris) pour trier et filtrer les
+   * rappels en base ; null sans rappel daté. Réécrit à chaque analyse.
+   */
+  rappelLe: timestamp({ withTimezone: true }),
   versionAnalyseur: text(),
   erreur: text(),
-});
+}, (t) => [index('appels_rappel_le_idx').on(t.rappelLe).where(sql`${t.rappelLe} is not null`)]);
 
 /** La connexion Google Agenda de l'opérateur (une seule). Le jeton de rafraîchissement est chiffré. */
 export const connexionGoogle = pgTable('connexion_google', {

@@ -3,6 +3,7 @@ import { ISSUES_SYSTEME, type IssueSysteme, type TourDeParole, statistiquesObjec
 import { type SQL, and, asc, desc, eq, ilike, isNotNull, ne, or, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { appels, entreprises, issuesPersonnalisees, journalMcp, objections, prospects, rendezVous, versionsScript } from '@/db/schema';
+import { RAPPEL_A_FAIRE } from './rappels';
 import { versionsDeLEntreprise } from './versions';
 
 /** Lectures partagées par les pages et le serveur MCP : une seule requête pour deux lecteurs. */
@@ -30,6 +31,8 @@ export type FiltresAppels = {
   periode?: string;
   /** Sans ligne choisie, écarte les appels simulés (ils ne comptent dans aucun chiffre). */
   reels?: boolean;
+  /** Seulement les rappels convenus encore à faire (aucun appel plus récent vers le prospect). */
+  rappels?: boolean;
 };
 
 const FORME_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -93,6 +96,7 @@ function conditionsAppels(f: FiltresAppels, { sansIssue = false } = {}): SQL[] {
   if (f.version && FORME_UUID.test(f.version)) conditions.push(eq(appels.versionScriptId, f.version));
   const periode = conditionPeriode(f.periode);
   if (periode) conditions.push(periode);
+  if (f.rappels) conditions.push(RAPPEL_A_FAIRE);
   const q = f.recherche?.trim();
   if (q) {
     // Cherche dans le nom du prospect, sa société, le résumé du bilan et toute la transcription.

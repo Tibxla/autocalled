@@ -88,6 +88,13 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
   ]);
 
   const bilan = appel.bilan;
+  // Le rappel daté par l'analyse, en date absolue (la fiche d'appel se relit longtemps après).
+  const rappelDate =
+    appel.rappelLe && bilan?.rappelLe
+      ? `${jourCourt(appel.rappelLe)}${
+          bilan.rappelLe.heure ? ` à ${heure(appel.rappelLe)}` : bilan.rappelLe.moment === 'matin' ? ' matin' : bilan.rappelLe.moment === 'apres-midi' ? ' après-midi' : ''
+        }`
+      : null;
   const etapes = version?.etapes ?? [];
   const enDirect = appel.statut === 'en-cours';
   const telephone = appel.ligne === 'bluetooth';
@@ -224,7 +231,12 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
           <p className="text-xl font-semibold tracking-[-0.01em] text-encre">{libelleIssue}</p>
           {perso && issue ? <span className="text-md text-encre-3">{LIBELLES_ISSUES[issue as IssueSysteme]}</span> : null}
         </div>
-        {bilan?.rappel ? <p className="text-base text-encre-2">Rappel convenu : {bilan.rappel}</p> : null}
+        {bilan?.rappel ? (
+          <p className="text-base text-encre-2">
+            Rappel convenu : {rappelDate ? <span className="text-encre">{rappelDate}</span> : null}
+            {rappelDate ? <span className="text-encre-3"> · « {bilan.rappel} »</span> : bilan.rappel}
+          </p>
+        ) : null}
         {rendezVousPris && !rdv ? (
           <p className="text-sm text-encre-3">Aucun rendez-vous réservé dans l’agenda pour cet appel : seul le bilan le dit.</p>
         ) : null}

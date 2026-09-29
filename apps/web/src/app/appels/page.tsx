@@ -88,9 +88,14 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
   const [entreprise] = parametres.entreprise
     ? await db.select({ id: entreprises.id }).from(entreprises).where(eq(entreprises.slug, parametres.entreprise))
     : [];
-  const [page, comptes, listeEntreprises, [twilio], vivantId, versions, persos] = await Promise.all([
+  const rappels = parametres.rappels === '1';
+  // Les comptes par issue restent ceux de la liste sans le filtre des rappels ; celui-ci a son propre compte.
+  const filtresSansRappels = { ...filtres };
+  delete filtresSansRappels.rappels;
+  const [page, comptes, compteRappels, listeEntreprises, [twilio], vivantId, versions, persos] = await Promise.all([
     pageAppels(filtres, { taille: PAS, ...(avant ? { avant } : {}) }),
-    comptesAppels(filtres),
+    comptesAppels(filtresSansRappels),
+    comptesAppels({ ...filtresSansRappels, rappels: true }).then((c) => c.total),
     db.select({ slug: entreprises.slug, nom: entreprises.nom }).from(entreprises).orderBy(asc(entreprises.nom)),
     db.select({ id: appels.id }).from(appels).where(eq(appels.ligne, 'twilio')).limit(1),
     appelVivant(),
@@ -145,11 +150,17 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
   };
   const lien = (changements: Record<string, string | null>) => lienAvec('/appels', sansCurseur, changements);
   const ici = lienAvec('/appels', { ...parametres }, {});
-  const filtre = Boolean(q || parametres.entreprise || issue || ligne || parametres.version || periode);
+  const filtre = Boolean(q || parametres.entreprise || issue || ligne || parametres.version || periode || rappels);
   const lignesProposees = LIGNES_FILTRE.filter((l) => l.valeur !== 'twilio' || twilio || ligne === 'twilio');
   const persosProposees = persos.filter((p) => !p.archivee || (comptes.parPerso[`perso:${p.id}`] ?? 0) > 0 || issue === `perso:${p.id}`);
-  const libelleIssue = issue ? (FILTRES_ISSUE.find((f) => f.cle === issue)?.libelle ?? persos.find((p) => `perso:${p.id}` === issue)?.libelle ?? null) : null;
-  const compteFiltre = issue ? (issue.startsWith('perso:') ? (comptes.parPerso[issue] ?? 0) : (comptes.parIssue[issue] ?? 0)) : comptes.total;
+  const libelleIssue = rappels ? 'Rappels à faire' : issue ? (FILTRES_ISSUE.find((f) => f.cle === issue)?.libelle ?? persos.find((p) => `perso:${p.id}` === issue)?.libelle ?? null) : null;
+  const compteFiltre = rappels
+    ? compteRappels
+    : issue
+      ? issue.startsWith('perso:')
+        ? (comptes.parPerso[issue] ?? 0)
+        : (comptes.parIssue[issue] ?? 0)
+      : comptes.total;
   const jourPrecis = periode && !(PERIODES as readonly string[]).includes(periode) ? periode : '';
   const population = ligne === 'simulation' ? 'appels simulés' : 'appels réels';
 
@@ -167,14 +178,18 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
 
       <div className="grid gap-2.5 border-b border-filet pb-3">
         <Filtres libelle={`Issue, ${population}`}>
-          <Filtre actif={!issue} compte={comptes.total} href={lien({ issue: null })}>
+          <Filtre actif={!issue && !rappels} compte={comptes.total} href={lien({ issue: null, rappels: null })}>
             Tous
           </Filtre>
           {FILTRES_ISSUE.map((f) => (
-            <Filtre key={f.cle} actif={issue === f.cle} compte={comptes.parIssue[f.cle] ?? 0} href={lien({ issue: f.cle })}>
+            <Filtre key={f.cle} actif={issue === f.cle} compte={comptes.parIssue[f.cle] ?? 0} href={lien({ issue: f.cle, rappels: null })}>
               {f.libelle}
             </Filtre>
           ))}
+          {/* Un rappel convenu reste à faire tant qu'aucun appel plus récent n'est parti vers le prospect. */}
+          <Filtre actif={rappels} compte={compteRappels} href={lien({ rappels: rappels ? null : '1', issue: null })}>
+            Rappels à faire
+          </Filtre>
         </Filtres>
         {persosProposees.length > 0 ? (
           <div className="flex flex-wrap items-baseline gap-x-[22px] gap-y-1 text-sm">
@@ -189,6 +204,7 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
                   compte={comptes.parPerso[`perso:${p.id}`] ?? 0}
                   href={lien({
                     issue: issue === `perso:${p.id}` ? null : `perso:${p.id}`,
+                    rappels: null,
                   })}
                 >
                   {p.libelle}

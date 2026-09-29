@@ -12,6 +12,7 @@ import {
   libelleJour,
   numeroMasque,
   prenom,
+  quandRappeler,
 } from './format-appel';
 
 describe('heure de Paris', () => {
@@ -155,5 +156,21 @@ describe('comptesCampagne', () => {
         { prospectId: 'f', etat: 'a-appeler', sauts: 2 },
       ]),
     ).toEqual({ total: 6, aAppeler: 2, enAppel: 1, appelees: 1, sautees: 1, retirees: 1, traites: 3 });
+  });
+});
+
+describe('quandRappeler', () => {
+  const maintenant = new Date('2026-09-29T08:00:00Z'); // mardi 29 septembre, 10 h à Paris
+
+  it('dit le jour relatif et la précision donnée par le prospect', () => {
+    expect(quandRappeler('2026-09-29T12:30:00Z', { heure: '14:30', moment: null }, maintenant)).toBe('aujourd’hui à 14:30');
+    expect(quandRappeler('2026-09-30T07:00:00Z', { heure: null, moment: 'matin' }, maintenant)).toBe('demain matin');
+    expect(quandRappeler('2026-10-01T12:00:00Z', { heure: null, moment: 'apres-midi' }, maintenant)).toBe('jeu. 01/10 après-midi');
+    expect(quandRappeler('2026-10-01T07:00:00Z', { heure: null, moment: null }, maintenant)).toBe('jeu. 01/10');
+    expect(quandRappeler('2026-09-28T07:00:00Z', { heure: null, moment: 'matin' }, maintenant)).toBe('hier matin');
+  });
+
+  it('sans précision connue, donne l’heure de l’instant', () => {
+    expect(quandRappeler('2026-09-29T12:30:00Z', null, maintenant)).toBe('aujourd’hui à 14:30');
   });
 });

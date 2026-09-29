@@ -2,6 +2,7 @@ import {
   LIBELLES_ISSUES,
   type EntreeCampagne,
   type IssueSysteme,
+  type RappelDate,
   type StatutCampagne,
 } from '@autocalled/domain';
 
@@ -69,6 +70,26 @@ export function libelleJour(d: Date | string, maintenant: Date = new Date()): st
   if (cle === veille(cleAujourdhui)) return 'Hier';
   const memeAnnee = cle.slice(0, 4) === cleAujourdhui.slice(0, 4);
   return majuscule((memeAnnee ? FORMAT_LONG : FORMAT_LONG_ANNEE).format(date(d)));
+}
+
+/** Le lendemain d'une clé de jour. */
+function lendemain(cle: string): string {
+  const [a, m, j] = cle.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(a, m - 1, j + 1)).toISOString().slice(0, 10);
+}
+
+/**
+ * Quand rappeler, en clair : « aujourd'hui à 14:30 », « demain matin », « jeu. 01/10 après-midi »,
+ * « jeu. 01/10 » (le jour seul). `quand` : la précision donnée par le prospect ; sans elle, l'heure de l'instant.
+ */
+export function quandRappeler(instant: Date | string, quand: Pick<RappelDate, 'heure' | 'moment'> | null, maintenant: Date = new Date()): string {
+  const cle = cleJour(instant);
+  const aujourdhui = cleJour(maintenant);
+  const jour = cle === aujourdhui ? 'aujourd’hui' : cle === lendemain(aujourdhui) ? 'demain' : cle === veille(aujourdhui) ? 'hier' : jourCourt(instant);
+  if (!quand || quand.heure) return `${jour} à ${heure(instant)}`;
+  if (quand.moment === 'matin') return `${jour} matin`;
+  if (quand.moment === 'apres-midi') return `${jour} après-midi`;
+  return jour;
 }
 
 const deux = (n: number) => String(n).padStart(2, '0');

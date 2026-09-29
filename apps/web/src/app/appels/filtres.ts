@@ -20,6 +20,8 @@ export type ParametresAppels = {
   ligne?: string;
   version?: string;
   periode?: string;
+  /** « 1 » : seulement les rappels convenus encore à faire ; exclut le filtre d'issue. */
+  rappels?: string;
   /** Curseur : l'identifiant du dernier appel de la page d'avant. */
   avant?: string;
 };
@@ -44,7 +46,9 @@ export function lireFiltresAppels(p: Record<string, string | undefined>): { para
   const parametres: ParametresAppels = {
     q,
     entreprise: p.entreprise || undefined,
-    issue: issueValide(p.issue),
+    // Les rappels à faire sont tous des rappels convenus : le filtre d'issue s'efface devant eux.
+    issue: p.rappels === '1' ? undefined : issueValide(p.issue),
+    rappels: p.rappels === '1' ? '1' : undefined,
     ligne,
     version: p.version && FORME_UUID.test(p.version) ? p.version : undefined,
     periode,
@@ -57,5 +61,6 @@ export function lireFiltresAppels(p: Record<string, string | undefined>): { para
   if (ligne) filtres.ligne = ligne;
   if (parametres.version) filtres.version = parametres.version;
   if (periode) filtres.periode = periode;
+  if (parametres.rappels) filtres.rappels = true;
   return { parametres, filtres };
 }
