@@ -1,29 +1,37 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { EnTetePage, Message, TitreSection } from '@/components/ui';
+import { heure, jourCourt } from '@/components/format-appel';
+import { EnTetePage, LigneDefinition, Message, Page, TitreSection } from '@/components/ui';
 import { calendrierConfigure, etatAgenda } from '@/lib/agenda';
 import { clientGoogle, connexion } from '@/lib/google';
 import { journalMcpRecent, rendezVousRecents } from '@/lib/lecture';
 import { BoutonDeconnecter } from './bouton-deconnecter';
-import { BoutonRecreer, BoutonRelire } from './boutons-agenda';
+import { BoutonRelire } from './boutons-agenda';
+import { JournalClaudeCode } from './journal-claude-code';
+import { MessageGoogle } from './message-google';
+import { RendezVousMina } from './rendez-vous-mina';
 
 export const metadata: Metadata = { title: 'Réglages' };
 
-const date = new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' });
+/** La copie de l'agenda est relue avant les appels quand elle a plus de dix minutes (lib/agenda.ts). */
+const FRAICHEUR_MINUTES = 10;
+/** Limite par défaut de rendezVousRecents : au-delà, la liste le dit. */
+const RENDEZ_VOUS_LUS = 20;
 
-const RESULTATS: Record<string, string> = {
-  ok: 'fait',
-  refus: 'refusé',
-  erreur: 'erreur',
-  'confirmation-demandee': 'confirmation demandée',
-};
-const CONFIRMATIONS: Record<string, string> = { acceptee: 'accord de l’opérateur', refusee: 'refus de l’opérateur', indisponible: 'confirmation impossible' };
+const JOUR_MOIS = new Intl.DateTimeFormat('fr-FR', {
+  day: '2-digit',
+  month: '2-digit',
+  timeZone: 'Europe/Paris',
+});
 
-const MESSAGES: Record<string, string> = {
-  connecte: 'L’API Google Agenda est connectée.',
-  refuse: 'La connexion a été refusée : le jeton de sécurité ne correspondait pas. Recommence.',
-  annule: 'Connexion annulée côté Google.',
-};
+function ilYA(minutes: number): string {
+  if (minutes < 1) return 'à l’instant';
+  if (minutes < 60) return `il y a ${minutes} min`;
+  const heures = Math.floor(minutes / 60);
+  if (heures < 48) return `il y a ${heures} h`;
+  return `il y a ${Math.floor(heures / 24)} jours`;
+}
+
+const SECTION = 'grid scroll-mt-[calc(var(--hauteur-barre)+16px)] gap-5';
 
 export default async function PageReglages({ searchParams }: { searchParams: Promise<{ google?: string }> }) {
   const { google } = await searchParams;
@@ -32,126 +40,155 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
     connexion(),
     etatAgenda(),
     rendezVousRecents(),
-    journalMcpRecent(),
+    journalMcpRecent(100),
   ]);
+  const maintenant = new Date();
+  const calendrier = calendrierConfigure();
+  const age = etat ? Math.max(0, Math.floor((maintenant.getTime() - etat.synchroniseLe.getTime()) / 60_000)) : null;
+  const plages = etat?.occupations.length ?? 0;
 
   return (
-    <>
-      <EnTetePage titre="Réglages" />
-      <div className="grid max-w-[48rem] gap-14">
-        <section className="grid gap-5">
-          <TitreSection>Agenda</TitreSection>
-          <p className="max-w-[62ch] text-encre-2">
-            Mina propose des créneaux libres sur l’ensemble de tes calendriers. L’agenda est relu avant les appels (toutes les dix minutes au
-            plus) ; un rendez-vous réservé pendant un appel est inscrit dans Google juste après.
+    <Page largeur="lecture">
+      <EnTetePage titre="Réglages" sousTitre="L’agenda lu par Mina, les rendez-vous qu’elle a pris, et ce que Claude Code a fait." />
+      <div className="grid max-w-[48rem] gap-12">
+        <nav aria-label="Sections de la page" className="-mt-2 flex flex-wrap gap-x-[22px] gap-y-1 text-md">
+          <Ancre href="#agenda">Agenda</Ancre>
+          <Ancre href="#rendez-vous" compte={rdvs.length}>
+            Rendez-vous
+          </Ancre>
+          <Ancre href="#claude-code" compte={journal.length}>
+            Claude Code
+          </Ancre>
+        </nav>
+
+        <section id="agenda" aria-labelledby="titre-agenda" className={SECTION}>
+          <TitreSection id="titre-agenda">Agenda</TitreSection>
+          <p className="max-w-[62ch] text-sm text-encre-2">
+            Mina propose des créneaux libres sur l’ensemble de tes calendriers. L’agenda est relu avant les appels (toutes les dix minutes
+            au plus) ; un rendez-vous réservé pendant un appel est inscrit dans Google juste après.
           </p>
-          <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-[12rem_1fr]">
-            <dt className="text-sm text-encre-3">Source</dt>
-            <dd>{api ? 'API Google Agenda' : 'Connecteur Google Agenda de Claude (MCP)'}</dd>
-            <dt className="text-sm text-encre-3">Rendez-vous créés dans</dt>
-            <dd>
+          <dl className="border-t border-filet">
+            <LigneDefinition intitule="Source">
+              {api ? (
+                'API Google Agenda'
+              ) : (
+                <>
+                  Connecteur Google Agenda de claude.ai, lu par <span className="font-mono text-sm">claude -p</span>{' '}
+                  <span className="text-encre-3">(environ 20 s)</span>
+                </>
+              )}
+            </LigneDefinition>
+            <LigneDefinition intitule="Rendez-vous créés dans">
               {api ? (
                 'le calendrier choisi à la connexion de l’API'
-              ) : calendrierConfigure() ? (
+              ) : calendrier ? (
                 <>
-                  <span className="font-mono">{calendrierConfigure()}</span>
-                  <span className="text-encre-3"> · les invitations partent à ce nom</span>
+                  <span className="font-mono text-sm">{calendrier}</span>
+                  <span className="block text-sm text-encre-3">Les invitations partent à ce nom.</span>
                 </>
               ) : (
-                <span className="text-encre-3">calendrier « Autocalled » s’il existe, sinon le principal (AGENDA_CALENDRIER dans .env pour en choisir un)</span>
-              )}
-            </dd>
-            <dt className="text-sm text-encre-3">Dernière lecture</dt>
-            <dd>
-              {etat ? (
                 <>
-                  <span className="font-mono">{date.format(etat.synchroniseLe)}</span>
-                  <span className="text-encre-3"> · {etat.occupations.length} plages occupées sur les trois semaines à venir</span>
+                  le calendrier « Autocalled » s’il existe, sinon le principal
+                  <span className="block text-sm text-encre-3">
+                    Pour en choisir un : <span className="font-mono">AGENDA_CALENDRIER</span> dans <span className="font-mono">.env</span>.
+                  </span>
+                </>
+              )}
+            </LigneDefinition>
+            <LigneDefinition intitule="Dernière lecture">
+              {etat && age !== null ? (
+                <>
+                  <time dateTime={etat.synchroniseLe.toISOString()} className="font-mono text-sm">
+                    {jourCourt(etat.synchroniseLe)} {heure(etat.synchroniseLe)}
+                  </time>
+                  <span className="text-encre-3"> · {ilYA(age)}</span>
+                  {age > FRAICHEUR_MINUTES ? (
+                    <span className="block text-sm text-encre-3">Sera relue au prochain appel ou à l’ouverture d’une campagne.</span>
+                  ) : null}
                 </>
               ) : (
-                <span className="text-encre-3">jamais</span>
+                <>
+                  <span className="text-encre-2">jamais</span>
+                  <span className="block text-sm text-encre-3">
+                    Elle se fera au prochain appel, ou maintenant avec le bouton ci-dessous.
+                  </span>
+                </>
               )}
-            </dd>
+            </LigneDefinition>
+            {etat ? (
+              <LigneDefinition intitule="Plages occupées">
+                <span className="font-mono">{plages}</span> {plages > 1 ? 'plages occupées' : 'plage occupée'} jusqu’au{' '}
+                <span className="font-mono">{JOUR_MOIS.format(etat.fenetreFin)}</span>
+              </LigneDefinition>
+            ) : null}
           </dl>
-          {etat?.erreur ? <Message ton="alerte">Dernière lecture en échec : {etat.erreur}</Message> : null}
+          {etat?.erreur ? (
+            <Message ton="alerte" titre="La dernière lecture a échoué.">
+              {etat.erreur} La copie affichée date de la lecture précédente.
+            </Message>
+          ) : null}
           <BoutonRelire />
+
+          <div className="grid gap-3 pt-2">
+            <h3 className="text-md font-semibold">API Google Agenda</h3>
+            <p className="max-w-[62ch] text-sm text-encre-2">
+              Plus rapide que le connecteur, mais demande un client OAuth Google. Une fois connectée, elle remplace le connecteur.
+            </p>
+            <MessageGoogle google={google} />
+            {!client ? (
+              <p className="text-sm text-encre-3">
+                Non configurée : <span className="font-mono">GOOGLE_CLIENT_ID</span>,{' '}
+                <span className="font-mono">GOOGLE_CLIENT_SECRET</span> et <span className="font-mono">ORIGINE_APP</span> manquent dans{' '}
+                <span className="font-mono">.env</span>.
+              </p>
+            ) : api ? (
+              <div className="grid gap-1">
+                <p>
+                  Connectée{api.email ? ' en tant que ' : '.'}
+                  {api.email ? <span className="font-mono text-sm">{api.email}</span> : null}
+                </p>
+                <BoutonDeconnecter />
+              </div>
+            ) : (
+              // Lien simple, jamais un <Link> : un préchargement ouvrirait la connexion OAuth.
+              <a
+                href="/google/connexion"
+                className="group -mx-1.5 inline-flex h-9 items-center justify-self-start rounded-[4px] px-1.5 text-md font-medium text-encre-2 transition-colors duration-150 hover:text-encre pointer-coarse:h-11"
+              >
+                <span className="decoration-souligne decoration-1 underline-offset-4 group-hover:underline">
+                  Connecter l’API Google Agenda
+                </span>
+              </a>
+            )}
+          </div>
         </section>
 
-        <section className="grid gap-3">
-          <TitreSection>Visios réservées par Mina</TitreSection>
-          {rdvs.length === 0 ? (
-            <p className="text-sm text-encre-3">Aucun pour l’instant.</p>
-          ) : (
-            <ul>
-              {rdvs.map(({ rdv, prospect, appelId }) => (
-                <li key={rdv.id} className="grid grid-cols-[8.5rem_minmax(0,1fr)_auto] items-baseline gap-4 border-b border-filet py-3">
-                  <span className="font-mono text-sm">{date.format(rdv.debut)}</span>
-                  <span className="flex min-w-0 items-baseline gap-3">
-                    <Link href={`/appels/${appelId}`} className="truncate hover:underline">
-                      {prospect ?? 'Prospect'}
-                    </Link>
-                    {rdv.lienVisio ? (
-                      <a href={rdv.lienVisio} className="text-sm text-encre-3 underline decoration-filet-fort underline-offset-4 hover:text-encre">
-                        visio
-                      </a>
-                    ) : null}
-                  </span>
-                  <span className="text-sm text-encre-3">
-                    {rdv.statut === 'cree' ? 'Dans l’agenda' : rdv.statut === 'a-creer' ? 'Inscription…' : <BoutonRecreer rendezVousId={rdv.id} />}
-                  </span>
-                  {rdv.email ? <span className="col-span-3 -mt-2 font-mono text-sm text-encre-3">{rdv.email}</span> : null}
-                  {rdv.erreur ? <span className="col-span-3 text-sm text-antenne">{rdv.erreur}</span> : null}
-                </li>
-              ))}
-            </ul>
-          )}
+        <section id="rendez-vous" aria-labelledby="titre-rendez-vous" className={SECTION}>
+          <TitreSection id="titre-rendez-vous">Rendez-vous pris par Mina</TitreSection>
+          <RendezVousMina rdvs={rdvs} maintenant={maintenant} limite={RENDEZ_VOUS_LUS} />
         </section>
 
-        <section className="grid gap-3">
-          <TitreSection>Journal de Claude Code</TitreSection>
+        <section id="claude-code" aria-labelledby="titre-claude-code" className={SECTION}>
+          <TitreSection id="titre-claude-code">Claude Code</TitreSection>
           <p className="max-w-[62ch] text-sm text-encre-2">
-            Ce que Claude Code a lu et fait par le serveur MCP (<span className="font-mono">.mcp.json</span>), du plus récent au plus ancien. Les
-            gestes qui font sonner le téléphone ou écrivent à un prospect attendent ton accord dans Claude Code.
+            Outils du serveur MCP d’Autocalled (<span className="font-mono">.mcp.json</span>) appelés par Claude Code. Les gestes qui font
+            sonner le téléphone ou écrivent à un prospect attendent ton accord dans Claude Code.
           </p>
-          {journal.length === 0 ? (
-            <p className="text-sm text-encre-3">Aucun appel d’outil pour l’instant.</p>
-          ) : (
-            <ul>
-              {journal.map((j) => (
-                <li key={j.id} className="grid grid-cols-[8.5rem_minmax(0,1fr)_auto] items-baseline gap-4 border-b border-filet py-2.5">
-                  <span className="font-mono text-sm">{date.format(j.le)}</span>
-                  <span className="truncate font-mono text-sm">{j.outil}</span>
-                  <span className={`text-sm ${j.resultat === 'ok' ? 'text-encre-3' : 'text-antenne'}`}>
-                    {RESULTATS[j.resultat] ?? j.resultat}
-                    {j.confirmation ? ` · ${CONFIRMATIONS[j.confirmation] ?? j.confirmation}` : ''}
-                  </span>
-                  {j.message && j.resultat !== 'ok' ? <span className="col-span-3 -mt-1 text-sm text-encre-3">{j.message}</span> : null}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="grid gap-4">
-          <TitreSection>API Google (facultatif)</TitreSection>
-          <p className="max-w-[62ch] text-sm text-encre-2">
-            Plus rapide que le connecteur, mais demande un client OAuth Google. Une fois connectée, elle remplace le connecteur.
-          </p>
-          {google && MESSAGES[google] ? <Message ton={google === 'connecte' ? 'neutre' : 'alerte'}>{MESSAGES[google]}</Message> : null}
-          {!client ? (
-            <p className="text-sm text-encre-3">Non configurée (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET et ORIGINE_APP dans .env).</p>
-          ) : api ? (
-            <div className="grid gap-2">
-              <p className="text-sm">Connectée{api.email ? ` en tant que ${api.email}` : ''}.</p>
-              <BoutonDeconnecter />
-            </div>
-          ) : (
-            <a href="/google/connexion" className="text-sm underline decoration-filet-fort underline-offset-4 hover:decoration-encre-3">
-              Connecter l’API Google Agenda
-            </a>
-          )}
+          <JournalClaudeCode lignes={journal} />
         </section>
       </div>
-    </>
+    </Page>
+  );
+}
+
+function Ancre({ href, compte, children }: { href: string; compte?: number; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      className="inline-flex items-baseline gap-1.5 rounded-[4px] py-1 whitespace-nowrap text-encre-3 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline pointer-coarse:py-2.5"
+    >
+      {children}
+      {compte !== undefined ? <span className="font-mono text-encre-3">{compte}</span> : null}
+    </a>
   );
 }
