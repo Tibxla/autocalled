@@ -10,6 +10,8 @@ import { Confirmation, useConfirmation } from '@/components/confirmation';
 import type { ReglagesLigne } from '@/components/garde-fous';
 import { Action, LienAction, Message } from '@/components/ui';
 import { cloreAppelDeCampagne, lancerCampagne, ouvrirAppelSuivant, suspendreCampagne, terminerAvantLaFin } from '../actions';
+import { useReconnexion } from '@/app/telephone/panneau-telephone';
+import { AIDE_RECONNEXION, reconnexionRegie } from '@/app/telephone/reconnexion';
 import { phraseEstimation, phrasePlafonds, Recapitulatif, type ProspectRecapitulatif } from './recapitulatif';
 
 /**
@@ -101,21 +103,40 @@ function blocageLigne(pont: EtatPont | null): { texte: string; lienTelephone: bo
   return null;
 }
 
-function Blocage({ blocage }: { blocage: { texte: string; lienTelephone: boolean } }) {
+/**
+ * Message d'alerte sur la ligne. Avec `reconnecter` (téléphone déconnecté, ou suspendue après un échec du
+ * téléphone ; reconnexion.ts), « Reconnecter le téléphone » en geste de secours à côté de la cause, son aide
+ * et son éventuelle erreur dans le même bloc (pas de message dans le message).
+ */
+function MessageLigne({ texte, lienTelephone, reconnecter }: { texte: string; lienTelephone: boolean; reconnecter: boolean }) {
+  const reconnexion = useReconnexion();
+  const ouvrir = lienTelephone ? <LienAction href="/telephone">Ouvrir Téléphone</LienAction> : null;
+  const action = reconnecter ? (
+    <div className="flex flex-wrap items-center gap-x-4">
+      <Action ton="fort" enCours={reconnexion.enCours} libelleEnCours="Reconnexion…" disabled={reconnexion.enCours} onClick={reconnexion.lancer} className="max-sm:h-11">
+        Reconnecter le téléphone
+      </Action>
+      {ouvrir}
+    </div>
+  ) : (
+    ouvrir
+  );
   return (
-    <Message ton="alerte" action={blocage.lienTelephone ? <LienAction href="/telephone">Ouvrir Téléphone</LienAction> : undefined}>
-      {blocage.texte}
+    <Message ton="alerte" action={action ?? undefined}>
+      {texte}
+      {reconnecter ? <span className="mt-1 block text-encre-2">{AIDE_RECONNEXION}</span> : null}
+      {reconnexion.erreur ? <span className="mt-1 block font-medium">{reconnexion.erreur}</span> : null}
     </Message>
   );
 }
 
-function Raison({ raison }: { raison: RaisonSuspension }) {
+function Blocage({ blocage, reconnecter = false }: { blocage: { texte: string; lienTelephone: boolean }; reconnecter?: boolean }) {
+  return <MessageLigne texte={blocage.texte} lienTelephone={blocage.lienTelephone} reconnecter={reconnecter} />;
+}
+
+function Raison({ raison, reconnecter = false }: { raison: RaisonSuspension; reconnecter?: boolean }) {
   if (raison.ton === 'neutre') return <p className="text-base text-encre-2">{raison.texte}</p>;
-  return (
-    <Message ton="alerte" action={raison.lienTelephone ? <LienAction href="/telephone">Ouvrir Téléphone</LienAction> : undefined}>
-      {raison.texte}
-    </Message>
-  );
+  return <MessageLigne texte={raison.texte} lienTelephone={raison.lienTelephone === true} reconnecter={reconnecter} />;
 }
 
 /** « Marc Dupont, Boulangerie Dupont ». */
@@ -248,7 +269,7 @@ function Lancement({ campagneId, ligne, entreprise, version, recapitulatif, pont
     const estime = phraseEstimation(autorises, pont?.reglages ?? null, passes24h);
     action = (
       <div className="grid justify-items-start gap-3">
-        {blocage ? <Blocage blocage={blocage} /> : null}
+        {blocage ? <Blocage blocage={blocage} reconnecter={reconnexionRegie(pont, null)} /> : null}
         <Actions>
           <Action
             ton="fort"
@@ -318,10 +339,16 @@ function RegieTelephone({
   const confirmation = useConfirmation();
   const blocage = blocageLigne(pont);
   const pause = pont?.reglages?.pauseEntreAppelsS;
+  // Une seule reconnexion par écran, jamais pendant un appel : sur le blocage de la ligne s'il s'affiche et le
+  // permet (téléphone déconnecté), sinon sur la raison de la suspension (échec du téléphone).
+  const blocageAffiche = statut === 'en-pause' ? Boolean(blocage) && raison?.lienTelephone !== true : !appelTelephone && Boolean(blocage);
+  const reconnecterBlocage = !appelTelephone && blocageAffiche && reconnexionRegie(pont, null);
+  const reconnecterRaison =
+    !appelTelephone && !reconnecterBlocage && statut === 'en-pause' && raison?.ton === 'alerte' && reconnexionRegie(pont, raison.texte);
 
   return (
     <>
-      {statut === 'en-pause' && raison ? <Raison raison={raison} /> : null}
+      {statut === 'en-pause' && raison ? <Raison raison={raison} reconnecter={reconnecterRaison} /> : null}
 
       {appelTelephone ? (
         <BandeAppel
@@ -348,7 +375,7 @@ function RegieTelephone({
           ) : (
             <p className="text-lg text-encre-2">Plus aucun prospect à appeler : la campagne se termine.</p>
           )}
-          {blocage ? <Blocage blocage={blocage} /> : null}
+          {blocage ? <Blocage blocage={blocage} reconnecter={reconnecterBlocage} /> : null}
         </div>
       ) : null}
 
@@ -358,7 +385,7 @@ function RegieTelephone({
         </Actions>
       ) : (
         <div className="grid justify-items-start gap-3">
-          {blocage && raison?.lienTelephone !== true ? <Blocage blocage={blocage} /> : null}
+          {blocage && raison?.lienTelephone !== true ? <Blocage blocage={blocage} reconnecter={reconnecterBlocage} /> : null}
           <Actions>
             <Action
               ton="fort"
