@@ -29,8 +29,9 @@ import { retirerDeLaFile, sauterDansLaFile } from '../actions';
  * window.history.replaceState, sans relancer le rendu serveur que la régie rafraîchit déjà.
  *
  * Tant que la campagne n'est pas terminée, chaque prospect encore à appeler se saute (il repasse en fin de
- * file) ou se retire (il ne sera pas appelé dans cette campagne). Ces gestes n'appellent personne : ni
- * confirmation ni touche sur la ligne ; S et R agissent sur la ligne sélectionnée (j, k).
+ * file) ou se retire (il ne sera pas appelé dans cette campagne, et n'y revient pas). Ces gestes n'appellent
+ * personne : pas de confirmation. S saute la ligne sélectionnée (j, k) ; Retirer, définitif pour la campagne,
+ * n'a pas de touche : il se fait à la souris ou par Tab.
  */
 
 export interface EntreeFile {
@@ -188,17 +189,6 @@ export function File({
         const e = entreeSelectionnee();
         if (!e) return false;
         geste(e, 'sauter');
-      },
-    },
-    {
-      touche: 'r',
-      libelle: 'Retirer le prospect sélectionné',
-      groupe: 'Liste',
-      actif: gestes && !enCours,
-      action: () => {
-        const e = entreeSelectionnee();
-        if (!e) return false;
-        geste(e, 'retirer');
       },
     },
   ]);

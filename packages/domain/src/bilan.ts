@@ -167,5 +167,8 @@ function erreursRappelDate(rappel: RappelDate, { estRappel, contexte }: { estRap
 export function schemaJsonBilan(): object {
   // Sans la clé $schema : le validateur de `claude --json-schema` ne résout pas la méta-référence.
   const { $schema: _, ...schema } = z.toJSONSchema(schemaBilan, { target: 'draft-2020-12' });
-  return schema;
+  // rappelLe est optionnel à la lecture (bilans antérieurs), mais le modèle le rend toujours, null s'il n'y a
+  // pas de date : comme rappel, requis et nullable, pour les validateurs qui exigent toutes les propriétés.
+  const requis = Array.isArray(schema.required) ? schema.required : [];
+  return { ...schema, required: [...new Set([...requis, 'rappelLe'])] };
 }

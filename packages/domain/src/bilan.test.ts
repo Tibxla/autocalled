@@ -179,11 +179,12 @@ describe('instantDuRappel', () => {
 });
 
 describe('schemaJsonBilan', () => {
-  it('décrit la date de rappel sans l’exiger', () => {
-    const schema = schemaJsonBilan() as { properties: Record<string, unknown>; required: string[] };
+  it('demande toujours la date de rappel au modèle, null permis', () => {
+    const schema = schemaJsonBilan() as { properties: Record<string, { anyOf?: { type: string }[] }>; required: string[] };
 
-    expect(schema.properties).toHaveProperty('rappelLe');
-    expect(schema.required).not.toContain('rappelLe');
+    expect(schema.required).toContain('rappelLe');
+    expect(schema.required).toContain('rappel');
+    expect(schema.properties.rappelLe?.anyOf?.map((t) => t.type)).toEqual(['object', 'null']);
   });
 
   it('produit un schéma JSON objet fermé, utilisable comme sortie structurée', () => {

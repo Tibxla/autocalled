@@ -37,7 +37,7 @@ export function RappelsDuJour({ rappels, sansDate, maintenant }: { rappels: Rapp
     ) : null;
 
   if (rappels.length === 0) {
-    return <p className="pt-3.5 text-sm text-encre-3">Aucun rappel daté pour aujourd’hui · {lienSansDate}</p>;
+    return <p className="pt-3.5 text-sm text-encre-3">{lienSansDate}</p>;
   }
 
   return (
