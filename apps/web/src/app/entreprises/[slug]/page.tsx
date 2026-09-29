@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { Page } from '@/components/ui';
 import { db } from '@/db';
@@ -18,7 +18,7 @@ export default async function PageFiche({ params }: { params: Promise<{ slug: st
     db
       .select({ id: prospects.id, nom: prospects.nom })
       .from(prospects)
-      .where(eq(prospects.entrepriseId, entreprise.id))
+      .where(and(eq(prospects.entrepriseId, entreprise.id), isNull(prospects.archiveLe)))
       .orderBy(asc(prospects.nom), asc(prospects.id)),
   ]);
   // Pleine largeur : la barre d'enregistrement collante va d'un bord à l'autre ; la colonne du formulaire fait 44 rem.

@@ -87,7 +87,7 @@ export default async function PageCampagne({
   const [[entreprise], listeProspects, listeAppels, versions, [version], issuesPerso, pont, passes24h] = await Promise.all([
     db.select().from(entreprises).where(eq(entreprises.id, campagne.entrepriseId)),
     db
-      .select({ id: prospects.id, nom: prospects.nom, societe: prospects.societe, telephone: prospects.telephone })
+      .select({ id: prospects.id, nom: prospects.nom, societe: prospects.societe, telephone: prospects.telephone, archiveLe: prospects.archiveLe })
       .from(prospects)
       .where(eq(prospects.entrepriseId, campagne.entrepriseId)),
     db
@@ -217,7 +217,8 @@ export default async function PageCampagne({
   let blocageAjout: string | null = null;
   if (campagne.statut !== 'terminee') {
     const dansLaFile = new Set(campagne.entrees.map((e) => e.prospectId));
-    const candidats = listeProspects.filter((p) => !dansLaFile.has(p.id)).sort((a, b) => a.nom.localeCompare(b.nom, 'fr') || a.id.localeCompare(b.id));
+    // Un prospect archivé n'est jamais proposé.
+    const candidats = listeProspects.filter((p) => !dansLaFile.has(p.id) && !p.archiveLe).sort((a, b) => a.nom.localeCompare(b.nom, 'fr') || a.id.localeCompare(b.id));
     const [autorisations, derniers] = await Promise.all([
       autorisationsDe(candidats.map((p) => p.telephone)),
       db

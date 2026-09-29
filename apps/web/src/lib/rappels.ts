@@ -13,7 +13,8 @@ import { appels, entreprises, prospects } from '@/db/schema';
 
 /**
  * L'appel porte un rappel convenu encore à faire (condition SQL sur `appels`). Un numéro révoqué depuis n'a plus de
- * rappel : la personne a demandé à ne plus être appelée, et aucun appel ne partira pour solder le rappel.
+ * rappel : la personne a demandé à ne plus être appelée, et aucun appel ne partira pour solder le rappel. Un prospect
+ * archivé non plus (ADR 0013) : il n'est plus appelé tant qu'il l'est.
  */
 export const RAPPEL_A_FAIRE = sql`(${appels.issueSysteme} = 'rappel-convenu' and ${appels.ligne} <> 'simulation' and not exists (
   select 1 from appels plus_recent
@@ -24,6 +25,9 @@ export const RAPPEL_A_FAIRE = sql`(${appels.issueSysteme} = 'rappel-convenu' and
 ) and not exists (
   select 1 from consentements revoque
   where revoque.numero = ${appels.numero} and revoque.revoque_le is not null
+) and not exists (
+  select 1 from prospects archive
+  where archive.entreprise_id = ${appels.entrepriseId} and archive.id = ${appels.prospectId} and archive.archive_le is not null
 ))`;
 
 const DEBUT_JOUR = sql`(date_trunc('day', now() at time zone 'Europe/Paris') at time zone 'Europe/Paris')`;

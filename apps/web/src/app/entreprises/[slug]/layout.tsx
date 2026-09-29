@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import Link from 'next/link';
 import { comptesCampagne } from '@/components/format-appel';
 import { db } from '@/db';
@@ -28,7 +28,7 @@ export default async function LayoutEntreprise({ params, children }: { params: P
     db
       .select({ telephone: prospects.telephone })
       .from(prospects)
-      .where(eq(prospects.entrepriseId, entreprise.id))
+      .where(and(eq(prospects.entrepriseId, entreprise.id), isNull(prospects.archiveLe)))
       .then(async (lignes) => {
         const autorisations = await autorisationsDe(lignes.map((l) => l.telephone));
         return lignes.filter((l) => autorisations.get(l.telephone)?.autorise).length;

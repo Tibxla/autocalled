@@ -40,6 +40,8 @@ export type PreparationAppel =
     }
   | { ok: false; raison: string };
 
+export const PROSPECT_ARCHIVE = 'Ce prospect est archivé : il n’est plus appelé. Réactive-le pour l’appeler.';
+
 /**
  * Tout ce qu'il faut pour appeler un prospect, vérifié au dernier moment : le numéro doit être
  * autorisé à l'instant même, quelle que soit la ligne.
@@ -58,10 +60,20 @@ export async function preparerAppel(entrepriseId: string, prospectId: string, ve
     .where(and(eq(versionsScript.id, versionScriptId), eq(scripts.entrepriseId, entrepriseId)));
   const version = ligneVersion?.version;
   if (!entreprise || !prospect || !version) return { ok: false, raison: 'Prospect ou version de script introuvable.' };
+  // Un prospect archivé n'est plus appelé (ADR 0013) : ni appel isolé, ni campagne.
+  if (prospect.archiveLe) return { ok: false, raison: PROSPECT_ARCHIVE };
 
   const autorisation = (await autorisationsDe([prospect.telephone])).get(prospect.telephone);
   if (!autorisation?.autorise) {
-    return { ok: false, raison: 'Ce numéro n’est pas autorisé : aucun consentement actif.' };
+    return {
+      ok: false,
+      raison:
+        autorisation?.raison === 'numero-efface'
+          ? 'Ce numéro appartient à une personne effacée à sa demande : il ne sera plus jamais composé.'
+          : autorisation?.raison === 'opposition-illisible'
+            ? 'La liste d’opposition ne se lit plus (SEL_OPPOSITION manque ou a changé) : aucun numéro n’est composé.'
+            : 'Ce numéro n’est pas autorisé : aucun consentement actif.',
+    };
   }
 
   const { variables, motsCles, premierMessage } = await variablesPour(entreprise, prospect, version.etapes, new Date());

@@ -1,12 +1,24 @@
-import { eq } from 'drizzle-orm';
+import { eq, isNotNull } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { db } from '@/db';
-import { appels, campagnes, consentements, imports, prospects, rendezVous } from '@/db/schema';
+import { appels, campagnes, consentements, imports, prospects } from '@/db/schema';
 import { avecBaseDeTest } from '../../test/outils';
-import { entrepriseDeTest, fiche } from '../../test/fixtures';
-import { enregistrerCampagne } from './campagnes';
+import { agendaFrais, entrepriseDeTest, fiche } from '../../test/fixtures';
+import { PROSPECT_ARCHIVE, preparerAppel } from './appels';
+import { autorisationsDe } from './autorisations';
+import { PROSPECTS_ARCHIVES, ajouterALaCampagne, enregistrerCampagne, obstacleNouvelleCampagne } from './campagnes';
 import { creerScript } from './entreprises';
-import { consentementsDuNumero, FicheChangee, importerFiches, modifierProspect, revoquerNumero, supprimerProspect, texteConsentementEnVigueur } from './prospects';
+import {
+  archiverProspect,
+  consentementsDuNumero,
+  FicheChangee,
+  importerFiches,
+  modifierProspect,
+  reactiverProspect,
+  revoquerNumero,
+  texteConsentementEnVigueur,
+} from './prospects';
+import { rappelsDuJour } from './rappels';
 
 avecBaseDeTest();
 
@@ -131,45 +143,85 @@ describe('modifierProspect', () => {
   });
 });
 
-describe('supprimerProspect', () => {
-  it('efface la fiche, garde ses appels et le consentement du numéro', async () => {
+describe('archiverProspect et reactiverProspect', () => {
+  it('le retire de la file d’une campagne non terminée, le rend inappelable et hors campagne, garde appels et consentement', async () => {
+    const e = await entrepriseDeTest();
+    await agendaFrais();
+    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01'), fiche('marc', 'Marc Fictif', '06 39 98 00 02')]);
+    const { versionScriptId } = await creerScript(e.id, 'Découverte');
+    const campagneId = await enregistrerCampagne(e.id, { versionScriptId, ligne: 'simulation', prospects: ['julie', 'marc'] });
+    const terminee = await enregistrerCampagne(e.id, { versionScriptId, ligne: 'simulation', prospects: ['julie'] });
+    await db.update(campagnes).set({ statut: 'terminee' }).where(eq(campagnes.id, terminee));
+    await db.insert(appels).values({ entrepriseId: e.id, prospectId: 'julie', versionScriptId, ligne: 'simulation', numero: '+33639980001', statut: 'termine' });
+
+    expect(await archiverProspect(e.id, 'julie', 'interface')).toEqual({ ok: true, deja: false, retireDe: [campagneId], terminees: [] });
+
+    const [c] = await db.select().from(campagnes).where(eq(campagnes.id, campagneId));
+    expect(c?.entrees[0]).toMatchObject({ prospectId: 'julie', etat: 'retiree', motif: 'retrait', par: 'interface' });
+    // La campagne terminée garde son historique tel quel.
+    expect((await db.select().from(campagnes).where(eq(campagnes.id, terminee)))[0]?.entrees).toEqual([{ prospectId: 'julie', etat: 'a-appeler' }]);
+    expect(await preparerAppel(e.id, 'julie', versionScriptId)).toEqual({ ok: false, raison: PROSPECT_ARCHIVE });
+    expect(await obstacleNouvelleCampagne(e.id, { versionScriptId, ligne: 'simulation', prospects: ['julie'] })).toContain(PROSPECTS_ARCHIVES);
+    const autre = await enregistrerCampagne(e.id, { versionScriptId, ligne: 'simulation', prospects: ['marc'] });
+    expect(await ajouterALaCampagne(autre, ['julie'])).toMatchObject({ ok: false, raison: expect.stringContaining(PROSPECTS_ARCHIVES) });
+    expect(await db.$count(appels)).toBe(1);
+    expect((await autorisationsDe(['+33639980001'])).get('+33639980001')?.autorise).toBe(true);
+    // Idempotent ; un réimport le laisse archivé et le dit.
+    expect(await archiverProspect(e.id, 'julie', 'mcp')).toMatchObject({ ok: true, deja: true });
+    expect(await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01', 'Autre contexte.')])).toMatchObject({ etat: 'fait', misAJour: ['julie'], archives: ['julie'] });
+
+    expect(await reactiverProspect(e.id, 'julie')).toEqual({ ok: true, deja: false });
+    expect(await preparerAppel(e.id, 'julie', versionScriptId)).toMatchObject({ ok: true });
+    // Réactivé, il ne revient dans aucune file.
+    expect((await db.select().from(campagnes).where(eq(campagnes.id, campagneId)))[0]?.entrees[0]).toMatchObject({ etat: 'retiree' });
+  });
+
+  it('termine la campagne dont il était le dernier à appeler', async () => {
     const e = await entrepriseDeTest();
     await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01')]);
     const { versionScriptId } = await creerScript(e.id, 'Découverte');
-    await db.insert(appels).values({ entrepriseId: e.id, prospectId: 'julie', versionScriptId, ligne: 'simulation', numero: '+33639980001', statut: 'termine' });
+    const campagneId = await enregistrerCampagne(e.id, { versionScriptId, ligne: 'simulation', prospects: ['julie'] });
 
-    expect(await supprimerProspect(e.id, 'julie')).toEqual({ ok: true, appelsGardes: 1 });
-    expect(await db.$count(prospects)).toBe(0);
-    expect(await db.$count(appels)).toBe(1);
-    expect(await db.$count(consentements)).toBe(1);
+    expect(await archiverProspect(e.id, 'julie', 'interface')).toMatchObject({ ok: true, terminees: [campagneId] });
+    expect((await db.select().from(campagnes))[0]?.statut).toBe('terminee');
   });
 
-  it('refuse un prospect en file d’une campagne non terminée, ou en appel', async () => {
+  it('refuse pendant un appel avec lui, isolé ou de campagne', async () => {
     const e = await entrepriseDeTest();
     await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01'), fiche('marc', 'Marc Fictif', '06 39 98 00 02')]);
     const { versionScriptId } = await creerScript(e.id, 'Découverte');
-    await enregistrerCampagne(e.id, { versionScriptId, ligne: 'simulation', prospects: ['julie'] });
-    await db.insert(appels).values({ entrepriseId: e.id, prospectId: 'marc', versionScriptId, ligne: 'bluetooth', numero: '+33639980002' });
+    const [a] = await db.insert(appels).values({ entrepriseId: e.id, prospectId: 'julie', versionScriptId, ligne: 'bluetooth', numero: '+33639980001' }).returning();
+    const campagneId = await enregistrerCampagne(e.id, { versionScriptId, ligne: 'bluetooth', prospects: ['marc'] });
+    await db
+      .update(campagnes)
+      .set({ statut: 'en-cours', entrees: [{ prospectId: 'marc', etat: 'en-appel', appelId: a!.id }] })
+      .where(eq(campagnes.id, campagneId));
 
-    expect(await supprimerProspect(e.id, 'julie')).toMatchObject({ ok: false, raison: expect.stringContaining('retirer_de_la_file') });
-    expect(await supprimerProspect(e.id, 'marc')).toMatchObject({ ok: false, raison: expect.stringContaining('en cours') });
-    await db.update(campagnes).set({ statut: 'terminee' });
-    expect(await supprimerProspect(e.id, 'julie')).toMatchObject({ ok: true });
+    expect(await archiverProspect(e.id, 'julie', 'interface')).toMatchObject({ ok: false, raison: expect.stringContaining('en cours') });
+    expect(await archiverProspect(e.id, 'marc', 'interface')).toMatchObject({ ok: false, raison: expect.stringContaining('en appel dans une campagne') });
+    expect(await archiverProspect(e.id, 'personne', 'interface')).toMatchObject({ ok: false });
+    expect(await db.$count(prospects, isNotNull(prospects.archiveLe))).toBe(0);
   });
 
-  it('refuse un prospect dont un rendez-vous reste à inscrire dans Google Agenda (à créer, échec)', async () => {
+  it('sort ses rappels convenus des rappels à faire', async () => {
     const e = await entrepriseDeTest();
     await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01')]);
     const { versionScriptId } = await creerScript(e.id, 'Découverte');
-    const [a] = await db.insert(appels).values({ entrepriseId: e.id, prospectId: 'julie', versionScriptId, ligne: 'bluetooth', numero: '+33639980001', statut: 'termine' }).returning();
-    const debut = new Date(Date.UTC(2026, 9, 1, 9));
-    const [r] = await db.insert(rendezVous).values({ appelId: a!.id, debut, fin: new Date(debut.getTime() + 1_800_000) }).returning();
+    await db.insert(appels).values({
+      entrepriseId: e.id,
+      prospectId: 'julie',
+      versionScriptId,
+      ligne: 'bluetooth',
+      numero: '+33639980001',
+      statut: 'termine',
+      issueSysteme: 'rappel-convenu',
+      rappelLe: new Date(Date.now() - 3_600_000),
+    });
+    expect((await rappelsDuJour()).rappels).toHaveLength(1);
 
-    expect(await supprimerProspect(e.id, 'julie')).toMatchObject({ ok: false, raison: expect.stringContaining('en cours d’inscription') });
-    await db.update(rendezVous).set({ statut: 'echec' }).where(eq(rendezVous.id, r!.id));
-    expect(await supprimerProspect(e.id, 'julie')).toMatchObject({ ok: false, raison: expect.stringContaining('recreer_evenement') });
-    await db.update(rendezVous).set({ statut: 'cree' }).where(eq(rendezVous.id, r!.id));
-    expect(await supprimerProspect(e.id, 'julie')).toMatchObject({ ok: true });
+    await archiverProspect(e.id, 'julie', 'interface');
+
+    expect((await rappelsDuJour()).rappels).toHaveLength(0);
   });
 });
 

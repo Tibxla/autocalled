@@ -33,6 +33,9 @@ type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 /** Nombre de prospects au plus dans une campagne, par l'interface comme par le MCP. */
 export const PROSPECTS_MAX_CAMPAGNE = 200;
 
+/** Début du refus d'une campagne qui contient des prospects archivés (ADR 0013). */
+export const PROSPECTS_ARCHIVES = 'Prospect archivé, jamais appelé en campagne';
+
 /** Refus d'une campagne sur un script archivé : l'interface ne le propose plus, un onglet resté ouvert ne passe pas. */
 export const SCRIPT_ARCHIVE_CAMPAGNE = 'Ce script est archivé : il ne se lance plus. Choisis la version d’un autre script, ou réactive-le.';
 
@@ -51,11 +54,13 @@ export async function obstacleNouvelleCampagne(entrepriseId: string, saisie: Sai
   if (version.archive) return SCRIPT_ARCHIVE_CAMPAGNE;
   const ids = [...new Set(saisie.prospects)];
   const connus = await db
-    .select({ id: prospects.id })
+    .select({ id: prospects.id, nom: prospects.nom, archiveLe: prospects.archiveLe })
     .from(prospects)
     .where(and(eq(prospects.entrepriseId, entrepriseId), inArray(prospects.id, ids)));
   const inconnus = ids.filter((id) => !connus.some((p) => p.id === id));
-  return inconnus.length ? `Prospect introuvable dans cette entreprise : ${inconnus.join(', ')}.` : null;
+  if (inconnus.length) return `Prospect introuvable dans cette entreprise : ${inconnus.join(', ')}.`;
+  const archives = connus.filter((p) => p.archiveLe);
+  return archives.length ? `${PROSPECTS_ARCHIVES} : ${archives.map((p) => p.nom).join(', ')}. Réactive-les d’abord.` : null;
 }
 
 /** Enregistre une campagne prête : rien ne sonne avant qu'on la lance. */
@@ -386,11 +391,13 @@ export async function ajouterALaCampagne(campagneId: string, prospectIds: readon
     return { ok: false, raison: 'Le script de cette campagne est archivé : réactive-le dans Scripts, ou lance une nouvelle campagne sur un autre script.' };
   }
   const trouves = await db
-    .select({ id: prospects.id, nom: prospects.nom, telephone: prospects.telephone })
+    .select({ id: prospects.id, nom: prospects.nom, telephone: prospects.telephone, archiveLe: prospects.archiveLe })
     .from(prospects)
     .where(and(eq(prospects.entrepriseId, ligne.entrepriseId), inArray(prospects.id, ids)));
   const inconnus = ids.filter((id) => !trouves.some((p) => p.id === id));
   if (inconnus.length) return { ok: false, raison: `Prospect introuvable dans cette entreprise : ${inconnus.join(', ')}. Rien n’a été ajouté.` };
+  const archives = trouves.filter((p) => p.archiveLe);
+  if (archives.length) return { ok: false, raison: `${PROSPECTS_ARCHIVES} : ${archives.map((p) => p.nom).join(', ')}. Rien n’a été ajouté.` };
   const autorisations = await autorisationsDe(trouves.map((p) => p.telephone));
   const nonAutorises = trouves.filter((p) => !autorisations.get(p.telephone)?.autorise);
   if (nonAutorises.length) {

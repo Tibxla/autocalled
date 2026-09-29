@@ -1,5 +1,5 @@
 import 'server-only';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { autorisationsDe } from './autorisations';
 import { entreprises, prospects } from '@/db/schema';
@@ -11,7 +11,7 @@ export async function listerEntreprises() {
       slug: entreprises.slug,
       nom: entreprises.nom,
       offre: entreprises.offre,
-      nombreProspects: sql<number>`(select count(*)::int from prospects p where p.entreprise_id = entreprises.id)`,
+      nombreProspects: sql<number>`(select count(*)::int from prospects p where p.entreprise_id = entreprises.id and p.archive_le is null)`,
       nombreObjections: sql<number>`(select count(*)::int from objections o where o.entreprise_id = entreprises.id and not o.archivee)`,
       nombreScripts: sql<number>`(select count(*)::int from scripts s where s.entreprise_id = entreprises.id and not s.archive)`,
     })
@@ -19,9 +19,9 @@ export async function listerEntreprises() {
     .orderBy(asc(entreprises.nom));
 }
 
-/** Nombre de prospects appelables par entreprise, selon la même règle que le contrôle avant composition. */
+/** Nombre de prospects appelables par entreprise, selon la même règle que le contrôle avant composition (archivés exclus). */
 export async function prospectsAutorisesParEntreprise(): Promise<Map<string, number>> {
-  const lignes = await db.select({ entrepriseId: prospects.entrepriseId, telephone: prospects.telephone }).from(prospects);
+  const lignes = await db.select({ entrepriseId: prospects.entrepriseId, telephone: prospects.telephone }).from(prospects).where(isNull(prospects.archiveLe));
   const autorisations = await autorisationsDe(lignes.map((l) => l.telephone));
   const comptes = new Map<string, number>();
   for (const l of lignes) {

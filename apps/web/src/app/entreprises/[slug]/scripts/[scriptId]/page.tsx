@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -141,7 +141,7 @@ export default async function PageScript({
     db
       .select({ id: prospects.id, nom: prospects.nom })
       .from(prospects)
-      .where(eq(prospects.entrepriseId, entreprise.id))
+      .where(and(eq(prospects.entrepriseId, entreprise.id), isNull(prospects.archiveLe)))
       .orderBy(asc(prospects.nom), asc(prospects.id)),
     usageDuScript(script.id),
   ]);

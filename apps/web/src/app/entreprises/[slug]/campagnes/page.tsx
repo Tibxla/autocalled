@@ -1,5 +1,5 @@
 import { finDemandee } from '@autocalled/domain';
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { comptesCampagne, dateCourte, etatAppel, STATUTS_CAMPAGNE } from '@/components/format-appel';
 import { Cellule, CelluleEnTete, EnTeteTable, LienLigne, LigneTable, Page, TableDense } from '@/components/ui';
@@ -31,7 +31,8 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
     db
       .select({ id: prospects.id, nom: prospects.nom, societe: prospects.societe, telephone: prospects.telephone })
       .from(prospects)
-      .where(eq(prospects.entrepriseId, entreprise.id))
+      // Un prospect archivé n'est jamais proposé pour une campagne.
+      .where(and(eq(prospects.entrepriseId, entreprise.id), isNull(prospects.archiveLe)))
       .orderBy(asc(prospects.nom), asc(prospects.id)),
     // Le dernier appel de chaque prospect, pour les filtres et les cases cochées d'office.
     db

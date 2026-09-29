@@ -1,5 +1,6 @@
 import 'server-only';
 import {
+  type Campagne,
   ecrireFiche,
   type FicheProspect,
   type FichierImporte,
@@ -7,12 +8,14 @@ import {
   fusionnerFiches,
   lireFiches,
   numerosAAutoriser,
+  retirer,
 } from '@autocalled/domain';
 import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { appels, campagnes, consentements, entreprises, imports, prospects, rendezVous, textesConsentement } from '@/db/schema';
+import { appels, campagnes, consentements, entreprises, imports, type Origine, prospects, textesConsentement } from '@/db/schema';
 import type { Conflit, Refus } from './entreprises';
 import { numeroLisible } from './format';
+import { OPPOSITION_ILLISIBLE, numerosOpposes } from './opposition';
 import type { PatchFiche } from './schemas';
 
 export const FICHIERS_MAX = 100;
@@ -29,6 +32,8 @@ export type RapportImport =
       refus: { nomFichier: string; erreurs: string[] }[];
       numerosAutorises: number;
       numerosRevoques: string[];
+      /** Prospects importés qui restent archivés : un réimport ne les réactive pas. */
+      archives: string[];
     };
 
 /** Levée par `importerFiches` quand la fiche attendue a changé (ou disparu) avant son écriture, sous verrou. */
@@ -41,11 +46,15 @@ export class FicheChangee extends Error {
   }
 }
 
+/** Le refus d'une fiche dont le numéro est dans la liste d'opposition (ADR 0013). */
+export const NUMERO_EFFACE = 'numéro d’une personne effacée à sa demande : il ne peut plus être importé ni appelé';
+
 /**
  * Importe des fiches prospect Markdown dans une entreprise et enregistre le consentement de leurs numéros
  * (ADR 0001). L'appelant atteste ce consentement : l'interface par sa case à cocher, le serveur MCP par
  * décision de l'opérateur (ADR 0009) ; `canal` garde la trace de la porte d'entrée. Un numéro révoqué ne l'est
- * jamais à nouveau (`numerosAAutoriser`).
+ * jamais à nouveau (`numerosAAutoriser`). Une fiche dont le numéro est dans la liste d'opposition (personne effacée,
+ * ADR 0013) est refusée : rien d'elle n'est écrit.
  */
 export async function importerFiches(
   entrepriseId: string,
@@ -57,13 +66,21 @@ export async function importerFiches(
   const trop = fichiers.find((f) => Buffer.byteLength(f.contenu) > TAILLE_MAX);
   if (trop) return { etat: 'erreur', message: `« ${trop.nomFichier} » dépasse 32 Ko : une fiche tient en quelques paragraphes.` };
 
-  const lecture = lireFiches(fichiers);
-  if (lecture.fiches.length === 0) return { etat: 'fait', crees: [], misAJour: [], inchanges: [], refus: lecture.refus, numerosAutorises: 0, numerosRevoques: [] };
+  const brute = lireFiches(fichiers);
+  const opposes = await numerosOpposes(brute.fiches.map((f) => f.telephone));
+  if (opposes === 'illisible') return { etat: 'erreur', message: OPPOSITION_ILLISIBLE };
+  const lecture = {
+    fiches: brute.fiches.filter((f) => !opposes.has(f.telephone)),
+    refus: [...brute.refus, ...brute.fiches.filter((f) => opposes.has(f.telephone)).map((f) => ({ nomFichier: `${f.id}.md`, erreurs: [NUMERO_EFFACE] }))],
+  };
+  if (lecture.fiches.length === 0) {
+    return { etat: 'fait', crees: [], misAJour: [], inchanges: [], refus: lecture.refus, numerosAutorises: 0, numerosRevoques: [], archives: [] };
+  }
 
   const [texte] = await db.select().from(textesConsentement).orderBy(desc(textesConsentement.version)).limit(1);
   if (!texte) return { etat: 'erreur', message: 'Aucun texte de consentement en base : lance les migrations.' };
 
-  const existantes: FicheProspect[] = (
+  const existantes: (FicheProspect & { archiveLe: Date | null })[] = (
     await db.select().from(prospects).where(eq(prospects.entrepriseId, entrepriseId))
   ).map((p) => ({ ...p, telephone: p.telephone as NumeroE164 }));
   const fusion = fusionnerFiches(existantes, lecture.fiches);
@@ -102,6 +119,7 @@ export async function importerFiches(
     return tri;
   });
 
+  const importes = new Set(lecture.fiches.map((f) => f.id));
   return {
     etat: 'fait',
     crees: fusion.crees.map((f) => f.id),
@@ -110,6 +128,7 @@ export async function importerFiches(
     refus: lecture.refus,
     numerosAutorises: tri.aAutoriser.length,
     numerosRevoques: tri.revoques.map(numeroLisible),
+    archives: existantes.filter((p) => p.archiveLe && importes.has(p.id)).map((p) => p.id),
   };
 }
 
@@ -211,63 +230,73 @@ export async function modifierProspect(
 
 const FICHE_CHANGEE = 'La fiche a changé depuis ta lecture (import ou autre correction) : relis-la avant de la corriger.';
 
-type Lecteur = Pick<typeof db, 'select' | '$count'>;
-
 /**
- * Pourquoi la fiche de ce prospect ne peut pas être supprimée maintenant, ou null : il attend dans la file d'une
- * campagne non terminée, un appel avec lui est en cours, ou un de ses rendez-vous reste à inscrire (à créer, échec).
+ * Archive un prospect (ADR 0013) : il sort des listes par défaut et des choix de campagne, et ne peut plus être
+ * appelé ni ajouté à une campagne tant qu'il l'est. Ses appels, bilans et le consentement de son numéro restent.
+ * Réversible, donc sans confirmation : c'est un frein. S'il attend dans la file d'une campagne non terminée, il en est
+ * retiré (motif « retrait », trace gardée) sous le verrou de la campagne, pour qu'aucun enchaînement ne le compose ni
+ * ne le marque « non autorisé » entre-temps ; le réactiver ne l'y remet pas. Refusé pendant un appel avec lui.
  */
-export async function obstacleSuppressionProspect(entrepriseId: string, prospectId: string, lecteur: Lecteur = db): Promise<string | null> {
-  const enFile = await lecteur
-    .select({ id: campagnes.id })
-    .from(campagnes)
-    .where(
-      and(
-        eq(campagnes.entrepriseId, entrepriseId),
-        ne(campagnes.statut, 'terminee'),
-        sql`exists (select 1 from jsonb_array_elements(${campagnes.entrees}) e where e->>'prospectId' = ${prospectId} and e->>'etat' in ('a-appeler', 'en-appel'))`,
-      ),
-    );
-  if (enFile.length) {
-    return `Ce prospect attend dans la file de ${enFile.length > 1 ? `${enFile.length} campagnes` : 'la campagne'} ${enFile.map((c) => c.id).join(', ')} : retire-le d’abord (retirer_de_la_file).`;
-  }
-  const enCours = await lecteur.$count(appels, and(eq(appels.entrepriseId, entrepriseId), eq(appels.prospectId, prospectId), eq(appels.statut, 'en-cours')));
-  if (enCours > 0) return 'Un appel avec ce prospect est en cours : attends qu’il finisse.';
-  // L'inscription d'un rendez-vous (création, nouvel essai) relit la fiche : sans elle, « à créer » n'aboutirait
-  // jamais et « échec » ne se recréerait plus, sans que personne soit prévenu.
-  const [rdv] = await lecteur
-    .select({ statut: rendezVous.statut })
-    .from(rendezVous)
-    .innerJoin(appels, eq(appels.id, rendezVous.appelId))
-    .where(and(eq(appels.entrepriseId, entrepriseId), eq(appels.prospectId, prospectId), inArray(rendezVous.statut, ['a-creer', 'echec'])))
-    .limit(1);
-  if (rdv) {
-    return rdv.statut === 'echec'
-      ? 'Ce prospect a un rendez-vous dont l’inscription dans Google Agenda a échoué : recrée l’événement d’abord (recreer_evenement), sa fiche sert à l’inscrire.'
-      : 'Ce prospect a un rendez-vous en cours d’inscription dans Google Agenda : attends qu’il soit inscrit, sa fiche sert à l’inscrire.';
-  }
-  return null;
-}
-
-/**
- * Supprime la fiche d'un prospect. Ses appels et bilans restent, rattachés par l'identifiant (un réimport du même
- * fichier les retrouve), et le consentement de son numéro reste : `revoquerNumero` pour ne plus jamais l'appeler.
- * Refusé tant qu'il attend dans la file d'une campagne non terminée ou qu'un appel avec lui est en cours.
- */
-export async function supprimerProspect(entrepriseId: string, prospectId: string): Promise<{ ok: true; appelsGardes: number } | Refus> {
+export async function archiverProspect(
+  entrepriseId: string,
+  prospectId: string,
+  par: Origine,
+): Promise<{ ok: true; deja: boolean; retireDe: string[]; terminees: string[] } | Refus> {
   return db.transaction(async (tx) => {
     const [p] = await tx
-      .select({ id: prospects.id })
+      .select({ archiveLe: prospects.archiveLe })
       .from(prospects)
       .where(and(eq(prospects.entrepriseId, entrepriseId), eq(prospects.id, prospectId)))
       .for('update');
     if (!p) return { ok: false as const, raison: 'Ce prospect n’existe pas dans cette entreprise.' };
-    const obstacle = await obstacleSuppressionProspect(entrepriseId, prospectId, tx);
-    if (obstacle) return { ok: false as const, raison: obstacle };
-    const appelsGardes = await tx.$count(appels, and(eq(appels.entrepriseId, entrepriseId), eq(appels.prospectId, prospectId)));
-    await tx.delete(prospects).where(and(eq(prospects.entrepriseId, entrepriseId), eq(prospects.id, prospectId)));
-    return { ok: true as const, appelsGardes };
+    if (p.archiveLe) return { ok: true as const, deja: true, retireDe: [], terminees: [] };
+    if (await tx.$count(appels, and(eq(appels.entrepriseId, entrepriseId), eq(appels.prospectId, prospectId), eq(appels.statut, 'en-cours')))) {
+      return { ok: false as const, raison: 'Un appel avec ce prospect est en cours : archive-le quand il sera fini.' };
+    }
+    const files = await tx
+      .select()
+      .from(campagnes)
+      .where(
+        and(
+          eq(campagnes.entrepriseId, entrepriseId),
+          ne(campagnes.statut, 'terminee'),
+          sql`exists (select 1 from jsonb_array_elements(${campagnes.entrees}) e where e->>'prospectId' = ${prospectId} and e->>'etat' in ('a-appeler', 'en-appel'))`,
+        ),
+      )
+      .orderBy(campagnes.id)
+      .for('update');
+    if (files.some((c) => c.entrees.some((e) => e.prospectId === prospectId && e.etat === 'en-appel'))) {
+      return { ok: false as const, raison: 'Ce prospect est en appel dans une campagne : archive-le quand l’appel sera fini.' };
+    }
+    const trace = { le: new Date().toISOString(), par };
+    const terminees: string[] = [];
+    for (const c of files) {
+      const campagne: Campagne = { id: c.id, entrepriseId: c.entrepriseId, versionScriptId: c.versionScriptId, statut: c.statut, entrees: c.entrees };
+      const apres = retirer(campagne, prospectId, trace);
+      if (apres.statut === 'terminee') terminees.push(c.id);
+      await tx.update(campagnes).set({ statut: apres.statut, entrees: apres.entrees }).where(eq(campagnes.id, c.id));
+    }
+    await tx
+      .update(prospects)
+      .set({ archiveLe: new Date(), archivePar: par })
+      .where(and(eq(prospects.entrepriseId, entrepriseId), eq(prospects.id, prospectId)));
+    return { ok: true as const, deja: false, retireDe: files.map((c) => c.id), terminees };
   });
+}
+
+/** Réactive un prospect archivé : il revient dans les listes et peut de nouveau être appelé. Il ne revient dans aucune file. */
+export async function reactiverProspect(entrepriseId: string, prospectId: string): Promise<{ ok: true; deja: boolean } | Refus> {
+  const [p] = await db
+    .select({ archiveLe: prospects.archiveLe })
+    .from(prospects)
+    .where(and(eq(prospects.entrepriseId, entrepriseId), eq(prospects.id, prospectId)));
+  if (!p) return { ok: false, raison: 'Ce prospect n’existe pas dans cette entreprise.' };
+  if (!p.archiveLe) return { ok: true, deja: true };
+  await db
+    .update(prospects)
+    .set({ archiveLe: null, archivePar: null })
+    .where(and(eq(prospects.entrepriseId, entrepriseId), eq(prospects.id, prospectId)));
+  return { ok: true, deja: false };
 }
 
 /**
@@ -314,8 +343,8 @@ export async function versionsConsentement(): Promise<{ version: number; consent
 
 /**
  * Les consentements enregistrés, du plus récent au plus ancien, par pages (`avant` : identifiant du dernier lu), avec
- * les prospects qui portent encore le numéro. Un numéro dont la fiche a été supprimée y figure toujours : c'est
- * par ici qu'on le retrouve pour le révoquer.
+ * les prospects qui portent encore le numéro. Le consentement d'une personne effacée n'y est plus : seule l'empreinte
+ * de son numéro reste, dans la liste d'opposition (ADR 0013).
  */
 export async function listerConsentements(f: { numero?: string; etat?: 'actif' | 'revoque'; limite: number; avant?: string }) {
   const conditions = [
