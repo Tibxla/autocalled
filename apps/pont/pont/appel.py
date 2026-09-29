@@ -17,13 +17,28 @@ from gi.repository import GLib
 from .audio import Pont, temps_de_reponse
 from .ofono import Telephone, dans_glib
 
-SILENCE_AU_DECROCHE_S = 2.0  # sans voix du prospect passé ce délai, Mina ouvre par « Allô ? »
+SILENCE_AU_DECROCHE_S = 2.0  # sans voix du prospect passé ce délai, l'assistante ouvre par son premier message
+PREMIER_MESSAGE_PAR_DEFAUT = "Allô ?"
+PREMIER_MESSAGE_MAX = 300  # au-delà, ce n'est plus une phrase d'ouverture : on reprend « Allô ? »
 # Le canal son s'ouvre entre 0,5 s (réseau mobile) et 3,5 s (appels Wi-Fi) après la composition : on ne conclut à
 # une panne qu'après 10 s, ou 3 s après le décroché (constat du 28/09).
 DELAI_CANAL_SON_S = 10.0
 DELAI_CANAL_APRES_DECROCHE_S = 3.0
 DUREE_MAX_S = 6 * 60  # au-delà du plafond de l'agent (300 s) : filet si la fin de session se perd
 DUREE_MAX_OPERATEUR_S = 60 * 60  # après une prise de main, l'opérateur parle aussi longtemps qu'il veut
+
+
+def premier_message_valide(valeur: Any) -> str:
+    """La phrase dite quand le prospect se tait au décroché, telle que l'application l'envoie (déjà composée).
+
+    Absente, vide, trop longue ou d'un autre type : « Allô ? ». Une application plus ancienne ne l'envoie pas.
+    """
+    if not isinstance(valeur, str):
+        return PREMIER_MESSAGE_PAR_DEFAUT
+    texte = " ".join(valeur.split())
+    if not texte or len(texte) > PREMIER_MESSAGE_MAX:
+        return PREMIER_MESSAGE_PAR_DEFAUT
+    return texte
 
 
 class Rappels(Protocol):
@@ -93,9 +108,11 @@ class Appel:
         dossier: Path,
         nom: str,
         rappels: Rappels,
+        premier_message: str = PREMIER_MESSAGE_PAR_DEFAUT,
     ):
         self._telephone = telephone
         self._numero = numero
+        self._premier_message = premier_message_valide(premier_message)
         self._rappels = rappels
         dossier.mkdir(parents=True, exist_ok=True)
         self.journal = Journal(dossier / f"{nom}.log")
@@ -288,12 +305,13 @@ class Appel:
 
     def _ouvrir_conversation(self) -> None:
         # Le prospect parle d'habitude le premier : on attend sa voix pour ouvrir (son « allô » est gardé et
-        # transmis). S'il se tait, c'est à Mina de dire « Allô ? », par le premier message de la conversation.
+        # transmis). S'il se tait, c'est à l'assistante de parler, par le premier message de la conversation
+        # (« Allô ? » par défaut, réglé dans l'application).
         if self._pont.prospect_parle.wait(SILENCE_AU_DECROCHE_S):
             self.journal("le prospect parle : ouverture de la conversation")
         else:
-            self.journal(f"silence depuis {SILENCE_AU_DECROCHE_S:.0f} s : Mina ouvre par « Allô ? »")
-            self._conversation.config.conversation_config_override["agent"] = {"first_message": "Allô ?"}
+            self.journal(f"silence depuis {SILENCE_AU_DECROCHE_S:.0f} s : l'assistante ouvre par « {self._premier_message} »")
+            self._conversation.config.conversation_config_override["agent"] = {"first_message": self._premier_message}
         with self._verrou:
             if self._prise_en_main is not None:
                 return  # l'opérateur a pris la main avant que Mina ne parle
@@ -301,7 +319,7 @@ class Appel:
         self._conversation.start_session()
 
     def _tour(self, role: str, texte: str) -> None:
-        self.journal("Mina :" if role == "agent" else "prospect :", texte)
+        self.journal("assistante :" if role == "agent" else "prospect :", texte)
         self._evenement("tour", {"role": role, "texte": texte})
 
     def _outil(self, nom: str) -> Callable[[dict[str, Any]], str]:

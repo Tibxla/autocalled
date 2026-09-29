@@ -4,7 +4,8 @@ N'écoute que sur 127.0.0.1. Chaque requête porte `Authorization: Bearer $PONT_
 présente le même secret à l'application quand il la rappelle (`$WEB_URL/api/pont/…`).
 
     GET  /etat                        le téléphone passerelle, l'appel en cours (décroché), le plafond
-    POST /appels                      {appelId, numero, variables, motsCles} : compose
+    POST /appels                      {appelId, numero, variables, motsCles, premierMessage?} : compose ; premierMessage
+                                      est la phrase dite si le prospect se tait au décroché (« Allô ? » sans elle)
     POST /appels/<id>/raccrocher
     GET  /appels/<id>/evenements      fil de l'appel en SSE (états, tours de parole), rejoué depuis le début ;
                                       s'y glissent, sans `id:` et sans rejeu, les niveaux des deux voix (voir plus bas)
@@ -52,7 +53,7 @@ from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
 from .appairage import Appairage
-from .appel import Appel, Journal
+from .appel import Appel, Journal, premier_message_valide
 from .audio import NIVEAU_PAS_MS
 from .ofono import Telephone, dans_glib
 from .plafond import Plafond
@@ -225,6 +226,7 @@ class Service:
                 self._dossier,
                 appel_id,
                 rappels,
+                premier_message_valide(corps.get("premierMessage")),
             )
             rappels.journal = appel.journal
             try:
