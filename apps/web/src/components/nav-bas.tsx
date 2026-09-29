@@ -13,12 +13,14 @@ function minusculeInitiale(texte: string): string {
 /**
  * Barre du bas, sous 640 px : la navigation principale descend là où est le pouce (la barre du haut garde une
  * rangée, le bandeau d'appel condensé se colle en haut). Collée au bas de l'écran, 56 px plus la zone de
- * sécurité (filet compris), sur `fond`, fermée en haut par un filet, sans ombre : une barre, pas un calque. Cinq liens texte
+ * sécurité, filet compris, sur `fond`, fermée en haut par un filet, sans ombre : une barre, pas un calque. Cinq liens texte
  * en Label, chacun large de son libellé plus une part égale de la place restante ; le lien courant en encre,
  * marqué d'un trait de 1,5 px sur le bord haut. Au-dessus de « Téléphone », le trait de la ligne d'état en
  * 16 px ; les autres entrées réservent la même hauteur. Elle s'efface tant qu'un champ a le focus (règle
  * `.nav-bas` de globals.css) : le clavier de l'écran prend sa place. Une seule « Navigation principale » à la
  * fois dans l'arbre : celle du haut est masquée sous 640 px, celle-ci dès 640 px.
+ * Mesuré en Chivo 13 px : les cinq libellés font 355 px à leur largeur naturelle (8 px de marge par lien compris),
+ * ils tiennent à 360 px ; en dessous, et là seulement, ils passent à 12 px.
  */
 export function NavBas() {
   const chemin = usePathname();
@@ -37,7 +39,7 @@ export function NavBas() {
             href={entree.href}
             aria-current={courante ? 'page' : undefined}
             aria-label={telephone ? `${entree.libelle}, ${minusculeInitiale(ligne.libelle).replace(' · ', ', ')}` : undefined}
-            className="relative flex h-[55px] min-w-0 flex-auto flex-col items-center justify-center gap-1 px-1 text-sm whitespace-nowrap text-encre-3 transition-colors duration-150 before:absolute before:inset-x-0 before:top-0 before:h-[1.5px] before:bg-encre before:opacity-0 active:bg-survol aria-[current=page]:text-encre aria-[current=page]:before:opacity-100 max-[374px]:text-xs"
+            className="relative flex h-[55px] min-w-0 flex-auto flex-col items-center justify-center gap-1 px-1 text-sm whitespace-nowrap text-encre-3 transition-colors duration-150 before:absolute before:inset-x-0 before:top-0 before:h-[1.5px] before:bg-encre before:opacity-0 active:bg-survol aria-[current=page]:text-encre aria-[current=page]:before:opacity-100 max-[359px]:text-xs"
           >
             <span aria-hidden="true" className="flex h-4 items-center">
               {telephone ? <TraitLigne largeur={16} trait={ligne.trait} couleur={ligne.couleurTrait} /> : null}
