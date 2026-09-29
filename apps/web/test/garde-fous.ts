@@ -23,3 +23,11 @@ vi.mock('@/lib/elevenlabs', async (original) => {
     ]),
   );
 });
+
+// Le client ElevenLabs de la configuration de l'assistante (pousser, rapatrier) : les tests injectent un faux client.
+vi.mock('@autocalled/agent', async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  clientElevenLabs: () => {
+    throw new Error('ElevenLabs est interdit dans les tests (clientElevenLabs)');
+  },
+}));
