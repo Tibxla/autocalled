@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, useTransition } from 'react';
-import { raccrocherAppelTelephone, relancerAnalyse } from '@/app/appels/actions';
+import { demanderAnalyse, raccrocherAppelTelephone } from '@/app/appels/actions';
 import { usePriseDeMain, type EtatPrise } from '@/app/appels/[id]/prise-de-main';
 import { Action, LienAction } from './action';
 import { toucheAria, useRaccourcis } from './clavier';
@@ -425,6 +425,8 @@ export interface VueBandeAppelProps {
   onRaccrocher: () => Promise<void> | void;
   onRapatrier?: () => void;
   rapatriementEnCours?: boolean;
+  /** Refus du rapatriement (analyse impossible), dit sous le fil perdu. */
+  erreurRapatriement?: string | null;
   /** Défaut vrai ; une seule bande par page inscrit E, Espace, M, T. */
   raccourcis?: boolean;
   /** Accueil : version collante quand la bande sort de l'écran. */
@@ -472,6 +474,7 @@ export function VueBandeAppel({
   onRaccrocher,
   onRapatrier,
   rapatriementEnCours = false,
+  erreurRapatriement = null,
   raccourcis = true,
   condensee = false,
   confirmationInitiale = null,
@@ -675,6 +678,11 @@ export function VueBandeAppel({
               ) : null}
               <LienAction href="/telephone">Voir la ligne</LienAction>
             </div>
+            {erreurRapatriement ? (
+              <p role="alert" className="text-alerte">
+                {erreurRapatriement}
+              </p>
+            ) : null}
           </div>
         ) : null}
 
@@ -839,6 +847,7 @@ export function BandeAppel({
   const [raccrochageEnCours, setRaccrochageEnCours] = useState(false);
   const [erreurRaccrochage, setErreurRaccrochage] = useState<string | null>(null);
   const [rapatriementEnCours, rapatrier] = useTransition();
+  const [erreurRapatriement, setErreurRapatriement] = useState<string | null>(null);
 
   // Heure à laquelle la main a été prise (à la seconde, par l'horloge partagée).
   const [priseVue, setPriseVue] = useState<EtatPrise>(prise.etat);
@@ -894,7 +903,14 @@ export function BandeAppel({
           setRaccrochageEnCours(false);
         }
       }}
-      onRapatrier={() => rapatrier(() => relancerAnalyse(appelId))}
+      erreurRapatriement={erreurRapatriement}
+      onRapatrier={() =>
+        rapatrier(async () => {
+          setErreurRapatriement(null);
+          const r = await demanderAnalyse(appelId);
+          if (!r.ok) setErreurRapatriement(r.raison);
+        })
+      }
     />
   );
 }

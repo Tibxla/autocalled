@@ -86,8 +86,3 @@ export async function demanderAnalyse(appelId: string): Promise<{ ok: true } | {
   revalidatePath(`/appels/${appelId}`);
   return { ok: true };
 }
-
-/** Même geste sans retour, pour un appelant qui ne lit pas le résultat (transition React qui attend `void`). */
-export async function relancerAnalyse(appelId: string): Promise<void> {
-  await demanderAnalyse(appelId);
-}
