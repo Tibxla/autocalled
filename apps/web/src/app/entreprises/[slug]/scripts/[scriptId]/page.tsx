@@ -1,13 +1,14 @@
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { FUSEAU } from '@/components/format-appel';
 import { Page } from '@/components/ui';
 import { db } from '@/db';
-import { campagnes, scripts, versionsScript, type Etape } from '@/db/schema';
+import { campagnes, prospects, scripts, versionsScript, type Etape } from '@/db/schema';
 import { analyseEntreprise } from '@/lib/lecture';
 import { entrepriseParSlug } from '@/lib/pages';
+import { ApercuMina } from '../../apercu-mina';
 import { EspaceVersion } from './espace-version';
 
 export const metadata: Metadata = { title: 'Script' };
@@ -121,7 +122,7 @@ export default async function PageScript({
   const base = `/entreprises/${slug}/scripts/${script.id}`;
   const lienVersion = (n: number) => (n === derniere.numero ? base : `${base}?version=${n}`);
 
-  const [analyse, servies] = await Promise.all([
+  const [analyse, servies, listeProspects] = await Promise.all([
     analyseEntreprise(entreprise.id, false),
     db
       .select({ versionScriptId: campagnes.versionScriptId, statut: campagnes.statut })
@@ -135,6 +136,11 @@ export default async function PageScript({
           inArray(campagnes.statut, ['en-cours', 'en-pause']),
         ),
       ),
+    db
+      .select({ id: prospects.id, nom: prospects.nom })
+      .from(prospects)
+      .where(eq(prospects.entrepriseId, entreprise.id))
+      .orderBy(asc(prospects.nom), asc(prospects.id)),
   ]);
   const chiffres = new Map(analyse.parVersion.map((v) => [v.versionScriptId, v]));
   const numeroDe = new Map(versions.map((v) => [v.id, v.numero]));
@@ -227,6 +233,13 @@ export default async function PageScript({
             <LectureVersion etapes={affichee.etapes} />
           )}
         </EspaceVersion>
+
+        <ApercuMina
+          entrepriseId={entreprise.id}
+          prospects={listeProspects}
+          versionFixe={affichee.id}
+          titre={`Ce que Mina recevra avec la v${affichee.numero}`}
+        />
       </div>
     </Page>
   );

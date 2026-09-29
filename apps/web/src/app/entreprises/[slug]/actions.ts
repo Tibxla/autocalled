@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
+import { type ApercuVariables, apercuVariablesAppel } from '@/lib/apercu';
 import * as entreprise from '@/lib/entreprises';
 import { type EtatFormulaire, type ResultatAction, erreursDeZod } from '@/lib/formulaire';
 import { exigerOperateur } from '@/lib/garde';
@@ -110,4 +111,17 @@ export async function creerVersion(
   if (!version.ok) return { message: version.raison };
   revalidatePath('/entreprises', 'layout');
   return { ok: true, message: 'Nouvelle version enregistrée.' };
+}
+
+/** Aperçu des variables d'appel (lecture seule) : rien n'est composé ni enregistré. */
+export async function lireApercu(
+  entrepriseId: string,
+  prospectId: string | null,
+  versionScriptId: string | null,
+): Promise<ResultatAction<{ apercu: ApercuVariables }>> {
+  await exigerOperateur();
+  const resultat = await apercuVariablesAppel(entrepriseId, { prospectId, versionScriptId });
+  if (!resultat.ok) return resultat;
+  const { ok, ...apercu } = resultat;
+  return { ok, apercu };
 }

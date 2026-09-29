@@ -7,12 +7,12 @@ import {
   type NumeroAutorise,
   SENS_ISSUES,
   type VariablesDeLAppel,
-  variablesDeLAppel,
 } from '@autocalled/domain';
 import { creneauParle } from '@autocalled/agenda';
-import { and, asc, desc, eq, isNotNull } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { appels, entreprises, issuesPersonnalisees, objections, prospects, rendezVous, versionsScript } from '@/db/schema';
+import { variablesPour } from './apercu';
 import { VERSION_ANALYSEUR, analyser } from './analyseur';
 import { autorisationsDe } from './autorisations';
 import { rafraichirSiAncien } from './agenda';
@@ -23,8 +23,6 @@ import { commanderPont, refusDuPont } from './pont';
 export function dossierDonnees(): string {
   return process.env.DOSSIER_DONNEES ?? join(process.cwd(), '..', '..', 'data');
 }
-
-const libelleIssue = new Map<string, string>(ISSUES_SYSTEME.map((i) => [i, LIBELLES_ISSUES[i]]));
 
 export type PreparationAppel =
   | { ok: true; numero: NumeroAutorise; variables: VariablesDeLAppel; entrepriseId: string; motsCles: string[] }
@@ -48,36 +46,7 @@ export async function preparerAppel(entrepriseId: string, prospectId: string, ve
     return { ok: false, raison: 'Ce numéro n’est pas autorisé : aucun consentement actif.' };
   }
 
-  const [listeObjections, precedents] = await Promise.all([
-    db
-      .select()
-      .from(objections)
-      .where(and(eq(objections.entrepriseId, entrepriseId), eq(objections.archivee, false)))
-      .orderBy(asc(objections.ordre)),
-    db
-      .select({ le: appels.debutLe, issue: appels.issue, bilan: appels.bilan })
-      .from(appels)
-      .where(and(eq(appels.entrepriseId, entrepriseId), eq(appels.prospectId, prospectId), isNotNull(appels.bilan)))
-      .orderBy(desc(appels.debutLe))
-      .limit(5),
-  ]);
-
-  const variables = variablesDeLAppel({
-    entreprise,
-    prospect,
-    rendezVous: { interlocuteur: entreprise.interlocuteur, dureeMinutes: entreprise.dureeRendezVousMinutes },
-    etapes: version.etapes,
-    objections: listeObjections,
-    historique: precedents.map((p) => ({
-      le: p.le,
-      issue: libelleIssue.get(p.issue ?? '') ?? p.issue ?? 'issue inconnue',
-      resume: p.bilan?.resume ?? '',
-    })),
-    maintenant: new Date(),
-    fuseau: entreprise.fuseau,
-  });
-  // Noms propres de l'appel, pour que la reconnaissance vocale les entende bien.
-  const motsCles = [...new Set([entreprise.nom, prospect.nom, ...prospect.nom.split(/\s+/), prospect.societe].filter((m): m is string => Boolean(m && m.length > 2)))].slice(0, 12);
+  const { variables, motsCles } = await variablesPour(entreprise, prospect, version.etapes, new Date());
   return { ok: true, numero: autorisation.numero, variables, entrepriseId, motsCles };
 }
 
