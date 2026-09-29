@@ -1,6 +1,6 @@
 import { ISSUES_SYSTEME, LIBELLES_ISSUES, type IssueSysteme } from '@autocalled/domain';
 import { NavigationListe } from './clavier';
-import { cleJour, estNonCompose, etatAppel, issueEffective, LIBELLE_NON_COMPOSE, libelleJour, LIGNES_COURTES, type TonEtat } from './format-appel';
+import { cleJour, estNonCompose, etatAppel, LIBELLE_NON_COMPOSE, libelleJour, LIGNES_COURTES, type TonEtat } from './format-appel';
 import { Cellule, CelluleEnTete, Duree, EnTeteTable, GlypheEtape, Heure, LienLigne, LigneTable, TableDense } from './ui';
 
 /**
@@ -60,17 +60,15 @@ export function estFiltreIssue(valeur: string | undefined): valeur is CleFiltreI
 }
 
 /**
- * Le filtre d'issue d'un appel, par son issue effective : les non aboutis téléphone dont seule `issue` est
- * posée comptent enfin comme non aboutis. Sans issue, un appel que la ligne n'a pas composé a son filtre,
+ * Le filtre d'issue d'un appel, par son issue système. Sans issue, un appel que la ligne n'a pas composé a son filtre,
  * du même nom que sa ligne (« Non composé ») ; le reste (en cours, analyse, analyse en échec) est « Sans bilan ».
  */
 export function cleFiltreIssue(a: {
   statut: string;
   conversationId?: string | null;
   issueSysteme: IssueSysteme | null;
-  issue?: string | null;
 }): CleFiltreIssue {
-  return issueEffective(a) ?? (estNonCompose(a) ? CLE_NON_COMPOSE : CLE_SANS_BILAN);
+  return a.issueSysteme ?? (estNonCompose(a) ? CLE_NON_COMPOSE : CLE_SANS_BILAN);
 }
 
 /* ------------------------------------------------------------------ rendu */
@@ -96,7 +94,7 @@ function lienDe(a: LigneAppel, depuis: string | undefined, recherche: string | u
 }
 
 function Glyphe({ a, vivant }: { a: LigneAppel; vivant: boolean }) {
-  const rendezVous = Boolean(a.rendezVous) || issueEffective(a) === 'rendez-vous-pris';
+  const rendezVous = Boolean(a.rendezVous) || a.issueSysteme === 'rendez-vous-pris';
   if (vivant) return <GlypheEtape etat="vivant" />;
   if (a.statut === 'traitement') return <GlypheEtape etat="analyse" />;
   if (a.statut === 'echec') return <GlypheEtape etat="echec" />;
@@ -106,10 +104,10 @@ function Glyphe({ a, vivant }: { a: LigneAppel; vivant: boolean }) {
 
 function Issue({ a, vivant, maintenant, lien }: { a: LigneAppel; vivant: boolean; maintenant: Date; lien?: string }) {
   const etat = etatAppel(
-    { ...a, issue: a.issue ?? null, erreur: a.erreur ?? null, conversationId: a.conversationId ?? null },
+    { ...a, erreur: a.erreur ?? null, conversationId: a.conversationId ?? null },
     { vivant, libellePerso: a.libellePerso ?? null, maintenant },
   );
-  const systeme = etat.cle === 'issue' && a.libellePerso ? issueEffective(a) : null;
+  const systeme = etat.cle === 'issue' && a.libellePerso ? a.issueSysteme : null;
   const libelle = vivant ? 'En cours · rejoindre' : etat.libelle;
   const contenu = (
     <>

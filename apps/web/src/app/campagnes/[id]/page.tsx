@@ -2,7 +2,7 @@ import { ISSUES_SYSTEME, LIBELLES_ISSUES, type IssueSysteme } from '@autocalled/
 import { and, eq, gte } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { comptesCampagne, dateCourte, duree, issueEffective, numeroMasque, STATUTS_CAMPAGNE } from '@/components/format-appel';
+import { comptesCampagne, dateCourte, duree, numeroMasque, STATUTS_CAMPAGNE } from '@/components/format-appel';
 import { EnTetePage, GlypheEtape, LienAction, Page, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { appels, campagnes, entreprises, issuesPersonnalisees, prospects, versionsScript } from '@/db/schema';
@@ -308,14 +308,14 @@ function BilanCampagne({
   const parIssue = new Map<IssueSysteme, number>();
   let sansIssue = 0;
   for (const a of liste) {
-    const issue = issueEffective(a);
+    const issue = a.issueSysteme;
     if (issue) parIssue.set(issue, (parIssue.get(issue) ?? 0) + 1);
     else sansIssue += 1;
   }
   const rendezVous = parIssue.get('rendez-vous-pris') ?? 0;
   // Un appel abouti est une conversation : les non aboutis ne disent rien du script.
   const aboutis = liste.filter((a) => {
-    const issue = issueEffective(a);
+    const issue = a.issueSysteme;
     return issue !== null && issue !== 'non-abouti';
   }).length;
   const secondes = liste.reduce((s, a) => s + (a.dureeSecondes ?? 0), 0);
@@ -384,7 +384,7 @@ function BilanCampagne({
                 etape={a.bilan?.etapeAtteinte ?? null}
                 nombre={nombreEtapes}
                 etat={a.statut === 'echec' ? 'echec' : a.bilan ? 'bilan' : 'sans-bilan'}
-                rendezVous={issueEffective(a) === 'rendez-vous-pris'}
+                rendezVous={a.issueSysteme === 'rendez-vous-pris'}
               />
             ))}
           </div>

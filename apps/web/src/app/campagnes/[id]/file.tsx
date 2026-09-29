@@ -3,7 +3,7 @@
 import type { IssueSysteme } from '@autocalled/domain';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { NavigationListe } from '@/components/clavier';
-import { etatAppel, issueEffective, type TonEtat } from '@/components/format-appel';
+import { etatAppel, type TonEtat } from '@/components/format-appel';
 import {
   Cellule,
   CelluleEnTete,
@@ -68,7 +68,7 @@ function categorie(e: EntreeFile): Categorie {
   if (e.etat === 'a-appeler') return 'a-appeler';
   if (e.etat === 'en-appel') return 'en-appel';
   if (e.etat === 'sautee') return 'sautes';
-  const issue = e.appel ? issueEffective(e.appel) : null;
+  const issue = e.appel?.issueSysteme ?? null;
   if (issue === 'rendez-vous-pris' || issue === 'rappel-convenu' || issue === 'refus' || issue === 'non-abouti') return issue;
   return 'autres';
 }
@@ -105,7 +105,7 @@ function Glyphe({ e, nombreEtapes }: { e: EntreeFile; nombreEtapes: number | nul
   const a = e.appel;
   if (!a) return null;
   const etat = a.statut === 'echec' ? 'echec' : a.statut === 'traitement' ? 'analyse' : a.etape === null ? 'sans-bilan' : 'bilan';
-  return <GlypheEtape etat={etat} etape={a.etape} nombre={nombreEtapes} rendezVous={issueEffective(a) === 'rendez-vous-pris'} />;
+  return <GlypheEtape etat={etat} etape={a.etape} nombre={nombreEtapes} rendezVous={a.issueSysteme === 'rendez-vous-pris'} />;
 }
 
 export function File({

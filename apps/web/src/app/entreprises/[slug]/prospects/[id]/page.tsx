@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { AjoutClaudeCode } from '@/components/ajout-claude-code';
 import { ListeAppels } from '@/components/liste-appels';
 import { PastilleAutorisation } from '@/components/pastille-autorisation';
-import { dateCourte, etatAppel, issueEffective } from '@/components/format-appel';
+import { dateCourte, etatAppel } from '@/components/format-appel';
 import { Chevron, EtatVide, LienAction, Page, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { appels, consentements, issuesPersonnalisees, prospects, rendezVous, versionsScript } from '@/db/schema';
@@ -144,7 +144,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
   const avecRendezVous = new Set(rdvHistorique.map((r) => r.appelId));
   const etatDernier = dernier ? etatAppel(dernier, { libellePerso: dernier.issue ? libellePerso.get(dernier.issue) : null }) : null;
   const dernierTermine = historique.find((a) => a.statut === 'termine');
-  const rappel = dernierTermine && issueEffective(dernierTermine) === 'rappel-convenu' ? (dernierTermine.bilan?.rappel ?? 'moment non précisé') : null;
+  const rappel = dernierTermine && dernierTermine.issueSysteme === 'rappel-convenu' ? (dernierTermine.bilan?.rappel ?? 'moment non précisé') : null;
 
   let blocage: { texte: string; lien?: { href: string; libelle: string } } | null = null;
   if (!autorise) {

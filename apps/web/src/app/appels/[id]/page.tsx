@@ -4,7 +4,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
-import { FUSEAU, LIGNES_LONGUES, duree, etatAppel, heure, issueEffective, jourCourt, numeroMasque, prenom } from '@/components/format-appel';
+import { FUSEAU, LIGNES_LONGUES, duree, etatAppel, heure, jourCourt, numeroMasque, prenom } from '@/components/format-appel';
 import { cleFiltreIssue, estFiltreIssue } from '@/components/liste-appels';
 import { EtatVide, GlypheEtape, LienAction, Message, Page, TitreSection } from '@/components/ui';
 import { db } from '@/db';
@@ -104,7 +104,7 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
   const ageAnalyse = ecouleDepuis(appel.finLe ?? appel.debutLe);
   const analyseBloquee = appel.statut === 'traitement' && ageAnalyse > ANALYSE_MAX_S;
 
-  const issue = issueEffective({ issueSysteme: appel.issueSysteme, issue: appel.issue });
+  const issue = appel.issueSysteme;
   const cleIssue = bilan?.issue ?? appel.issue ?? null;
   const perso = cleIssue?.startsWith('perso:') ? (personnalisees.find((p) => `perso:${p.id}` === cleIssue)?.libelle ?? null) : null;
   const libelleIssue = perso ?? (issue ? LIBELLES_ISSUES[issue as IssueSysteme] : etatAppel(appel).libelle);

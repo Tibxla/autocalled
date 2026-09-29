@@ -1,5 +1,4 @@
 import {
-  ISSUES_SYSTEME,
   LIBELLES_ISSUES,
   type EntreeCampagne,
   type IssueSysteme,
@@ -111,19 +110,6 @@ export function numeroMasque(lisible: string): string {
   });
 }
 
-function estIssueSysteme(issue: string | null | undefined): issue is IssueSysteme {
-  return typeof issue === 'string' && (ISSUES_SYSTEME as readonly string[]).includes(issue);
-}
-
-/**
- * L'issue système d'un appel. Repli sur `issue` quand `issueSysteme` est nul et qu'`issue` est une clé
- * système : la route de fin d'un appel téléphone sans décroché pose `issue: 'non-abouti'` seule.
- */
-export function issueEffective(a: { issueSysteme: IssueSysteme | null; issue?: string | null }): IssueSysteme | null {
-  if (a.issueSysteme) return a.issueSysteme;
-  return estIssueSysteme(a.issue) ? a.issue : null;
-}
-
 export type TonEtat = 'antenne' | 'alerte' | 'encre' | 'encre-2' | 'encre-3';
 
 export interface EtatAppelAffiche {
@@ -149,7 +135,6 @@ export function etatAppel(
   a: {
     statut: string;
     issueSysteme: IssueSysteme | null;
-    issue?: string | null;
     erreur?: string | null;
     conversationId?: string | null;
     ligne: string;
@@ -172,7 +157,7 @@ export function etatAppel(
       ? { cle: 'pas-parti', libelle: LIBELLE_NON_COMPOSE, ton: 'encre-2', ...detail }
       : { cle: 'analyse-echec', libelle: 'Analyse en échec', ton: 'encre-2', ...detail };
   }
-  const issue = issueEffective(a);
+  const issue = a.issueSysteme;
   if (!issue) return { cle: 'sans-issue', libelle: 'Sans issue', ton: 'encre-3' };
   return {
     cle: 'issue',

@@ -1,6 +1,6 @@
-import { and, asc, desc, eq, inArray, or } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import type { Metadata } from 'next';
-import { comptesCampagne, dateCourte, etatAppel, issueEffective, STATUTS_CAMPAGNE } from '@/components/format-appel';
+import { comptesCampagne, dateCourte, etatAppel, STATUTS_CAMPAGNE } from '@/components/format-appel';
 import { Cellule, CelluleEnTete, EnTeteTable, LienLigne, LigneTable, Page, TableDense } from '@/components/ui';
 import { NavigationListe } from '@/components/clavier';
 import { db } from '@/db';
@@ -50,7 +50,7 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
     db
       .selectDistinct({ prospectId: appels.prospectId })
       .from(appels)
-      .where(and(eq(appels.entrepriseId, entreprise.id), or(eq(appels.issueSysteme, 'rendez-vous-pris'), eq(appels.issue, 'rendez-vous-pris')))),
+      .where(and(eq(appels.entrepriseId, entreprise.id), eq(appels.issueSysteme, 'rendez-vous-pris'))),
     db
       .select({ id: issuesPersonnalisees.id, libelle: issuesPersonnalisees.libelle })
       .from(issuesPersonnalisees)
@@ -73,7 +73,7 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
   const rendezVousDe = new Set(avecRendezVous.map((r) => r.prospectId));
   const rendezVousParCampagne = new Map<string, number>();
   for (const a of appelsCampagnes) {
-    if (a.campagneId && issueEffective(a) === 'rendez-vous-pris') rendezVousParCampagne.set(a.campagneId, (rendezVousParCampagne.get(a.campagneId) ?? 0) + 1);
+    if (a.campagneId && a.issueSysteme === 'rendez-vous-pris') rendezVousParCampagne.set(a.campagneId, (rendezVousParCampagne.get(a.campagneId) ?? 0) + 1);
   }
 
   const prospectsFormulaire: ProspectCampagne[] = listeProspects.map((p) => {
@@ -83,7 +83,7 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
       nom: p.nom,
       societe: p.societe,
       autorisation: autorisations.get(p.telephone),
-      derniere: d ? { cle: issueEffective(d), libelle: etatAppel(d, { libellePerso: d.issue ? libellePerso.get(d.issue) : null }).libelle } : null,
+      derniere: d ? { cle: d.issueSysteme, libelle: etatAppel(d, { libellePerso: d.issue ? libellePerso.get(d.issue) : null }).libelle } : null,
       rendezVous: rendezVousDe.has(p.id),
     };
   });

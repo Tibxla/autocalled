@@ -8,7 +8,6 @@ import {
   etatAppel,
   hauteurTrait,
   heure,
-  issueEffective,
   jourCourt,
   libelleJour,
   numeroMasque,
@@ -78,21 +77,6 @@ describe('identité', () => {
   });
 });
 
-describe('issueEffective', () => {
-  it('garde l’issue système', () => {
-    expect(issueEffective({ issueSysteme: 'refus', issue: 'trop-cher' })).toBe('refus');
-  });
-
-  it('se replie sur une clé système posée seule dans issue', () => {
-    expect(issueEffective({ issueSysteme: null, issue: 'non-abouti' })).toBe('non-abouti');
-  });
-
-  it('ignore une issue personnalisée sans issue système', () => {
-    expect(issueEffective({ issueSysteme: null, issue: 'demande-une-maquette' })).toBeNull();
-    expect(issueEffective({ issueSysteme: null })).toBeNull();
-  });
-});
-
 describe('etatAppel', () => {
   const maintenant = new Date('2026-09-29T12:00:00Z');
   const base = { issueSysteme: null, ligne: 'bluetooth', debutLe: new Date('2026-09-29T11:58:00Z') };
@@ -134,7 +118,7 @@ describe('etatAppel', () => {
     expect(etatAppel({ ...base, statut: 'termine', issueSysteme: 'refus' }, { maintenant })).toEqual({ cle: 'issue', libelle: 'Refus', ton: 'encre-2' });
     expect(etatAppel({ ...base, statut: 'termine', issueSysteme: 'refus' }, { libellePerso: 'Trop cher', maintenant })).toMatchObject({ libelle: 'Trop cher' });
     expect(etatAppel({ ...base, statut: 'termine', issueSysteme: 'rendez-vous-pris' }, { maintenant })).toMatchObject({ ton: 'encre' });
-    expect(etatAppel({ ...base, statut: 'termine', issue: 'non-abouti' }, { maintenant })).toMatchObject({ cle: 'issue', libelle: 'Non abouti' });
+    expect(etatAppel({ ...base, statut: 'termine', issueSysteme: 'non-abouti' }, { maintenant })).toMatchObject({ cle: 'issue', libelle: 'Non abouti' });
   });
 
   it('dit « Sans issue » plutôt qu’un tiret', () => {

@@ -1,6 +1,6 @@
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
-import { dateCourte, etatAppel, issueEffective } from '@/components/format-appel';
+import { dateCourte, etatAppel } from '@/components/format-appel';
 import { Page } from '@/components/ui';
 import { db } from '@/db';
 import { appels, issuesPersonnalisees, prospects, textesConsentement } from '@/db/schema';
@@ -61,7 +61,7 @@ export default async function PageProspects({
       dernier: d
         ? { date: dateCourte(d.debutLe).split(' ')[0] ?? '', libelle: etatAppel(d, { libellePerso: d.issue ? libellePerso.get(d.issue) : null }).libelle }
         : null,
-      rappel: d && d.statut === 'termine' && issueEffective(d) === 'rappel-convenu' ? (d.rappel ?? 'moment non précisé') : null,
+      rappel: d && d.statut === 'termine' && d.issueSysteme === 'rappel-convenu' ? (d.rappel ?? 'moment non précisé') : null,
     };
   });
 
