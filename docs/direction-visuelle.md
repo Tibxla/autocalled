@@ -8,13 +8,14 @@ Régie d'écoute sombre, faite pour enchaîner une centaine d'appels par jour et
 - Clavier d'abord : chaque action d'appel a sa touche, affichée devant son libellé (`E` écouter, `Espace` prendre la main, `/` chercher).
 - Chivo pour le texte, Chivo Mono pour tout ce qui se lit caractère par caractère : heures, durées, numéros, comptes.
 - Le premium tient au soin : filets fins, alignements exacts, états de survol et de focus soignés. Le mouvement est réservé à ce qui vit (l'onde de l'appel en cours).
+- Sur téléphone (30/09/2026) : navigation dans une barre du bas, filtres sur une rangée qui défile, une seule action en relief par zone, rien qui dépende du survol.
 
 ## Interdits (esthétique « générée par IA »)
 
 - Dégradés violet-bleu, halos néon, lueurs colorées autour des éléments, verre dépoli (glassmorphism), fonds à particules.
 - Quasi-noir avec un seul accent vif et des bords qui brillent : le fond reste un graphite chaud.
 - Polices que les générateurs ressortent par défaut : Inter, Geist, Hanken Grotesk, JetBrains Mono, Instrument Sans, Space Grotesk, IBM Plex, Fraunces.
-- Composants par défaut : la paire bouton en contour et bouton plein, les filtres en puces encadrées, le champ de recherche encadré, le point rouge « live ». Les actions sont du texte précédé de leur touche, les filtres du texte souligné quand ils sont actifs, la recherche un filet bas.
+- Composants par défaut : la paire bouton en contour et bouton plein, les filtres en puces encadrées, le champ de recherche encadré, le point rouge « live ». Les actions sont du texte précédé de leur touche, les filtres du texte souligné quand ils sont actifs, la recherche un filet bas. Au doigt, sans clavier ni survol, l'action principale prend la forme de sa touche, agrandie (cadre d'un pixel, bord bas appuyé, sur le graphite posé) : ce n'est ni un bouton plein ni la paire plein et contour, et les autres actions restent du texte souligné.
 - Étiquettes en petites capitales espacées. Le nom de qui parle s'écrit en casse normale, en gras.
 - Grilles de cartes identiques avec une icône en haut à gauche, rangées de chiffres-clés géants en haut de page. Les comptes vivent dans les filtres et les lignes.
 - Emojis dans l'interface, badges « IA » ou étincelles ✨ pour signaler l'intelligence.
