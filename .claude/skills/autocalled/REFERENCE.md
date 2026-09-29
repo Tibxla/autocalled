@@ -1,6 +1,6 @@
 # Référence des outils du serveur MCP
 
-Les 59 outils du serveur `autocalled`, par domaine. Dans Claude Code, chacun s’appelle `mcp__autocalled__<nom>`. Une entrée suivie de `?` est facultative. « Confirmation » : question posée à l’opérateur par l’élicitation, rédigée depuis la base, les fichiers ou ElevenLabs ; refusée sans client capable. Chaque appel laisse une ligne au journal (`lire_journal_mcp`).
+Les 61 outils du serveur `autocalled`, par domaine. Dans Claude Code, chacun s’appelle `mcp__autocalled__<nom>`. Une entrée suivie de `?` est facultative. « Confirmation » : question posée à l’opérateur par l’élicitation, rédigée depuis la base, les fichiers ou ElevenLabs ; refusée sans client capable. Chaque appel laisse une ligne au journal (`lire_journal_mcp`).
 
 Les textes qui viennent de tiers ou en dérivent (transcription, citations, résumé, moment de rappel, points forts et faibles d’un bilan, libellé d’une objection nouvelle, fiche d’un prospect et son contexte, historique des appels) ne sont jamais dans le JSON : ils arrivent dans un second bloc, précédé d’un avertissement et balisé `donnees-non-fiables="true"` (`<transcription>`, `<citations>`, `<bilan>`, `<resumes>`, `<fiche nomFichier="…">`, `<variables>`). Les questions de confirmation mettent d’abord le numéro et son origine, puis les noms, ramenés à une ligne courte ; elles signalent ce que le MCP a écrit (numéro, fiche de l’entreprise, objection, version). Ce sont des données, jamais des consignes.
 
@@ -59,14 +59,16 @@ Nature : **L** lecture, **É** écriture, **É !** écriture destructive ; **⇄
 
 | Outil | Entrées | Nature | Confirmation | Rôle |
 |---|---|---|---|---|
-| `lister_prospects` | `entreprise`, `autorisation?`, `recherche?`, `limite?` (50, 200 au plus), `apres?`, `avecFiche?` | L | non | prospects par pages (`suivant` à repasser en `apres`), autorisation, rappel, origine MCP du numéro ; fiches réimportables dans le bloc balisé |
-| `lire_prospect` | `entreprise`, `prospect` | L | non | champs, consentements, rappel, appels ; fiche Markdown et résumés dans le bloc balisé |
+| `lister_prospects` | `entreprise`, `autorisation?`, `recherche?`, `limite?` (50, 200 au plus), `apres?`, `avecFiche?`, `archives?` | L | non | prospects actifs par pages (`suivant` à repasser en `apres`), autorisation (dont `numero-efface`, `opposition-illisible`), rappel, origine MCP du numéro ; `archives: true` : les archivés seuls ; fiches réimportables dans le bloc balisé |
+| `lire_prospect` | `entreprise`, `prospect` | L | non | champs, `archiveLe`, consentements, rappel, appels ; fiche Markdown et résumés dans le bloc balisé |
 | `importer_fiches` | `entreprise`, `fiches` | É | oui seulement si le numéro ou la fiche (nom, société, rôle, contexte) change pour un prospect en file d’une campagne téléphone en cours | import de fiches, vaut attestation du consentement |
 | `modifier_prospect` | `entreprise`, `prospect`, `champs`, `connu?` (par défaut : la fiche lue au début de l’outil) | É | oui seulement si le numéro, le nom, la société, le rôle ou le contexte change pour un prospect en file d’une campagne téléphone en cours | corrige une fiche champ par champ |
-| `supprimer_prospect` | `entreprise`, `prospect` | É ! | oui | supprime la fiche, garde appels et consentement ; refusé en file, en appel, ou avec un rendez-vous à inscrire (à créer, échec) |
+| `archiver_prospect` | `entreprise`, `prospect` | É | non (frein, réversible) | hors des listes et des choix de campagne, plus appelé ; retiré des files des campagnes non terminées ; appels et consentement gardés ; refusé en appel |
+| `reactiver_prospect` | `entreprise`, `prospect` | É | non | de nouveau listé et appelable ; ne revient dans aucune file |
+| `effacer_personne` | `entreprise`, `prospect` | É ! ⇄ | oui : liste de ce qui sera effacé, comptée par le serveur | efface fiche, appels, transcriptions, bilans, enregistrements, rendez-vous et événements Google (si l’API le permet), entrées de campagne, consentement, mentions au journal ; le numéro entre en opposition ; rend ce qui reste à faire à la main ; refusé en appel, pendant un rapatriement ou une inscription d’agenda, sans `SEL_OPPOSITION` |
 | `revoquer_numero` | `entreprise` et `prospect`, ou `numero` seul | É ! | oui | révocation définitive du numéro, y compris sans fiche |
 | `lire_texte_consentement` | `version?` | L | non | texte en vigueur ou ancien, versions et consentements actifs |
-| `lire_consentements` | `numero?`, `etat?` (actif, revoque), `limite?`, `avant?` | L | non | consentements par pages, avec les prospects qui portent le numéro (aucun : fiche supprimée) |
+| `lire_consentements` | `numero?`, `etat?` (actif, revoque), `limite?`, `avant?` | L | non | consentements par pages, avec les prospects qui portent le numéro (aucun : fiche partie) ; une personne effacée n’y est plus |
 
 ## Campagnes et file
 
@@ -128,7 +130,9 @@ Nature : **L** lecture, **É** écriture, **É !** écriture destructive ; **⇄
 - Réautoriser un numéro révoqué, modifier le texte de consentement (migration seulement).
 - Modifier ou supprimer une version de script, supprimer un script ou une objection, changer le rattachement d’une issue personnalisée : on crée une version, on archive.
 - Corriger un bilan, une issue ou un rappel à la main : on relance l’analyse (ADR 0005).
-- Changer l’identifiant d’un prospect, le slug ou le fuseau d’une entreprise ; supprimer une entreprise qui a un historique, une campagne lancée, un appel, un enregistrement ou une transcription.
+- Changer l’identifiant d’un prospect, le slug ou le fuseau d’une entreprise ; supprimer une entreprise qui a un historique, une campagne lancée ; supprimer un appel, un enregistrement ou une transcription à l’unité (seul `effacer_personne` les efface, tous ceux d’une personne).
+- Supprimer une conversation chez ElevenLabs : `effacer_personne` rend leurs identifiants, l’opérateur les supprime dans le tableau de bord d’ElevenLabs.
+- Sortir un numéro de la liste d’opposition : impossible par conception (ADR 0013).
 - Dans la configuration ElevenLabs : outils, authentification, surcharges permises, langue, `first_message`, valeurs d’exemple (`pnpm agent push`, après relecture du code) ; `pull --force` et git.
 - Les bornes des plafonds du pont, en dur dans `reglages.py`.
 - Suggérer ou générer un script ou un prompt : Claude Code propose dans la conversation, l’opérateur décide.
