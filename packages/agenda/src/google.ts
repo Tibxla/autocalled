@@ -111,3 +111,17 @@ export async function creerEvenement(
   );
   return { id: r.id, lienVisio: r.hangoutLink ?? null };
 }
+
+/**
+ * Supprime un événement du calendrier (portée `calendar.app.created` : seulement dans le calendrier créé par
+ * l'application). `prevenir` : Google envoie l'annulation aux invités (un rendez-vous encore à venir). Un événement
+ * déjà supprimé (404, 410) n'est pas une erreur.
+ */
+export async function supprimerEvenement(acces: string, calendrier: string, evenementId: string, prevenir: boolean): Promise<void> {
+  const reponse = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendrier)}/events/${encodeURIComponent(evenementId)}?sendUpdates=${prevenir ? 'all' : 'none'}`,
+    { method: 'DELETE', headers: { authorization: `Bearer ${acces}` } },
+  );
+  if (reponse.ok || reponse.status === 404 || reponse.status === 410) return;
+  throw new Error(`Google Agenda ${reponse.status} : ${(await reponse.text()).slice(0, 200)}`);
+}
