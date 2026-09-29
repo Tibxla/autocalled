@@ -115,6 +115,15 @@ describe('liste des appels en base', () => {
     expect(lignes[0]).toMatchObject({ libellePerso: 'Rappel fictif', rendezVous: false, nombreEtapes: expect.any(Number), transcription: null });
   });
 
+  it('en recherche, la transcription revient décodée pour l’extrait', async () => {
+    const { inseres } = await jeu();
+    const tours = [{ role: 'agent', texte: 'Je vous envoie une plaquette fictive.', secondes: 3 }];
+    await db.execute(sql`update appels set transcription = ${JSON.stringify(tours)}::jsonb where id = ${inseres[1]!.id}`);
+    const { lignes } = await pageAppels({ recherche: 'plaquette' }, { taille: 10 });
+    expect(lignes.map((l) => l.id)).toEqual([inseres[1]!.id]);
+    expect(lignes[0]!.transcription).toEqual(tours);
+  });
+
   it('comptes par jour de Paris et voisins d’un appel dans la liste filtrée', async () => {
     const { inseres, maintenant } = await jeu();
     const aujourdhui = PARIS.format(new Date(maintenant));

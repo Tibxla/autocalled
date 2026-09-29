@@ -132,6 +132,8 @@ def etat_du_plafond(plafond: Plafond, maintenant: float | None = None) -> dict[s
 
 def decroche_le(appel: Any) -> int | None:
     """L'heure du décroché (ms depuis l'epoch) : celle du premier état « active » du fil, lue sans rien modifier."""
+    if appel is None:
+        return None
     return next((e.get("t") for e in list(appel.evenements) if e.get("type") == "etat" and e.get("etat") == "active"), None)
 
 
@@ -190,7 +192,8 @@ class Service:
             **dans_glib(self._telephone.etat),
             "appelId": en_cours,
             **etat_du_plafond(self._plafond),
-            "decrocheLe": decroche_le(self._appels[en_cours]) if en_cours else None,
+            # .get : l'appel peut être oublié entre les deux lectures (fin d'appel), sans faire tomber /etat.
+            "decrocheLe": decroche_le(self._appels.get(en_cours)) if en_cours else None,
             "reglages": self._reglages.valeurs,
         }
 

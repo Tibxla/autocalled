@@ -61,6 +61,9 @@ class DecrocheTest(unittest.TestCase):
         )
         self.assertEqual(decroche_le(appel), 5)
 
+    def test_appel_oublie_entre_deux_lectures(self):
+        self.assertIsNone(decroche_le(None))
+
     def test_pas_encore_decroche(self):
         self.assertIsNone(decroche_le(SimpleNamespace(evenements=[{"type": "etat", "etat": "alerting", "t": 1}])))
 
