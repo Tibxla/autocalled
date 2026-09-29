@@ -17,6 +17,8 @@ La liste des gestes soumis à l'élicitation s'allonge : pousser la configuratio
 - Le nom dans `agent/` : chaque renommage exigerait une poussée, et ni l'interface, ni l'analyseur, ni les confirmations ne lisent ces fichiers.
 - Le `first_message` d'ElevenLabs comme premier message : il parlerait aussi quand le prospect a déjà dit « allô », et doublerait l'ouverture.
 - Une suggestion de script ou de prompt produite par Autocalled après l'analyse : écartée par l'opérateur. Les ajustements passent par Claude Code, dans la conversation, puis par l'opérateur.
+- Les consignes de l'analyseur réglables par le MCP : le bilan vient d'une analyse isolée (ADR 0005), dont les chiffres ne se comparent qu'à version d'analyseur égale. Elles restent dans le code, relu, et tout changement porte une nouvelle `VERSION_ANALYSEUR`.
+- Le personnage du prospect simulé réglable par le MCP : c'est le banc d'essai du produit, du code relu. Régler la difficulté des simulations demanderait un réglage en base, à créer le jour où l'opérateur le demande.
 
 ## Consequences
 
