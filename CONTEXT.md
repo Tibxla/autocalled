@@ -8,6 +8,10 @@ Mini-SaaS de démonstration : une assistante vocale IA passe des appels de prosp
 Numéro d'une personne qui a accepté d'être appelée par une IA et enregistrée. Tout appel vers un autre numéro est refusé.
 _Avoid_ : whitelist, numéro de test
 
+**Consentement** :
+L'accord donné par une personne, avant tout appel, sur un texte versionné : être appelée par une IA et enregistrée. Il est attesté à l'import de la fiche et rend le numéro autorisé. La révocation le clôt pour de bon : un numéro révoqué ne se réautorise pas, et ses rappels à faire disparaissent.
+_Avoid_ : opt-in, accord RGPD
+
 **Opérateur** :
 La seule personne qui se connecte au SaaS, configure les entreprises et lance les appels.
 _Avoid_ : utilisateur, admin, client
@@ -31,6 +35,10 @@ _Avoid_ : CSV, profil, contact
 **Campagne** :
 Une liste de prospects d'une même entreprise, appelés l'un après l'autre avec une même version de script ; un seul appel à la fois, chaque appel repartant du seul contexte de son prospect.
 _Avoid_ : batch, séquence, vague, liste d'appels
+
+**File** :
+L'ordre dans lequel une campagne appelle ses prospects. Tant que la campagne n'est pas terminée, l'opérateur la modifie sans couper l'appel en cours : sauter un prospect le renvoie en fin de file, le retirer l'écarte de la campagne en gardant la trace, ajouter des prospects les place à la fin, terminer retire tous ceux qui restent et laisse l'appel en cours aller à son terme. Un prospect dont le numéro n'est plus autorisé au moment de son tour n'est pas appelé : il est « non autorisé ».
+_Avoid_ : queue, liste d'attente, pile
 
 **Appel** :
 Une conversation téléphonique entre l'assistante et un prospect, lancée par l'opérateur.
@@ -65,7 +73,7 @@ La stratégie d'appel d'une entreprise, découpée en étapes ordonnées ; l'ass
 _Avoid_ : pitch, trame, playbook
 
 **Étape** :
-Un moment du script avec une intention propre (accroche, qualification, pitch, proposition de rendez-vous) et une ou deux formulations d'exemple.
+Un moment du script avec une intention propre (accroche, qualification, pitch, proposition de rendez-vous) et une ou deux formulations d'exemple. Pendant l'appel, l'assistante signale l'étape où elle se trouve, pour l'affichage seulement ; l'étape atteinte que retient le bilan fait foi.
 _Avoid_ : phase, section, bloc
 
 **Version de script** :
@@ -91,8 +99,12 @@ Issue système d'un appel où aucune conversation n'a eu lieu (pas de réponse, 
 _Avoid_ : échec, raté
 
 **Rappel convenu** :
-Issue système où le prospect demande à être rappelé à un moment précis ; la fiche du prospect affiche alors ce rappel à faire.
+Issue système où le prospect demande à être rappelé à un moment précis ; la fiche du prospect affiche alors ce rappel à faire. Il reste à faire jusqu'au prochain appel vers ce prospect, qu'il décroche ou non ; un appel simulé ne compte pas.
 _Avoid_ : relance, callback
+
+**Rappel daté** :
+Rappel convenu dont le bilan donne le jour, et l'heure ou le moment de la journée (matin, après-midi), tels que le prospect les a dits. Seule l'analyse le date, et on ne le corrige qu'en la relançant. L'accueil liste les rappels datés du jour et ceux en retard ; un rappel sans date reste « sans date ».
+_Avoid_ : rappel programmé, tâche, échéance
 
 **Bilan** :
 Ce que l'analyse produit après un appel : l'issue, l'étape atteinte, les objections apparues ou levées, un résumé et des points forts et faibles.
@@ -129,3 +141,21 @@ _Avoid_ : faux appel, test automatique
 **Téléphone passerelle** :
 Téléphone dédié, posé à côté du serveur et appairé en Bluetooth, qui compose les appels de l'assistante avec sa propre carte SIM.
 _Avoid_ : modem, gateway, kit mains-libres
+
+**Garde-fous** :
+Les limites de la ligne téléphone, réglées par l'opérateur : appels par heure, appels par jour, pause entre deux appels. Un appel qui dépasserait un plafond ne part pas ; les desserrer demande une confirmation.
+_Avoid_ : quota, rate limit, limites
+
+**Prise de main** :
+Pendant un appel téléphone, l'opérateur parle au prospect depuis son navigateur à la place de l'assistante, qui se tait jusqu'à la fin de l'appel.
+_Avoid_ : takeover, transfert, reprise
+
+## Pilotage par Claude Code
+
+**Confirmation** :
+L'accord que l'opérateur donne lui-même, sur une question rédigée par le serveur, avant un geste qui fait sonner un téléphone, révoque un numéro, supprime une fiche, envoie une invitation, desserre un garde-fou ou change ce que l'assistante dit au prospect. Le modèle ne peut pas y répondre à sa place. Les freins (raccrocher, suspendre, retirer de la file) n'en demandent pas.
+_Avoid_ : validation, approbation, consentement
+
+**Journal de Claude Code** :
+La trace de chaque appel d'outil du serveur MCP, lectures comprises, avec la réponse de l'opérateur quand une confirmation a été demandée. Il se lit dans Réglages.
+_Avoid_ : logs, audit
