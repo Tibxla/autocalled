@@ -1,52 +1,49 @@
 import type { TourDeParole } from '@autocalled/domain';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import type { Metadata } from 'next';
-import {
-  FILTRES_ISSUE,
-  ListeAppels,
-  cleFiltreIssue,
-  estFiltreIssue,
-  type CleFiltreIssue,
-  type ExtraitAppel,
-  type LigneAppel,
-} from '@/components/liste-appels';
-import { prenom } from '@/components/format-appel';
+import { cleJour, FUSEAU, prenom } from '@/components/format-appel';
+import { FILTRES_ISSUE, ListeAppels, type ExtraitAppel, type LigneAppel } from '@/components/liste-appels';
 import { EnTetePage, EtatVide, Filtre, Filtres, LienAction, Page, Recherche } from '@/components/ui';
 import { lienAvec } from '@/components/url';
 import { db } from '@/db';
-import { appels, entreprises, issuesPersonnalisees, prospects, rendezVous, versionsScript } from '@/db/schema';
-import { listerAppels } from '@/lib/lecture';
+import { appels, entreprises, issuesPersonnalisees } from '@/db/schema';
+import { comptesAppels, comptesParJour, pageAppels, PERIODES } from '@/lib/lecture';
 import { commanderPont } from '@/lib/pont';
-import { FiltreEntreprise } from './filtre-entreprise';
+import { versionsDeLEntreprise } from '@/lib/versions';
+import { LIGNES_FILTRE, lireFiltresAppels } from './filtres';
+import { FiltreJour, FiltreSelection } from './filtres-client';
 
 export const metadata: Metadata = { title: 'Appels' };
 
-const PAS = 200;
-const PLAFOND = 1000;
+/** Appels par page ; « Appels plus anciens » (N) passe à la suivante par curseur, filtres gardés. */
+const PAS = 100;
 /** Au-delà, la liste s'affiche sans savoir quel appel la ligne porte : un pont qui pend ne la bloque pas. */
 const ATTENTE_PONT_MS = 1500;
 
-const LIGNES = [
-  { valeur: 'bluetooth', libelle: 'Téléphone' },
-  { valeur: 'navigateur', libelle: 'Navigateur' },
-  { valeur: 'simulation', libelle: 'Simulés' },
-  { valeur: 'twilio', libelle: 'Twilio' },
-] as const;
+const LIBELLES_PERIODES: Record<(typeof PERIODES)[number], string> = {
+  aujourdhui: 'Aujourd’hui',
+  '7-jours': '7 jours',
+  '30-jours': '30 jours',
+  tout: 'Tout',
+};
 
-type Parametres = { q?: string; entreprise?: string; issue?: string; ligne?: string; n?: string };
-
-function taille(n: string | undefined): number {
-  const lu = Number.parseInt(n ?? '', 10);
-  if (!Number.isFinite(lu) || lu <= PAS) return PAS;
-  return Math.min(PLAFOND, Math.ceil(lu / PAS) * PAS);
-}
+const FORMAT_JOUR = new Intl.DateTimeFormat('fr-FR', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+  timeZone: FUSEAU,
+});
 
 /** L'appel que la ligne téléphone porte en ce moment, ou null (pont muet ou trop lent). */
 async function appelVivant(): Promise<string | null> {
   const attente = new Promise<null>((resoudre) => setTimeout(() => resoudre(null), ATTENTE_PONT_MS));
   const etat = await Promise.race([commanderPont('/etat'), attente]);
   if (!etat?.ok) return null;
-  const { appelEnCours, appelId } = etat.corps as { appelEnCours?: boolean; appelId?: string | null };
+  const { appelEnCours, appelId } = etat.corps as {
+    appelEnCours?: boolean;
+    appelId?: string | null;
+  };
   return appelEnCours && typeof appelId === 'string' ? appelId : null;
 }
 
@@ -82,103 +79,85 @@ function extraitDe(transcription: TourDeParole[] | null, terme: string, nomProsp
   return null;
 }
 
-export default async function PageAppels({ searchParams }: { searchParams: Promise<Parametres> }) {
-  const p = await searchParams;
-  const q = p.q?.trim() ?? '';
-  const issue: CleFiltreIssue | null = estFiltreIssue(p.issue) ? p.issue : null;
-  const ligne = LIGNES.some((l) => l.valeur === p.ligne) ? p.ligne : undefined;
-  const n = taille(p.n);
+export default async function PageAppels({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const brut = await searchParams;
+  const un = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  const { parametres, filtres } = lireFiltresAppels(Object.fromEntries(Object.entries(brut).map(([k, v]) => [k, un(v)])));
+  const { q = '', issue, ligne, periode, avant } = parametres;
 
-  const [fenetre, listeEntreprises, [twilio], vivantId] = await Promise.all([
-    listerAppels({ entreprise: p.entreprise, ligne, recherche: q }, n),
+  const [entreprise] = parametres.entreprise
+    ? await db.select({ id: entreprises.id }).from(entreprises).where(eq(entreprises.slug, parametres.entreprise))
+    : [];
+  const [page, comptes, listeEntreprises, [twilio], vivantId, versions, persos] = await Promise.all([
+    pageAppels(filtres, { taille: PAS, ...(avant ? { avant } : {}) }),
+    comptesAppels(filtres),
     db.select({ slug: entreprises.slug, nom: entreprises.nom }).from(entreprises).orderBy(asc(entreprises.nom)),
     db.select({ id: appels.id }).from(appels).where(eq(appels.ligne, 'twilio')).limit(1),
     appelVivant(),
+    entreprise ? versionsDeLEntreprise(entreprise.id) : Promise.resolve([]),
+    entreprise
+      ? db
+          .select({
+            id: issuesPersonnalisees.id,
+            libelle: issuesPersonnalisees.libelle,
+            archivee: issuesPersonnalisees.archivee,
+          })
+          .from(issuesPersonnalisees)
+          .where(eq(issuesPersonnalisees.entrepriseId, entreprise.id))
+          .orderBy(asc(issuesPersonnalisees.libelle))
+      : Promise.resolve([]),
+  ]);
+  const jours = [...new Set(page.lignes.map((l) => cleJour(l.debutLe)))];
+  const [comptesJours, simules] = await Promise.all([
+    comptesParJour(filtres, jours),
+    // Liste vide sans aucun filtre : dire s'il existe des appels simulés, rangés à part.
+    page.lignes.length === 0 && !ligne ? comptesAppels({ ligne: 'simulation' }).then((c) => c.total) : Promise.resolve(0),
   ]);
 
-  // Lectures complémentaires de la fenêtre : société, nombre d'étapes, libellés personnalisés, rendez-vous.
-  const ids = fenetre.map((f) => f.appel.id);
-  const versions = [...new Set(fenetre.map((f) => f.appel.versionScriptId))];
-  const idsProspects = [...new Set(fenetre.map((f) => f.appel.prospectId))];
-  const idsEntreprises = [...new Set(fenetre.map((f) => f.appel.entrepriseId))];
-  const clesPerso = new Set<string>();
-  for (const { appel } of fenetre) {
-    for (const cle of [appel.issue, appel.bilan?.issue]) if (cle?.startsWith('perso:')) clesPerso.add(cle.slice(6));
-  }
-  const [etapes, societes, perso, rdv] = ids.length
-    ? await Promise.all([
-        db
-          .select({ id: versionsScript.id, nombre: sql<number>`jsonb_array_length(${versionsScript.etapes})` })
-          .from(versionsScript)
-          .where(inArray(versionsScript.id, versions)),
-        db
-          .select({ entrepriseId: prospects.entrepriseId, id: prospects.id, societe: prospects.societe })
-          .from(prospects)
-          .where(and(inArray(prospects.entrepriseId, idsEntreprises), inArray(prospects.id, idsProspects))),
-        clesPerso.size
-          ? db
-              .select({ id: issuesPersonnalisees.id, libelle: issuesPersonnalisees.libelle })
-              .from(issuesPersonnalisees)
-              .where(
-                inArray(
-                  issuesPersonnalisees.id,
-                  [...clesPerso].filter((c) => /^[0-9a-f-]{36}$/.test(c)),
-                ),
-              )
-          : Promise.resolve([]),
-        db.select({ appelId: rendezVous.appelId }).from(rendezVous).where(inArray(rendezVous.appelId, ids)),
-      ])
-    : [[], [], [], []];
-  const nombreEtapes = new Map(etapes.map((e) => [e.id, Number(e.nombre)]));
-  const societe = new Map(societes.map((s) => [`${s.entrepriseId}/${s.id}`, s.societe]));
-  const libellesPerso = new Map(perso.map((x) => [`perso:${x.id}`, x.libelle]));
-  const avecRendezVous = new Set(rdv.map((r) => r.appelId));
-
-  const toutes: (LigneAppel & { filtre: CleFiltreIssue })[] = fenetre.map(({ appel, prospect, entreprise }) => {
-    const cleIssue = appel.issue ?? appel.bilan?.issue ?? null;
-    const nom = prospect ?? appel.prospectId;
+  const lignes: LigneAppel[] = page.lignes.map((a) => {
+    const nom = a.prospect ?? a.prospectId;
     return {
-      id: appel.id,
-      debutLe: appel.debutLe,
-      ligne: appel.ligne,
-      statut: appel.statut,
-      issueSysteme: appel.issueSysteme,
-      issue: appel.issue,
-      erreur: appel.erreur,
-      conversationId: appel.conversationId,
-      bilan: appel.bilan ? { etapeAtteinte: appel.bilan.etapeAtteinte } : null,
-      dureeSecondes: appel.dureeSecondes,
-      resume: appel.bilan?.resume ?? null,
+      id: a.id,
+      debutLe: a.debutLe,
+      ligne: a.ligne,
+      statut: a.statut,
+      issueSysteme: a.issueSysteme,
+      issue: a.issue,
+      erreur: a.erreur,
+      conversationId: a.conversationId,
+      bilan: a.avecBilan ? { etapeAtteinte: a.etapeAtteinte ?? 0 } : null,
+      dureeSecondes: a.dureeSecondes,
+      resume: a.resume,
       prospect: nom,
-      societe: societe.get(`${appel.entrepriseId}/${appel.prospectId}`) ?? null,
-      entreprise,
-      nombreEtapes: nombreEtapes.get(appel.versionScriptId) ?? null,
-      rendezVous: avecRendezVous.has(appel.id),
-      libellePerso: cleIssue ? (libellesPerso.get(cleIssue) ?? null) : null,
-      extrait: q ? extraitDe(appel.transcription, q, nom) : null,
-      filtre: cleFiltreIssue(appel),
+      societe: a.societe,
+      entreprise: a.entreprise,
+      nombreEtapes: a.nombreEtapes,
+      rendezVous: a.rendezVous,
+      libellePerso: a.libellePerso,
+      extrait: q ? extraitDe(a.transcription, q, nom) : null,
     };
   });
 
-  // Sans ligne choisie, seuls les appels réels comptent (CONTEXT.md) : les simulés sont à part, sous « Simulés ».
-  const lignes = ligne ? toutes : toutes.filter((l) => l.ligne !== 'simulation');
-  const simulesMasques = toutes.length - lignes.length;
-
-  const comptes = new Map<CleFiltreIssue, number>();
-  for (const l of lignes) comptes.set(l.filtre, (comptes.get(l.filtre) ?? 0) + 1);
-  const affichees = issue ? lignes.filter((l) => l.filtre === issue) : lignes;
-
-  const parametres = { q: q || undefined, entreprise: p.entreprise, issue: issue ?? undefined, ligne, n: n > PAS ? String(n) : undefined };
-  const ici = lienAvec('/appels', parametres, {});
-  const pleine = fenetre.length === n;
-  const filtre = Boolean(q || p.entreprise || issue || ligne);
-  const lignesProposees = LIGNES.filter((l) => l.valeur !== 'twilio' || twilio || ligne === 'twilio');
+  // Les liens de filtre repartent de la première page ; seul « Appels plus anciens » pose le curseur.
+  const sansCurseur: Record<string, string | undefined> = {
+    ...parametres,
+    avant: undefined,
+  };
+  const lien = (changements: Record<string, string | null>) => lienAvec('/appels', sansCurseur, changements);
+  const ici = lienAvec('/appels', { ...parametres }, {});
+  const filtre = Boolean(q || parametres.entreprise || issue || ligne || parametres.version || periode);
+  const lignesProposees = LIGNES_FILTRE.filter((l) => l.valeur !== 'twilio' || twilio || ligne === 'twilio');
+  const persosProposees = persos.filter((p) => !p.archivee || (comptes.parPerso[`perso:${p.id}`] ?? 0) > 0 || issue === `perso:${p.id}`);
+  const libelleIssue = issue ? (FILTRES_ISSUE.find((f) => f.cle === issue)?.libelle ?? persos.find((p) => `perso:${p.id}` === issue)?.libelle ?? null) : null;
+  const compteFiltre = issue ? (issue.startsWith('perso:') ? (comptes.parPerso[issue] ?? 0) : (comptes.parIssue[issue] ?? 0)) : comptes.total;
+  const jourPrecis = periode && !(PERIODES as readonly string[]).includes(periode) ? periode : '';
+  const population = ligne === 'simulation' ? 'appels simulés' : 'appels réels';
 
   return (
     <Page>
       <EnTetePage
         titre="Appels"
-        compte={affichees.length}
+        compte={compteFiltre}
         sousTitre={
           ligne === 'simulation'
             ? 'Appels simulés, du plus récent au plus ancien ; ils ne comptent dans aucun chiffre.'
@@ -187,74 +166,125 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
       />
 
       <div className="grid gap-2.5 border-b border-filet pb-3">
-        <Filtres
-          libelle={`Issue, ${ligne === 'simulation' ? 'appels simulés' : 'appels réels'}${pleine ? `, parmi les ${n} derniers appels` : ''}`}
-        >
-          <Filtre actif={!issue} compte={lignes.length} href={lienAvec('/appels', parametres, { issue: null })}>
+        <Filtres libelle={`Issue, ${population}`}>
+          <Filtre actif={!issue} compte={comptes.total} href={lien({ issue: null })}>
             Tous
           </Filtre>
           {FILTRES_ISSUE.map((f) => (
-            <Filtre key={f.cle} actif={issue === f.cle} compte={comptes.get(f.cle) ?? 0} href={lienAvec('/appels', parametres, { issue: f.cle })}>
+            <Filtre key={f.cle} actif={issue === f.cle} compte={comptes.parIssue[f.cle] ?? 0} href={lien({ issue: f.cle })}>
               {f.libelle}
             </Filtre>
           ))}
         </Filtres>
+        {persosProposees.length > 0 ? (
+          <div className="flex flex-wrap items-baseline gap-x-[22px] gap-y-1 text-sm">
+            <span aria-hidden="true" className="text-encre-3">
+              Issues personnalisées
+            </span>
+            <Filtres libelle="Issues personnalisées de l’entreprise" className="text-sm!">
+              {persosProposees.map((p) => (
+                <Filtre
+                  key={p.id}
+                  actif={issue === `perso:${p.id}`}
+                  compte={comptes.parPerso[`perso:${p.id}`] ?? 0}
+                  href={lien({
+                    issue: issue === `perso:${p.id}` ? null : `perso:${p.id}`,
+                  })}
+                >
+                  {p.libelle}
+                </Filtre>
+              ))}
+            </Filtres>
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-center gap-x-10 gap-y-2 text-sm">
           <Filtres libelle="Ligne" className="text-sm!">
-            <Filtre actif={!ligne} href={lienAvec('/appels', parametres, { ligne: null, n: null })}>
+            <Filtre actif={!ligne} href={lien({ ligne: null })}>
               Réels
             </Filtre>
             {lignesProposees.map((l) => (
-              <Filtre key={l.valeur} actif={ligne === l.valeur} href={lienAvec('/appels', parametres, { ligne: l.valeur, n: null })}>
+              <Filtre key={l.valeur} actif={ligne === l.valeur} href={lien({ ligne: l.valeur })}>
                 {l.libelle}
               </Filtre>
             ))}
           </Filtres>
-          <FiltreEntreprise valeur={p.entreprise ?? ''} entreprises={listeEntreprises} parametres={parametres} />
-          {pleine ? (
-            <p className="flex flex-wrap items-center gap-x-1 text-encre-3">
-              <span>
-                Les <span className="font-mono">{n}</span> appels les plus récents
-                {n >= PLAFOND ? ', le plus long historique affiché ici.' : ''}
-              </span>
-              {n < PLAFOND ? (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <LienAction href={lienAvec('/appels', parametres, { n: String(n + PAS) })} ton="discret" scroll={false}>
-                    Afficher les {PAS} suivants
-                  </LienAction>
-                </>
-              ) : null}
-            </p>
+          <div className="flex flex-wrap items-center gap-x-[22px] gap-y-1">
+            <Filtres libelle="Période" className="text-sm!">
+              {PERIODES.map((cle) => (
+                <Filtre key={cle} actif={cle === 'tout' ? !periode : periode === cle} href={lien({ periode: cle === 'tout' ? null : cle })}>
+                  {LIBELLES_PERIODES[cle]}
+                </Filtre>
+              ))}
+            </Filtres>
+            <FiltreJour valeur={jourPrecis} parametres={sansCurseur} />
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-10 gap-y-2 text-sm">
+          {listeEntreprises.length > 1 || parametres.entreprise ? (
+            <FiltreSelection
+              cle="entreprise"
+              libelle="Entreprise"
+              vide="Toutes les entreprises"
+              valeur={parametres.entreprise ?? ''}
+              options={listeEntreprises.map((e) => ({
+                valeur: e.slug,
+                libelle: e.nom,
+              }))}
+              parametres={sansCurseur}
+              changements={{
+                version: null,
+                ...(issue?.startsWith('perso:') ? { issue: null } : {}),
+              }}
+            />
+          ) : null}
+          {versions.length > 1 || parametres.version ? (
+            <FiltreSelection
+              cle="version"
+              libelle="Version de script"
+              vide="Toutes les versions"
+              valeur={parametres.version ?? ''}
+              options={versions.map((v) => ({
+                valeur: v.id,
+                libelle: v.libelle,
+              }))}
+              parametres={sansCurseur}
+            />
           ) : null}
           <Recherche
             valeur={q}
             placeholder="Chercher un prospect, une société ou une phrase dite"
             libelle="Chercher dans les appels"
-            conserver={{ issue: issue ?? undefined, entreprise: p.entreprise, ligne }}
+            conserver={{ ...sansCurseur, q: undefined }}
             className="w-full sm:ml-auto sm:w-[360px]"
           />
         </div>
       </div>
 
-      {affichees.length === 0 ? (
-        filtre ? (
+      {avant ? (
+        <p className="flex flex-wrap items-center gap-x-1 pt-3 text-sm text-encre-3">
+          <span>Appels plus anciens que ceux de la première page.</span>
+          <LienAction href={lien({})} ton="discret">
+            Revenir aux plus récents
+          </LienAction>
+        </p>
+      ) : null}
+
+      {lignes.length === 0 ? (
+        filtre || avant ? (
           <EtatVide
             forme="filtre"
-            titre="Aucun appel ne correspond à ces filtres."
+            titre={avant ? 'Plus aucun appel plus ancien.' : 'Aucun appel ne correspond à ces filtres.'}
             action={
-              <LienAction href="/appels" ton="fort">
-                Effacer les filtres
+              <LienAction href={avant ? lien({}) : '/appels'} ton="fort">
+                {avant ? 'Revenir aux plus récents' : 'Effacer les filtres'}
               </LienAction>
             }
           >
-            {q ? `Rien ne contient « ${q} » dans les noms, les sociétés, les résumés ni les transcriptions.` : null}
+            {q && !avant ? `Rien ne contient « ${q} » dans les noms, les sociétés, les résumés ni les transcriptions.` : null}
+            {jourPrecis && !q && !avant ? `Aucun appel le ${FORMAT_JOUR.format(new Date(`${jourPrecis}T12:00:00Z`))}.` : null}
           </EtatVide>
-        ) : simulesMasques > 0 ? (
-          <EtatVide
-            titre="Aucun appel réel pour l’instant."
-            action={<LienAction href={lienAvec('/appels', parametres, { ligne: 'simulation', n: null })}>Voir les appels simulés</LienAction>}
-          >
+        ) : simules > 0 ? (
+          <EtatVide titre="Aucun appel réel pour l’instant." action={<LienAction href={lien({ ligne: 'simulation' })}>Voir les appels simulés</LienAction>}>
             Les appels simulés ne comptent pas parmi les appels réels.
           </EtatVide>
         ) : (
@@ -263,14 +293,31 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
           </EtatVide>
         )
       ) : (
-        <ListeAppels
-          appels={affichees}
-          depuis={ici}
-          vivantId={vivantId}
-          navigationClavier
-          {...(q ? { recherche: q } : {})}
-          libelle={issue ? `Appels : ${FILTRES_ISSUE.find((f) => f.cle === issue)?.libelle}` : 'Appels'}
-        />
+        <>
+          <ListeAppels
+            appels={lignes}
+            depuis={ici}
+            vivantId={vivantId}
+            navigationClavier
+            comptesJours={comptesJours}
+            {...(q ? { recherche: q } : {})}
+            libelle={libelleIssue ? `Appels : ${libelleIssue}` : 'Appels'}
+          />
+          <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 pt-4 text-sm">
+            {page.suivant ? (
+              <LienAction href={lien({ avant: page.suivant })} touche="N" raccourci="n" groupeRaccourci="Liste">
+                Appels plus anciens
+              </LienAction>
+            ) : (
+              <span className="px-1.5 text-encre-3">Fin de la liste.</span>
+            )}
+            {avant ? (
+              <LienAction href={lien({})} ton="discret">
+                Revenir aux plus récents
+              </LienAction>
+            ) : null}
+          </div>
+        </>
       )}
     </Page>
   );

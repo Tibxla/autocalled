@@ -48,7 +48,7 @@ export const CLE_SANS_BILAN = 'sans-bilan';
 export const CLE_NON_COMPOSE = 'non-compose';
 export type CleFiltreIssue = IssueSysteme | typeof CLE_NON_COMPOSE | typeof CLE_SANS_BILAN;
 
-/** Les neuf filtres d'issue : ils partagent la fenêtre chargée (Tous = leur somme). */
+/** Les neuf filtres d'issue (Tous = leur somme) ; la liste des appels les compte en base (lib/lecture, CLE_ISSUE). */
 export const FILTRES_ISSUE: readonly { cle: CleFiltreIssue; libelle: string }[] = [
   ...ISSUES_SYSTEME.map((cle) => ({ cle, libelle: LIBELLES_ISSUES[cle] })),
   { cle: CLE_NON_COMPOSE, libelle: LIBELLE_NON_COMPOSE },
@@ -227,7 +227,7 @@ function Ligne({
   );
 }
 
-function Intertitre({ libelle, nombre, colonnes }: { libelle: string; nombre: number; colonnes: number }) {
+function Intertitre({ libelle, nombre, ici, colonnes }: { libelle: string; nombre: number; ici: number; colonnes: number }) {
   return (
     <div role="row" className="border-b border-filet-2 pt-6 pb-1.5 text-sm">
       <span role="cell" aria-colspan={colonnes} className="font-medium text-encre-2">
@@ -235,6 +235,12 @@ function Intertitre({ libelle, nombre, colonnes }: { libelle: string; nombre: nu
         <span className="font-normal text-encre-3">
           {' · '}
           <span className="font-mono">{nombre}</span> appel{nombre > 1 ? 's' : ''}
+          {ici < nombre ? (
+            <>
+              {', '}
+              <span className="font-mono">{ici}</span> sur cette page
+            </>
+          ) : null}
         </span>
       </span>
     </div>
@@ -248,6 +254,7 @@ export function ListeAppels({
   navigationClavier = false,
   recherche,
   libelle = 'Appels',
+  comptesJours,
 }: {
   appels: LigneAppel[];
   /** URL de la liste d'origine, ajoutée aux liens (?depuis=) : retour, appel suivant et précédent sur la fiche. */
@@ -259,6 +266,8 @@ export function ListeAppels({
   /** Terme cherché, transmis à la fiche (?q=) pour surligner la transcription. */
   recherche?: string;
   libelle?: string;
+  /** Appels de chaque jour (`AAAA-MM-JJ`, jour de Paris) comptés en base : un jour coupé par la pagination garde son vrai total. */
+  comptesJours?: Readonly<Record<string, number>>;
 }) {
   const maintenant = new Date();
   const complete = appels.some((a) => a.prospect !== undefined);
@@ -294,14 +303,18 @@ export function ListeAppels({
           <Ligne a={vivant} vivant {...proprietes} />
         </div>
       ) : null}
-      {jours.map((j) => (
-        <div key={j.cle} role="rowgroup">
-          <Intertitre libelle={j.libelle} nombre={j.appels.length} colonnes={complete ? 6 : 5} />
-          {j.appels.map((a) => (
-            <Ligne key={a.id} a={a} vivant={false} {...proprietes} />
-          ))}
-        </div>
-      ))}
+      {jours.map((j) => {
+        // L'appel vivant, épinglé en tête, reste compté dans son jour.
+        const ici = j.appels.length + (vivant && cleJour(vivant.debutLe) === j.cle ? 1 : 0);
+        return (
+          <div key={j.cle} role="rowgroup">
+            <Intertitre libelle={j.libelle} nombre={Math.max(comptesJours?.[j.cle] ?? 0, ici)} ici={ici} colonnes={complete ? 6 : 5} />
+            {j.appels.map((a) => (
+              <Ligne key={a.id} a={a} vivant={false} {...proprietes} />
+            ))}
+          </div>
+        );
+      })}
     </TableDense>
   );
   return navigationClavier ? <NavigationListe memoriser="appels">{table}</NavigationListe> : table;

@@ -5,13 +5,13 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
 import { FUSEAU, LIGNES_LONGUES, duree, etatAppel, heure, jourCourt, numeroMasque, prenom } from '@/components/format-appel';
-import { cleFiltreIssue, estFiltreIssue } from '@/components/liste-appels';
 import { EtatVide, GlypheEtape, LienAction, Message, Page, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { campagnes, scripts } from '@/db/schema';
 import { DUREE_MAX_ANALYSE_S } from '@/lib/appels';
 import { numeroLisible } from '@/lib/format';
-import { LIGNES, type Ligne, listerAppels, lireAppel } from '@/lib/lecture';
+import { lireAppel, voisinsAppel } from '@/lib/lecture';
+import { lireFiltresAppels } from '../filtres';
 import { Actualisation, Ecoule } from './actualisation';
 import { BoutonRelancer } from './bouton-relancer';
 import { LecteurAppel } from './lecteur-appel';
@@ -59,18 +59,10 @@ function origine(depuis: string | undefined, nomProspect: string): { href: strin
   return defaut;
 }
 
-/** L'appel précédent et le suivant dans la liste d'origine, mêmes filtres et même fenêtre. */
+/** L'appel précédent et le suivant dans la liste d'origine, mêmes filtres, sur toute la liste (pas seulement sa page). */
 async function voisins(id: string, liste: URL | null) {
   if (!liste) return { precedent: null, suivant: null };
-  const p = Object.fromEntries(liste.searchParams);
-  const ligne = (LIGNES as readonly string[]).includes(p.ligne ?? '') ? (p.ligne as Ligne) : undefined;
-  const n = Math.min(1000, Math.max(200, Math.ceil((Number.parseInt(p.n ?? '', 10) || 200) / 200) * 200));
-  const fenetre = await listerAppels({ entreprise: p.entreprise, ligne, recherche: p.q?.trim() ?? '' }, n);
-  const issue = estFiltreIssue(p.issue) ? p.issue : null;
-  const ordre = (issue ? fenetre.filter((f) => cleFiltreIssue(f.appel) === issue) : fenetre).map((f) => f.appel.id);
-  const i = ordre.indexOf(id);
-  if (i < 0) return { precedent: null, suivant: null };
-  return { precedent: ordre[i - 1] ?? null, suivant: ordre[i + 1] ?? null };
+  return voisinsAppel(id, lireFiltresAppels(Object.fromEntries(liste.searchParams)).filtres);
 }
 
 function lienVoisin(id: string, depuis: string, q: string): string {
