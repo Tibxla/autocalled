@@ -1,11 +1,12 @@
 'use server';
 
 import type { VariablesDeLAppel } from '@autocalled/domain';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { after } from 'next/server';
+import { z } from 'zod';
 import { db } from '@/db';
-import { appels, versionsScript } from '@/db/schema';
+import { appels, campagnes, versionsScript } from '@/db/schema';
 import { appelerParTelephone, enregistrerAppelSimule, preparerAppel, preparerReanalyse, reanalyser, simulerAppel, traiterAppel } from '@/lib/appels';
 import { rafraichirSiAncien } from '@/lib/agenda';
 import { jetonConversation } from '@/lib/elevenlabs';
@@ -24,6 +25,17 @@ export type DemarrageAppel =
     }
   | { ok: false; raison: string };
 
+const uuid = z.uuid();
+
+/** Une campagne désignée par le client doit être une campagne en cours de la même entreprise. */
+async function campagneRecevable(entrepriseId: string, campagneId: string | null): Promise<boolean> {
+  if (campagneId === null) return true;
+  if (!uuid.safeParse(campagneId).success) return false;
+  return (await db.$count(campagnes, and(eq(campagnes.id, campagneId), eq(campagnes.entrepriseId, entrepriseId), eq(campagnes.statut, 'en-cours')))) > 0;
+}
+
+const CAMPAGNE_INVALIDE = { ok: false as const, raison: 'Cette campagne n’est pas en cours dans cette entreprise.' };
+
 /** Ligne navigateur : vérifie l'autorisation, obtient un jeton de conversation et enregistre l'appel. */
 export async function demarrerAppelNavigateur(
   entrepriseId: string,
@@ -32,6 +44,7 @@ export async function demarrerAppelNavigateur(
   campagneId: string | null = null,
 ): Promise<DemarrageAppel> {
   await exigerOperateur();
+  if (!(await campagneRecevable(entrepriseId, campagneId))) return CAMPAGNE_INVALIDE;
   const preparation = await preparerAppel(entrepriseId, prospectId, versionScriptId);
   if (!preparation.ok) return preparation;
 
@@ -66,8 +79,14 @@ export async function demarrerAppelNavigateur(
 /** Fin de session côté navigateur : le rapatriement et l'analyse continuent après la réponse. */
 export async function terminerAppelNavigateur(appelId: string): Promise<void> {
   await exigerOperateur();
-  await db.update(appels).set({ finLe: new Date() }).where(eq(appels.id, appelId));
-  after(() => traiterAppel(appelId));
+  if (!uuid.safeParse(appelId).success) return;
+  // Un appel navigateur pas encore clos seulement : ni un appel téléphone, ni une deuxième fin.
+  const clos = await db
+    .update(appels)
+    .set({ finLe: new Date() })
+    .where(and(eq(appels.id, appelId), eq(appels.ligne, 'navigateur'), isNull(appels.finLe)))
+    .returning({ id: appels.id });
+  if (clos.length) after(() => traiterAppel(appelId));
 }
 
 /** Ligne téléphone (ADR 0007) : voir `appelerParTelephone`. */
@@ -78,11 +97,13 @@ export async function demarrerAppelTelephone(
   campagneId: string | null = null,
 ): Promise<{ ok: true; appelId: string } | { ok: false; raison: string }> {
   await exigerOperateur();
+  if (!(await campagneRecevable(entrepriseId, campagneId))) return CAMPAGNE_INVALIDE;
   return appelerParTelephone(entrepriseId, prospectId, versionScriptId, campagneId);
 }
 
 export async function raccrocherAppelTelephone(appelId: string): Promise<{ ok: true } | { ok: false; raison: string }> {
   await exigerOperateur();
+  if (!uuid.safeParse(appelId).success) return { ok: false, raison: 'Appel inconnu.' };
   const reponse = await commanderPont(`/appels/${appelId}/raccrocher`, {});
   return reponse.ok ? { ok: true } : reponse;
 }
@@ -94,6 +115,7 @@ export async function lancerSimulation(
   campagneId: string | null = null,
 ): Promise<{ ok: true; appelId: string } | { ok: false; raison: string }> {
   await exigerOperateur();
+  if (!(await campagneRecevable(entrepriseId, campagneId))) return CAMPAGNE_INVALIDE;
   const appel = await enregistrerAppelSimule(entrepriseId, prospectId, versionScriptId, campagneId);
   if (!appel.ok) return appel;
   after(() => simulerAppel(appel.appelId, appel.variables));

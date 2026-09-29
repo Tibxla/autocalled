@@ -12,7 +12,7 @@ import {
 import { creneauParle } from '@autocalled/agenda';
 import { and, eq } from 'drizzle-orm';
 import { db } from '@/db';
-import { appels, entreprises, issuesPersonnalisees, objections, prospects, rendezVous, versionsScript } from '@/db/schema';
+import { appels, entreprises, issuesPersonnalisees, objections, prospects, rendezVous, scripts, versionsScript } from '@/db/schema';
 import { variablesPour } from './apercu';
 import { VERSION_ANALYSEUR, analyser } from './analyseur';
 import { lireAssistante } from './assistante';
@@ -50,7 +50,13 @@ export async function preparerAppel(entrepriseId: string, prospectId: string, ve
     .select()
     .from(prospects)
     .where(and(eq(prospects.entrepriseId, entrepriseId), eq(prospects.id, prospectId)));
-  const [version] = await db.select().from(versionsScript).where(eq(versionsScript.id, versionScriptId));
+  // La version doit être celle d'un script de cette entreprise.
+  const [ligneVersion] = await db
+    .select({ version: versionsScript })
+    .from(versionsScript)
+    .innerJoin(scripts, eq(scripts.id, versionsScript.scriptId))
+    .where(and(eq(versionsScript.id, versionScriptId), eq(scripts.entrepriseId, entrepriseId)));
+  const version = ligneVersion?.version;
   if (!entreprise || !prospect || !version) return { ok: false, raison: 'Prospect ou version de script introuvable.' };
 
   const autorisation = (await autorisationsDe([prospect.telephone])).get(prospect.telephone);

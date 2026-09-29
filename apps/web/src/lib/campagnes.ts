@@ -30,6 +30,34 @@ import type { SaisieCampagne } from './schemas';
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+/** Nombre de prospects au plus dans une campagne, par l'interface comme par le MCP. */
+export const PROSPECTS_MAX_CAMPAGNE = 200;
+
+/** Refus d'une campagne sur un script archivé : l'interface ne le propose plus, un onglet resté ouvert ne passe pas. */
+export const SCRIPT_ARCHIVE_CAMPAGNE = 'Ce script est archivé : il ne se lance plus. Choisis la version d’un autre script, ou réactive-le.';
+
+/**
+ * Pourquoi cette campagne ne peut pas être enregistrée (version d'une autre entreprise ou d'un script archivé,
+ * prospect inconnu, file trop longue), ou null. Les mêmes contrôles que l'outil MCP, pour l'interface.
+ */
+export async function obstacleNouvelleCampagne(entrepriseId: string, saisie: SaisieCampagne): Promise<string | null> {
+  if (saisie.prospects.length > PROSPECTS_MAX_CAMPAGNE) return `${PROSPECTS_MAX_CAMPAGNE} prospects au plus par campagne.`;
+  const [version] = await db
+    .select({ archive: scripts.archive })
+    .from(versionsScript)
+    .innerJoin(scripts, eq(scripts.id, versionsScript.scriptId))
+    .where(and(eq(versionsScript.id, saisie.versionScriptId), eq(scripts.entrepriseId, entrepriseId)));
+  if (!version) return 'Cette version de script n’appartient pas à cette entreprise.';
+  if (version.archive) return SCRIPT_ARCHIVE_CAMPAGNE;
+  const ids = [...new Set(saisie.prospects)];
+  const connus = await db
+    .select({ id: prospects.id })
+    .from(prospects)
+    .where(and(eq(prospects.entrepriseId, entrepriseId), inArray(prospects.id, ids)));
+  const inconnus = ids.filter((id) => !connus.some((p) => p.id === id));
+  return inconnus.length ? `Prospect introuvable dans cette entreprise : ${inconnus.join(', ')}.` : null;
+}
+
 /** Enregistre une campagne prête : rien ne sonne avant qu'on la lance. */
 export async function enregistrerCampagne(entrepriseId: string, saisie: SaisieCampagne): Promise<string> {
   const campagne = creerCampagne({ id: crypto.randomUUID(), entrepriseId, versionScriptId: saisie.versionScriptId, prospectIds: saisie.prospects });
@@ -107,7 +135,18 @@ export async function appelerSuivantNavigateur(campagneId: string, attendu?: str
  * `derouleSimulation` ou `appelerSuivantTelephone`. Lève `TransitionInvalide` si elle n'est ni prête ni en pause.
  */
 export async function demarrerCampagne(campagneId: string): Promise<'navigateur' | 'simulation' | 'bluetooth' | 'twilio' | null> {
-  await avecCampagne(campagneId, async (c) => ({ campagne: demarrer(c), resultat: null }));
+  await avecCampagne(campagneId, async (c, tx) => {
+    // Une campagne prête ne part pas sur un script archivé entre-temps ; une campagne en pause garde sa version.
+    if (c.statut === 'prete') {
+      const [version] = await tx
+        .select({ archive: scripts.archive })
+        .from(versionsScript)
+        .innerJoin(scripts, eq(scripts.id, versionsScript.scriptId))
+        .where(eq(versionsScript.id, c.versionScriptId));
+      if (version?.archive) throw new TransitionInvalide(SCRIPT_ARCHIVE_CAMPAGNE);
+    }
+    return { campagne: demarrer(c), resultat: null };
+  });
   await rafraichirSiAncien();
   const [ligne] = await db.select({ ligne: campagnes.ligne }).from(campagnes).where(eq(campagnes.id, campagneId));
   return ligne?.ligne ?? null;

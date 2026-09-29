@@ -199,6 +199,7 @@ export const campagneSchema = z.object({
   ligne: z.enum(['navigateur', 'bluetooth', 'simulation'], 'Choisis la ligne : navigateur, téléphone ou simulation.'),
   prospects: z
     .array(z.string('Un prospect est désigné par son identifiant.').min(1, 'Un prospect sans identifiant.'), 'Choisis au moins un prospect.')
-    .min(1, 'Choisis au moins un prospect.'),
+    .min(1, 'Choisis au moins un prospect.')
+    .max(200, 'Deux cents prospects au plus par campagne.'),
 });
 export type SaisieCampagne = z.infer<typeof campagneSchema>;
