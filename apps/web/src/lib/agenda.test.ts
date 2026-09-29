@@ -15,7 +15,7 @@ const ADRESSE = 'prospect.fictif@exemple.test';
 
 async function appelAvecCreneau(ligne: 'bluetooth' | 'navigateur', email: string | null = null) {
   const e = await entrepriseDeTest();
-  const plages = [1, 2, 3, 4, 5, 6, 7].map((jour) => ({ jour, debut: '00:00', fin: '23:45' }));
+  const plages = ([1, 2, 3, 4, 5, 6, 7] as const).map((jour) => ({ jour, debut: '00:00', fin: '23:45' }));
   await db.update(entreprises).set({ plagesRendezVous: plages, delaiMinimumHeures: 0 }).where(eq(entreprises.id, e.id));
   await agendaFrais();
   await importerFiches(e.id, [fiche('p-fictif', 'Prospect Fictif', '+33639980001')], 'interface');
