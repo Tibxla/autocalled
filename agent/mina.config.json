@@ -160,6 +160,7 @@
       },
       "dynamic_variables": {
         "dynamic_variable_placeholders": {
+          "assistante_nom": "Mina",
           "date_du_jour": "vendredi 25 septembre 2026",
           "entreprise_nom": "Atelier Vitrine",
           "entreprise_offre": "des sites de réservation directe pour les loueurs saisonniers, livrés en deux semaines.",
@@ -173,7 +174,9 @@
           "prospect_contexte": "Gîte de quatre chambres près d'Annecy. Site ancien, pas de réservation en ligne : tout passe par Booking.",
           "historique_appels": "Aucun échange précédent.",
           "script_etapes": "1. Accroche : une phrase sur ce que tu as remarqué chez elle, puis tu demandes si elle a deux minutes. 2. Qualification : comment arrivent ses réservations aujourd'hui. 3. Pitch : le coût des commissions, en une phrase, relié à ce qu'elle a dit. 4. Rendez-vous : un échange de trente minutes pour lui montrer ce que ça donnerait.",
-          "objections": "« On est déjà sur Booking » : creuser ce que Booking lui coûte par an ; argument : le site ne remplace pas Booking, il récupère les clients qui reviennent. « Pas le temps » : creuser si c'est maintenant ou en général ; argument : trente minutes, au moment qui l'arrange. « Ça ne m'intéresse pas » : creuser si c'est le sujet ou le moment."
+          "objections": "« On est déjà sur Booking » : creuser ce que Booking lui coûte par an ; argument : le site ne remplace pas Booking, il récupère les clients qui reviennent. « Pas le temps » : creuser si c'est maintenant ou en général ; argument : trente minutes, au moment qui l'arrange. « Ça ne m'intéresse pas » : creuser si c'est le sujet ou le moment.",
+          "prospect_email": "julie@exemple.fr",
+          "rendez_vous": "une visio de 30 minutes avec Camille"
         }
       }
     },
@@ -238,6 +241,12 @@
       "conversation_config_override": {
         "asr": {
           "keywords": true
+        },
+        "agent": {
+          "first_message": true
+        },
+        "conversation": {
+          "text_only": true
         }
       }
     }

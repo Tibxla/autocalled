@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { type ContexteAppel, VARIABLES_DE_L_APPEL, variablesDeLAppel } from './variables.ts';
 
 const contexte: ContexteAppel = {
+  assistante: { nom: 'Mina' },
   entreprise: {
     nom: 'Atelier Vitrine',
     offre: 'Des sites de réservation directe.',
@@ -30,8 +31,12 @@ const contexte: ContexteAppel = {
 };
 
 describe('variablesDeLAppel', () => {
-  it('fournit exactement les variables attendues par le prompt de Mina', () => {
+  it('fournit exactement les variables attendues par le prompt de l’assistante', () => {
     expect(Object.keys(variablesDeLAppel(contexte)).sort()).toEqual([...VARIABLES_DE_L_APPEL].sort());
+  });
+
+  it('donne le nom choisi pour l’assistante', () => {
+    expect(variablesDeLAppel({ ...contexte, assistante: { nom: 'Lina' } }).assistante_nom).toBe('Lina');
   });
 
   it('écrit la date du jour en toutes lettres, à l’heure de Paris', () => {
@@ -89,7 +94,7 @@ describe('variablesDeLAppel', () => {
   });
 });
 
-describe('cohérence avec le prompt de Mina', () => {
+describe('cohérence avec le prompt de l’assistante', () => {
   it('fournit chaque variable que le prompt utilise, et aucune de trop', async () => {
     const { readFile } = await import('node:fs/promises');
     const prompt = await readFile(new URL('../../../agent/prompt.md', import.meta.url), 'utf8');

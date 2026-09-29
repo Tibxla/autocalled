@@ -1,9 +1,10 @@
 /**
- * Les variables dynamiques injectées dans le prompt de Mina au début de chaque appel. L'assistante
- * est un agent unique : tout ce qu'elle sait de l'entreprise et du prospect passe par ici.
+ * Les variables dynamiques injectées dans le prompt de l'assistante au début de chaque appel. L'assistante
+ * est un agent unique : tout ce qu'elle sait d'elle-même (son nom), de l'entreprise et du prospect passe par ici.
  */
 
 export const VARIABLES_DE_L_APPEL = [
+  'assistante_nom',
   'date_du_jour',
   'entreprise_nom',
   'entreprise_offre',
@@ -25,6 +26,8 @@ export const VARIABLES_DE_L_APPEL = [
 export type VariablesDeLAppel = Record<(typeof VARIABLES_DE_L_APPEL)[number], string>;
 
 export interface ContexteAppel {
+  /** Le nom sous lequel l'assistante se présente, choisi par l'opérateur (Mina par défaut). */
+  assistante: { nom: string };
   entreprise: {
     nom: string;
     offre: string;
@@ -80,6 +83,7 @@ export function variablesDeLAppel(c: ContexteAppel): VariablesDeLAppel {
     .join('\n');
 
   return {
+    assistante_nom: c.assistante.nom,
     date_du_jour: jourComplet.format(c.maintenant),
     entreprise_nom: c.entreprise.nom,
     entreprise_offre: ou(c.entreprise.offre, 'à présenter simplement.'),
