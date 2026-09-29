@@ -3,10 +3,11 @@
 import { useState, useTransition } from 'react';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
 import { Action } from '@/components/ui';
+import type { ResultatAction } from '@/lib/formulaire';
 import { deconnecterGoogle } from './actions';
 
 /** Déconnecter l'API Google ralentit la lecture de l'agenda : le geste passe par une Confirmation. */
-export function BoutonDeconnecter({ deconnecter = deconnecterGoogle }: { deconnecter?: () => Promise<void> }) {
+export function BoutonDeconnecter({ deconnecter = deconnecterGoogle }: { deconnecter?: () => Promise<ResultatAction> }) {
   const confirmation = useConfirmation();
   const [enCours, demarrer] = useTransition();
   const [erreur, setErreur] = useState<string | null>(null);
@@ -36,7 +37,8 @@ export function BoutonDeconnecter({ deconnecter = deconnecterGoogle }: { deconne
         onConfirmer={() =>
           demarrer(async () => {
             try {
-              await deconnecter();
+              const resultat = await deconnecter();
+              if (!resultat.ok) return setErreur(resultat.raison);
               confirmation.fermer();
             } catch {
               setErreur('La déconnexion a échoué. Réessaie dans un instant.');

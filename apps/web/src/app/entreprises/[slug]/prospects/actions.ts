@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import type { ResultatAction } from '@/lib/formulaire';
 import { exigerOperateur } from '@/lib/garde';
 import * as prospects from '@/lib/prospects';
 
@@ -27,9 +28,13 @@ export async function importerFiches(entrepriseId: string, _: prospects.RapportI
   return rapport;
 }
 
-/** Révoque le numéro pour tous les prospects qui le partagent : il ne sera plus jamais composé. */
-export async function revoquerNumero(numero: string) {
+/**
+ * Révoque le numéro pour tous les prospects qui le partagent : il ne sera plus jamais composé. `revoques` :
+ * les consentements actifs clos à l'instant (zéro si le numéro l'était déjà).
+ */
+export async function revoquerNumero(numero: string): Promise<ResultatAction<{ revoques: number }>> {
   await exigerOperateur();
-  await prospects.revoquerNumero(numero);
+  const revoques = await prospects.revoquerNumero(numero);
   revalidatePath('/entreprises', 'layout');
+  return { ok: true, revoques };
 }

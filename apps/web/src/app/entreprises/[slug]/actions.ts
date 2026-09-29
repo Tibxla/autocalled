@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import * as entreprise from '@/lib/entreprises';
-import { type EtatFormulaire, erreursDeZod } from '@/lib/formulaire';
+import { type EtatFormulaire, type ResultatAction, erreursDeZod } from '@/lib/formulaire';
 import { exigerOperateur } from '@/lib/garde';
 import { JOURS, etapesSchema, ficheSchema, issueSchema, nomScriptSchema, objectionSchema, plagesSchema } from '@/lib/schemas';
 
@@ -47,10 +47,17 @@ export async function enregistrerObjection(
   return { ok: true, message: objectionId ? 'Objection enregistrée.' : 'Objection ajoutée.' };
 }
 
-export async function basculerArchiveObjection(entrepriseId: string, objectionId: string, archivee: boolean) {
+export async function basculerArchiveObjection(
+  entrepriseId: string,
+  objectionId: string,
+  archivee: boolean,
+): Promise<ResultatAction<{ archivee: boolean }>> {
   await exigerOperateur();
-  await entreprise.basculerArchiveObjection(entrepriseId, objectionId, archivee);
+  if (!(await entreprise.basculerArchiveObjection(entrepriseId, objectionId, archivee))) {
+    return { ok: false, raison: 'Cette objection n’existe plus dans cette entreprise.' };
+  }
   revalidatePath('/entreprises', 'layout');
+  return { ok: true, archivee };
 }
 
 export async function ajouterIssue(entrepriseId: string, _: EtatFormulaire, donnees: FormData): Promise<EtatFormulaire> {
@@ -62,10 +69,17 @@ export async function ajouterIssue(entrepriseId: string, _: EtatFormulaire, donn
   return { ok: true };
 }
 
-export async function basculerArchiveIssue(entrepriseId: string, issueId: string, archivee: boolean) {
+export async function basculerArchiveIssue(
+  entrepriseId: string,
+  issueId: string,
+  archivee: boolean,
+): Promise<ResultatAction<{ archivee: boolean }>> {
   await exigerOperateur();
-  await entreprise.basculerArchiveIssue(entrepriseId, issueId, archivee);
+  if (!(await entreprise.basculerArchiveIssue(entrepriseId, issueId, archivee))) {
+    return { ok: false, raison: 'Cette issue n’existe plus dans cette entreprise.' };
+  }
   revalidatePath('/entreprises', 'layout');
+  return { ok: true, archivee };
 }
 
 export async function creerScript(entrepriseId: string, slug: string, _: EtatFormulaire, donnees: FormData): Promise<EtatFormulaire> {

@@ -161,9 +161,12 @@ export function ListeObjections({
                             archivee={false}
                             nom={o.libelle}
                             action={async () => {
-                              await basculerArchiveObjection(entrepriseId, o.id, true);
-                              setOuverte((cur) => (cur === o.id ? null : cur));
-                              setAnnonce(`« ${o.libelle} » est archivée : elle reste dans la liste des archivées.`);
+                              const resultat = await basculerArchiveObjection(entrepriseId, o.id, true);
+                              if (resultat.ok) {
+                                setOuverte((cur) => (cur === o.id ? null : cur));
+                                setAnnonce(`« ${o.libelle} » est archivée : elle reste dans la liste des archivées.`);
+                              }
+                              return resultat;
                             }}
                           />
                         }
@@ -191,8 +194,9 @@ export function ListeObjections({
                   archivee
                   nom={o.libelle}
                   action={async () => {
-                    await basculerArchiveObjection(entrepriseId, o.id, false);
-                    setAnnonce(`« ${o.libelle} » est de nouveau dans les objections connues.`);
+                    const resultat = await basculerArchiveObjection(entrepriseId, o.id, false);
+                    if (resultat.ok) setAnnonce(`« ${o.libelle} » est de nouveau dans les objections connues.`);
+                    return resultat;
                   }}
                 />
               </li>
