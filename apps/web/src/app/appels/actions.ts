@@ -31,7 +31,16 @@ export async function demarrerAppelNavigateur(
   const { jeton, conversationId } = await jetonConversation();
   const [appel] = await db
     .insert(appels)
-    .values({ entrepriseId, prospectId, versionScriptId, campagneId, ligne: 'navigateur', numero: preparation.numero, conversationId })
+    .values({
+      entrepriseId,
+      prospectId,
+      versionScriptId,
+      campagneId,
+      ligne: 'navigateur',
+      numero: preparation.numero,
+      assistanteNom: preparation.assistanteNom,
+      conversationId,
+    })
     .returning({ id: appels.id });
   if (!appel) return { ok: false, raison: 'Impossible d’enregistrer l’appel.' };
   return { ok: true, appelId: appel.id, jeton, variables: preparation.variables, motsCles: preparation.motsCles };

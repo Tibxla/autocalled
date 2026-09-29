@@ -10,11 +10,12 @@ import {
 import { and, asc, desc, eq, isNotNull } from 'drizzle-orm';
 import { db } from '@/db';
 import { appels, entreprises, objections, prospects, scripts, versionsScript, type Etape } from '@/db/schema';
+import { composerPremierMessage, lireAssistante } from './assistante';
 import { autorisationsDe } from './autorisations';
 import { versionsLancables } from './versions';
 
 /**
- * Les variables que Mina reçoit au début d'un appel, calculées d'un seul endroit : `preparerAppel` (qui appelle
+ * Les variables que l'assistante reçoit au début d'un appel, calculées d'un seul endroit : `preparerAppel` (qui appelle
  * vraiment) et l'aperçu des pages d'entreprise passent par `variablesPour`. L'aperçu n'écrit rien et ne compose
  * rien ; il dit aussi quelles valeurs tombent sur leur texte par défaut, ce qui sert à régler la fiche et le prompt.
  */
@@ -53,8 +54,9 @@ export async function variablesPour(
   prospect: ProspectAppel | null,
   etapes: Etape[],
   maintenant: Date,
-): Promise<{ variables: VariablesDeLAppel; motsCles: string[]; parDefaut: CleVariable[] }> {
-  const [listeObjections, precedents] = await Promise.all([
+): Promise<{ variables: VariablesDeLAppel; motsCles: string[]; parDefaut: CleVariable[]; premierMessage: string }> {
+  const [assistante, listeObjections, precedents] = await Promise.all([
+    lireAssistante(),
     objectionsActives(entreprise.id),
     prospect
       ? db
@@ -68,6 +70,7 @@ export async function variablesPour(
   const fiche = prospect ?? { nom: '', role: null, societe: null, contexte: '', email: null };
 
   const variables = variablesDeLAppel({
+    assistante: { nom: assistante.nom },
     entreprise,
     prospect: fiche,
     rendezVous: { interlocuteur: entreprise.interlocuteur, dureeMinutes: entreprise.dureeRendezVousMinutes },
@@ -111,7 +114,12 @@ export async function variablesPour(
         ] as [CleVariable, boolean][])
       : []),
   ];
-  return { variables, motsCles, parDefaut: sources.filter(([, d]) => d).map(([cle]) => cle) };
+  return {
+    variables,
+    motsCles,
+    parDefaut: sources.filter(([, d]) => d).map(([cle]) => cle),
+    premierMessage: composerPremierMessage(assistante.premierMessage, variables),
+  };
 }
 
 function refusDe(a: Autorisation | undefined): RaisonRefus | null {
@@ -122,6 +130,8 @@ function refusDe(a: Autorisation | undefined): RaisonRefus | null {
 export interface ApercuVariables {
   variables: VariablesDeLAppel;
   motsCles: string[];
+  /** La phrase que l'assistante dira si le prospect se tait au décroché, variables remplacées. */
+  premierMessage: string;
   /** Clés dont la valeur est le texte par défaut, faute de contenu dans la fiche ou le script. */
   parDefaut: CleVariable[];
   /** Clés qui dépendent du prospect : vides de sens quand aucun prospect n'est choisi. */
@@ -134,7 +144,7 @@ export interface ApercuVariables {
 type RaisonRefus = Extract<Autorisation, { autorise: false }>['raison'];
 
 /**
- * Ce que Mina recevrait pour appeler un prospect de cette entreprise (ou n'importe lequel, sans prospect) avec
+ * Ce que l'assistante recevrait pour appeler un prospect de cette entreprise (ou n'importe lequel, sans prospect) avec
  * une version de script (par défaut la dernière du premier script lançable). Lecture seule : ni appel, ni
  * journal ; un numéro non autorisé est signalé, pas refusé.
  */

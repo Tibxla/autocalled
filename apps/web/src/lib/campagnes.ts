@@ -89,6 +89,7 @@ export async function appelerSuivantNavigateur(campagneId: string, attendu?: str
           campagneId,
           ligne: 'navigateur',
           numero: preparation.numero,
+          assistanteNom: preparation.assistanteNom,
           conversationId,
         })
         .returning({ id: appels.id });
@@ -137,6 +138,7 @@ export async function derouleSimulation(campagneId: string): Promise<void> {
             campagneId,
             ligne: 'simulation',
             numero: preparation.numero,
+            assistanteNom: preparation.assistanteNom,
           })
           .returning({ id: appels.id });
         if (!appel) throw new Error('appel non enregistré');
@@ -167,7 +169,13 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
     await suspendreSiEnCours(campagneId);
     return;
   }
-  const suivant = await avecCampagne<{ appelId: string; numero: string; variables: VariablesDeLAppel; motsCles: string[] } | null>(
+  const suivant = await avecCampagne<{
+    appelId: string;
+    numero: string;
+    variables: VariablesDeLAppel;
+    motsCles: string[];
+    premierMessage: string;
+  } | null>(
     campagneId,
     async (campagne, tx) => {
       for (;;) {
@@ -187,12 +195,19 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
             campagneId,
             ligne: 'bluetooth',
             numero: preparation.numero,
+            assistanteNom: preparation.assistanteNom,
           })
           .returning({ id: appels.id });
         if (!appel) throw new Error('appel non enregistré');
         return {
           campagne: debuterAppel(campagne, action.prospectId, appel.id),
-          resultat: { appelId: appel.id, numero: preparation.numero, variables: preparation.variables, motsCles: preparation.motsCles },
+          resultat: {
+            appelId: appel.id,
+            numero: preparation.numero,
+            variables: preparation.variables,
+            motsCles: preparation.motsCles,
+            premierMessage: preparation.premierMessage,
+          },
         };
       }
     },
@@ -204,6 +219,7 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
     numero: suivant.numero,
     variables: suivant.variables,
     motsCles: suivant.motsCles,
+    premierMessage: suivant.premierMessage,
   });
   if (reponse.ok) return;
   // Pont injoignable ou téléphone absent : l'appel échoue et la campagne se met en pause, plutôt que de

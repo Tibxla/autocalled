@@ -91,6 +91,9 @@ describe('Sauter', () => {
     await finDAppel(id);
     expect(numerosComposes()).toEqual(['+33639980001', '+33639980003']);
     expect((await lire(id)).entrees.find((e) => e.prospectId === 'marc')).toEqual({ prospectId: 'marc', etat: 'a-appeler', sauts: 1 });
+    // Chaque composition porte le premier message de l'assistante, et chaque appel le nom sous lequel elle parle.
+    expect(pont.compositions().map((r) => (r.corps as { premierMessage: string }).premierMessage)).toEqual(['Allô ?', 'Allô ?']);
+    expect((await db.select({ nom: appels.assistanteNom }).from(appels)).map((a) => a.nom)).toEqual(['Mina', 'Mina']);
   });
 
   it('refuse l’appel en cours, le dernier à appeler et une campagne terminée, en le disant', async () => {
