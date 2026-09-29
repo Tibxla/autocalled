@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { Suspense, use, useId, useState, useTransition } from 'react';
 import { demarrerAppelTelephone, lancerSimulation } from '@/app/appels/actions';
 import { phrasePlafonds } from '@/app/campagnes/[id]/recapitulatif';
+import { ActionReconnecter } from '@/app/telephone/panneau-telephone';
+import { AIDE_RECONNEXION, echecDuTelephone, reconnexionFiche } from '@/app/telephone/reconnexion';
 import { AjoutClaudeCode } from '@/components/ajout-claude-code';
 import { AppelEnDirect } from '@/components/appel-en-direct';
 import { useNomAssistante } from '@/components/assistante';
@@ -38,27 +40,39 @@ function SuffixeTelephone({ promesse }: { promesse: Promise<BlocageTelephone | n
   return bloque ? <span className="font-normal text-encre-3">&nbsp;· {bloque.court}</span> : null;
 }
 
-/** Le geste « Appeler le 06… », désactivé avec sa raison quand le téléphone passerelle ne peut rien composer. */
+/**
+ * Le geste « Appeler le 06… », désactivé avec sa raison quand le téléphone passerelle ne peut rien composer ;
+ * téléphone déconnecté, « Reconnecter le téléphone » est le geste de secours, à côté de la raison.
+ */
 function GesteTelephone({
   promesse,
+  echec,
   children,
 }: {
   promesse: Promise<BlocageTelephone | null>;
+  /** Un échec d'appel dû au téléphone porte déjà la reconnexion : une seule par écran. */
+  echec: boolean;
   children: (bloque: boolean) => React.ReactNode;
 }) {
   const bloque = use(promesse);
   if (!bloque) return <>{children(false)}</>;
+  const reconnecter = !echec && reconnexionFiche(bloque.court, null);
+  const ouvrirTelephone = (
+    <LienAction ton="discret" href="/telephone">
+      Ouvrir Téléphone
+    </LienAction>
+  );
   return (
     <>
       {children(true)}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+      <div className="grid gap-1">
         <p className="text-sm text-encre-2">
           <PointCreux className="mr-2" />
           {bloque.texte} Aucun appel ne peut partir par le téléphone.
         </p>
-        <LienAction ton="discret" href="/telephone" className="-mx-1.5">
-          Ouvrir Téléphone
-        </LienAction>
+        <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+          {reconnecter ? <ActionReconnecter ton="fort" aide={AIDE_RECONNEXION} suite={ouvrirTelephone} /> : ouvrirTelephone}
+        </div>
       </div>
     </>
   );
@@ -226,7 +240,7 @@ export function PanneauAppel({
               </div>
             }
           >
-            <GesteTelephone promesse={telephoneBloque}>
+            <GesteTelephone promesse={telephoneBloque} echec={echecDuTelephone(erreur)}>
               {(bloque) => (
                 <div className="-mx-1.5">
                   <Action
@@ -267,6 +281,12 @@ export function PanneauAppel({
         </div>
       )}
       {erreur ? <Message ton="alerte">{erreur}</Message> : null}
+      {/* Appel refusé faute de téléphone (liaison figée, hors de portée) : la reconnexion, à côté de l'échec. Page relue, l'échec périmé s'efface. */}
+      {erreur && ligne === 'telephone' && reconnexionFiche(null, erreur) ? (
+        <div className="-mx-1.5 -mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
+          <ActionReconnecter ton="fort" aide={AIDE_RECONNEXION} apres={() => setErreur(null)} />
+        </div>
+      ) : null}
     </section>
   );
 }
