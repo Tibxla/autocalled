@@ -63,7 +63,7 @@ const base = { appelVivant: null, appels: [] as AppelDuJour[], campagnes: [] as 
 
 describe('situationAccueil : priorités', () => {
   it('un appel vivant passe avant tout, identité comprise quand elle correspond', () => {
-    const vivant = { id: 'x', prospect: 'Julie Martin', societe: null, entreprise: 'Atelier Vitrine', version: null, numeroMasque: '06 •• •• •• 01', debutLe: il(0), conversation: true, campagneId: null };
+    const vivant = { id: 'x', prospect: 'Julie Martin', societe: null, entreprise: 'Atelier Vitrine', version: null, numeroMasque: '06 •• •• •• 01', debutLe: il(0), conversation: true, campagneId: null, etapes: ['Accroche'] };
     const s = situationAccueil({
       ...base,
       ligne: { ...LIBRE, appelEnCours: true, appelId: 'x', plafond: 'Plafond atteint.' },

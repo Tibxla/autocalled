@@ -79,6 +79,7 @@ export function BandeAccueil({
           debutLe: s.appel?.debutLe ?? null,
           finLe: null,
           conversation: s.appel?.conversation ?? false,
+          etapes: s.appel?.etapes ?? null,
         }
       : s.type === 'fin-appel' && s.appel.statut === 'traitement' && s.appel.ligne === 'bluetooth'
         ? {
@@ -93,6 +94,7 @@ export function BandeAccueil({
             debutLe: s.appel.debutLe,
             finLe: s.appel.finLe,
             conversation: s.appel.conversation,
+            etapes: null,
           }
         : null;
 
@@ -109,6 +111,7 @@ export function BandeAccueil({
           {...(bande.debutLe ? { debutLe: bande.debutLe } : {})}
           finLe={bande.finLe}
           conversation={bande.conversation}
+          etapes={bande.etapes}
         />
       ) : (
         <SansAppel situation={s} ligne={ligne} telephoneRecents={telephoneRecents} confirmationInitiale={confirmationInitiale} />

@@ -169,6 +169,7 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
         finLe={appel.finLe?.toISOString() ?? null}
         conversation={Boolean(appel.conversationId)}
         {...(prospect?.nom ? { libelleProspect: prenom(prospect.nom) } : {})}
+        etapes={etapes.map((e) => e.intention)}
       />
     ) : null;
 

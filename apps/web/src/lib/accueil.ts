@@ -88,6 +88,8 @@ export interface AppelVivant {
   debutLe: string;
   conversation: boolean;
   campagneId: string | null;
+  /** Intentions des étapes de la version de l'appel : la bande nomme l'étape signalée en direct. */
+  etapes: string[];
 }
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
@@ -349,6 +351,7 @@ export async function appelVivant(appelId: string): Promise<AppelVivant | null> 
       entreprise: entreprises.nom,
       script: scripts.nom,
       numeroVersion: versionsScript.numero,
+      etapes: versionsScript.etapes,
     })
     .from(appels)
     .innerJoin(entreprises, eq(entreprises.id, appels.entrepriseId))
@@ -367,6 +370,7 @@ export async function appelVivant(appelId: string): Promise<AppelVivant | null> 
     debutLe: l.debutLe.toISOString(),
     conversation: Boolean(l.conversationId),
     campagneId: l.campagneId,
+    etapes: (l.etapes ?? []).map((e) => e.intention),
   };
 }
 

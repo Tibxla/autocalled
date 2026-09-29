@@ -16,6 +16,7 @@ export function SuiviTelephone({
   conversation = false,
   identite,
   libelleProspect,
+  etapes,
 }: {
   appelId: string;
   statut?: 'en-cours' | 'traitement';
@@ -28,6 +29,8 @@ export function SuiviTelephone({
   identite?: IdentiteAppel;
   /** Prénom affiché dans le fil quand `identite` manque. */
   libelleProspect?: string;
+  /** Intentions des étapes de la version de l'appel : libellé de l'étape signalée en direct. */
+  etapes?: readonly string[];
 }) {
   return (
     <BandeAppel
@@ -39,6 +42,7 @@ export function SuiviTelephone({
       {...(finLe !== undefined ? { finLe } : {})}
       {...(identite ? { identite } : {})}
       {...(libelleProspect ? { libelleProspect } : {})}
+      {...(etapes ? { etapes } : {})}
     />
   );
 }

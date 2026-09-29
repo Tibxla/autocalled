@@ -290,6 +290,7 @@ export default async function PageCampagne({
           entreprise={{ nom: entreprise.nom, slug: entreprise.slug }}
           versionScriptId={campagne.versionScriptId}
           version={libelleVersion}
+          etapes={version?.etapes.map((e) => e.intention) ?? []}
           prochain={prochain}
           restants={comptes.aAppeler}
           enAppel={comptes.enAppel > 0}

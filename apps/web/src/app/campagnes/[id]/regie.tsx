@@ -47,6 +47,8 @@ interface ProprietesRegie {
   entreprise: { nom: string; slug: string };
   versionScriptId: string;
   version: string;
+  /** Intentions des étapes de la version de la campagne : libellé de l'étape signalée en direct. */
+  etapes: readonly string[];
   prochain: Prochain | null;
   restants: number;
   enAppel: boolean;
@@ -304,6 +306,7 @@ function RegieTelephone({
   statut,
   entreprise,
   version,
+  etapes,
   prochain,
   restants,
   appelTelephone,
@@ -330,6 +333,7 @@ function RegieTelephone({
           statut={appelTelephone.statut}
           finLe={appelTelephone.finLe}
           conversation={appelTelephone.conversation}
+          etapes={etapes}
         />
       ) : statut === 'en-cours' ? (
         <div className="grid gap-2">
@@ -447,7 +451,7 @@ function RegieTwilio({ campagneId, statut, raison }: ProprietesRegie) {
 /* ------------------------------------------------------------------ ligne navigateur */
 
 function RegieNavigateur(props: ProprietesRegie) {
-  const { campagneId, statut, entrepriseId, versionScriptId, prochain, restants, appelOuvertNavigateur, raison, recapitulatif } = props;
+  const { campagneId, statut, entrepriseId, versionScriptId, etapes, prochain, restants, appelOuvertNavigateur, raison, recapitulatif } = props;
   const router = useRouter();
   const { erreur, enCours, agir } = useGeste();
   // Premier geste de l'opérateur dans cette page : sans lui, aucun appel ne part (ni au chargement, ni au
@@ -477,6 +481,7 @@ function RegieNavigateur(props: ProprietesRegie) {
           prospectNom={direct.nom}
           versionScriptId={versionScriptId}
           campagneId={campagneId}
+          etapes={etapes}
           demarrageAuto
           ouvrir={async () => {
             // Le prospect affiché : si la file a changé entre-temps (Sauter, Retirer), rien ne part.
