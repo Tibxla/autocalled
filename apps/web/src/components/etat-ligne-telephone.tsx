@@ -61,7 +61,7 @@ async function relever() {
   if (document.hidden || enVol) return;
   enVol = true;
   try {
-    const r = await fetch('/ligne/etat', { cache: 'no-store' });
+    const r = await fetch('/ligne/etat', { cache: 'no-store', signal: AbortSignal.timeout(PEREMPTION_MS) });
     if (!r.ok) throw new Error(String(r.status));
     const corps = (await r.json()) as Reponse;
     dernierSucces = Date.now();
