@@ -168,7 +168,7 @@ class Appel:
         """Depuis le thread GLib."""
         self._tentatives += 1
         self.journal("composition du", self._numero[:4] + "…" + self._numero[-2:])
-        self._telephone.composer(self._numero, self)
+        self._telephone.composer(self._numero, self, self._composition_echouee)
         self._en_ligne = True
         self._conversation.precharger_url()
         self._evenement("etat", {"etat": "composition"})
@@ -238,6 +238,17 @@ class Appel:
 
     # --- déroulé ---------------------------------------------------------------------------------
 
+    def _composition_echouee(self, raison: str) -> None:
+        """Le téléphone a refusé la composition ou n'a pas répondu : liaison figée, le plus souvent. On le
+        reconnecte et on recompose une fois, comme pour un canal son absent."""
+        self._en_ligne = False
+        self.journal("le téléphone n'a pas composé :", raison)
+        if self._tentatives < 2:
+            threading.Thread(target=self._reconnecter_et_relancer, daemon=True).start()
+        else:
+            self._canal_absent = False
+            threading.Thread(target=self._terminer, args=("composition impossible",), daemon=True).start()
+
     def _verifier_canal(self) -> bool:
         if self._en_ligne and not self._canal and not self._relance and not self._canal_absent:
             if self._tentatives < 2:
@@ -266,8 +277,7 @@ class Appel:
             dans_glib(self.lancer)
         except Exception as e:
             self.journal("relance impossible :", e)
-            self._canal_absent = True
-            self._terminer("canal son absent")
+            self._terminer("composition impossible")
 
     def _duree_max(self) -> bool:
         if self._en_ligne and self._prise_en_main is None:

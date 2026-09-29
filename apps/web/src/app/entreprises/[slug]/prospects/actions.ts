@@ -21,6 +21,7 @@ export async function importerFiches(entrepriseId: string, _: prospects.RapportI
   const rapport = await prospects.importerFiches(
     entrepriseId,
     await Promise.all(fichiers.map(async (f) => ({ nomFichier: f.name, contenu: await f.text() }))),
+    'interface',
   );
   revalidatePath('/entreprises', 'layout');
   return rapport;

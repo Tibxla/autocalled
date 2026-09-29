@@ -61,6 +61,7 @@ describe('lancer_appel sur le téléphone', () => {
 
     expect(r.erreur).toBe(false);
     expect(messages).toHaveLength(1);
+    // Julie est entrée par l'interface : rien à signaler sur l'origine du numéro.
     expect(messages[0]).toMatch(/^Appeler maintenant Julie Fictive \(Société fictive\) au 06 39 98 00 01, pour Gîte fictif, avec le script « Découverte · v1 »/);
     expect(pont.compositions()).toHaveLength(1);
     expect(pont.compositions()[0]?.corps).toMatchObject({ numero: '+33639980001', appelId: (r.json as { appelId: string }).appelId });
@@ -70,6 +71,15 @@ describe('lancer_appel sur le téléphone', () => {
       ['confirmation-demandee', null],
       ['ok', 'acceptee'],
     ]);
+  });
+
+  it('signale un numéro ajouté par le MCP', async () => {
+    const { appeler, messages } = await connecter({ elicitation: 'refuser' });
+    await appeler('importer_fiches', { entreprise: 'gite-fictif', fiches: [fiche('lea', 'Léa Fictive', '06 39 98 00 03')] });
+
+    await appeler('lancer_appel', { ...appelJulie(), prospect: 'lea' });
+
+    expect(messages[0]).toMatch(/^Appeler maintenant Léa Fictive \(Société fictive\) au 06 39 98 00 03 \(numéro ajouté par le MCP le [a-z]+ \d+ [a-zéû]+ 2026 à \d\d:\d\d\), pour Gîte fictif/);
   });
 
   it.each([['refuser'], ['annuler']] as const)('ne compose pas si l’opérateur choisit « %s »', async (reponse) => {
@@ -123,6 +133,7 @@ describe('lancer_campagne', () => {
     const r = await appeler('lancer_campagne', { campagneId });
 
     expect(messages[0]).toMatch(/^Lancer la campagne de Gîte fictif sur le téléphone passerelle : 2 prospects à appeler l’un après l’autre, dont 1 au numéro autorisé/);
+    expect(messages[0]).not.toContain('ajouté par le MCP');
     expect(r.json).toMatchObject({ statut: 'en-cours', appelEnCours: { prospect: 'marc' } });
     expect(pont.compositions().map((c) => (c.corps as { numero: string }).numero)).toEqual(['+33639980002']);
     const [c] = await db.select().from(campagnes);
@@ -130,6 +141,16 @@ describe('lancer_campagne', () => {
       ['julie', 'sautee'],
       ['marc', 'en-appel'],
     ]);
+  });
+
+  it('compte dans l’annonce les numéros ajoutés par le MCP', async () => {
+    const { appeler, messages } = await connecter({ elicitation: 'refuser' });
+    await appeler('importer_fiches', { entreprise: 'gite-fictif', fiches: [fiche('lea', 'Léa Fictive', '06 39 98 00 03')] });
+    const campagneId = await enregistrerCampagne(entrepriseId, { versionScriptId, ligne: 'bluetooth', prospects: ['julie', 'lea'] });
+
+    await appeler('lancer_campagne', { campagneId });
+
+    expect(messages[0]).toMatch(/dont 2 au numéro autorisé à cet instant \(les autres seront sautés\), avec le script « Découverte · v1 »\. Un de ces numéros a été ajouté par le MCP \(le dernier le /);
   });
 
   it('ne lance rien si l’opérateur refuse, et renvoie une campagne navigateur vers l’interface', async () => {

@@ -63,3 +63,10 @@ export async function enregistrerReglages(
   revalidatePath('/telephone');
   return r.ok ? { message: 'Réglages enregistrés.', ok: true } : { message: r.raison, ok: false };
 }
+
+/** Relance la liaison Bluetooth du téléphone passerelle, à distance (liaison figée, téléphone revenu à portée). */
+export async function reconnecterTelephone(): Promise<{ ok: true } | { ok: false; raison: string }> {
+  await exigerOperateur();
+  const r = await commanderPont('/telephone/reconnecter', {});
+  return r.ok ? { ok: true } : r;
+}

@@ -1,10 +1,18 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useTransition, type FormEvent } from 'react';
+import { useEffect, useRef, useState, useTransition, type FormEvent } from 'react';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
 import { Action, Champ, LigneDefinition, Message, Saisie } from '@/components/ui';
-import { type Appairage, type EtatTelephone, fermerAppairage, lireAppairage, oublierTelephone, ouvrirAppairage } from './actions';
+import {
+  type Appairage,
+  type EtatTelephone,
+  fermerAppairage,
+  lireAppairage,
+  oublierTelephone,
+  ouvrirAppairage,
+  reconnecterTelephone,
+} from './actions';
 
 /**
  * Le téléphone passerelle et ce qu'on peut lui faire, au même endroit : sa fiche quand il est connu,
@@ -21,6 +29,7 @@ export type GestesTelephone = {
   lire: () => Promise<Resultat<Appairage>>;
   fermer: () => Promise<Resultat<Appairage>>;
   oublier: (adresse: string) => Promise<{ ok: true } | { ok: false; raison: string }>;
+  reconnecter: () => Promise<{ ok: true } | { ok: false; raison: string }>;
 };
 
 const GESTES_REELS: GestesTelephone = {
@@ -28,6 +37,7 @@ const GESTES_REELS: GestesTelephone = {
   lire: lireAppairage,
   fermer: fermerAppairage,
   oublier: oublierTelephone,
+  reconnecter: reconnecterTelephone,
 };
 
 const LIBELLES_REGLAGES: Record<string, string> = {
@@ -220,6 +230,7 @@ export function PanneauTelephone({
           nom={telephone.nom || 'ce téléphone'}
           adresse={telephone.adresse}
           oublier={gestes.oublier}
+          reconnecter={gestes.reconnecter}
           onChanger={() => {
             setAppairage(null);
             setChanger(true);
@@ -295,19 +306,80 @@ export function DetailTelephone({ telephone }: { telephone: EtatTelephone }) {
   );
 }
 
+/** Le temps que la liaison Bluetooth se refasse avant de relire la page. */
+const ATTENTE_RECONNEXION_MS = 12_000;
+
 /**
- * Rangée des gestes sur le téléphone connu. À la fusion avec main, « Reconnecter le téléphone »
- * (reconnecterTelephone, sans confirmation : geste réversible) se glisse ici, avant « Changer de téléphone ».
+ * Relance la liaison Bluetooth à distance : utile quand le téléphone ne répond plus (liaison endormie) ou vient
+ * de revenir à portée, sans avoir à le toucher. Personne n'est appelé : ni confirmation ni raccourci clavier.
+ * « Reconnexion… » tient une douzaine de secondes, puis la page se relit.
  */
+function useReconnexion(reconnecter: GestesTelephone['reconnecter'] = reconnecterTelephone) {
+  const router = useRouter();
+  const [enCours, setEnCours] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const minuterie = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (minuterie.current) clearTimeout(minuterie.current);
+    },
+    [],
+  );
+  const lancer = async () => {
+    setErreur(null);
+    setEnCours(true);
+    const r = await reconnecter().catch(() => SANS_REPONSE);
+    if (!r.ok) {
+      setErreur(texteLigne(r.raison));
+      setEnCours(false);
+      return;
+    }
+    minuterie.current = setTimeout(() => {
+      setEnCours(false);
+      router.refresh();
+    }, ATTENTE_RECONNEXION_MS);
+  };
+  return { enCours, erreur, lancer };
+}
+
+/**
+ * « Reconnecter le téléphone » et son éventuelle erreur. Posée dans une rangée d'actions `flex-wrap` :
+ * l'erreur passe sur sa propre ligne sous la rangée.
+ */
+export function ActionReconnecter({
+  reconnecter,
+  ton = 'normal',
+}: {
+  reconnecter?: GestesTelephone['reconnecter'];
+  ton?: 'normal' | 'discret';
+}) {
+  const { enCours, erreur, lancer } = useReconnexion(reconnecter);
+  return (
+    <>
+      <Action ton={ton} enCours={enCours} libelleEnCours="Reconnexion…" disabled={enCours} onClick={lancer}>
+        Reconnecter le téléphone
+      </Action>
+      {erreur ? (
+        <Message ton="alerte" className="mx-1.5 basis-full">
+          {erreur}
+        </Message>
+      ) : null}
+    </>
+  );
+}
+
+/** Rangée des gestes sur le téléphone connu : reconnecter (réversible, sans confirmation), changer, oublier. */
 function ActionsTelephone({
   nom,
   adresse,
   oublier,
+  reconnecter,
   onChanger,
 }: {
   nom: string;
   adresse: string;
   oublier: GestesTelephone['oublier'];
+  reconnecter: GestesTelephone['reconnecter'];
   onChanger: () => void;
 }) {
   const router = useRouter();
@@ -317,6 +389,7 @@ function ActionsTelephone({
   return (
     <div className="grid gap-3">
       <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+        <ActionReconnecter reconnecter={reconnecter} />
         <Action ton="normal" onClick={onChanger} disabled={confirmation.ouverte}>
           Changer de téléphone
         </Action>

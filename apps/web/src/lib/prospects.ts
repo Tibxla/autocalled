@@ -24,9 +24,14 @@ export type RapportImport =
 /**
  * Importe des fiches prospect Markdown dans une entreprise et enregistre le consentement de leurs numéros
  * (ADR 0001). L'appelant atteste ce consentement : l'interface par sa case à cocher, le serveur MCP par
- * décision de l'opérateur (ADR 0009). Un numéro révoqué ne l'est jamais à nouveau (`numerosAAutoriser`).
+ * décision de l'opérateur (ADR 0009) ; `canal` garde la trace de la porte d'entrée. Un numéro révoqué ne l'est
+ * jamais à nouveau (`numerosAAutoriser`).
  */
-export async function importerFiches(entrepriseId: string, fichiers: readonly FichierImporte[]): Promise<RapportImport> {
+export async function importerFiches(
+  entrepriseId: string,
+  fichiers: readonly FichierImporte[],
+  canal: 'interface' | 'mcp' = 'interface',
+): Promise<RapportImport> {
   if (fichiers.length > FICHIERS_MAX) return { etat: 'erreur', message: `${FICHIERS_MAX} fichiers au plus par import.` };
   const trop = fichiers.find((f) => Buffer.byteLength(f.contenu) > TAILLE_MAX);
   if (trop) return { etat: 'erreur', message: `« ${trop.nomFichier} » dépasse 32 Ko : une fiche tient en quelques paragraphes.` };
@@ -45,7 +50,7 @@ export async function importerFiches(entrepriseId: string, fichiers: readonly Fi
   const tri = await db.transaction(async (tx) => {
     const [imp] = await tx
       .insert(imports)
-      .values({ entrepriseId, texteConsentementVersion: texte.version, nombreFiches: lecture.fiches.length })
+      .values({ entrepriseId, texteConsentementVersion: texte.version, nombreFiches: lecture.fiches.length, canal })
       .returning({ id: imports.id });
     if (!imp) throw new Error('import impossible');
 
@@ -85,4 +90,19 @@ export async function revoquerNumero(numero: string): Promise<number> {
     .where(and(eq(consentements.numero, numero), isNull(consentements.revoqueLe)))
     .returning({ id: consentements.id });
   return revoques.length;
+}
+
+/**
+ * Si le consentement actif de ce numéro est entré par le serveur MCP, sa date ; sinon null. Un numéro glissé
+ * dans un import par une consigne injectée serait autorisé : la confirmation d'un appel le signale.
+ */
+export async function ajoutParMcp(numero: string): Promise<Date | null> {
+  const [ligne] = await db
+    .select({ le: consentements.accordeLe })
+    .from(consentements)
+    .innerJoin(imports, eq(imports.id, consentements.importId))
+    .where(and(eq(consentements.numero, numero), isNull(consentements.revoqueLe), eq(imports.canal, 'mcp')))
+    .orderBy(desc(consentements.accordeLe))
+    .limit(1);
+  return ligne?.le ?? null;
 }

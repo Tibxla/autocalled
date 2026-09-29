@@ -176,7 +176,7 @@ export function outilsDeConfiguration(declarer: Declarer): void {
     async ({ entreprise: slug, fiches }) => {
       const e = await trouverEntreprise(slug);
       if (!e) return refus(entrepriseInconnue(slug));
-      const rapport = await importerFiches(e.id, fiches);
+      const rapport = await importerFiches(e.id, fiches, 'mcp');
       if (rapport.etat === 'erreur') return refus(rapport.message);
       return reussite(rapport);
     },
