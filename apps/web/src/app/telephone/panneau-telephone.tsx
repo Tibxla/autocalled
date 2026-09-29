@@ -176,6 +176,11 @@ export function PanneauTelephone({
   // Après une expiration, le formulaire revient avec l'adresse déjà saisie et « Rouvrir l'appairage ».
   const adresseTentee = appairage?.etat === 'expire' ? (appairage.adresse ?? '') : '';
 
+  // Un appel en cours sans téléphone connu (relevé partiel du pont) : l'appairage le couperait, il attend.
+  if (!telephone.adresse && telephone.appelEnCours) {
+    return <p className="max-w-[62ch] text-base text-encre-2">L’appairage attendra la fin de l’appel.</p>;
+  }
+
   if (!telephone.adresse) {
     return (
       <div className="grid gap-5">

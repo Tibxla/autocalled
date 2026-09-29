@@ -99,7 +99,7 @@ export function Recapitulatif({
           {sautes > 0 ? (
             <>
               {' '}
-              <span className="font-mono">{sautes}</span> ser{sautes > 1 ? 'ont' : 'a'} sauté{sautes > 1 ? 's' : ''} : numéro non autorisé.
+              <span className="font-mono">{sautes}</span> ne ser{sautes > 1 ? 'ont' : 'a'} pas appelé{sautes > 1 ? 's' : ''} : numéro non autorisé.
             </>
           ) : null}
           {ajoutsMcp > 0 ? (

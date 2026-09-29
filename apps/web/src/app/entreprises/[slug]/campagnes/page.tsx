@@ -139,7 +139,7 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
                 const version = libelleVersion.get(c.versionScriptId) ?? 'Version supprimée';
                 const rendezVous = rendezVousParCampagne.get(c.id) ?? 0;
                 return (
-                  <LigneTable key={c.id} etat={c.statut === 'en-cours' ? 'vivante' : 'normale'}>
+                  <LigneTable key={c.id} etat={c.statut === 'en-cours' && comptes.enAppel > 0 ? 'vivante' : 'normale'}>
                     <Cellule className="max-sm:order-1 max-sm:flex-1">
                       <LienLigne href={`/campagnes/${c.id}`} className="font-mono text-xs text-encre-2">
                         {dateCourte(c.creeLe)}

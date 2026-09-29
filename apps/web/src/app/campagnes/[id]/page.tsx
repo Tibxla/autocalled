@@ -263,8 +263,10 @@ export default async function PageCampagne({
         retour={{ href: `/entreprises/${entreprise.slug}/campagnes`, libelle: `${entreprise.nom} · Campagnes` }}
         action={
           <p className="flex items-baseline gap-3 text-md">
-            {/* Terminée : le bloc « Campagne terminée » le dit déjà, l'en-tête garde le seul compte. */}
-            {campagne.statut === 'terminee' ? null : (
+            {/* Terminée : dite discrètement, comme dans la liste des campagnes, pour que le compte ne reste pas seul. */}
+            {campagne.statut === 'terminee' ? (
+              <span className="text-encre-3">{STATUTS_CAMPAGNE.terminee}</span>
+            ) : (
               <span className={`font-medium ${campagne.statut === 'en-cours' && comptes.enAppel > 0 ? 'text-antenne' : TON_STATUT[campagne.statut]}`}>
                 {STATUTS_CAMPAGNE[campagne.statut]}
               </span>
@@ -324,6 +326,7 @@ export default async function PageCampagne({
             campagneId={campagne.id}
             filtreInitial={typeof filtreFile === 'string' ? filtreFile : undefined}
             gestes={campagne.statut !== 'terminee' && !seTermine}
+            terminee={campagne.statut === 'terminee'}
           />
         </SectionFile>
       </div>
@@ -386,12 +389,12 @@ function BilanCampagne({
   if (liste.length === 0) {
     phrase =
       sautes > 0
-        ? `Aucun appel passé : ${sautes} prospect${sautes > 1 ? 's' : ''} sauté${sautes > 1 ? 's' : ''}, numéro non autorisé.`
+        ? `Aucun appel passé : ${sautes} prospect${sautes > 1 ? 's' : ''} non appelé${sautes > 1 ? 's' : ''}, numéro non autorisé.`
         : retires > 0
           ? `Aucun appel passé : ${retires} prospect${retires > 1 ? 's' : ''} retiré${retires > 1 ? 's' : ''} de la file.`
           : 'Aucun appel passé.';
   } else if (aboutis === 0) {
-    phrase = `Aucune conversation sur ${liste.length} ${mot}.`;
+    phrase = `Aucun appel abouti sur ${liste.length} ${mot}.`;
   } else {
     const taux = aboutis >= 10 ? ` · ${Math.round((rendezVous / aboutis) * 100)} %` : '';
     phrase = `${rendezVous} rendez-vous sur ${aboutis} ${mot} aboutis${taux}`;
@@ -411,7 +414,7 @@ function BilanCampagne({
           </p>
         ) : null}
         {aboutis > 0 && aboutis < 10 ? (
-          <p className="text-sm text-encre-3">Pas de taux sous 10 conversations : il ne voudrait rien dire.</p>
+          <p className="text-sm text-encre-3">Pas de taux sous 10 appels aboutis : il ne voudrait rien dire.</p>
         ) : null}
       </div>
       <dl className="flex flex-wrap gap-x-7 gap-y-2 text-md">
@@ -429,7 +432,7 @@ function BilanCampagne({
         ) : null}
         {sautes > 0 ? (
           <div className="flex items-baseline gap-2">
-            <dt className="text-encre-2">Sautés</dt>
+            <dt className="text-encre-2">Non autorisés</dt>
             <dd className="font-mono text-encre-3">{sautes}</dd>
           </div>
         ) : null}

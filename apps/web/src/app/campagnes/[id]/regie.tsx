@@ -19,7 +19,7 @@ import { phraseEstimation, phrasePlafonds, Recapitulatif, type ProspectRecapitul
  * - Ligne navigateur : l'appel vit dans cette page. Rien ne part au chargement ni au retour sur la page : le
  *   premier appel attend un geste de l'opérateur, les suivants s'enchaînent ensuite après un décompte de 5 s.
  * - Simulation : le serveur enchaîne seul, la page se relit.
- * Suspendre est un frein réversible : immédiat, sans confirmation ni touche.
+ * Suspendre est un frein réversible : immédiat, sans confirmation, touche P (S est déjà Sauter dans la file).
  * Terminer ferme la file pour de bon : confirmation en ligne. Il ne coupe aucun appel : l'appel en cours va à
  * son terme et la campagne se termine avec lui.
  */
@@ -130,7 +130,7 @@ function Actions({ children }: { children: React.ReactNode }) {
 function Suspendre({ onClick, enCours }: { onClick: () => void; enCours: boolean }) {
   return (
     <>
-      <Action onClick={onClick} disabled={enCours} enCours={enCours} libelleEnCours="Suspension…">
+      <Action touche="P" raccourci="p" libelleRaccourci="Suspendre la campagne" onClick={onClick} disabled={enCours} enCours={enCours} libelleEnCours="Suspension…">
         Suspendre
       </Action>
       <span className="px-1.5 text-sm text-encre-3">L’appel en cours va à son terme, aucun autre ne part.</span>
@@ -292,7 +292,7 @@ function Lancement({ campagneId, ligne, entreprise, version, recapitulatif, pont
     <>
       <Recapitulatif ligne={ligne} prospects={prospects} autorises={autorises} reglages={pont?.reglages ?? null} passes24h={passes24h} action={action} />
       {vide && prospects.length > 0 ? (
-        <Message ton="alerte">Aucun numéro de cette campagne n’est autorisé : tous seraient sautés, rien ne partirait.</Message>
+        <Message ton="alerte">Aucun numéro de cette campagne n’est autorisé : aucun ne serait appelé, rien ne partirait.</Message>
       ) : null}
       {erreur ? <Message ton="alerte">{erreur}</Message> : null}
     </>
@@ -580,7 +580,7 @@ function RegieNavigateur(props: ProprietesRegie) {
           <p className="text-sm text-encre-3">Rien ne part tant que tu n’appelles pas ; ensuite, les appels s’enchaînent après un décompte de 5 s.</p>
         </div>
         <Actions>
-          <Action ton="fort" onClick={() => appeler(prochain)}>
+          <Action ton="fort" touche="Entrée" raccourci="Enter" libelleRaccourci="Appeler maintenant" onClick={() => appeler(prochain)}>
             Appeler maintenant
           </Action>
           <Suspendre enCours={enCours} onClick={() => agir(() => suspendreCampagne(campagneId))} />
@@ -650,7 +650,7 @@ function Decompte({ nom, onFini, onArreter }: { nom: string; onFini: () => void;
         <span className="text-encre-3"> s</span>
       </p>
       <Actions>
-        <Action ton="fort" onClick={onFini}>
+        <Action ton="fort" touche="Entrée" raccourci="Enter" libelleRaccourci="Appeler maintenant" onClick={onFini}>
           Appeler maintenant
         </Action>
         <Action ton="discret" touche="Échap" raccourci="Escape" libelleRaccourci="Arrêter le décompte" onClick={onArreter}>

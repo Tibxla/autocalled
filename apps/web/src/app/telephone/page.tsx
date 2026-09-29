@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { NomDeLAssistante } from '@/components/assistante';
 import { FUSEAU } from '@/components/format-appel';
-import { EnTetePage, Message, Page, PointCreux, TitreSection } from '@/components/ui';
+import { EnTetePage, LienAction, Message, Page, PointCreux, TitreSection } from '@/components/ui';
 import { lireAppel } from '@/lib/lecture';
 import { assistantePourLaPage } from '@/lib/pages';
 import { commanderPont, type ReglagesLigne } from '@/lib/pont';
@@ -106,7 +106,6 @@ export default async function PageTelephone() {
       ...(telephone.appelId
         ? {
             lien: `/appels/${telephone.appelId}`,
-            detail: 'Rejoindre l’appel : suivi, écoute, prise de main.',
           }
         : {}),
     };
@@ -141,6 +140,14 @@ export default async function PageTelephone() {
             )}
           </p>
           {verdict.detail ? <p className="max-w-[62ch] text-sm text-encre-2">{verdict.detail}</p> : null}
+          {verdict.lien ? (
+            <div className="-mx-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <LienAction ton="fort" href={verdict.lien}>
+                Rejoindre l’appel
+              </LienAction>
+              <span className="text-sm text-encre-3">suivi, écoute, prise de main</span>
+            </div>
+          ) : null}
           {verdict.reconnecter ? (
             <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
               <ActionReconnecter />
