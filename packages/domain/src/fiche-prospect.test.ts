@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type FicheProspect, fusionnerFiches, lireFiche, lireFiches } from './fiche-prospect.ts';
+import { type FicheProspect, ecrireFiche, fusionnerFiches, lireFiche, lireFiches } from './fiche-prospect.ts';
 
 const julie = `---
 nom: Julie Martin
@@ -164,5 +164,39 @@ describe('fusionnerFiches', () => {
     const resultat = fusionnerFiches([ficheJulie], [{ ...ficheJulie }]);
 
     expect(resultat).toEqual({ crees: [], misAJour: [], inchanges: ['julie-martin'] });
+  });
+});
+
+describe('ecrireFiche', () => {
+  const complete: FicheProspect = {
+    id: 'julie-martin',
+    nom: 'Julie Martin',
+    societe: 'Gîte des Aravis',
+    role: 'Gérante',
+    telephone: '+33639980001' as FicheProspect['telephone'],
+    email: 'julie@exemple.fr',
+    contexte: 'Gîte de 4 chambres.\n\nPiste : parler de la commission.',
+  };
+
+  it('écrit une fiche que lireFiche relit à l’identique', () => {
+    const { nomFichier, contenu } = ecrireFiche(complete);
+
+    expect(nomFichier).toBe('julie-martin.md');
+    expect(lireFiche(nomFichier, contenu)).toEqual({ ok: true, fiche: complete });
+  });
+
+  it('omet les champs absents de l’en-tête', () => {
+    const minimale = { ...complete, societe: null, role: null, email: null, contexte: '' };
+    const { nomFichier, contenu } = ecrireFiche(minimale);
+
+    expect(contenu).not.toMatch(/societe|role|email/);
+    expect(lireFiche(nomFichier, contenu)).toEqual({ ok: true, fiche: minimale });
+  });
+
+  it('protège les valeurs que YAML lirait autrement', () => {
+    const piegee = { ...complete, nom: 'Martin: "la gérante"', societe: '# Gîte', role: 'yes' };
+    const { nomFichier, contenu } = ecrireFiche(piegee);
+
+    expect(lireFiche(nomFichier, contenu)).toEqual({ ok: true, fiche: piegee });
   });
 });

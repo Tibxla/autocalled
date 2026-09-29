@@ -1,4 +1,4 @@
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { z } from 'zod';
 import { type NumeroE164, normaliserNumero } from './numero.ts';
 
@@ -93,6 +93,20 @@ export function lireFiche(nomFichier: string, contenu: string): LectureFiche {
       contexte,
     },
   };
+}
+
+/**
+ * Inverse de `lireFiche` : la fiche redevient un fichier Markdown qu'un nouvel import relit à l'identique.
+ * Sert à montrer une fiche telle qu'on la réimporterait après l'avoir modifiée.
+ */
+export function ecrireFiche(fiche: FicheProspect): FichierImporte {
+  const enTete: Record<string, string> = { nom: fiche.nom };
+  if (fiche.societe) enTete.societe = fiche.societe;
+  if (fiche.role) enTete.role = fiche.role;
+  enTete.telephone = fiche.telephone;
+  if (fiche.email) enTete.email = fiche.email;
+  const corps = fiche.contexte ? `\n${fiche.contexte}\n` : '';
+  return { nomFichier: `${fiche.id}.md`, contenu: `---\n${stringifyYaml(enTete, { lineWidth: 0 })}---\n${corps}` };
 }
 
 export interface FichierImporte {
