@@ -8,7 +8,7 @@ import {
   lireFiches,
   numerosAAutoriser,
 } from '@autocalled/domain';
-import { and, count, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { appels, campagnes, consentements, imports, prospects, textesConsentement } from '@/db/schema';
 import type { Conflit, Refus } from './entreprises';
@@ -182,6 +182,30 @@ export async function modifierProspect(
   return { ok: true, rapport };
 }
 
+type Lecteur = Pick<typeof db, 'select' | '$count'>;
+
+/**
+ * Pourquoi la fiche de ce prospect ne peut pas être supprimée maintenant, ou null : il attend dans la file d'une
+ * campagne non terminée, ou un appel avec lui est en cours.
+ */
+export async function obstacleSuppressionProspect(entrepriseId: string, prospectId: string, lecteur: Lecteur = db): Promise<string | null> {
+  const enFile = await lecteur
+    .select({ id: campagnes.id })
+    .from(campagnes)
+    .where(
+      and(
+        eq(campagnes.entrepriseId, entrepriseId),
+        ne(campagnes.statut, 'terminee'),
+        sql`exists (select 1 from jsonb_array_elements(${campagnes.entrees}) e where e->>'prospectId' = ${prospectId} and e->>'etat' in ('a-appeler', 'en-appel'))`,
+      ),
+    );
+  if (enFile.length) {
+    return `Ce prospect attend dans la file de ${enFile.length > 1 ? `${enFile.length} campagnes` : 'la campagne'} ${enFile.map((c) => c.id).join(', ')} : retire-le d’abord (retirer_de_la_file).`;
+  }
+  const enCours = await lecteur.$count(appels, and(eq(appels.entrepriseId, entrepriseId), eq(appels.prospectId, prospectId), eq(appels.statut, 'en-cours')));
+  return enCours > 0 ? 'Un appel avec ce prospect est en cours : attends qu’il finisse.' : null;
+}
+
 /**
  * Supprime la fiche d'un prospect. Ses appels et bilans restent, rattachés par l'identifiant (un réimport du même
  * fichier les retrouve), et le consentement de son numéro reste : `revoquerNumero` pour ne plus jamais l'appeler.
@@ -195,27 +219,8 @@ export async function supprimerProspect(entrepriseId: string, prospectId: string
       .where(and(eq(prospects.entrepriseId, entrepriseId), eq(prospects.id, prospectId)))
       .for('update');
     if (!p) return { ok: false as const, raison: 'Ce prospect n’existe pas dans cette entreprise.' };
-    const enFile = await tx
-      .select({ id: campagnes.id })
-      .from(campagnes)
-      .where(
-        and(
-          eq(campagnes.entrepriseId, entrepriseId),
-          ne(campagnes.statut, 'terminee'),
-          sql`exists (select 1 from jsonb_array_elements(${campagnes.entrees}) e where e->>'prospectId' = ${prospectId} and e->>'etat' in ('a-appeler', 'en-appel'))`,
-        ),
-      );
-    if (enFile.length) {
-      return {
-        ok: false as const,
-        raison: `Ce prospect attend dans la file de ${enFile.length > 1 ? `${enFile.length} campagnes` : 'la campagne'} ${enFile.map((c) => c.id).join(', ')} : retire-le d’abord (retirer_de_la_file).`,
-      };
-    }
-    const [enCours] = await tx
-      .select({ n: count() })
-      .from(appels)
-      .where(and(eq(appels.entrepriseId, entrepriseId), eq(appels.prospectId, prospectId), eq(appels.statut, 'en-cours')));
-    if (enCours && Number(enCours.n) > 0) return { ok: false as const, raison: 'Un appel avec ce prospect est en cours : attends qu’il finisse.' };
+    const obstacle = await obstacleSuppressionProspect(entrepriseId, prospectId, tx);
+    if (obstacle) return { ok: false as const, raison: obstacle };
     const appelsGardes = await tx.$count(appels, and(eq(appels.entrepriseId, entrepriseId), eq(appels.prospectId, prospectId)));
     await tx.delete(prospects).where(and(eq(prospects.entrepriseId, entrepriseId), eq(prospects.id, prospectId)));
     return { ok: true as const, appelsGardes };

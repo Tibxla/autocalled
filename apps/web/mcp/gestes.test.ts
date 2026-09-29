@@ -47,7 +47,7 @@ describe('revoquer_numero', () => {
     expect(messages[0]).toBe(
       'Révoquer définitivement le numéro 06 39 98 00 01 de Julie Fictive (Gîte fictif) : il ne sera plus jamais appelé, pour les 2 prospects qui le partagent, et aucun import ne le réautorisera.',
     );
-    expect(r.json).toEqual({ numero: '06 39 98 00 01', revoque: true, prospectsTouches: 2 });
+    expect(r.json).toEqual({ numero: '06 39 98 00 01', revoque: true, consentementsClos: 1, prospectsTouches: { entreprise: 2, toutes: 2 } });
     expect(await revoques()).toBe(1);
   });
 
@@ -97,7 +97,7 @@ describe('recreer_evenement', () => {
     const r = await appeler('recreer_evenement', { rendezVousId: rdv.id });
 
     expect(messages[0]).toContain('sans invité : aucun e-mail ne part');
-    expect(r).toMatchObject({ erreur: true, texte: 'La création a encore échoué : claude -p est interdit dans les tests' });
+    expect(r).toMatchObject({ erreur: true, texte: 'L’inscription a encore échoué : claude -p est interdit dans les tests' });
   });
 
   it('refuse un rendez-vous déjà dans l’agenda, sans rien demander', async () => {

@@ -65,7 +65,10 @@ describe('configuration d’une entreprise', () => {
 
   it('crée un script, puis une version, et refuse une version identique à la précédente', async () => {
     await entrepriseDeTest();
-    const { scriptId } = (await appeler('creer_script', { entreprise: 'gite-fictif', nom: 'Découverte' })).json as { scriptId: string };
+    const premieres = [{ intention: 'Accroche : se présenter', exemples: [] }];
+    expect((await appeler('creer_script', { entreprise: 'gite-fictif', nom: 'Découverte' })).erreur).toBe(true);
+    const { scriptId } = (await appeler('creer_script', { entreprise: 'gite-fictif', nom: 'Découverte', etapes: premieres })).json as { scriptId: string };
+    expect((await db.select({ etapes: versionsScript.etapes }).from(versionsScript))[0]?.etapes).toEqual(premieres);
     const etapes = [{ intention: 'Accroche courte', exemples: ['Bonjour !'] }];
 
     expect((await appeler('creer_version_script', { entreprise: 'gite-fictif', scriptId, etapes })).json).toMatchObject({ numero: 2 });

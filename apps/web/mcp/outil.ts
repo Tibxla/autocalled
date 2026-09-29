@@ -10,14 +10,38 @@ import { journalMcp } from '@/db/schema';
 
 export type Confirmation = 'acceptee' | 'refusee' | 'indisponible';
 
-/** Ce que rend un outil : un résultat, un refus (même phrase que l'interface), ou une demande de confirmation. */
+/**
+ * Ce que rend un outil : un résultat, un refus (même phrase que l'interface), ou une demande de confirmation.
+ * `journal` : une ligne de résumé gardée au journal pour un succès (versions avant et après d'une poussée…).
+ */
 export type Issue =
-  | { ok: true; donnees: unknown; confirmation?: Confirmation; complement?: string }
+  | { ok: true; donnees: unknown; confirmation?: Confirmation; complement?: string; journal?: string }
   | { ok: false; raison: string; confirmation?: Confirmation }
   | { demande: InputRequiredResult };
 
-export const reussite = (donnees: unknown, extra: { confirmation?: Confirmation; complement?: string } = {}): Issue => ({ ok: true, donnees, ...extra });
+export const reussite = (donnees: unknown, extra: { confirmation?: Confirmation; complement?: string; journal?: string } = {}): Issue => ({
+  ok: true,
+  donnees,
+  ...extra,
+});
 export const refus = (raison: string, confirmation?: Confirmation): Issue => ({ ok: false, raison, confirmation });
+
+/** Le résultat positif d'une fonction de lib, sans son drapeau `ok`, tel qu'on le rend au modèle. */
+export function sansOk(r: { ok: true }): Record<string, unknown> {
+  const copie: Record<string, unknown> = { ...r };
+  delete copie.ok;
+  return copie;
+}
+
+/**
+ * La réponse de l'opérateur pendant un passage d'un outil, posée par `confirmer` : elle reste au journal même si
+ * l'outil échoue ensuite (un accord donné avant une exception doit se voir).
+ */
+const confirmations = new WeakMap<ServerContext, Confirmation>();
+
+export function noterConfirmation(ctx: ServerContext, c: Confirmation): void {
+  confirmations.set(ctx, c);
+}
 
 export type Declarer = <S extends z.ZodObject>(
   nom: string,
@@ -48,6 +72,9 @@ async function noter(
 
 const texte = (t: string) => ({ type: 'text' as const, text: t });
 
+/** Ce que voit le modèle d'une exception : ni texte Postgres, ni chemin de fichier, ni trace. Le détail va au journal. */
+export const ERREUR_INTERNE = 'Erreur interne : l’outil a échoué (le détail est au journal MCP).';
+
 export function declarateur(serveur: McpServer): Declarer {
   return (nom, config, traiter) => {
     const rappel = async (args: z.output<typeof config.entree>, ctx: ServerContext): Promise<CallToolResult | InputRequiredResult> => {
@@ -56,19 +83,20 @@ export function declarateur(serveur: McpServer): Declarer {
       try {
         issue = await traiter(args, ctx);
       } catch (erreur) {
-        const message = (erreur as Error).message;
-        await noter(nom, journal, 'erreur', message, null);
-        return { isError: true, content: [texte(`Erreur interne : ${message}`)] };
+        const message = erreur instanceof Error ? erreur.message : String(erreur);
+        await noter(nom, journal, 'erreur', message, confirmations.get(ctx) ?? null);
+        return { isError: true, content: [texte(ERREUR_INTERNE)] };
       }
       if ('demande' in issue) {
         await noter(nom, journal, 'confirmation-demandee', null, null);
         return issue.demande;
       }
+      const confirmation = issue.confirmation ?? confirmations.get(ctx) ?? null;
       if (!issue.ok) {
-        await noter(nom, journal, 'refus', issue.raison, issue.confirmation ?? null);
+        await noter(nom, journal, 'refus', issue.raison, confirmation);
         return { isError: true, content: [texte(issue.raison)] };
       }
-      await noter(nom, journal, 'ok', null, issue.confirmation ?? null);
+      await noter(nom, journal, 'ok', issue.journal ?? null, confirmation);
       return {
         content: [texte(JSON.stringify(issue.donnees, null, 2)), ...(issue.complement ? [texte(issue.complement)] : [])],
       };

@@ -55,6 +55,41 @@ function conflitSi(connu: string | null | undefined, actuel: { modifieLe: Date; 
   };
 }
 
+type Lecteur = Pick<typeof db, 'select' | '$count'>;
+
+/** Ce qu'une entreprise contient : son historique (qui empêche de la supprimer) et sa configuration. */
+export async function contenuEntreprise(entrepriseId: string, lecteur: Lecteur = db) {
+  const idsScripts = lecteur.select({ id: scripts.id }).from(scripts).where(eq(scripts.entrepriseId, entrepriseId));
+  const [prospectsN, importsN, appelsN, campagnesN, objectionsN, issuesN, scriptsN, versionsN] = await Promise.all([
+    lecteur.$count(prospects, eq(prospects.entrepriseId, entrepriseId)),
+    lecteur.$count(imports, eq(imports.entrepriseId, entrepriseId)),
+    lecteur.$count(appels, eq(appels.entrepriseId, entrepriseId)),
+    lecteur.$count(campagnes, eq(campagnes.entrepriseId, entrepriseId)),
+    lecteur.$count(objections, eq(objections.entrepriseId, entrepriseId)),
+    lecteur.$count(issuesPersonnalisees, eq(issuesPersonnalisees.entrepriseId, entrepriseId)),
+    lecteur.$count(scripts, eq(scripts.entrepriseId, entrepriseId)),
+    lecteur.$count(versionsScript, inArray(versionsScript.scriptId, idsScripts)),
+  ]);
+  return {
+    historique: { prospects: prospectsN, imports: importsN, appels: appelsN, campagnes: campagnesN },
+    configuration: { objections: objectionsN, issues: issuesN, scripts: scriptsN, versions: versionsN },
+  };
+}
+
+/** Pourquoi cette entreprise ne se supprime pas (elle a un historique), ou null. */
+export function obstacleSuppressionEntreprise(contenu: Awaited<ReturnType<typeof contenuEntreprise>>): string | null {
+  const h = contenu.historique;
+  const bloquants = [
+    h.prospects && `${h.prospects} prospect${h.prospects > 1 ? 's' : ''}`,
+    h.imports && `${h.imports} import${h.imports > 1 ? 's' : ''}`,
+    h.appels && `${h.appels} appel${h.appels > 1 ? 's' : ''}`,
+    h.campagnes && `${h.campagnes} campagne${h.campagnes > 1 ? 's' : ''}`,
+  ].filter(Boolean);
+  return bloquants.length
+    ? `Cette entreprise a un historique (${bloquants.join(', ')}) : elle ne se supprime pas. Seule une entreprise vide, créée par erreur, se supprime.`
+    : null;
+}
+
 /**
  * Supprime une entreprise créée par erreur, avec sa fiche, ses objections, ses issues personnalisées, ses scripts et
  * leurs versions. Refusée dès qu'elle a un prospect, un import (les consentements y renvoient), un appel ou une
@@ -66,34 +101,12 @@ export async function supprimerEntrepriseVide(
   return db.transaction(async (tx) => {
     const [e] = await tx.select({ id: entreprises.id }).from(entreprises).where(eq(entreprises.id, entrepriseId)).for('update');
     if (!e) return { ok: false as const, raison: 'Cette entreprise n’existe plus.' };
-    const [nProspects, nImports, nAppels, nCampagnes] = await Promise.all([
-      tx.$count(prospects, eq(prospects.entrepriseId, entrepriseId)),
-      tx.$count(imports, eq(imports.entrepriseId, entrepriseId)),
-      tx.$count(appels, eq(appels.entrepriseId, entrepriseId)),
-      tx.$count(campagnes, eq(campagnes.entrepriseId, entrepriseId)),
-    ]);
-    const bloquants = [
-      nProspects && `${nProspects} prospect${nProspects > 1 ? 's' : ''}`,
-      nImports && `${nImports} import${nImports > 1 ? 's' : ''}`,
-      nAppels && `${nAppels} appel${nAppels > 1 ? 's' : ''}`,
-      nCampagnes && `${nCampagnes} campagne${nCampagnes > 1 ? 's' : ''}`,
-    ].filter(Boolean);
-    if (bloquants.length) {
-      return {
-        ok: false as const,
-        raison: `Cette entreprise a un historique (${bloquants.join(', ')}) : elle ne se supprime pas. Seule une entreprise vide, créée par erreur, se supprime.`,
-      };
-    }
-    const idsScripts = tx.select({ id: scripts.id }).from(scripts).where(eq(scripts.entrepriseId, entrepriseId));
-    const [nObjections, nIssues, nScripts, nVersions] = await Promise.all([
-      tx.$count(objections, eq(objections.entrepriseId, entrepriseId)),
-      tx.$count(issuesPersonnalisees, eq(issuesPersonnalisees.entrepriseId, entrepriseId)),
-      tx.$count(scripts, eq(scripts.entrepriseId, entrepriseId)),
-      tx.$count(versionsScript, inArray(versionsScript.scriptId, idsScripts)),
-    ]);
+    const contenu = await contenuEntreprise(entrepriseId, tx);
+    const obstacle = obstacleSuppressionEntreprise(contenu);
+    if (obstacle) return { ok: false as const, raison: obstacle };
     // Les objections, issues, scripts et versions partent en cascade.
     await tx.delete(entreprises).where(eq(entreprises.id, entrepriseId));
-    return { ok: true as const, supprime: { objections: nObjections, issues: nIssues, scripts: nScripts, versions: nVersions } };
+    return { ok: true as const, supprime: contenu.configuration };
   });
 }
 

@@ -1,4 +1,5 @@
 import { ISSUES_SYSTEME, TransitionInvalide } from '@autocalled/domain';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/db';
@@ -8,11 +9,20 @@ import { trouverEntreprise } from '@/lib/donnees';
 import * as entreprise from '@/lib/entreprises';
 import { FICHIERS_MAX, importerFiches } from '@/lib/prospects';
 import { etapesSchema, ficheSchema, issueSchema, nomEntrepriseSchema, nomScriptSchema, objectionSchema, plagesSchema } from '@/lib/schemas';
-import { champEntreprise, champVersion, entrepriseInconnue, versionDeLEntreprise } from './communs';
+import { usageDuScript } from '@/lib/versions';
+import { champEntreprise, champVersion, entrepriseInconnue, SCRIPT_ARCHIVE, versionDeLEntreprise } from './communs';
+import { confirmer, refusDeConfirmation } from './confirmation';
 import { type Declarer, refus, reussite } from './outil';
 
-/** Écritures réversibles ou additives : aucune ne fait sonner un téléphone ni n'écrit à un prospect. */
+/**
+ * La configuration d'une entreprise (fiche, objections, issues, scripts), l'import des fiches prospect et la
+ * préparation des campagnes. Toute écriture passe l'origine `mcp` en clair. Aucune ne fait sonner un téléphone ni
+ * n'écrit à un prospect ; seule la suppression d'une entreprise vide, irréversible, demande une confirmation.
+ */
+
+/** Écritures réversibles ou additives. */
 const ECRITURE = { readOnlyHint: false, destructiveHint: false, openWorldHint: false } as const;
+const PAR_MCP = { origine: 'mcp' } as const;
 
 /** La première erreur d'un schéma, dans les mots de l'interface. */
 const premiereErreur = (e: z.ZodError) => {
@@ -20,10 +30,14 @@ const premiereErreur = (e: z.ZodError) => {
   return i ? `${i.path.length ? `${i.path.join('.')} : ` : ''}${i.message}` : 'Saisie invalide.';
 };
 
-export function outilsDeConfiguration(declarer: Declarer): void {
+const connuHorodatage = z.iso.datetime({ offset: true }).optional();
+
+export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): void {
+  /* ------------------------------------------------------------------ entreprises */
+
   declarer(
     'creer_entreprise',
-    { description: 'Crée une entreprise que Mina pourra représenter ; renvoie son identifiant (slug).', entree: z.strictObject({ nom: nomEntrepriseSchema }), annotations: ECRITURE },
+    { description: 'Crée une entreprise que l’assistante pourra représenter ; renvoie son identifiant (slug), figé ensuite.', entree: z.strictObject({ nom: nomEntrepriseSchema }), annotations: ECRITURE },
     async ({ nom }) => {
       const creee = await entreprise.creerEntreprise(nom);
       return creee.ok ? reussite({ entreprise: creee.slug }) : refus(creee.raison);
@@ -34,15 +48,16 @@ export function outilsDeConfiguration(declarer: Declarer): void {
     'modifier_fiche_entreprise',
     {
       description:
-        'Modifie la fiche d’une entreprise : seuls les champs donnés changent, le reste est gardé. `plages` remplace toutes les plages de rendez-vous (jour 1 = lundi … 7 = dimanche, heures HH:MM).',
+        'Modifie la fiche d’une entreprise : seuls les champs donnés changent, le reste est gardé. `plages` remplace toutes les plages de rendez-vous (jour 1 = lundi … 7 = dimanche, heures HH:MM). Changer `nom` ne change pas l’identifiant (slug). `connu` : le `modifieLe` de lire_entreprise, refus si la fiche a changé depuis.',
       entree: z.strictObject({
         entreprise: champEntreprise,
         champs: ficheSchema.partial().strict().default({}),
         plages: plagesSchema.optional(),
+        connu: connuHorodatage,
       }),
       annotations: { ...ECRITURE, idempotentHint: true },
     },
-    async ({ entreprise: slug, champs, plages }) => {
+    async ({ entreprise: slug, champs, plages, connu }) => {
       const e = await trouverEntreprise(slug);
       if (!e) return refus(entrepriseInconnue(slug));
       // Le patch est fusionné avec la fiche actuelle, puis validé par le même schéma que le formulaire.
@@ -50,27 +65,59 @@ export function outilsDeConfiguration(declarer: Declarer): void {
       if (!fiche.success) return refus(premiereErreur(fiche.error));
       const lesPlages = plagesSchema.safeParse(plages ?? e.plagesRendezVous);
       if (!lesPlages.success) return refus(premiereErreur(lesPlages.error));
-      await entreprise.enregistrerFiche(e.id, fiche.data, lesPlages.data);
-      return reussite({ entreprise: e.slug, fiche: fiche.data, plagesRendezVous: lesPlages.data });
+      // Sans `connu`, la fiche lue au début de l'outil : rien n'est écrasé entre la lecture, la fusion et l'écriture.
+      const r = await entreprise.enregistrerFiche(e.id, fiche.data, lesPlages.data, { ...PAR_MCP, connu: connu ?? e.modifieLe.toISOString() });
+      return r.ok ? reussite({ entreprise: e.slug, modifieLe: r.modifieLe, fiche: fiche.data, plagesRendezVous: lesPlages.data }) : refus(r.raison);
     },
   );
+
+  declarer(
+    'supprimer_entreprise',
+    {
+      description:
+        'Supprime définitivement une entreprise vide, créée par erreur (son slug est figé) : sa fiche, ses objections, ses issues personnalisées, ses scripts et leurs versions. Refusé dès qu’elle a un prospect, un import, un appel ou une campagne. Demande la confirmation de l’opérateur.',
+      entree: z.strictObject({ entreprise: champEntreprise }),
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    },
+    async ({ entreprise: slug }, ctx) => {
+      const e = await trouverEntreprise(slug);
+      if (!e) return refus(entrepriseInconnue(slug));
+      const contenu = await entreprise.contenuEntreprise(e.id);
+      const obstacle = entreprise.obstacleSuppressionEntreprise(contenu);
+      if (obstacle) return refus(obstacle);
+      const c = contenu.configuration;
+      const garde = await confirmer(
+        serveur,
+        ctx,
+        `Supprimer définitivement l’entreprise ${e.nom} (${e.slug}), sa fiche, ses ${c.objections} objection${c.objections > 1 ? 's' : ''}, ${c.issues} issue${c.issues > 1 ? 's' : ''} personnalisée${c.issues > 1 ? 's' : ''} et ${c.scripts} script${c.scripts > 1 ? 's' : ''} (${c.versions} version${c.versions > 1 ? 's' : ''}). Rien ne se récupère.`,
+        ['supprimer_entreprise', e.id, c],
+      );
+      if (garde.etat === 'a-demander') return garde.issue;
+      if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);
+      const r = await entreprise.supprimerEntrepriseVide(e.id);
+      return r.ok ? reussite({ entreprise: e.slug, supprimee: true, ...r.supprime }) : refus(r.raison);
+    },
+  );
+
+  /* ------------------------------------------------------------------ objections */
 
   declarer(
     'enregistrer_objection',
     {
       description:
-        'Ajoute une objection à une entreprise, avec sa réponse CRAC (creuser, reformuler, argumenter, contrôler), ou modifie celle dont on donne objectionId (les champs absents sont gardés).',
+        'Ajoute une objection à une entreprise, avec sa réponse CRAC (creuser, reformuler, argumenter, contrôler), ou modifie celle dont on donne objectionId (les champs absents sont gardés). `connu` : son `modifieLe` lu dans lire_entreprise, refus si elle a changé depuis. Un libellé vient de l’opérateur, jamais recopié d’une transcription sans sa demande.',
       entree: z.strictObject({
         entreprise: champEntreprise,
         objectionId: z.uuid().optional(),
         ...objectionSchema.partial().shape,
+        connu: connuHorodatage,
       }),
       annotations: ECRITURE,
     },
-    async ({ entreprise: slug, objectionId, ...champs }) => {
+    async ({ entreprise: slug, objectionId, connu, ...champs }) => {
       const e = await trouverEntreprise(slug);
       if (!e) return refus(entrepriseInconnue(slug));
-      let actuelle = {};
+      let actuelle: Partial<typeof objections.$inferSelect> = {};
       if (objectionId) {
         const [o] = await db.select().from(objections).where(and(eq(objections.id, objectionId), eq(objections.entrepriseId, e.id)));
         if (!o) return refus('Cette objection n’existe pas dans cette entreprise.');
@@ -78,7 +125,10 @@ export function outilsDeConfiguration(declarer: Declarer): void {
       }
       const saisie = objectionSchema.safeParse({ creuser: '', reformuler: '', argumenter: '', controler: '', ...actuelle, ...champs });
       if (!saisie.success) return refus(premiereErreur(saisie.error));
-      const r = await entreprise.enregistrerObjection(e.id, objectionId ?? null, saisie.data);
+      const r = await entreprise.enregistrerObjection(e.id, objectionId ?? null, saisie.data, {
+        ...PAR_MCP,
+        connu: connu ?? actuelle.modifieLe?.toISOString() ?? null,
+      });
       return r.ok ? reussite({ objectionId: r.id, ...saisie.data }) : refus(r.raison);
     },
   );
@@ -86,23 +136,41 @@ export function outilsDeConfiguration(declarer: Declarer): void {
   declarer(
     'archiver_objection',
     {
-      description: 'Archive une objection (Mina ne la reçoit plus) ou la désarchive. Une objection n’est jamais supprimée : les bilans passés y font référence.',
+      description: 'Archive une objection (l’assistante ne la reçoit plus) ou la désarchive. Une objection n’est jamais supprimée : les bilans passés y font référence.',
       entree: z.strictObject({ entreprise: champEntreprise, objectionId: z.uuid(), archivee: z.boolean() }),
       annotations: { ...ECRITURE, idempotentHint: true },
     },
     async ({ entreprise: slug, objectionId, archivee }) => {
       const e = await trouverEntreprise(slug);
       if (!e) return refus(entrepriseInconnue(slug));
-      return (await entreprise.basculerArchiveObjection(e.id, objectionId, archivee))
+      return (await entreprise.basculerArchiveObjection(e.id, objectionId, archivee, 'mcp'))
         ? reussite({ objectionId, archivee })
         : refus('Cette objection n’existe pas dans cette entreprise.');
     },
   );
 
   declarer(
+    'ordonner_objections',
+    {
+      description:
+        'Donne l’ordre dans lequel l’assistante reçoit les objections : `ordre` liste exactement les identifiants des objections actives, dans l’ordre voulu. Les archivées passent après.',
+      entree: z.strictObject({ entreprise: champEntreprise, ordre: z.array(z.uuid()).max(200) }),
+      annotations: { ...ECRITURE, idempotentHint: true },
+    },
+    async ({ entreprise: slug, ordre }) => {
+      const e = await trouverEntreprise(slug);
+      if (!e) return refus(entrepriseInconnue(slug));
+      const r = await entreprise.ordonnerObjections(e.id, ordre);
+      return r.ok ? reussite({ entreprise: e.slug, ordre }) : refus(r.raison);
+    },
+  );
+
+  /* ------------------------------------------------------------------ issues personnalisées */
+
+  declarer(
     'ajouter_issue',
     {
-      description: `Ajoute une issue personnalisée à une entreprise, rattachée à une issue système (${ISSUES_SYSTEME.join(', ')}).`,
+      description: `Ajoute une issue personnalisée à une entreprise, rattachée à une issue système (${ISSUES_SYSTEME.join(', ')}). Le rattachement est figé ensuite.`,
       entree: z.strictObject({ entreprise: champEntreprise, ...issueSchema.shape }),
       annotations: ECRITURE,
     },
@@ -110,6 +178,20 @@ export function outilsDeConfiguration(declarer: Declarer): void {
       const e = await trouverEntreprise(slug);
       if (!e) return refus(entrepriseInconnue(slug));
       return reussite({ issueId: await entreprise.ajouterIssue(e.id, saisie), ...saisie });
+    },
+  );
+
+  declarer(
+    'renommer_issue',
+    {
+      description: 'Corrige le libellé d’une issue personnalisée ; les bilans passés la suivent. Son issue système de rattachement ne change pas (archiver et recréer pour cela).',
+      entree: z.strictObject({ entreprise: champEntreprise, issueId: z.uuid(), libelle: issueSchema.shape.libelle }),
+      annotations: { ...ECRITURE, idempotentHint: true },
+    },
+    async ({ entreprise: slug, issueId, libelle }) => {
+      const e = await trouverEntreprise(slug);
+      if (!e) return refus(entrepriseInconnue(slug));
+      return (await entreprise.renommerIssue(e.id, issueId, libelle)) ? reussite({ issueId, libelle }) : refus('Cette issue n’existe pas dans cette entreprise.');
     },
   );
 
@@ -129,13 +211,20 @@ export function outilsDeConfiguration(declarer: Declarer): void {
     },
   );
 
+  /* ------------------------------------------------------------------ scripts */
+
   declarer(
     'creer_script',
-    { description: 'Crée un script d’appel ; sa version 1 reçoit les quatre étapes de départ (accroche, qualification, pitch, rendez-vous).', entree: z.strictObject({ entreprise: champEntreprise, nom: nomScriptSchema }), annotations: ECRITURE },
-    async ({ entreprise: slug, nom }) => {
+    {
+      description:
+        'Crée un script d’appel et sa version 1 avec les étapes données (1 à 10, chacune une intention et au plus 4 formulations d’exemple), écrites avec l’opérateur : aucun gabarit n’est posé à sa place.',
+      entree: z.strictObject({ entreprise: champEntreprise, nom: nomScriptSchema, etapes: etapesSchema }),
+      annotations: ECRITURE,
+    },
+    async ({ entreprise: slug, nom, etapes }) => {
       const e = await trouverEntreprise(slug);
       if (!e) return refus(entrepriseInconnue(slug));
-      return reussite(await entreprise.creerScript(e.id, nom));
+      return reussite({ ...(await entreprise.creerScript(e.id, nom, etapes)), numero: 1 });
     },
   );
 
@@ -143,22 +232,54 @@ export function outilsDeConfiguration(declarer: Declarer): void {
     'creer_version_script',
     {
       description:
-        'Crée la version suivante d’un script (une version est figée, jamais écrasée) : 1 à 10 étapes, chacune une intention et au plus 4 formulations d’exemple. Refusée si identique à la dernière version.',
-      entree: z.strictObject({ entreprise: champEntreprise, scriptId: z.uuid(), etapes: etapesSchema }),
+        'Crée la version suivante d’un script (une version est figée, jamais écrasée) : 1 à 10 étapes, chacune une intention et au plus 4 formulations d’exemple. Refusée si identique à la dernière version. `connu` : le numéro de la dernière version lue, refus si une autre est arrivée depuis.',
+      entree: z.strictObject({ entreprise: champEntreprise, scriptId: z.uuid(), etapes: etapesSchema, connu: z.int().min(1).optional() }),
       annotations: ECRITURE,
     },
-    async ({ entreprise: slug, scriptId, etapes }) => {
+    async ({ entreprise: slug, scriptId, etapes, connu }) => {
       const e = await trouverEntreprise(slug);
       if (!e) return refus(entrepriseInconnue(slug));
-      const v = await entreprise.creerVersion(e.id, scriptId, etapes);
+      const v = await entreprise.creerVersion(e.id, scriptId, etapes, { ...PAR_MCP, connu: connu === undefined ? null : String(connu) });
       return v.ok ? reussite({ versionScriptId: v.id, numero: v.numero }) : refus(v.raison);
     },
   );
 
   declarer(
+    'renommer_script',
+    {
+      description: 'Renomme un script ; ses versions, ses appels et ses campagnes le suivent.',
+      entree: z.strictObject({ entreprise: champEntreprise, scriptId: z.uuid(), nom: nomScriptSchema }),
+      annotations: { ...ECRITURE, idempotentHint: true },
+    },
+    async ({ entreprise: slug, scriptId, nom }) => {
+      const e = await trouverEntreprise(slug);
+      if (!e) return refus(entrepriseInconnue(slug));
+      return (await entreprise.renommerScript(e.id, scriptId, nom)) ? reussite({ scriptId, nom }) : refus('Ce script n’existe pas dans cette entreprise.');
+    },
+  );
+
+  declarer(
+    'archiver_script',
+    {
+      description:
+        'Archive un script (il sort des choix de lancement d’un appel ou d’une campagne) ou le réactive. Rien ne s’arrête : une campagne déjà lancée garde sa version ; l’usage rendu dit ce qui tourne encore.',
+      entree: z.strictObject({ entreprise: champEntreprise, scriptId: z.uuid(), archive: z.boolean() }),
+      annotations: { ...ECRITURE, idempotentHint: true },
+    },
+    async ({ entreprise: slug, scriptId, archive }) => {
+      const e = await trouverEntreprise(slug);
+      if (!e) return refus(entrepriseInconnue(slug));
+      if (!(await entreprise.basculerArchiveScript(e.id, scriptId, archive))) return refus('Ce script n’existe pas dans cette entreprise.');
+      return reussite({ scriptId, archive, usage: await usageDuScript(scriptId) });
+    },
+  );
+
+  /* ------------------------------------------------------------------ prospects */
+
+  declarer(
     'importer_fiches',
     {
-      description: `Importe des fiches prospect Markdown dans une entreprise (au plus ${FICHIERS_MAX}, 32 Ko chacune) : en-tête YAML (nom, telephone, societe, role, email) puis le contexte que Mina doit connaître. Le nom de fichier identifie le prospect ; réimporter met la fiche à jour. Les numéros nouveaux sont enregistrés comme consentants, comme l’import de l’interface case cochée ; un numéro révoqué ne l’est jamais à nouveau.`,
+      description: `Importe des fiches prospect Markdown dans une entreprise (au plus ${FICHIERS_MAX}, 32 Ko chacune) : en-tête YAML (nom, telephone, societe, role, email) puis le contexte que l’assistante doit connaître. Le nom de fichier identifie le prospect ; réimporter met la fiche à jour. Demander l’import vaut attestation du texte de consentement en vigueur (lire_texte_consentement) : les numéros nouveaux sont enregistrés comme consentants, comme l’import de l’interface case cochée ; un numéro révoqué ne l’est jamais à nouveau.`,
       entree: z.strictObject({
         entreprise: champEntreprise,
         fiches: z
@@ -182,11 +303,13 @@ export function outilsDeConfiguration(declarer: Declarer): void {
     },
   );
 
+  /* ------------------------------------------------------------------ campagnes */
+
   declarer(
     'nouvelle_campagne',
     {
       description:
-        'Prépare une campagne : une liste de prospects d’une entreprise, appelés l’un après l’autre avec une même version de script, sur une ligne (bluetooth = le téléphone, simulation, navigateur). Elle est créée prête : rien ne sonne avant son lancement.',
+        'Prépare une campagne : une liste de prospects d’une entreprise, appelés l’un après l’autre avec une même version de script (d’un script non archivé), sur une ligne (bluetooth = le téléphone, simulation, navigateur). Elle est créée prête : rien ne sonne avant son lancement. Une campagne navigateur se prépare ici mais se lance dans l’interface.',
       entree: z.strictObject({
         entreprise: champEntreprise,
         versionScriptId: champVersion,
@@ -198,7 +321,9 @@ export function outilsDeConfiguration(declarer: Declarer): void {
     async ({ entreprise: slug, versionScriptId, ligne, prospects: ids }) => {
       const e = await trouverEntreprise(slug);
       if (!e) return refus(entrepriseInconnue(slug));
-      if (!(await versionDeLEntreprise(e.id, versionScriptId))) return refus('Cette version de script n’appartient pas à cette entreprise.');
+      const version = await versionDeLEntreprise(e.id, versionScriptId);
+      if (!version) return refus('Cette version de script n’appartient pas à cette entreprise.');
+      if (version.archive) return refus(SCRIPT_ARCHIVE);
       const connus = await db
         .select({ id: prospects.id })
         .from(prospects)

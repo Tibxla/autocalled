@@ -34,6 +34,7 @@ export async function fauxPont(
         return repondre(200, reglages);
       }
       if (/^\/appels\/[0-9a-f-]{36}\/raccrocher$/.test(req.url ?? '')) return repondre(200, { ok: true });
+      if (req.url === '/telephone/reconnecter' && req.method === 'POST') return repondre(200, { ok: true });
       repondre(404, { erreur: 'inconnu du faux pont' });
     });
   });
