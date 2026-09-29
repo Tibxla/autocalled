@@ -183,7 +183,13 @@ export async function preparerReanalyse(appelId: string, maintenant = new Date()
   if (a.statut === 'traitement' && maintenant.getTime() - depuis.getTime() < DUREE_MAX_ANALYSE_S * 1000) {
     return { ok: false, raison: 'Le bilan de cet appel est déjà en cours de calcul.' };
   }
-  await db.update(appels).set({ statut: 'traitement', traitementLe: maintenant, erreur: null }).where(eq(appels.id, appelId));
+  // Pas sur un appel purgé entre la lecture et ici.
+  const [pret] = await db
+    .update(appels)
+    .set({ statut: 'traitement', traitementLe: maintenant, erreur: null })
+    .where(and(eq(appels.id, appelId), isNull(appels.purgeLe)))
+    .returning({ id: appels.id });
+  if (!pret) return { ok: false, raison: APPEL_PURGE };
   return { ok: true };
 }
 
