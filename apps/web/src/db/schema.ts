@@ -107,6 +107,8 @@ export const imports = pgTable('imports', {
     .notNull()
     .references(() => textesConsentement.version),
   nombreFiches: integer().notNull(),
+  /** Par où les fiches sont entrées : le formulaire de l'interface ou le serveur MCP (ADR 0009). Traçabilité seule. */
+  canal: text().$type<'interface' | 'mcp'>().notNull().default('interface'),
   importeLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 

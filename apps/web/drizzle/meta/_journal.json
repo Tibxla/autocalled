@@ -57,6 +57,13 @@
       "when": 1790667281217,
       "tag": "0007_journal-mcp",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790668772109,
+      "tag": "0008_import-canal",
+      "breakpoints": true
     }
   ]
 }

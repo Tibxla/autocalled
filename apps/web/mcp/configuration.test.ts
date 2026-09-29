@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { db } from '@/db';
-import { campagnes, consentements, entreprises, journalMcp, objections, prospects, versionsScript } from '@/db/schema';
+import { campagnes, consentements, entreprises, imports, journalMcp, objections, prospects, versionsScript } from '@/db/schema';
 import { creerScript } from '@/lib/entreprises';
 import { importerFiches, revoquerNumero } from '@/lib/prospects';
 import { clientDeTest } from '../test/client-mcp';
@@ -86,6 +86,7 @@ describe('importer_fiches', () => {
     expect(r.json).toMatchObject({ etat: 'fait', crees: ['julie'], numerosAutorises: 1 });
     expect(await db.$count(consentements, eq(consentements.numero, '+33639980001'))).toBe(1);
     expect(await db.$count(prospects, eq(prospects.entrepriseId, e.id))).toBe(1);
+    expect(await db.select({ canal: imports.canal }).from(imports)).toEqual([{ canal: 'mcp' }]);
   });
 
   it('ne réautorise jamais un numéro révoqué, même en changeant le numéro d’une fiche', async () => {
