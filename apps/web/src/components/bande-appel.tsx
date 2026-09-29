@@ -779,7 +779,7 @@ export function VueBandeAppel({
 /** « Étape 2/4 · Qualification » : où l'assistante en est dans le plan, d'après elle. */
 function EtapeEnCours({ etape }: { etape: NonNullable<ReturnType<typeof etapeAffichee>> }) {
   return (
-    <span className="min-w-0 truncate text-sm whitespace-nowrap text-encre-3 max-sm:max-w-full" title="Étape signalée par l’assistante ; le bilan dira l’étape atteinte.">
+    <span className="min-w-0 truncate text-sm whitespace-nowrap text-encre-3 max-sm:max-w-full">
       Étape{' '}
       <span className="font-mono">
         {etape.numero}
