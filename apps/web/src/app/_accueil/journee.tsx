@@ -50,7 +50,8 @@ const LIBELLES_FILTRE: Record<CleFiltre, string> = { ...LIBELLES_ISSUES, 'sans-b
 
 const STATUTS: Record<CampagneJour['statut'], { libelle: string; classe: string }> = {
   prete: { libelle: 'prête', classe: 'text-encre-2' },
-  'en-cours': { libelle: 'en cours', classe: 'text-antenne' },
+  // Pas d'antenne : une campagne en cours peut être entre deux appels ; l'appel vivant a sa bande et son trait.
+  'en-cours': { libelle: 'en cours', classe: 'text-encre' },
   'en-pause': { libelle: 'suspendue', classe: 'text-encre-2' },
   terminee: { libelle: 'terminée', classe: 'text-encre-3' },
 };
@@ -343,7 +344,8 @@ function EnTeteJournee({ appels, campagnes }: { appels: AppelDuJour[]; campagnes
 const CLASSES_TRAIT: Record<Trait['forme'], string> = {
   normal: 'bg-trait',
   'rendez-vous': 'bg-encre',
-  echec: 'bg-alerte',
+  // Point creux centré sur l'heure de l'appel : un échec n'a ni durée ni étape.
+  echec: '-translate-x-1/2 rounded-full border-[1.5px] border-alerte',
   pointille: 'border border-dashed border-trait',
   vivant: 'bg-antenne',
 };
@@ -434,8 +436,8 @@ const Traits = memo(function Traits({ traits, attenues }: { traits: Trait[]; att
       }`}
       style={{
         left: `${t.gauche}%`,
-        width: t.forme === 'vivant' ? '5px' : `max(var(--trait-min), ${t.largeur}%)`,
-        height: t.hauteur,
+        width: t.forme === 'vivant' ? '5px' : t.forme === 'echec' ? '7px' : `max(var(--trait-min), ${t.largeur}%)`,
+        height: t.forme === 'echec' ? '7px' : t.hauteur,
       }}
     />
   ));

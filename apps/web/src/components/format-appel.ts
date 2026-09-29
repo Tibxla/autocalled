@@ -159,9 +159,10 @@ export function etatAppel(
   if (a.statut === 'traitement') return { cle: 'analyse', libelle: 'Analyse…', ton: 'encre-3' };
   if (a.statut === 'echec') {
     const detail = a.erreur ? { detail: a.erreur } : {};
+    // Graphite : l'échec se signale par son glyphe (point creux brique), pas par un libellé coloré.
     return a.conversationId
-      ? { cle: 'analyse-echec', libelle: 'Analyse en échec', ton: 'alerte', ...detail }
-      : { cle: 'pas-parti', libelle: 'Non composé', ton: 'alerte', ...detail };
+      ? { cle: 'analyse-echec', libelle: 'Analyse en échec', ton: 'encre-2', ...detail }
+      : { cle: 'pas-parti', libelle: 'Non composé', ton: 'encre-2', ...detail };
   }
   const issue = issueEffective(a);
   if (!issue) return { cle: 'sans-issue', libelle: 'Sans issue', ton: 'encre-3' };

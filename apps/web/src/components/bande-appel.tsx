@@ -661,7 +661,7 @@ export function VueBandeAppel({
                   sousTitre.taille === 'grande' ? 'max-w-[34ch] text-3xl' : 'max-w-[48ch] text-2xl'
                 }`}
               >
-                <span className="mr-3.5 align-middle text-[16px] leading-none font-semibold tracking-normal text-antenne">Mina</span>
+                <span className="mr-3.5 align-middle text-lg leading-none font-semibold tracking-normal text-antenne">Mina</span>
                 {sousTitre.phrase}
               </p>
             ) : null}

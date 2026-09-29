@@ -94,7 +94,7 @@ type Tracable = Placable &
 
 /**
  * Un trait par appel : à son heure de début, large de sa durée, haut de l'étape atteinte du script
- * (décision de l'opérateur). Rendez-vous en encre, échec en brique, analyse et sans bilan en pointillé au
+ * (décision de l'opérateur). Rendez-vous en encre, échec en point creux brique, analyse et sans bilan en pointillé au
  * minimum, appel vivant en antenne sur toute la hauteur.
  */
 export function traitFrise(a: Tracable, b: Bornes, o: { vivant?: boolean } = {}): Trait {

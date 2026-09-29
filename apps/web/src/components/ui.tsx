@@ -385,7 +385,8 @@ export function Duree({ secondes }: { secondes: number | null | undefined }) {
 
 /**
  * Trait vertical de 3 px dont la hauteur suit l'étape atteinte (même règle que la frise de l'accueil).
- * Rendez-vous en encre, vivant en antenne (pleine hauteur), échec en alerte ; analyse et sans bilan au minimum.
+ * Rendez-vous en encre, vivant en antenne (pleine hauteur), échec en point creux brique ; analyse et sans
+ * bilan au minimum.
  */
 export function GlypheEtape({
   etape,
@@ -400,14 +401,30 @@ export function GlypheEtape({
   rendezVous?: boolean;
   hauteur?: number;
 }) {
+  if (etat === 'echec') {
+    // Un échec n'a pas d'étape : un point creux, pas un trait, pour ne pas se lire comme un appel qui a vécu.
+    return (
+      <span aria-hidden="true" className="relative inline-flex w-[3px] shrink-0" style={{ height: hauteur }}>
+        <PointCreux className="absolute bottom-0 left-1/2 -translate-x-1/2" />
+      </span>
+    );
+  }
   const min = 2;
   const h = etat === 'vivant' ? hauteur : etat === 'analyse' || etat === 'sans-bilan' ? min : hauteurTrait(etape, nombre, { min, max: hauteur });
-  const couleur = rendezVous ? 'bg-encre' : etat === 'vivant' ? 'bg-antenne' : etat === 'echec' ? 'bg-alerte' : 'bg-trait';
+  const couleur = rendezVous ? 'bg-encre' : etat === 'vivant' ? 'bg-antenne' : 'bg-trait';
   return (
     <span aria-hidden="true" className="inline-flex w-[3px] shrink-0 items-end" style={{ height: hauteur }}>
       <span className={`block w-[3px] ${couleur}`} style={{ height: h }} />
     </span>
   );
+}
+
+/**
+ * Point creux brique de 7 px : la marque d'une ligne coupée ou d'un échec. La forme porte l'alerte, le libellé
+ * voisin reste graphite ; l'antenne pleine est réservée à ce qui vit.
+ */
+export function PointCreux({ className = '' }: { className?: string }) {
+  return <span aria-hidden="true" className={`inline-block size-[7px] shrink-0 rounded-full border-[1.5px] border-alerte align-middle ${className}`} />;
 }
 
 /**

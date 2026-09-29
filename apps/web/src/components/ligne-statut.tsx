@@ -48,7 +48,7 @@ function affichage(e: EtatLigneClient): Affichage {
       return {
         trait: 'interrompu',
         couleurTrait: 'stroke-alerte',
-        couleurTexte: 'text-alerte',
+        couleurTexte: 'text-encre-2',
         libelle: 'Téléphone déconnecté',
         court: 'Déconnecté',
         lien: { href: '/telephone', aria: `Téléphone passerelle déconnecté : ${VERS_TELEPHONE}` },
@@ -57,7 +57,7 @@ function affichage(e: EtatLigneClient): Affichage {
       return {
         trait: 'interrompu',
         couleurTrait: 'stroke-alerte',
-        couleurTexte: 'text-alerte',
+        couleurTexte: 'text-encre-2',
         libelle: 'Ligne injoignable',
         court: 'Injoignable',
         lien: { href: '/telephone', aria: `Ligne injoignable : la ligne téléphone ne répond pas, ${VERS_TELEPHONE}` },
@@ -74,10 +74,11 @@ function affichage(e: EtatLigneClient): Affichage {
   }
 }
 
-const TIRETS: Record<Trait, string | undefined> = { pointille: '2 4', plein: undefined, interrompu: '22 4 30' };
+/** Interrompu : une coupure franche au milieu (10 px sur 56, 5 px sur 16), qui ne se confond pas avec le plein d'un appel. */
+const TIRETS: Record<Trait, string | undefined> = { pointille: '2 4', plein: undefined, interrompu: '20 10 26' };
 
 function TraitLigne({ largeur, trait, couleur, className }: { largeur: number; trait: Trait; couleur: string; className: string }) {
-  const tirets = largeur < 56 && trait === 'interrompu' ? '6 3 7' : TIRETS[trait];
+  const tirets = largeur < 56 && trait === 'interrompu' ? '5 5 6' : TIRETS[trait];
   return (
     <svg width={largeur} height="16" viewBox={`0 0 ${largeur} 16`} aria-hidden="true" className={`shrink-0 overflow-visible ${className}`}>
       <line
@@ -96,7 +97,8 @@ function TraitLigne({ largeur, trait, couleur, className }: { largeur: number; t
 
 /**
  * État de la ligne, toujours visible dans la barre : un trait (pointillé au repos, plein en antenne pendant
- * un appel, interrompu quand la ligne n'est pas sûre) et un libellé. Relu toutes les 3 s par useLigne.
+ * un appel, coupé en brique quand la ligne est tombée, coupé en graphite quand son état est inconnu) et un
+ * libellé, graphite hors appel. Relu toutes les 3 s par useLigne.
  * Plus jamais « Ligne libre » affirmé sans relevé.
  */
 export function LigneStatut() {

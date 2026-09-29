@@ -12,7 +12,7 @@ import { useLigne } from '@/components/etat-ligne-telephone';
 import { chrono, dateCourte, duree, etatAppel, FUSEAU, heure, LIGNES_COURTES } from '@/components/format-appel';
 import { estimation } from '@/components/garde-fous';
 import { useHorloge } from '@/components/horloge';
-import { GlypheEtape } from '@/components/ui';
+import { GlypheEtape, PointCreux } from '@/components/ui';
 import type { AppelDuJour, CampagneJour, EtatLigneServeur } from '@/lib/accueil';
 import { ligneBloquee, type Situation } from './situation';
 import { AxePiste } from './squelette-bande';
@@ -258,9 +258,9 @@ function Cadre({
   return (
     <section aria-label={etiquette} className="grid min-w-0 grid-cols-1 gap-3.5">
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 max-sm:contents">
-        <h2
-          className={`text-lg font-semibold ${tonTitre === 'alerte' ? 'text-alerte' : tonTitre === 'antenne' ? 'text-antenne' : 'text-encre'} max-sm:order-1`}
-        >
+        {/* Alerte : le titre reste en encre, la brique ne porte que sur le point creux (l'antenne est au vivant seul). */}
+        <h2 className={`text-lg font-semibold ${tonTitre === 'antenne' ? 'text-antenne' : 'text-encre'} max-sm:order-1 ${tonTitre === 'alerte' ? 'flex items-center gap-2.5' : ''}`}>
+          {tonTitre === 'alerte' ? <PointCreux /> : null}
           {titre}
         </h2>
         {actions ? (
@@ -327,7 +327,12 @@ function FinAppel({ appel: a, bloquee }: { appel: AppelDuJour; bloquee: boolean 
         etiquette="Dernier appel"
         titre="Ligne libre"
         contexte={`Appel de ${heure(a.debutLe)} · ${qui}`}
-        phrase={<span className="text-alerte">{pasParti ? `L’appel de ${a.prospect} n’est pas parti` : 'Analyse en échec'}</span>}
+        phrase={
+          <span className="text-encre-2">
+            <PointCreux className="mr-3.5" />
+            {pasParti ? `L’appel de ${a.prospect} n’est pas parti` : 'Analyse en échec'}
+          </span>
+        }
         {...(a.erreur ? { detail: a.erreur, tonDetail: 'alerte' as const } : {})}
         actions={<LienEntree href={lienAppel(a.id)}>Ouvrir l’appel</LienEntree>}
       />
@@ -564,7 +569,8 @@ function CampagneArretee({
         blocage || erreur || (telephone && ouverte) ? (
           <>
             {blocage ? (
-              <p id={`blocage-${c.id}`} className="text-sm text-alerte sm:text-right">
+              <p id={`blocage-${c.id}`} className="text-sm text-encre-2 sm:text-right">
+                <PointCreux className="mr-2" />
                 {reprise ? 'Reprise' : 'Lancement'} impossible : {blocage.charAt(0).toLocaleLowerCase('fr-FR') + blocage.slice(1)}
               </p>
             ) : null}

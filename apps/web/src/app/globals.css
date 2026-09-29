@@ -3,7 +3,7 @@
  * THÈSE : une régie d'écoute sombre, dense, pilotée au clavier, pour 100 appels par jour et une démo
  *   regardée par-dessus l'épaule. L'écran se tait jusqu'à ce qu'un appel vive.
  * MONDE : graphite chaud #121110, texte #f2f0eb, un seul rouge « antenne » #ff6a4d pour ce qui vit,
- *   brique #c97a55 pour les erreurs. Chivo pour le texte, Chivo Mono pour heures, durées, numéros,
+ *   brique mate #b98468 pour les erreurs. Chivo pour le texte, Chivo Mono pour heures, durées, numéros,
  *   comptes et identifiants. Filets d'un pixel, actions en texte précédées de leur touche, filtres
  *   soulignés, recherche sur filet bas, coins de 6 px au plus.
  * RÉCIT : l'opérateur voit l'appel en cours, situe la journée, retrouve n'importe quel appel en deux gestes.
@@ -32,7 +32,10 @@
   --filet-fort: #3a3935;  /* contour des touches, filet bas des champs */
   --souligne: #4a4843;    /* soulignement au survol */
   --antenne: #ff6a4d;     /* ce qui vit, et rien d'autre : 6,67:1 */
-  --alerte: #c97a55;      /* brique : erreurs, révocation, ligne coupée : 5,75 fond / 5,30 sur alerte-fond */
+  /* Brique mate : erreurs et révocation en texte ; ligne coupée et échec d'appel en forme seulement (trait coupé,
+     point creux), leur libellé restant graphite. Chroma OKLCH 0,077 contre 0,188 pour l'antenne : elle ne se lit
+     pas comme un rouge vivant. 5,89 fond / 5,55 surface / 5,38 survol / 5,44 sur alerte-fond. */
+  --alerte: #b98468;
   --alerte-fond: #221812; /* fond d'un message d'alerte */
   --focus: #f2f0eb;
   --gouttiere: 16px;

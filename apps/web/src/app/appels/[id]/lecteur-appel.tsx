@@ -32,6 +32,11 @@ const TEMPS: Record<string, string> = { creuser: 'creuser', reformuler: 'reformu
 const SAUT = 5;
 /** Après un défilement à la main, la transcription ne suit plus la lecture pendant ce délai. */
 const REPIT_DEFILEMENT_MS = 5000;
+/** Durée pendant laquelle les évènements de défilement sont attribués au défilement automatique. */
+const DUREE_DEFILEMENT_AUTO_MS = 1200;
+/** Une réplique plus proche que ces marges des bords de l'écran (en px) fait défiler la page. */
+const MARGE_HAUTE = 96;
+const MARGE_BASSE = 48;
 
 /** Découpe un texte autour des occurrences d'un terme (sans casse) pour les surligner. */
 function morceaux(texte: string, terme: string): { texte: string; trouve: boolean }[] {
@@ -52,8 +57,10 @@ function morceaux(texte: string, terme: string): { texte: string; trouve: boolea
 /**
  * Bilan et transcription d'un appel terminé, dans un seul composant : une citation d'objection déplace la
  * lecture et surligne la phrase qui la prouve. Barre de lecture maison (les contrôles natifs restaient clairs
- * sur le graphite), une seule réplique tabulable (flèches pour passer de l'une à l'autre), défilement du seul
- * conteneur de la transcription, qui suit la lecture sauf si l'opérateur a défilé à la main.
+ * sur le graphite), une seule réplique tabulable (flèches pour passer de l'une à l'autre). La transcription
+ * garde sa hauteur naturelle, lisible jusqu'à la dernière réplique : c'est la page qui défile, et elle suit la
+ * lecture (seulement quand la réplique courante sort de l'écran) sauf si l'opérateur a défilé à la main. La
+ * barre de lecture reste collée sous la barre de navigation.
  *
  * Clavier (appel terminé, rien d'autre ne réclame ces touches) : Espace lecture et pause, ← et → cinq secondes,
  * ↑ et ↓ réplique précédente et suivante.
@@ -84,7 +91,6 @@ export function LecteurAppel({
   raccourcis?: boolean;
 }) {
   const lecteur = useRef<HTMLAudioElement>(null);
-  const conteneur = useRef<HTMLDivElement>(null);
   const repliques = useRef<(HTMLButtonElement | null)[]>([]);
   const defilementAuto = useRef(0);
   const defilementManuel = useRef(0);
@@ -107,16 +113,28 @@ export function LecteurAppel({
   const dureeTotale = dureeAudio || (transcription.at(-1)?.secondes ?? 0);
   const courante = audioDispo ? transcription.findLastIndex((t) => t.secondes <= instant + 0.05) : choisie;
 
+  /** Amène une réplique à l'écran si elle en sort (`force` passe outre le répit après un défilement manuel). */
   const defiler = (index: number, force: boolean) => {
-    const c = conteneur.current;
     const li = repliques.current[index];
-    if (!c || !li || c.scrollHeight <= c.clientHeight + 1) return;
+    if (!li) return;
     if (!force && Date.now() - defilementManuel.current < REPIT_DEFILEMENT_MS) return;
-    const cible = li.offsetTop - c.clientHeight / 3;
+    const { top, bottom } = li.getBoundingClientRect();
+    const barre = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hauteur-barre')) || 0;
+    // Marge haute : la barre de navigation et la barre de lecture collée dessous.
+    if (top >= barre + MARGE_HAUTE && bottom <= window.innerHeight - MARGE_BASSE) return;
     defilementAuto.current = Date.now();
     const reduit = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    c.scrollTo({ top: Math.max(0, cible), behavior: reduit ? 'auto' : 'smooth' });
+    window.scrollTo({ top: Math.max(0, window.scrollY + top - window.innerHeight / 3), behavior: reduit ? 'auto' : 'smooth' });
   };
+
+  // Un défilement de la page qui ne vient pas de la lecture suspend le suivi pendant le répit.
+  useEffect(() => {
+    const surDefilement = () => {
+      if (Date.now() - defilementAuto.current > DUREE_DEFILEMENT_AUTO_MS) defilementManuel.current = Date.now();
+    };
+    window.addEventListener('scroll', surDefilement, { passive: true });
+    return () => window.removeEventListener('scroll', surDefilement);
+  }, []);
 
   // La transcription suit la lecture.
   useEffect(() => {
@@ -319,7 +337,7 @@ export function LecteurAppel({
         ) : null}
 
         {audioDispo ? (
-          <div className="-mx-1.5 flex items-center gap-4 pb-1">
+          <div className="sticky top-(--hauteur-barre) z-10 -mx-1.5 flex items-center gap-4 border-b border-filet bg-fond py-2">
             <Action
               ton="fort"
               touche="Espace"
@@ -360,13 +378,7 @@ export function LecteurAppel({
           <p className="text-sm text-encre-3">Pas d’enregistrement pour cet appel.</p>
         )}
 
-        <div
-          ref={conteneur}
-          onScroll={() => {
-            if (Date.now() - defilementAuto.current > 800) defilementManuel.current = Date.now();
-          }}
-          className="relative lg:max-h-[calc(100dvh-var(--hauteur-barre)-10rem)] lg:overflow-y-auto"
-        >
+        <div>
           <ol aria-label="Transcription" className="grid gap-0.5">
             {transcription.map((t, i) => {
               const mina = t.role === 'agent';

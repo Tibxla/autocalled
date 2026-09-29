@@ -9,7 +9,7 @@ import { AppelEnDirect } from '@/components/appel-en-direct';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
 import { numeroMasque, prenom as prenomDe } from '@/components/format-appel';
 import type { ReglagesLigne } from '@/components/garde-fous';
-import { Action, LienAction, Message, Selection } from '@/components/ui';
+import { Action, LienAction, Message, PointCreux, Selection } from '@/components/ui';
 
 /**
  * Appeler un prospect depuis sa fiche : une version, une ligne, et une action dont la forme suit la gravité.
@@ -50,7 +50,10 @@ function GesteTelephone({
     <>
       {children(true)}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        <p className="text-sm text-alerte">{bloque.texte} Aucun appel ne peut partir par le téléphone.</p>
+        <p className="text-sm text-encre-2">
+          <PointCreux className="mr-2" />
+          {bloque.texte} Aucun appel ne peut partir par le téléphone.
+        </p>
         <LienAction ton="discret" href="/telephone" className="-mx-1.5">
           Ouvrir Téléphone
         </LienAction>

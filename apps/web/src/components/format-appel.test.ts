@@ -116,17 +116,17 @@ describe('etatAppel', () => {
     expect(etatAppel({ ...base, statut: 'traitement' }, { maintenant })).toMatchObject({ cle: 'analyse', libelle: 'Analyse…', ton: 'encre-3' });
   });
 
-  it('distingue un appel pas parti d’une analyse en échec', () => {
+  it('distingue un appel pas parti d’une analyse en échec, en graphite', () => {
     expect(etatAppel({ ...base, statut: 'echec', erreur: 'Ligne occupée.' }, { maintenant })).toEqual({
       cle: 'pas-parti',
       libelle: 'Non composé',
-      ton: 'alerte',
+      ton: 'encre-2',
       detail: 'Ligne occupée.',
     });
     expect(etatAppel({ ...base, statut: 'echec', conversationId: 'conv-fictive' }, { maintenant })).toEqual({
       cle: 'analyse-echec',
       libelle: 'Analyse en échec',
-      ton: 'alerte',
+      ton: 'encre-2',
     });
   });
 

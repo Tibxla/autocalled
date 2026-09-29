@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { FUSEAU } from '@/components/format-appel';
-import { EnTetePage, Message, Page, TitreSection } from '@/components/ui';
+import { EnTetePage, Message, Page, PointCreux, TitreSection } from '@/components/ui';
 import { lireAppel } from '@/lib/lecture';
 import { commanderPont, type ReglagesLigne } from '@/lib/pont';
 import type { Appairage, EtatTelephone } from './actions';
@@ -34,7 +34,8 @@ type Verdict = {
 const TONS: Record<Verdict['ton'], string> = {
   encre: 'text-encre',
   'encre-2': 'text-encre-2',
-  alerte: 'text-alerte',
+  // Ligne tombée, injoignable ou plafonnée : texte en encre, la brique sur le point creux qui le précède.
+  alerte: 'text-encre',
   antenne: 'text-antenne',
 };
 
@@ -59,7 +60,7 @@ function verdictPlafond(phrase: string): Verdict {
   if (!m) return { ton: 'alerte', texte: 'Plafond d’appels atteint', detail: phrase };
   return {
     ton: 'alerte',
-    texte: `Plafond atteint : prochain appel possible dans ${m[3]} min`,
+    texte: `Plafond atteint\u00a0: prochain appel possible dans ${m[3]} min`,
     detail: `${m[1]} appels par ${m[2]} au plus, pour que le numéro ne soit pas signalé comme démarchage.`,
   };
 }
@@ -108,7 +109,7 @@ export default async function PageTelephone() {
   else if (!telephone.connecte)
     verdict = {
       ton: 'alerte',
-      texte: 'Téléphone passerelle déconnecté : hors de portée ou Bluetooth coupé',
+      texte: 'Téléphone passerelle déconnecté\u00a0: hors de portée ou Bluetooth coupé',
     };
   else if (telephone.plafond) verdict = verdictPlafond(telephone.plafond);
   else verdict = { ton: 'encre', texte: 'Prête à appeler' };
@@ -119,6 +120,7 @@ export default async function PageTelephone() {
       <div className="grid max-w-[48rem] gap-12">
         <section aria-label="État de la ligne" className="grid gap-1.5">
           <p role="status" className={`text-lg font-semibold text-balance ${TONS[verdict.ton]}`}>
+            {verdict.ton === 'alerte' ? <PointCreux className="mr-2.5" /> : null}
             {verdict.lien ? (
               <Link href={verdict.lien} className="decoration-antenne/50 decoration-1 underline-offset-4 hover:underline">
                 {verdict.texte}
