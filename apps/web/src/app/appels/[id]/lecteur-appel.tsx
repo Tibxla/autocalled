@@ -223,6 +223,10 @@ export function LecteurAppel({
     } else if (e.key === 'Enter') {
       e.preventDefault();
       aller(i);
+    } else if (e.key === ' ' && audioDispo && !e.repeat) {
+      // Espace garde son sens de lecture et pause, même le focus sur une réplique (sinon le bouton se recliquerait).
+      e.preventDefault();
+      basculer();
     }
   };
 
