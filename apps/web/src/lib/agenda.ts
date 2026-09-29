@@ -162,10 +162,46 @@ export async function proposerPourAppel(appelId: string): Promise<unknown> {
 }
 
 /**
+ * Les adresses dont l'épellation a été renvoyée à Mina, par appel : `adresse_confirmee` n'est cru que pour l'adresse
+ * exacte relue pendant ce même appel. Le booléen vient du modèle, qui peut le poser d'emblée ou recopier une autre
+ * adresse que celle relue ; le serveur garde donc la preuve. En mémoire (un redémarrage fait relire l'adresse de
+ * nouveau), sur `globalThis` pour que la route du pont et l'action du navigateur la partagent.
+ */
+const RELUES_DUREE_MS = 2 * 3600_000;
+const cleRelues = Symbol.for('autocalled.adressesRelues');
+const adressesRelues: Map<string, { email: string; le: number }> =
+  ((globalThis as Record<symbol, unknown>)[cleRelues] as Map<string, { email: string; le: number }> | undefined) ??
+  ((globalThis as Record<symbol, unknown>)[cleRelues] = new Map());
+
+function noterRelue(appelId: string, email: string): void {
+  const maintenant = Date.now();
+  for (const [id, r] of adressesRelues) if (maintenant - r.le > RELUES_DUREE_MS) adressesRelues.delete(id);
+  adressesRelues.set(appelId, { email, le: maintenant });
+}
+
+/** Les lignes où l'opérateur joue le prospect (ou un modèle) : aucune invitation à l'adresse de la fiche, rien recopié dans la fiche. */
+const LIGNES_DE_TEST = new Set(['navigateur', 'simulation']);
+
+/** Un lien de visio n'est gardé que s'il mène à Google Meet : il peut venir d'un modèle. */
+export function lienMeet(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && u.hostname === 'meet.google.com' ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Réservation d'un créneau par Mina. L'adresse de l'invitation passe par deux appels : le premier renvoie son
  * épellation, produite ici à partir de l'adresse qui sera utilisée, que Mina relit au prospect ; le second,
- * avec `adresseConfirmee`, réserve. Une consigne du prompt ne suffisait pas (appel du 28/09 : adresse mal
- * entendue, réservée sans relecture, puis correction du prospect ignorée).
+ * avec `adresseConfirmee` et la même adresse, réserve. Une consigne du prompt ne suffisait pas (appel du 28/09 :
+ * adresse mal entendue, réservée sans relecture, puis correction du prospect ignorée), et le booléen seul non plus :
+ * seule l'adresse relue pendant cet appel est acceptée.
+ *
+ * Sur une ligne de test (navigateur, simulation), l'opérateur joue le prospect : l'adresse de la fiche, celle du vrai
+ * prospect, ne reçoit jamais d'invitation, et une adresse dictée n'est pas recopiée dans la fiche.
  */
 export async function reserverPourAppel(appelId: string, debutBrut: unknown, emailBrut?: unknown, confirmeeBrut?: unknown): Promise<unknown> {
   const c = await contexteAppel(appelId);
@@ -174,7 +210,8 @@ export async function reserverPourAppel(appelId: string, debutBrut: unknown, ema
   const saisie = typeof emailBrut === 'string' ? emailBrut.trim().toLowerCase() : '';
   const lu = z.email().safeParse(saisie);
   const email = lu.success ? lu.data : null;
-  const confirmee = confirmeeBrut === true || confirmeeBrut === 'true';
+  const confirmee = (confirmeeBrut === true || confirmeeBrut === 'true') && email !== null && adressesRelues.get(appelId)?.email === email;
+  const ligneDeTest = LIGNES_DE_TEST.has(c.appel.ligne);
   if (saisie && !email) {
     return { reserve: false, raison: 'Adresse incomplète ou illisible : redemande-la au prospect, en lui faisant épeler la partie avant l’arobase.' };
   }
@@ -198,6 +235,7 @@ export async function reserverPourAppel(appelId: string, debutBrut: unknown, ema
   }
 
   if (email && !confirmee) {
+    noterRelue(appelId, email);
     return {
       reserve: false,
       a_faire: `Relis l'adresse au prospect telle qu'elle sera utilisée, lettre par lettre : « ${epelerAdresse(email)} ». S'il dit oui, rappelle reserver_creneau avec la même adresse et adresse_confirmee à true. S'il corrige, rappelle avec l'adresse corrigée, sans adresse_confirmee.`,
@@ -216,9 +254,13 @@ export async function reserverPourAppel(appelId: string, debutBrut: unknown, ema
     return { reserve: false, raison: "Ce créneau vient d'être pris ou n'est pas autorisé.", alternatives };
   }
 
-  const [rdv] = await db.insert(rendezVous).values({ appelId, debut, fin, email }).returning({ id: rendezVous.id });
-  // Une adresse confirmée au téléphone complète la fiche pour les appels suivants.
-  if (email && !c.prospect.email) {
+  adressesRelues.delete(appelId);
+  // Ligne de test : l'adresse du vrai prospect (celle de la fiche) ne reçoit rien ; une autre adresse dictée, celle de
+  // l'opérateur qui essaie l'invitation, reste invitée.
+  const invite = email && !(ligneDeTest && email === c.prospect.email?.toLowerCase()) ? email : null;
+  const [rdv] = await db.insert(rendezVous).values({ appelId, debut, fin, email: invite }).returning({ id: rendezVous.id });
+  // Une adresse confirmée au téléphone complète la fiche pour les appels suivants (jamais depuis une ligne de test).
+  if (email && !c.prospect.email && !ligneDeTest) {
     await db
       .update(prospects)
       .set({ email })
@@ -228,7 +270,11 @@ export async function reserverPourAppel(appelId: string, debutBrut: unknown, ema
   return {
     reserve: true,
     libelle: creneauParle(debut, c.regles.fuseau),
-    invitation: email ? `envoyée à ${email}` : 'aucune adresse : pas d’invitation envoyée',
+    invitation: invite
+      ? `envoyée à ${invite}`
+      : email
+        ? 'ligne de test : pas d’invitation à l’adresse de la fiche du prospect'
+        : 'aucune adresse : pas d’invitation envoyée',
   };
 }
 
@@ -242,15 +288,17 @@ export async function creerEvenementDuRendezVous(rendezVousId: string): Promise<
   const titre = `Visio · ${p.nom}${p.societe ? ` (${p.societe})` : ''} · ${c.entreprise.nom}`;
   // Avec un invité, la description lui est visible : rien d'interne (notes, numéro, lien de l'appel).
   const descriptionInvite = `Premier échange en visio de ${c.regles.dureeMinutes} minutes${c.entreprise.interlocuteur ? ` avec ${c.entreprise.interlocuteur}` : ''}, ${c.entreprise.nom}.`;
-  const descriptionInterne = [
-    `${p.nom}${p.role ? `, ${p.role}` : ''}${p.societe ? ` chez ${p.societe}` : ''}`,
-    `Téléphone : ${p.telephone}`,
-    '',
-    p.contexte,
-    '',
-    `Appel : ${process.env.ORIGINE_APP ?? ''}/appels/${rdv.appelId}`,
-  ].join('\n');
-  const description = rdv.email ? descriptionInvite : descriptionInterne;
+  const interne = (contexte: string | null) =>
+    [
+      `${p.nom}${p.role ? `, ${p.role}` : ''}${p.societe ? ` chez ${p.societe}` : ''}`,
+      `Téléphone : ${p.telephone}`,
+      ...(contexte ? ['', contexte] : []),
+      '',
+      `Appel : ${process.env.ORIGINE_APP ?? ''}/appels/${rdv.appelId}`,
+    ].join('\n');
+  const description = rdv.email ? descriptionInvite : interne(p.contexte);
+  // Pour le modèle (connecteur de Claude), jamais le contexte de la fiche : c'est un texte de tiers.
+  const descriptionPourModele = rdv.email ? descriptionInvite : interne(null);
 
   try {
     const google = await accesGoogle().catch(() => null);
@@ -282,18 +330,25 @@ summary : ${JSON.stringify(titre)}
 startTime : ${iso(rdv.debut)}
 endTime : ${iso(rdv.fin)}
 timeZone : Europe/Paris
-description : ${JSON.stringify(description)}
+description : ${JSON.stringify(descriptionPourModele)}
 availability : AVAILABILITY_BUSY
 addGoogleMeetUrl : true
 ${rdv.email ? `attendees : [{ email: ${JSON.stringify(rdv.email)} }]\nnotificationLevel : ALL` : 'aucun invité (attendees vide)\nnotificationLevel : NONE'}
 Renvoie l'identifiant de l'événement créé, le calendarId utilisé et le lien Google Meet (hangoutLink ou lien de conférence ; chaîne vide s'il n'y en a pas).`,
+      }).catch((erreur: unknown) => {
+        // Le message d'un `claude -p` échoué reprend la réponse du modèle : il reste au journal du service, pas en base.
+        console.error('création de l’événement par le connecteur en échec :', erreur);
+        throw new Error('La création de l’événement par le connecteur Google Agenda de Claude a échoué (détail dans le journal du service).');
       })) as { evenementId: string; calendrier: string; lienVisio: string };
       evenementId = r.evenementId;
       calendrier = r.calendrier;
-      lienVisio = r.lienVisio || null;
+      lienVisio = r.lienVisio;
     }
-    await db.update(rendezVous).set({ evenementId, calendrier, lienVisio, statut: 'cree', erreur: null }).where(eq(rendezVous.id, rendezVousId));
+    await db
+      .update(rendezVous)
+      .set({ evenementId, calendrier, lienVisio: lienMeet(lienVisio), statut: 'cree', erreur: null })
+      .where(eq(rendezVous.id, rendezVousId));
   } catch (erreur) {
-    await db.update(rendezVous).set({ statut: 'echec', erreur: (erreur as Error).message }).where(eq(rendezVous.id, rendezVousId));
+    await db.update(rendezVous).set({ statut: 'echec', erreur: (erreur as Error).message.slice(0, 300) }).where(eq(rendezVous.id, rendezVousId));
   }
 }
