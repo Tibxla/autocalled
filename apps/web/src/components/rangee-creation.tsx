@@ -60,7 +60,7 @@ export function RangeeCreation({
           aria-describedby={erreur ? `${id}-erreur` : undefined}
           className="max-w-[26rem] min-w-[12rem] flex-1"
         />
-        <div className="-mx-1.5 flex items-center gap-3">
+        <div className="-mx-1.5 flex items-center gap-3 pointer-coarse:mx-0">
           <Action type="submit" ton="fort" touche="Entrée" enCours={enCours} libelleEnCours="Création…" disabled={enCours}>
             Créer
           </Action>

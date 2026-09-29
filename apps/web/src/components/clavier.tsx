@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useRef, useSyncExternalStore } from 'react';
+import { Action } from './action';
 import { Touche } from './touche';
 
 /**
@@ -481,9 +482,10 @@ export function AideRaccourcis() {
         <h2 id={titre} className="text-md font-semibold">
           Raccourcis clavier
         </h2>
-        <span className="flex items-center gap-1.5 text-sm text-encre-3">
-          <Touche>Échap</Touche> fermer
-        </span>
+        {/* Une action, pas une légende : le panneau se ferme aussi au doigt (44 px) ou à la souris. */}
+        <Action ton="discret" touche="Échap" onClick={() => fermerAide()} className="-my-2 -mr-1.5">
+          Fermer
+        </Action>
       </div>
       <div className="mt-3 grid gap-4">
         {groupes.map(({ groupe, lignes }) => (

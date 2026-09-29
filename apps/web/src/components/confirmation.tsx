@@ -15,6 +15,10 @@ import { useRaccourcis } from './clavier';
  * quand le focus est sur ce conteneur ; Espace y est sans effet (une seconde pression réflexe d'Espace après
  * « Espace Prendre la main » ne valide donc rien) ; Échap annule où que soit le focus ; Tab atteint les deux
  * boutons, qui gardent leur activation native. À la fermeture, le focus revient au déclencheur.
+ *
+ * En pleine largeur, jamais en plein écran ni en fenêtre modale. Sous 640 px, les actions s'empilent : l'action
+ * en relief (au doigt) sur toute la largeur, « Annuler » dessous, en texte, sur toute la largeur. À l'ouverture,
+ * elle vient dans la vue au plus court, au-dessus de la barre du bas, jamais dessous.
  */
 
 export function useConfirmation(): { ouverte: boolean; ouvrir: (declencheur?: HTMLElement | null) => void; fermer: () => void } {
@@ -81,7 +85,11 @@ export function Confirmation({
   ]);
 
   useEffect(() => {
-    if (ouverte) conteneur.current?.focus();
+    const el = conteneur.current;
+    if (!ouverte || !el) return;
+    el.focus({ preventScroll: true });
+    const reduit = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollIntoView({ block: 'nearest', behavior: reduit ? 'auto' : 'smooth' });
   }, [ouverte]);
 
   if (!ouverte) return null;
@@ -96,7 +104,7 @@ export function Confirmation({
         // Espace sur le conteneur : rien, pas même le défilement.
         if (e.key === ' ' && e.target === e.currentTarget) e.preventDefault();
       }}
-      className={`grid scroll-mt-[calc(var(--hauteur-barre)+16px)] gap-2 rounded-md bg-surface px-3.5 py-3 focus-visible:outline-trait focus-visible:outline-offset-0 ${className}`}
+      className={`grid scroll-mt-[calc(var(--hauteur-barre)+16px)] scroll-mb-[calc(var(--hauteur-nav-bas)+16px)] gap-2 rounded-md bg-surface px-3.5 py-3 focus-visible:outline-trait focus-visible:outline-offset-0 ${className}`}
     >
       <p id={idQuestion} className="text-md font-medium text-encre">
         {question}
@@ -106,9 +114,11 @@ export function Confirmation({
           {children}
         </div>
       ) : null}
-      <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+      <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 max-sm:grid max-sm:gap-2 pointer-coarse:mx-0">
         <Action
           ton={ton === 'alerte' ? 'alerte' : 'fort'}
+          forme="relief"
+          className="max-sm:w-full max-sm:justify-center"
           touche="Entrée"
           enCours={enCours}
           {...(libelleEnCours ? { libelleEnCours } : {})}
@@ -117,7 +127,7 @@ export function Confirmation({
         >
           {libelleConfirmer}
         </Action>
-        <Action ton="discret" touche="Échap" onClick={onAnnuler}>
+        <Action ton="discret" touche="Échap" onClick={onAnnuler} className="max-sm:h-11 max-sm:w-full max-sm:justify-center">
           {libelleAnnuler}
         </Action>
       </div>

@@ -190,8 +190,8 @@ function Conversation({
   if (phase === 'repos') {
     return (
       <div className="grid justify-items-start gap-3">
-        <div className="-mx-1.5">
-          {/* Pas de raccourci : l'appel est enregistré en base dès le clic (règle du clavier). */}
+        <div className="-mx-1.5 pointer-coarse:mx-0">
+          {/* Pas de raccourci : l'appel est enregistré en base dès le clic (règle du clavier). Ton fort : relief au doigt. */}
           <Action ton="fort" onClick={() => void demarrer()}>
             Appeler {prenom(prospectNom)} au micro
           </Action>
@@ -203,9 +203,10 @@ function Conversation({
 
   const actions =
     phase === 'en-appel' ? (
-      <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+      // Raccrocher : le relief d'alerte au doigt, seul sur sa rangée sous 640 px, 16 px sous le reste.
+      <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 max-sm:grid max-sm:gap-y-4 pointer-coarse:mx-0">
         <span className="px-1.5 text-sm text-encre-3">{conversation.isSpeaking ? `${nomAssistante} parle` : `${nomAssistante} écoute`}</span>
-        <Action ton="alerte" onClick={() => conversation.endSession()}>
+        <Action ton="alerte" forme="relief" className="max-sm:w-full" onClick={() => conversation.endSession()}>
           Raccrocher
         </Action>
       </div>
