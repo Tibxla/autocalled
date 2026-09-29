@@ -17,7 +17,7 @@ describe('importerFiches', () => {
     expect(rapport).toMatchObject({ etat: 'fait', crees: ['julie', 'marc'], numerosAutorises: 2, numerosRevoques: [] });
     const lignes = await db.select().from(consentements);
     expect(lignes.map((c) => c.numero).sort()).toEqual(['+33639980001', '+33639980002']);
-    expect(lignes.every((c) => c.texteVersion === 1 && c.revoqueLe === null)).toBe(true);
+    expect(lignes.every((c) => c.texteVersion === 2 && c.revoqueLe === null)).toBe(true);
     expect(await db.select({ canal: imports.canal }).from(imports)).toEqual([{ canal: 'interface' }]);
   });
 
