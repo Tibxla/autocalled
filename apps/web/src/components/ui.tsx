@@ -47,7 +47,8 @@ export function EnTetePage({
   retour,
 }: {
   titre: string;
-  sousTitre?: string;
+  /** Texte ou contenu en ligne (liens, spans) : rendu dans un <p>. */
+  sousTitre?: React.ReactNode;
   action?: React.ReactNode;
   compte?: number | string;
   retour?: { href: string; libelle: string };
@@ -269,7 +270,7 @@ export function Filtre({
  */
 export function TableDense({ libelle, colonnes, children, className = '' }: { libelle: string; colonnes: string; children: React.ReactNode; className?: string }) {
   return (
-    <div role="table" aria-label={libelle} style={{ '--colonnes': colonnes } as CSSProperties} className={`text-md ${className}`}>
+    <div role="table" aria-label={libelle} style={{ '--colonnes': colonnes } as CSSProperties} className={`min-w-0 text-md ${className}`}>
       {children}
     </div>
   );
@@ -409,12 +410,43 @@ export function GlypheEtape({
   );
 }
 
+/**
+ * Rangée d'une liste de définitions dense (à placer dans un <dl className="border-t border-filet">) :
+ * intitulé à gauche en encre-3, valeur à droite, une colonne sous 640 px.
+ */
+export function LigneDefinition({ intitule, children }: { intitule: string; children: React.ReactNode }) {
+  return (
+    <div className="grid gap-0.5 border-b border-filet py-2 sm:grid-cols-[10rem_minmax(0,1fr)] sm:items-baseline sm:gap-4">
+      <dt className="text-sm text-encre-3">{intitule}</dt>
+      <dd className="min-w-0">{children}</dd>
+    </div>
+  );
+}
+
+/**
+ * Chevron de <details> : « droite » pivote d'un quart quand la ligne s'ouvre, « bas » se retourne (menu).
+ * `ouvert` absent : la rotation passe par className (group-open:rotate-90).
+ */
+export function Chevron({ direction = 'droite', ouvert, className = 'stroke-current' }: { direction?: 'droite' | 'bas'; ouvert?: boolean; className?: string }) {
+  const droite = direction === 'droite';
+  const rotation = ouvert ? (droite ? 'rotate-90' : 'rotate-180') : '';
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox={droite ? '0 0 6 10' : '0 0 10 6'}
+      className={`${droite ? 'w-1.5' : 'w-2.5'} shrink-0 fill-none transition-transform duration-150 ${rotation} ${className}`}
+    >
+      <path d={droite ? 'M1 1l4 4-4 4' : 'M1 1l4 4 4-4'} strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 const LARGEURS_SQUELETTE = ['40%', '55%', '30%', '62%', '45%', '35%', '58%', '28%', '50%', '42%'];
 
 /** Squelette statique d'une liste, sans animation ni reflet. */
-export function SqueletteListe({ lignes = 10, titre = false }: { lignes?: number; titre?: boolean }) {
+export function SqueletteListe({ lignes = 10, titre = false, className = 'pt-8' }: { lignes?: number; titre?: boolean; className?: string }) {
   return (
-    <div aria-hidden="true" className="pt-8">
+    <div aria-hidden="true" className={className}>
       {titre ? <div className="mb-6 h-5 w-40 rounded-[3px] bg-survol" /> : null}
       {Array.from({ length: lignes }, (_, i) => (
         <div key={i} className="flex h-[38px] items-center border-b border-filet">

@@ -29,7 +29,7 @@ interface OptionsAction {
 }
 
 const BASE =
-  'group inline-flex h-9 items-center gap-2 rounded-[4px] px-1.5 text-md whitespace-nowrap transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45 aria-disabled:cursor-not-allowed aria-disabled:opacity-45 pointer-coarse:h-11';
+  'group inline-flex h-9 items-center gap-2 rounded-[4px] px-1.5 text-left text-md whitespace-nowrap transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45 aria-disabled:cursor-not-allowed aria-disabled:opacity-45 pointer-coarse:h-11';
 
 const TONS: Record<TonAction, string> = {
   fort: 'font-semibold text-encre',

@@ -756,10 +756,13 @@ export function BandeAppel({
   raccourcis = true,
   condensee = false,
   onTermine,
+  libelleProspect,
 }: {
   appelId: string;
   variante: 'bande' | 'fiche';
   identite?: IdentiteAppel;
+  /** Nom de qui parle côté prospect quand `identite` manque (fiche d'appel) : sinon « Prospect ». */
+  libelleProspect?: string;
   debutLe?: string;
   statut?: 'en-cours' | 'traitement';
   finLe?: string | null;
@@ -798,6 +801,7 @@ export function BandeAppel({
     <VueBandeAppel
       variante={variante}
       {...(identite ? { identite } : {})}
+      {...(libelleProspect ? { libelleProspect } : {})}
       etat={fil.etat}
       perdu={fil.perdu}
       tours={fil.tours}
