@@ -1,3 +1,4 @@
+import { bilanEntier } from '@autocalled/domain';
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -284,7 +285,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
                   const cleIssue = a.issue ?? a.bilan?.issue ?? null;
                   return {
                     ...a,
-                    resume: a.bilan?.resume ?? null,
+                    resume: bilanEntier(a.bilan)?.resume ?? null,
                     nombreEtapes: nombreEtapes.get(a.versionScriptId) ?? null,
                     rendezVous: avecRendezVous.has(a.id),
                     libellePerso: cleIssue ? (libellePerso.get(cleIssue) ?? null) : null,

@@ -1,6 +1,7 @@
 import 'server-only';
 import {
   type Autorisation,
+  bilanEntier,
   ISSUES_SYSTEME,
   LIBELLES_ISSUES,
   VARIABLES_DE_L_APPEL,
@@ -79,7 +80,8 @@ export async function variablesPour(
     historique: precedents.map((p) => ({
       le: p.le,
       issue: libelleIssue.get(p.issue ?? '') ?? p.issue ?? 'issue inconnue',
-      resume: p.bilan?.resume ?? '',
+      // Un bilan purgé (durée de conservation, ADR 0014) n'a plus de résumé : l'issue seule reste.
+      resume: bilanEntier(p.bilan)?.resume ?? '',
     })),
     maintenant,
     fuseau: entreprise.fuseau,

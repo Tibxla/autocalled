@@ -1,0 +1,1 @@
+ALTER TABLE "appels" ADD COLUMN "purge_le" timestamp with time zone;

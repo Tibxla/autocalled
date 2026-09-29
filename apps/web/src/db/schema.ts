@@ -1,4 +1,4 @@
-import type { Bilan, EntreeCampagne, IssueSysteme, PlageHoraire, StatutCampagne, TourDeParole } from '@autocalled/domain';
+import type { BilanEnregistre, EntreeCampagne, IssueSysteme, PlageHoraire, StatutCampagne, TourDeParole } from '@autocalled/domain';
 import { ISSUES_SYSTEME } from '@autocalled/domain';
 import { sql } from 'drizzle-orm';
 import {
@@ -223,7 +223,8 @@ export const appels = pgTable('appels', {
   transcription: jsonb().$type<TourDeParole[]>(),
   /** Chemin relatif de l'enregistrement dans le dossier de données, hors dépôt. */
   audio: text(),
-  bilan: jsonb().$type<Bilan>(),
+  /** Le bilan entier, ou ce qu'il en reste après la durée de conservation (`purge: true`, ADR 0014). */
+  bilan: jsonb().$type<BilanEnregistre>(),
   issue: text(),
   issueSysteme: issueSysteme(),
   /**
@@ -233,6 +234,11 @@ export const appels = pgTable('appels', {
   rappelLe: timestamp({ withTimezone: true }),
   versionAnalyseur: text(),
   erreur: text(),
+  /**
+   * Passé la durée de conservation (ADR 0014, `DUREE_CONSERVATION_MOIS`) : enregistrements, transcription, texte libre
+   * du bilan et de l'erreur effacés ; issue, étape, objections, durée, dates, ligne et versions restent. Null : entier.
+   */
+  purgeLe: timestamp({ withTimezone: true }),
 }, (t) => [index('appels_rappel_le_idx').on(t.rappelLe).where(sql`${t.rappelLe} is not null`)]);
 
 /** La connexion Google Agenda de l'opérateur (une seule). Le jeton de rafraîchissement est chiffré. */

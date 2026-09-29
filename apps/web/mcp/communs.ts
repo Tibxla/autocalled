@@ -1,4 +1,4 @@
-import { type IssueSysteme, LIBELLES_ISSUES, type TourDeParole } from '@autocalled/domain';
+import { bilanEntier, type IssueSysteme, LIBELLES_ISSUES, type TourDeParole } from '@autocalled/domain';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/db';
@@ -6,6 +6,7 @@ import { issuesPersonnalisees, scripts, versionsAssistante, versionsScript } fro
 import { lireAssistante } from '@/lib/assistante';
 import { trouverEntreprise, trouverProspect } from '@/lib/donnees';
 import { numeroLisible } from '@/lib/format';
+import { mentionPurge } from '@/lib/conservation';
 import { lireAppel } from '@/lib/lecture';
 
 /** Identifiants d'entrée communs aux outils : le vocabulaire de CONTEXT.md, les formes de l'interface. */
@@ -133,12 +134,14 @@ export async function vueAppel(appelId: string, o: { transcription?: boolean } =
   ]);
   const etapes = version?.etapes ?? [];
   const b = a.bilan;
-  const libelleObjection = (o: { objectionId: string | null; libelle: string }) =>
-    o.objectionId ? (lu.objections.find((x) => x.id === o.objectionId)?.libelle ?? o.libelle) : o.libelle;
+  // Un bilan purgé (durée de conservation, ADR 0014) n'a plus de texte : ni résumé, ni citations, ni transcription.
+  const entier = bilanEntier(b);
+  const repertoriee = (id: string) => lu.objections.find((x) => x.id === id)?.libelle ?? null;
+  const libelleObjection = (o: { objectionId: string | null; libelle: string }) => (o.objectionId ? (repertoriee(o.objectionId) ?? o.libelle) : o.libelle);
   const tiers = {
     transcription: a.transcription ?? [],
-    citations: (b?.objections ?? []).map((o) => ({ objection: libelleObjection(o), citation: o.citation })),
-    texteBilan: b ? { resume: b.resume, pointsForts: b.pointsForts, pointsFaibles: b.pointsFaibles, rappel: b.rappel } : null,
+    citations: (entier?.objections ?? []).map((o) => ({ objection: libelleObjection(o), citation: o.citation })),
+    texteBilan: entier ? { resume: entier.resume, pointsForts: entier.pointsForts, pointsFaibles: entier.pointsFaibles, rappel: entier.rappel } : null,
     assistanteNom,
     donnees: {
       appelId: a.id,
@@ -162,6 +165,7 @@ export async function vueAppel(appelId: string, o: { transcription?: boolean } =
       audioDisponible: Boolean(a.audio),
       issueSysteme: a.issueSysteme,
       rappelLe: a.rappelLe,
+      purgeLe: a.purgeLe,
       bilan: b
         ? {
             issue: libelle(b.issue),
@@ -172,9 +176,10 @@ export async function vueAppel(appelId: string, o: { transcription?: boolean } =
             // le bloc des paroles de tiers, à part (`complement`).
             // Le libellé d'une objection nouvelle est écrit par l'analyseur d'après la transcription : il n'est que dans
             // le bloc des citations. Celui d'une objection répertoriée vient de la fiche de l'entreprise.
+            ...(entier ? {} : { purge: mentionPurge() }),
             objections: b.objections.map((o) => ({
               objectionId: o.objectionId,
-              libelle: o.objectionId ? libelleObjection(o) : null,
+              libelle: o.objectionId ? (repertoriee(o.objectionId) ?? ('libelle' in o ? o.libelle : null)) : null,
               nouvelle: !o.objectionId,
               levee: o.levee,
               tempsBloquant: o.tempsBloquant,

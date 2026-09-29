@@ -1,4 +1,4 @@
-import { type IssueSysteme, LIBELLES_ISSUES } from '@autocalled/domain';
+import { bilanEntier, type IssueSysteme, LIBELLES_ISSUES } from '@autocalled/domain';
 import { eq } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -9,6 +9,7 @@ import { EtatVide, GlypheEtape, LienAction, Message, Page, TitreSection } from '
 import { db } from '@/db';
 import { campagnes, scripts } from '@/db/schema';
 import { DUREE_MAX_ANALYSE_S } from '@/lib/appels';
+import { mentionPurge } from '@/lib/conservation';
 import { numeroLisible } from '@/lib/format';
 import { lireAppel, voisinsAppel } from '@/lib/lecture';
 import { assistantePourLaPage } from '@/lib/pages';
@@ -20,6 +21,9 @@ import { SuiviTelephone } from './suivi-telephone';
 
 const lire = cache(lireAppel);
 const FORME_ID = /^[0-9a-f-]{36}$/;
+
+/** Les temps CRAC, tels que l'écran les nomme. */
+const TEMPS_CRAC: Record<string, string> = { creuser: 'creuser', reformuler: 'reformuler', argumenter: 'argumenter', controler: 'contrôler' };
 
 /** Au-delà, un appel navigateur ou simulé encore « en cours » n'est plus présenté comme vivant. */
 const VIE_MAX_S = 10 * 60;
@@ -91,6 +95,9 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
   ]);
 
   const bilan = appel.bilan;
+  // Passé la durée de conservation (ADR 0014), le bilan n'a plus que ses champs structurés, et l'appel plus ni son ni transcription.
+  const entier = bilanEntier(bilan);
+  const purge = appel.purgeLe !== null;
   // Le rappel daté par l'analyse, en date absolue (la fiche d'appel se relit longtemps après).
   const rappelDate =
     appel.rappelLe && bilan?.rappelLe
@@ -175,7 +182,9 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
 
   let etatDirect: React.ReactNode = null;
   let actualisation: React.ReactNode = null;
-  if (appel.statut === 'en-cours' && telephone) {
+  if (purge) {
+    // Rien à suivre ni à relancer : la mention de la purge dit ce qui reste.
+  } else if (appel.statut === 'en-cours' && telephone) {
     // Filet de sécurité : la fin peut ne jamais arriver par le fil (pont redémarré). La bande garde son fil.
     actualisation = <Actualisation secondes={10} />;
   } else if (appel.statut === 'en-cours' && appel.ligne === 'simulation' && age < VIE_MAX_S) {
@@ -235,10 +244,14 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
           <p className="text-xl font-semibold tracking-[-0.01em] text-encre">{libelleIssue}</p>
           {perso && issue ? <span className="text-md text-encre-3">{LIBELLES_ISSUES[issue as IssueSysteme]}</span> : null}
         </div>
-        {bilan?.rappel ? (
+        {entier?.rappel ? (
           <p className="text-base text-encre-2">
             Rappel convenu : {rappelDate ? <span className="text-encre">{rappelDate}</span> : null}
-            {rappelDate ? <span className="text-encre-3"> · « {bilan.rappel} »</span> : bilan.rappel}
+            {rappelDate ? <span className="text-encre-3"> · « {entier.rappel} »</span> : entier.rappel}
+          </p>
+        ) : purge && rappelDate ? (
+          <p className="text-base text-encre-2">
+            Rappel convenu : <span className="text-encre">{rappelDate}</span>
           </p>
         ) : null}
         {rendezVousPris && !rdv ? (
@@ -304,7 +317,7 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
       </section>
     ) : null;
 
-  const objections = (bilan?.objections ?? []).map((o) => ({
+  const objections = (entier?.objections ?? []).map((o) => ({
     libelle: o.objectionId ? (listeObjections.find((x) => x.id === o.objectionId)?.libelle ?? o.libelle) : o.libelle,
     levee: o.levee,
     tempsBloquant: o.tempsBloquant,
@@ -312,33 +325,33 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
     repertoriee: o.objectionId !== null,
   }));
 
-  const hautBilan = bilan ? (
+  const hautBilan = entier ? (
     <>
       <TitreSection>Bilan</TitreSection>
       <section className="grid gap-1.5">
         <h3 className="text-md font-semibold">Résumé</h3>
-        <p className="text-base text-encre-2">{bilan.resume}</p>
+        <p className="text-base text-encre-2">{entier.resume}</p>
       </section>
     </>
   ) : null;
 
-  const basBilan = bilan ? (
+  const basBilan = entier ? (
     <>
-      {bilan.pointsForts.length ? (
+      {entier.pointsForts.length ? (
         <section className="grid gap-1.5">
           <h3 className="text-md font-semibold">Ce qui a marché</h3>
           <ul className="grid gap-1.5 text-base text-encre-2">
-            {bilan.pointsForts.map((p, i) => (
+            {entier.pointsForts.map((p, i) => (
               <li key={i}>{p}</li>
             ))}
           </ul>
         </section>
       ) : null}
-      {bilan.pointsFaibles.length ? (
+      {entier.pointsFaibles.length ? (
         <section className="grid gap-1.5">
           <h3 className="text-md font-semibold">Ce qui a moins marché</h3>
           <ul className="grid gap-1.5 text-base text-encre-2">
-            {bilan.pointsFaibles.map((p, i) => (
+            {entier.pointsFaibles.map((p, i) => (
               <li key={i}>{p}</li>
             ))}
           </ul>
@@ -367,6 +380,37 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
         </div>
       ) : null}
     </>
+  ) : null;
+
+  // Ce qui reste d'un appel purgé : la mention, puis ses objections par libellé de la fiche, levées ou non.
+  const blocPurge = purge ? (
+    <section aria-label="Bilan purgé" className="grid max-w-[68ch] gap-6">
+      <Message ton="neutre">{mentionPurge(Boolean(bilan))}</Message>
+      {bilan?.objections.length ? (
+        <section aria-labelledby="titre-objections" className="grid gap-3">
+          <TitreSection id="titre-objections" compte={bilan.objections.length}>
+            Objections
+          </TitreSection>
+          <ul className="grid gap-4">
+            {bilan.objections.map((o, i) => (
+              <li key={i} className="grid gap-1">
+                <p className="font-medium text-encre">
+                  {o.objectionId ? (listeObjections.find((x) => x.id === o.objectionId)?.libelle ?? 'Objection supprimée de la fiche') : 'Objection nouvelle, libellé effacé'}
+                </p>
+                <p className={`text-sm ${o.levee ? 'text-encre-2' : 'text-encre-3'}`}>
+                  {o.levee ? 'Levée' : o.tempsBloquant ? `Bloquée à « ${TEMPS_CRAC[o.tempsBloquant] ?? o.tempsBloquant} »` : 'Non levée'}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {appel.versionAnalyseur ? (
+        <p className="text-sm text-encre-3">
+          Analyseur <span className="font-mono">{appel.versionAnalyseur}</span>
+        </p>
+      ) : null}
+    </section>
   ) : null;
 
   const transcription = appel.transcription ?? [];
@@ -429,7 +473,7 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
           </div>
         ) : null}
         {blocIssue}
-        {transcription.length > 0 || bilan ? (
+        {blocPurge ?? (transcription.length > 0 || entier ? (
           <LecteurAppel
             appelId={appel.id}
             audio={Boolean(appel.audio)}
@@ -444,7 +488,7 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
           />
         ) : appel.statut === 'termine' ? (
           <EtatVide titre="Aucune conversation enregistrée : messagerie, pas de réponse ou appel coupé avant le décroché." />
-        ) : null}
+        ) : null)}
       </div>
 
       {voisinsVisibles ? (

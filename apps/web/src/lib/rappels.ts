@@ -94,7 +94,8 @@ export interface AppelHistorique {
   debutLe: Date;
   issueSysteme: IssueSysteme | null;
   rappelLe: Date | null;
-  bilan: { rappel: string | null; rappelLe?: RappelDate | null } | null;
+  /** Un bilan entier, ou purgé (ADR 0014) : il garde la date du rappel, pas les mots du prospect. */
+  bilan: { rappel: string | null; rappelLe?: RappelDate | null } | { purge: true; rappelLe?: RappelDate | null } | null;
 }
 
 /**
@@ -104,5 +105,6 @@ export interface AppelHistorique {
 export function rappelEnAttente(historique: readonly AppelHistorique[]): { appelId: string; rappelLe: Date | null; quand: RappelDate | null; texte: string | null } | null {
   const dernier = historique.filter((a) => a.ligne !== 'simulation').sort((a, b) => b.debutLe.getTime() - a.debutLe.getTime())[0];
   if (dernier?.issueSysteme !== 'rappel-convenu') return null;
-  return { appelId: dernier.id, rappelLe: dernier.rappelLe, quand: dernier.bilan?.rappelLe ?? null, texte: dernier.bilan?.rappel ?? null };
+  const texte = dernier.bilan && 'rappel' in dernier.bilan ? dernier.bilan.rappel : null;
+  return { appelId: dernier.id, rappelLe: dernier.rappelLe, quand: dernier.bilan?.rappelLe ?? null, texte };
 }

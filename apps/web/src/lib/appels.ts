@@ -10,7 +10,7 @@ import {
   type VariablesDeLAppel,
 } from '@autocalled/domain';
 import { creneauParle } from '@autocalled/agenda';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '@/db';
 import { appels, entreprises, issuesPersonnalisees, objections, prospects, rendezVous, scripts, versionsScript } from '@/db/schema';
 import { variablesPour } from './apercu';
@@ -150,6 +150,8 @@ export async function enregistrerAppelSimule(
   return { ok: true, appelId: appel.id, variables: preparation.variables };
 }
 
+export const APPEL_PURGE = 'Cet appel a passé la durée de conservation : son enregistrement, sa transcription et le détail de son bilan sont effacés, il ne se réanalyse plus.';
+
 /** Au-delà, une analyse encore « en traitement » est tenue pour bloquée : on peut la relancer. */
 export const DUREE_MAX_ANALYSE_S = 5 * 60;
 
@@ -168,10 +170,13 @@ export async function preparerReanalyse(appelId: string, maintenant = new Date()
       debutLe: appels.debutLe,
       finLe: appels.finLe,
       traitementLe: appels.traitementLe,
+      purgeLe: appels.purgeLe,
     })
     .from(appels)
     .where(eq(appels.id, appelId));
   if (!a) return { ok: false, raison: 'Cet appel n’existe plus.' };
+  // Rapatrier de nouveau la conversation rendrait ce que la durée de conservation a effacé (ADR 0014).
+  if (a.purgeLe) return { ok: false, raison: APPEL_PURGE };
   if (!a.transcription && !a.conversationId) return { ok: false, raison: 'Cet appel n’a ni transcription ni conversation à rapatrier : rien à analyser.' };
   if (a.statut === 'en-cours' && a.ligne === 'bluetooth') return { ok: false, raison: 'L’appel est en cours : son bilan sera calculé à la fin.' };
   const depuis = a.traitementLe ?? a.finLe ?? a.debutLe;
@@ -191,7 +196,7 @@ export async function reanalyser(appelId: string): Promise<void> {
 /** Rapatrie la conversation terminée (transcription, durée, audio) puis lance l'analyse. */
 export async function traiterAppel(appelId: string): Promise<void> {
   const [appel] = await db.select().from(appels).where(eq(appels.id, appelId));
-  if (!appel) return;
+  if (!appel || appel.purgeLe) return;
   if (!appel.conversationId) {
     await db
       .update(appels)
@@ -230,7 +235,8 @@ export async function traiterAppel(appelId: string): Promise<void> {
         versionAgent: conversation.versionAgent,
         audio,
       })
-      .where(eq(appels.id, appelId));
+      // Jamais sur un appel purgé entre-temps (ADR 0014).
+      .where(and(eq(appels.id, appelId), isNull(appels.purgeLe)));
   } catch (erreur) {
     await db.update(appels).set({ statut: 'echec', erreur: (erreur as Error).message }).where(eq(appels.id, appelId));
     return;
@@ -241,7 +247,7 @@ export async function traiterAppel(appelId: string): Promise<void> {
 /** Produit et enregistre le bilan d'un appel dont la transcription est connue. Peut être relancé. */
 export async function analyserAppel(appelId: string): Promise<void> {
   const [appel] = await db.select().from(appels).where(eq(appels.id, appelId));
-  if (!appel) return;
+  if (!appel || appel.purgeLe) return;
   if (!appel.transcription) {
     const erreur = appel.conversationId
       ? 'La transcription n’a pas été rapatriée : rapatrie la conversation pour obtenir le bilan.'
@@ -306,7 +312,7 @@ export async function analyserAppel(appelId: string): Promise<void> {
         versionAnalyseur: VERSION_ANALYSEUR,
         statut: 'termine',
       })
-      .where(eq(appels.id, appelId));
+      .where(and(eq(appels.id, appelId), isNull(appels.purgeLe)));
   } catch (erreur) {
     await db.update(appels).set({ statut: 'echec', erreur: (erreur as Error).message }).where(eq(appels.id, appelId));
   }

@@ -99,7 +99,20 @@ type Lecteur = Pick<typeof db, 'select' | '$count'>;
 
 interface Collecte {
   prospect: typeof prospects.$inferSelect;
-  appels: { id: string; statut: string; traitementLe: Date | null; finLe: Date | null; debutLe: Date; audio: string | null; conversationId: string | null; transcrit: boolean; analyse: boolean; ligne: string; issueSysteme: string | null }[];
+  appels: {
+    id: string;
+    statut: string;
+    traitementLe: Date | null;
+    finLe: Date | null;
+    debutLe: Date;
+    audio: string | null;
+    conversationId: string | null;
+    transcrit: boolean;
+    analyse: boolean;
+    ligne: string;
+    issueSysteme: string | null;
+    purgeLe: Date | null;
+  }[];
   rendezVous: { id: string; statut: string; evenementId: string | null; calendrier: string | null; debut: Date; creeLe: Date }[];
   campagnes: { id: string; statut: string; entrees: EntreeCampagne[] }[];
   consentements: number;
@@ -124,6 +137,7 @@ async function collecter(lecteur: Lecteur | Transaction, entrepriseId: string, p
       analyse: sql<boolean>`${appels.bilan} is not null`,
       ligne: appels.ligne,
       issueSysteme: appels.issueSysteme,
+      purgeLe: appels.purgeLe,
     })
     .from(appels)
     .where(and(eq(appels.entrepriseId, entrepriseId), eq(appels.prospectId, prospectId)));
@@ -278,7 +292,8 @@ export async function inventaireEffacement(entrepriseId: string, prospectId: str
     appels: c.appels.length,
     transcriptions: c.appels.filter((a) => a.transcrit).length,
     bilans: c.appels.filter((a) => a.analyse).length,
-    enregistrements: c.appels.filter((a) => a.audio || a.ligne === 'bluetooth').length,
+    // Un appel purgé (durée de conservation, ADR 0014) n'a plus d'enregistrement, ni ici ni au pont.
+    enregistrements: c.appels.filter((a) => a.audio || (a.ligne === 'bluetooth' && !a.purgeLe)).length,
     rendezVous: c.rendezVous.length,
     evenements: evenementsDe(c, clientGoogle() && google ? google.calendrierId : null, maintenant),
     entreesCampagne: c.campagnes.length,
@@ -293,8 +308,11 @@ export async function inventaireEffacement(entrepriseId: string, prospectId: str
 
 /* ------------------------------------------------------------------ effacement */
 
-/** Supprime un fichier du dossier de données ; faux s'il n'existait pas. Refuse un chemin qui en sortirait. */
-async function supprimerFichier(relatif: string): Promise<boolean> {
+/**
+ * Supprime un fichier du dossier de données ; faux s'il n'existait pas. Refuse un chemin qui en sortirait. Partagé
+ * avec la purge de la durée de conservation (conservation.ts).
+ */
+export async function supprimerFichier(relatif: string): Promise<boolean> {
   const racine = normalize(dossierDonnees());
   const chemin = normalize(join(racine, relatif));
   if (!chemin.startsWith(racine + sep)) throw new Error('chemin hors du dossier de données');
