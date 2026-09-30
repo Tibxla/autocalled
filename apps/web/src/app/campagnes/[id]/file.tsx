@@ -17,7 +17,6 @@ import {
   Heure,
   LienLigne,
   LigneTable,
-  Message,
   Recherche,
   TableDense,
   Action,
@@ -32,7 +31,13 @@ import { retirerDeLaFile, sauterDansLaFile } from '../actions';
  * Tant que la campagne n'est pas terminée, chaque prospect encore à appeler se saute (il repasse en fin de
  * file) ou se retire (il ne sera pas appelé dans cette campagne, et n'y revient pas). Sauter n'appelle personne
  * et se défait en le sautant encore : pas de confirmation, S sur la ligne sélectionnée (j, k). Retirer est
- * définitif pour la campagne : confirmé en ligne sous la ligne, sans touche.
+ * définitif pour la campagne : confirmé en ligne sous la ligne, sans touche. Sous 640 px, ces gestes ne restent
+ * que sur la ligne « Suivant », et sur toutes les lignes à appeler quand ce filtre est actif.
+ *
+ * Le retour d'un geste s'écrit dans sa ligne, jamais au-dessus du tableau, hors de l'écran : un prospect sauté
+ * reste à sa place, atténué, « Repasse en fin de file », sans geste, jusqu'à ce que l'opérateur relise la liste
+ * (filtre, recherche) ; seule la ligne concernée attend pendant l'envoi. Une région d'état masquée l'annonce
+ * aux lecteurs d'écran.
  */
 
 export interface EntreeFile {
@@ -98,6 +103,29 @@ function sansAccents(texte: string): string {
   return texte.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
+/**
+ * Le retour d'un geste, écrit dans la ligne. `place` et `rang` : un prospect sauté garde sa place et son rang
+ * d'avant le geste tant que la liste n'est pas relue (la page, elle, l'a déjà renvoyé en fin de file).
+ */
+interface Retour {
+  texte: string;
+  ton: 'neutre' | 'alerte';
+  place?: number;
+  rang?: number;
+}
+
+/** Les prospects sautés remis à la place qu'ils avaient au moment du geste, tant qu'ils sont encore à appeler. */
+function ordonner(entrees: EntreeFile[], retours: ReadonlyMap<string, Retour>): EntreeFile[] {
+  const figees = entrees
+    .filter((e) => e.etat === 'a-appeler' && retours.get(e.prospectId)?.place !== undefined)
+    .sort((a, b) => (retours.get(a.prospectId)?.place ?? 0) - (retours.get(b.prospectId)?.place ?? 0));
+  if (figees.length === 0) return entrees;
+  const ids = new Set(figees.map((e) => e.prospectId));
+  const liste = entrees.filter((e) => !ids.has(e.prospectId));
+  for (const e of figees) liste.splice(Math.min(retours.get(e.prospectId)?.place ?? liste.length, liste.length), 0, e);
+  return liste;
+}
+
 function Issue({ e }: { e: EntreeFile }) {
   if (e.etat === 'a-appeler') {
     const repasse = e.sauts > 0 ? ` · repassé${e.sauts > 1 ? ` ${e.sauts} fois` : ''} en fin de file` : '';
@@ -116,9 +144,11 @@ function Issue({ e }: { e: EntreeFile }) {
   if (e.etat === 'en-appel' && (!e.appel || e.appel.statut === 'en-cours')) return <span>En appel</span>;
   if (!e.appel) return <span className="text-encre-3">Sans appel</span>;
   const etat = etatAppel(e.appel, { libellePerso: e.appel.libellePerso });
+  // Le détail d'un échec : au survol au pointeur fin, en toutes lettres sous 640 px (rien ne s'y lit au survol).
   return (
     <span className={TONS[etat.ton]} title={etat.detail}>
       {etat.libelle}
+      {etat.detail ? <span className="text-encre-3 sm:hidden"> · {etat.detail}</span> : null}
     </span>
   );
 }
@@ -153,8 +183,29 @@ export function File({
 }) {
   const depuis = `?depuis=${encodeURIComponent(`/campagnes/${campagneId}`)}`;
   const [enCours, demarrer] = useTransition();
-  const [annonce, setAnnonce] = useState<{ texte: string; ton: 'neutre' | 'alerte' } | null>(null);
+  const [retours, setRetours] = useState<ReadonlyMap<string, Retour>>(() => new Map());
+  // Pour les lecteurs d'écran seulement : le retour visible est dans la ligne.
+  const [annonce, setAnnonce] = useState('');
+  // Les lignes dont un geste est en cours d'envoi : elles seules attendent.
+  const [enAttente, setEnAttente] = useState<ReadonlySet<string>>(() => new Set());
   const derniereAAppeler = entrees.findLast((e) => e.etat === 'a-appeler')?.prospectId ?? null;
+
+  const ecrire = (id: string, retour: Retour | null) =>
+    setRetours((r) => {
+      const suivant = new Map(r);
+      if (retour) suivant.set(id, retour);
+      else suivant.delete(id);
+      return suivant;
+    });
+  const attendre = (id: string, oui: boolean) =>
+    setEnAttente((a) => {
+      const suivant = new Set(a);
+      if (oui) suivant.add(id);
+      else suivant.delete(id);
+      return suivant;
+    });
+  /** Relire la liste (filtre, recherche) : les prospects sautés rejoignent leur nouvelle place, les retours s'effacent. */
+  const relire = () => setRetours(new Map());
 
   const confirmationRetrait = useConfirmation();
   const [aRetirer, setARetirer] = useState<EntreeFile | null>(null);
@@ -164,27 +215,38 @@ export function File({
   };
 
   const geste = (e: EntreeFile, quoi: 'sauter' | 'retirer') => {
-    if (quoi === 'sauter' && e.prospectId === derniereAAppeler) {
-      setAnnonce({ texte: `${e.nom} est déjà le dernier à appeler.`, ton: 'neutre' });
+    const id = e.prospectId;
+    if (quoi === 'sauter' && id === derniereAAppeler) {
+      ecrire(id, { texte: 'Déjà le dernier à appeler', ton: 'neutre' });
+      setAnnonce(`${e.nom} est déjà le dernier à appeler.`);
       return;
     }
+    // Place et rang d'avant le geste, dans la liste telle qu'elle s'affiche (un prospect déjà sauté compris).
+    const place = ordonner(entrees, retours).findIndex((x) => x.prospectId === id);
+    const rang = retours.get(id)?.rang ?? e.rang;
+    ecrire(id, null);
+    attendre(id, true);
     demarrer(async () => {
-      setAnnonce(null);
       try {
         if (quoi === 'sauter') {
-          const r = await sauterDansLaFile(campagneId, e.prospectId);
-          setAnnonce(r.ok ? { texte: `${e.nom} repasse en fin de file.`, ton: 'neutre' } : { texte: r.raison, ton: 'alerte' });
+          const r = await sauterDansLaFile(campagneId, id);
+          ecrire(id, r.ok ? { texte: 'Repasse en fin de file', ton: 'neutre', place, rang } : { texte: r.raison, ton: 'alerte' });
+          setAnnonce(r.ok ? `${e.nom} repasse en fin de file.` : r.raison);
         } else {
-          const r = await retirerDeLaFile(campagneId, e.prospectId);
+          const r = await retirerDeLaFile(campagneId, id);
+          // Réussi, la ligne le dit d'elle-même (« Retiré le … ») ; la fin de la campagne se voit dans la régie.
+          if (!r.ok) ecrire(id, { texte: r.raison, ton: 'alerte' });
           setAnnonce(
             r.ok
-              ? { texte: `${e.nom} est retiré de la file : il ne sera pas appelé dans cette campagne.${r.terminee ? ' Plus personne à appeler : la campagne est terminée.' : ''}`, ton: 'neutre' }
-              : { texte: r.raison, ton: 'alerte' },
+              ? `${e.nom} est retiré de la file : il ne sera pas appelé dans cette campagne.${r.terminee ? ' Plus personne à appeler : la campagne est terminée.' : ''}`
+              : r.raison,
           );
         }
       } catch {
-        setAnnonce({ texte: 'Le geste n’a pas abouti : relis la page et réessaie.', ton: 'alerte' });
+        ecrire(id, { texte: 'Le geste n’a pas abouti : relis la page et réessaie.', ton: 'alerte' });
+        setAnnonce('Le geste n’a pas abouti : relis la page et réessaie.');
       }
+      attendre(id, false);
       if (quoi === 'retirer') fermerRetrait();
     });
   };
@@ -220,13 +282,14 @@ export function File({
   }, [entrees]);
 
   const recherche = sansAccents(texte.trim());
-  const visibles = entrees.filter(
+  const visibles = ordonner(entrees, retours).filter(
     (e) =>
       (filtre === null || categorie(e) === filtre) &&
       (recherche === '' || sansAccents(`${e.nom} ${e.societe ?? ''}`).includes(recherche)),
   );
 
   const choisir = (suivant: Categorie | null) => {
+    relire();
     setFiltre(suivant);
     const url = new URL(window.location.href);
     if (suivant) url.searchParams.set('file', suivant);
@@ -247,9 +310,15 @@ export function File({
     document.getElementById(`file-${vivante}`)?.scrollIntoView({ block: 'nearest' });
   }, [vivante]);
 
+  const chercher = (valeur: string) => {
+    relire();
+    setTexte(valeur);
+  };
+
   return (
     <div className="grid grid-cols-1 gap-3 pt-3">
-      <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
+      {/* Sous 640 px, la recherche en tête, pleine largeur, puis la rangée de filtres qui défile. */}
+      <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3 max-sm:grid max-sm:grid-cols-1">
         <Filtres libelle="Filtrer la file">
           <Filtre actif={filtre === null} compte={entrees.length} onClick={() => choisir(null)}>
             Tous
@@ -260,18 +329,18 @@ export function File({
             </Filtre>
           ))}
         </Filtres>
-        <Recherche key={cleRecherche} placeholder="Chercher un prospect" libelle="Chercher dans la file" instantane={setTexte} />
+        <Recherche
+          key={cleRecherche}
+          placeholder="Chercher un prospect"
+          libelle="Chercher dans la file"
+          instantane={chercher}
+          className="w-full max-sm:order-first sm:w-[300px]"
+        />
       </div>
 
-      {annonce ? (
-        annonce.ton === 'alerte' ? (
-          <Message ton="alerte">{annonce.texte}</Message>
-        ) : (
-          <p role="status" className="text-sm text-encre-2">
-            {annonce.texte}
-          </p>
-        )
-      ) : null}
+      <p role="status" className="sr-only">
+        {annonce}
+      </p>
 
       {visibles.length === 0 ? (
         <EtatVide
@@ -290,7 +359,12 @@ export function File({
             </Action>
           }
         >
-          {texte ? 'Vide la recherche (Échap dans le champ) ou change de filtre.' : null}
+          {texte ? (
+            <>
+              <span className="pointer-coarse:hidden">Vide la recherche (Échap dans le champ) ou change de filtre.</span>
+              <span className="hidden pointer-coarse:inline">Efface la recherche ou change de filtre.</span>
+            </>
+          ) : null}
         </EtatVide>
       ) : (
         <NavigationListe>
@@ -315,91 +389,102 @@ export function File({
                 ) : null}
               </EnTeteTable>
               <div role="rowgroup">
-                {visibles.map((e) => [
-                  <LigneTable
-                    key={e.prospectId}
-                    id={`file-${e.prospectId}`}
-                    etat={e.etat === 'en-appel' ? 'vivante' : e.etat === 'sautee' || e.etat === 'retiree' ? 'attenuee' : 'normale'}
-                  >
-                    <Cellule mono className="max-sm:order-1 max-sm:w-7">
-                      {e.rang}
-                    </Cellule>
-                    <Cellule tronquee titre={e.societe ? `${e.nom} · ${e.societe}` : e.nom} className="max-sm:order-2 max-sm:flex-1">
-                      <LienLigne href={e.appel ? `/appels/${e.appel.id}${depuis}` : `/entreprises/${slug}/prospects/${e.prospectId}`}>
-                        <span className="font-medium">{e.nom}</span>
-                        {e.societe ? <span className="text-encre-3"> · {e.societe}</span> : null}
-                      </LienLigne>
-                    </Cellule>
-                    {/* Sous 640 px, heure et durée restent sur la ligne du nom ; l'issue passe dessous. */}
-                    <Cellule mono className="max-sm:order-3">
-                      {e.appel ? <Heure date={e.appel.debutLe} /> : null}
-                    </Cellule>
-                    <Cellule mono align="droite" className="max-sm:order-4 max-sm:ml-3">
-                      <Duree secondes={e.appel?.dureeSecondes} />
-                    </Cellule>
-                    <Cellule masqueeMobile className="flex items-center gap-2">
-                      <Glyphe e={e} nombreEtapes={nombreEtapes} />
-                      {e.appel?.etape != null && nombreEtapes ? (
-                        <span className="font-mono text-xs text-encre-3">
-                          {e.appel.etape}/{nombreEtapes}
-                        </span>
-                      ) : null}
-                    </Cellule>
-                    <Cellule etat tronquee className="max-sm:order-5 max-sm:basis-full max-sm:pl-10 max-sm:text-sm">
-                      <Issue e={e} />
-                    </Cellule>
-                    {gestes ? (
-                      <Cellule className="max-sm:order-6 max-sm:basis-full max-sm:pl-10">
-                        {e.etat === 'a-appeler' ? (
-                          <span className="relative z-10 -mx-1.5 flex items-center gap-x-4">
-                            <Action
-                              ton="discret"
-                              touche="S"
-                              className="[&_.touche]:hidden in-data-selectionnee:[&_.touche]:inline-flex"
-                              disabled={enCours}
-                              title="Repasse en fin de file, sans être appelé maintenant"
-                              aria-label={`Sauter ${e.nom} : repasse en fin de file`}
-                              onClick={() => geste(e, 'sauter')}
-                            >
-                              Sauter
-                            </Action>
-                            <Action
-                              ton="discret"
-                              disabled={enCours}
-                              title="Ne sera pas appelé dans cette campagne"
-                              aria-label={`Retirer ${e.nom} de la file`}
-                              aria-expanded={aRetirer?.prospectId === e.prospectId}
-                              onClick={(ev) => {
-                                setARetirer(e);
-                                confirmationRetrait.ouvrir(ev.currentTarget);
-                              }}
-                            >
-                              Retirer
-                            </Action>
+                {visibles.map((e) => {
+                  const retour = retours.get(e.prospectId);
+                  // Sauté : à sa place d'avant, atténué, sans geste, jusqu'à la relecture de la liste.
+                  const saute = e.etat === 'a-appeler' && retour?.place !== undefined;
+                  // Un retour ne vaut que pour l'état qui l'a vu naître : l'appel parti, la ligne reprend sa vie.
+                  const visible = retour && e.etat === 'a-appeler' ? retour : null;
+                  const avecGestes = e.etat === 'a-appeler' && !saute;
+                  // Sous 640 px, seulement sur la ligne « Suivant », ou partout quand « À appeler » est le filtre.
+                  const gestesMobile = e.suivant || filtre === 'a-appeler';
+                  const attend = enAttente.has(e.prospectId);
+                  return [
+                    <LigneTable
+                      key={e.prospectId}
+                      id={`file-${e.prospectId}`}
+                      etat={e.etat === 'en-appel' ? 'vivante' : e.etat === 'sautee' || e.etat === 'retiree' || saute ? 'attenuee' : 'normale'}
+                    >
+                      <Cellule mono className="max-sm:order-1 max-sm:w-7">
+                        {saute ? (retour?.rang ?? e.rang) : e.rang}
+                      </Cellule>
+                      <Cellule tronquee titre={e.societe ? `${e.nom} · ${e.societe}` : e.nom} className="max-sm:order-2 max-sm:flex-1">
+                        <LienLigne href={e.appel ? `/appels/${e.appel.id}${depuis}` : `/entreprises/${slug}/prospects/${e.prospectId}`}>
+                          <span className="font-medium">{e.nom}</span>
+                          {e.societe ? <span className="text-encre-3"> · {e.societe}</span> : null}
+                        </LienLigne>
+                      </Cellule>
+                      {/* Sous 640 px, heure et durée restent sur la ligne du nom ; l'issue passe dessous. */}
+                      <Cellule mono className="max-sm:order-3">
+                        {e.appel ? <Heure date={e.appel.debutLe} /> : null}
+                      </Cellule>
+                      <Cellule mono align="droite" className="max-sm:order-4 max-sm:ml-3">
+                        <Duree secondes={e.appel?.dureeSecondes} />
+                      </Cellule>
+                      <Cellule masqueeMobile className="flex items-center gap-2">
+                        <Glyphe e={e} nombreEtapes={nombreEtapes} />
+                        {e.appel?.etape != null && nombreEtapes ? (
+                          <span className="font-mono text-xs text-encre-3">
+                            {e.appel.etape}/{nombreEtapes}
                           </span>
                         ) : null}
                       </Cellule>
-                    ) : null}
-                  </LigneTable>,
-                  aRetirer?.prospectId === e.prospectId && confirmationRetrait.ouverte ? (
-                    <div key={`retrait-${e.prospectId}`} role="row" className="border-b border-filet py-2">
-                      <div role="cell">
-                        <Confirmation
-                          ouverte
-                          ton="alerte"
-                          question={`Retirer ${e.nom} de la file ?`}
-                          libelleConfirmer="Retirer"
-                          enCours={enCours}
-                          libelleEnCours="Retrait…"
-                          onConfirmer={() => geste(e, 'retirer')}
-                          onAnnuler={fermerRetrait}
-                        >
-                          Il ne sera pas appelé dans cette campagne, et ne pourra plus y revenir.
-                        </Confirmation>
+                      <Cellule etat tronquee className="max-sm:order-5 max-sm:basis-full max-sm:pl-10 max-sm:text-sm">
+                        {visible ? <span className={visible.ton === 'alerte' ? 'text-alerte' : 'text-encre-2'}>{visible.texte}</span> : <Issue e={e} />}
+                      </Cellule>
+                      {gestes ? (
+                        <Cellule className={`max-sm:order-6 max-sm:basis-full max-sm:pl-10 ${avecGestes && gestesMobile ? '' : 'max-sm:hidden'}`}>
+                          {avecGestes ? (
+                            <span className="relative z-10 -mx-1.5 flex items-center gap-x-4">
+                              <Action
+                                ton="discret"
+                                touche="S"
+                                className="[&_.touche]:hidden in-data-selectionnee:[&_.touche]:inline-flex"
+                                disabled={attend}
+                                aria-label={`Sauter ${e.nom} : repasse en fin de file`}
+                                onClick={() => geste(e, 'sauter')}
+                              >
+                                Sauter
+                              </Action>
+                              {/* Au doigt, un filet entre le geste immédiat et celui qui demande confirmation. */}
+                              <span aria-hidden="true" className="hidden h-5 w-px bg-filet pointer-coarse:block" />
+                              <Action
+                                ton="discret"
+                                disabled={attend}
+                                aria-label={`Retirer ${e.nom} de la file`}
+                                aria-expanded={aRetirer?.prospectId === e.prospectId}
+                                onClick={(ev) => {
+                                  setARetirer(e);
+                                  confirmationRetrait.ouvrir(ev.currentTarget);
+                                }}
+                              >
+                                Retirer
+                              </Action>
+                            </span>
+                          ) : null}
+                        </Cellule>
+                      ) : null}
+                    </LigneTable>,
+                    aRetirer?.prospectId === e.prospectId && confirmationRetrait.ouverte ? (
+                      <div key={`retrait-${e.prospectId}`} role="row" className="border-b border-filet py-2">
+                        <div role="cell">
+                          <Confirmation
+                            ouverte
+                            ton="alerte"
+                            question={`Retirer ${e.nom} de la file ?`}
+                            libelleConfirmer="Retirer"
+                            enCours={attend}
+                            libelleEnCours="Retrait…"
+                            onConfirmer={() => geste(e, 'retirer')}
+                            onAnnuler={fermerRetrait}
+                          >
+                            Il ne sera pas appelé dans cette campagne, et ne pourra plus y revenir.
+                          </Confirmation>
+                        </div>
                       </div>
-                    </div>
-                  ) : null,
-                ])}
+                    ) : null,
+                  ];
+                })}
               </div>
             </TableDense>
           </div>
