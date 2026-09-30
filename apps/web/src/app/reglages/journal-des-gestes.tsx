@@ -249,7 +249,7 @@ function LigneDuJournal({ ligne: l }: { ligne: LigneJournal }) {
       </details>
       {/* Un refus de l'opérateur est déjà dit par le résultat : son message le répéterait. Une question : sa première ligne. */}
       {question ? (
-        <p className="line-clamp-2 pb-2 text-sm break-words text-encre-3 sm:pl-[calc(6.5rem+1rem)]">{question.split('\n')[0]}</p>
+        <p className="mb-2 line-clamp-2 text-sm break-words text-encre-3 sm:pl-[calc(6.5rem+1rem)]">{question.split('\n')[0]}</p>
       ) : l.message && l.resultat !== 'ok' && l.confirmation !== 'refusee' ? (
         <p className="pb-2 text-sm text-encre-3 sm:pl-[calc(6.5rem+1rem)]">{masquer(l.message)}</p>
       ) : null}

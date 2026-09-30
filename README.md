@@ -116,7 +116,7 @@ Une campagne enchaîne les prospects d'une même entreprise. Sa régie garde la 
   </tr>
   <tr>
     <td><img src="docs/captures/telephone-garde-fous.png" alt="Page Téléphone : état du téléphone passerelle et garde-fous de la ligne"></td>
-    <td><img src="docs/captures/reglages-journal-claude-code.png" alt="Réglages : rendez-vous pris et journal des gestes de Claude Code, avec l'accord de l'opérateur"></td>
+    <td><img src="docs/captures/reglages-journal-des-gestes.png" alt="Réglages : rendez-vous pris et journal des gestes, Claude Code et interface"></td>
   </tr>
   <tr>
     <td>Le téléphone passerelle, son appairage et les garde-fous : appels par heure, par jour, pause entre deux appels.</td>
