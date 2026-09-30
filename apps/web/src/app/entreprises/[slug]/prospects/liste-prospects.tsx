@@ -21,8 +21,8 @@ import {
   TableDense,
   TitreSection,
 } from '@/components/ui';
-import { DetailEffacement } from './[id]/gestes-prospect';
-import { type RapportEffacement, archiverProspect, effacerLaPersonne, inventaireEffacement, reactiverProspect } from './actions';
+import { ConfirmationArchivage, DetailEffacement } from './[id]/gestes-prospect';
+import { type FileEnAttente, type RapportEffacement, archiverProspect, effacerLaPersonne, inventaireEffacement, reactiverProspect } from './actions';
 import { FormulaireImport } from './formulaire-import';
 import { RapportEffacementMessage } from './rapport-effacement';
 
@@ -157,6 +157,10 @@ export function ListeProspects({
   const [aEffacer, setAEffacer] = useState<{ p: LigneProspect; detail: { efface: string[]; reste: string[]; obstacle: string | null } | null } | null>(null);
   const [erreurEffacement, setErreurEffacement] = useState<string | null>(null);
   const [inventaireEnCours, setInventaireEnCours] = useState(false);
+  // Archiver un prospect qui attend dans une file : le serveur nomme les campagnes, la confirmation s'ouvre sous la ligne.
+  const confirmationArchivage = useConfirmation();
+  const [aArchiver, setAArchiver] = useState<{ p: LigneProspect; files: FileEnAttente[] } | null>(null);
+  const declencheurArchivage = useRef<HTMLElement | null>(null);
 
   // Le compte rendu venu de la fiche ne se rejoue pas au rechargement : l'adresse le perd, la page le garde.
   useEffect(() => {
@@ -172,7 +176,12 @@ export function ListeProspects({
     confirmationEffacement.fermer();
   };
 
-  const basculerArchive = (p: LigneProspect, archive: boolean) => {
+  const fermerArchivage = () => {
+    setAArchiver(null);
+    confirmationArchivage.fermer();
+  };
+
+  const basculerArchive = (p: LigneProspect, archive: boolean, confirmees: FileEnAttente[] = []) => {
     setEnCoursPour(p.id);
     demarrer(async () => {
       try {
@@ -180,7 +189,18 @@ export function ListeProspects({
           const r = await reactiverProspect(entrepriseId, p.id);
           ecrire(p.id, r.ok ? { texte: 'Réactivé : de nouveau appelable.', defaire: 'archiver' } : { texte: r.raison, alerte: true });
         } else {
-          const r = await archiverProspect(entrepriseId, p.id);
+          const r = await archiverProspect(
+            entrepriseId,
+            p.id,
+            confirmees.map((f) => f.id),
+          );
+          // Il attend dans une file : rien n'est fait, la confirmation nomme les campagnes.
+          if (!r.ok && 'aConfirmer' in r) {
+            setAArchiver({ p, files: [...confirmees, ...r.aConfirmer] });
+            confirmationArchivage.ouvrir(declencheurArchivage.current);
+            return;
+          }
+          if (aArchiver) fermerArchivage();
           ecrire(
             p.id,
             r.ok
@@ -200,6 +220,7 @@ export function ListeProspects({
   };
 
   const ouvrirEffacement = (p: LigneProspect, declencheur: HTMLElement) => {
+    if (aArchiver) fermerArchivage();
     setAEffacer({ p, detail: null });
     setErreurEffacement(null);
     confirmationEffacement.ouvrir(declencheur);
@@ -423,11 +444,15 @@ export function ListeProspects({
                                 <>
                                   <Action
                                     ton="discret"
-                                    disabled={occupee}
-                                    enCours={occupee && !confirmationEffacement.ouverte}
+                                    disabled={occupee || (aArchiver?.p.id === p.id && confirmationArchivage.ouverte)}
+                                    enCours={occupee && !confirmationEffacement.ouverte && !confirmationArchivage.ouverte}
                                     libelleEnCours={p.archive ? 'Réactivation…' : 'Archivage…'}
                                     aria-label={p.archive ? `Réactiver ${p.nom}` : `Archiver ${p.nom}`}
-                                    onClick={() => basculerArchive(p, p.archive)}
+                                    aria-expanded={p.archive ? undefined : aArchiver?.p.id === p.id && confirmationArchivage.ouverte}
+                                    onClick={(ev) => {
+                                      declencheurArchivage.current = ev.currentTarget;
+                                      basculerArchive(p, p.archive);
+                                    }}
                                   >
                                     {p.archive ? 'Réactiver' : 'Archiver'}
                                   </Action>
@@ -445,6 +470,20 @@ export function ListeProspects({
                             </span>
                           </Cellule>
                         </LigneTable>
+                        {aArchiver?.p.id === p.id && confirmationArchivage.ouverte ? (
+                          <div role="row" className="border-b border-filet py-2 max-sm:hidden">
+                            <div role="cell">
+                              <ConfirmationArchivage
+                                ouverte
+                                nom={p.nom}
+                                files={aArchiver.files}
+                                enCours={occupee}
+                                onConfirmer={() => basculerArchive(p, false, aArchiver.files)}
+                                onAnnuler={fermerArchivage}
+                              />
+                            </div>
+                          </div>
+                        ) : null}
                         {aEffacer?.p.id === p.id && confirmationEffacement.ouverte ? (
                           <div role="row" className="border-b border-filet py-2 max-sm:hidden">
                             <div role="cell">

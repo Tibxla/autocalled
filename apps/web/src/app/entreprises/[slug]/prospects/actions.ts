@@ -49,15 +49,26 @@ export async function revoquerNumero(numero: string): Promise<ResultatAction<{ r
   return { ok: true, revoques };
 }
 
+export type { FileEnAttente } from '@/lib/prospects';
+
 /**
- * Archive un prospect (ADR 0013) : un frein, réversible, sans confirmation. `retireDe` : les campagnes dont il a
- * quitté la file ; `terminees` : celles qui n'avaient plus personne d'autre à appeler.
+ * Archive un prospect (ADR 0013) : un frein, réversible, sans confirmation, sauf s'il attend dans la file d'une
+ * campagne non terminée. Alors rien n'est fait et `aConfirmer` nomme ces campagnes pour la confirmation en ligne ; le
+ * geste confirmé repasse avec leurs identifiants (`filesConfirmees`). `retireDe` : les campagnes dont il a quitté la
+ * file ; `terminees` : celles qui n'avaient plus personne d'autre à appeler.
  */
-export async function archiverProspect(entrepriseId: string, prospectId: string): Promise<ResultatAction<{ retireDe: number; terminees: number }>> {
+export async function archiverProspect(
+  entrepriseId: string,
+  prospectId: string,
+  filesConfirmees: string[] = [],
+): Promise<ResultatAction<{ retireDe: number; terminees: number }> | { ok: false; raison: string; aConfirmer: prospects.FileEnAttente[] }> {
   await exigerOperateur();
   if (!FORME_UUID.test(entrepriseId)) return { ok: false, raison: INTROUVABLE };
-  const r = await prospects.archiverProspect(entrepriseId, prospectId, 'interface');
-  if (!r.ok) return r;
+  if (!Array.isArray(filesConfirmees) || filesConfirmees.length > 50 || !filesConfirmees.every((id) => typeof id === 'string' && FORME_UUID.test(id))) {
+    return { ok: false, raison: 'Confirmation illisible : relis la page.' };
+  }
+  const r = await prospects.archiverProspect(entrepriseId, prospectId, 'interface', filesConfirmees);
+  if (!r.ok) return r.aConfirmer ? { ok: false, raison: r.raison, aConfirmer: r.aConfirmer } : { ok: false, raison: r.raison };
   revalidatePath('/entreprises', 'layout');
   return { ok: true, retireDe: r.retireDe.length, terminees: r.terminees.length };
 }

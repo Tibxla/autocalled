@@ -1,14 +1,15 @@
 'use client';
 
 import { unstable_rethrow } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
 import { Action } from '@/components/ui';
-import { archiverProspect, effacerLaPersonne, reactiverProspect } from '../actions';
+import { archiverProspect, effacerLaPersonne, type FileEnAttente, reactiverProspect } from '../actions';
 
 /**
  * Retirer un prospect (ADR 0013), sous le numéro de la fiche. Archiver est un frein réversible : immédiat, sans
- * confirmation, et Réactiver le défait. Effacer la personne ne se défait pas : confirmation en ligne qui liste ce qui
+ * confirmation, et Réactiver le défait ; mais s'il attend dans la file d'une campagne non terminée, l'archiver l'en
+ * retire pour de bon : le serveur le dit (`aConfirmer`) et une confirmation en ligne nomme ces campagnes. Effacer la personne ne se défait pas : confirmation en ligne qui liste ce qui
  * sera effacé, compté par le serveur au rendu de la fiche ; refusée d'avance (action inerte, raison dessous) pendant
  * un appel avec elle ou sans sel d'opposition. Après l'effacement, la fiche n'existe plus : le serveur repart vers
  * la liste, qui montre le compte rendu.
@@ -32,8 +33,16 @@ export function GestesProspect({
   const [erreur, setErreur] = useState<string | null>(null);
   const [erreurEffacement, setErreurEffacement] = useState<string | null>(null);
   const confirmation = useConfirmation();
+  const confirmationArchivage = useConfirmation();
+  const [files, setFiles] = useState<FileEnAttente[]>([]);
+  const declencheur = useRef<HTMLElement | null>(null);
 
-  const basculer = () =>
+  const fermerArchivage = () => {
+    setFiles([]);
+    confirmationArchivage.fermer();
+  };
+
+  const basculer = (confirmees: FileEnAttente[] = []) =>
     demarrerArchivage(async () => {
       setErreur(null);
       setAnnonce(null);
@@ -43,8 +52,21 @@ export function GestesProspect({
           if (!r.ok) return setErreur(r.raison);
           setAnnonce('Prospect réactivé : il peut de nouveau être appelé et ajouté à une campagne. Il ne revient dans aucune file.');
         } else {
-          const r = await archiverProspect(entrepriseId, prospectId);
-          if (!r.ok) return setErreur(r.raison);
+          const r = await archiverProspect(
+            entrepriseId,
+            prospectId,
+            confirmees.map((f) => f.id),
+          );
+          if (!r.ok) {
+            // Il attend dans une file (ou dans une de plus depuis la question) : la confirmation les nomme, rien n'est fait.
+            if ('aConfirmer' in r) {
+              setFiles([...confirmees, ...r.aConfirmer]);
+              if (!confirmationArchivage.ouverte) confirmationArchivage.ouvrir(declencheur.current);
+              return;
+            }
+            return setErreur(r.raison);
+          }
+          fermerArchivage();
           setAnnonce(
             `Prospect archivé : il n’est plus proposé pour un appel ni une campagne.${
               r.retireDe ? ` Retiré de la file de ${r.retireDe > 1 ? `${r.retireDe} campagnes` : 'la campagne'}${r.terminees ? ', qui n’avait plus personne à appeler et se termine' : ''}.` : ''
@@ -75,10 +97,14 @@ export function GestesProspect({
       <div className="-mx-1.5 flex flex-wrap items-center gap-x-6 gap-y-1">
         <Action
           ton="discret"
-          enCours={archivage}
+          enCours={archivage && !confirmationArchivage.ouverte}
           libelleEnCours={archive ? 'Réactivation…' : 'Archivage…'}
-          disabled={archivage || enCours}
-          onClick={basculer}
+          aria-expanded={archive ? undefined : confirmationArchivage.ouverte}
+          disabled={archivage || enCours || confirmationArchivage.ouverte}
+          onClick={(e) => {
+            declencheur.current = e.currentTarget;
+            basculer();
+          }}
         >
           {archive ? 'Réactiver' : 'Archiver'}
         </Action>
@@ -87,7 +113,7 @@ export function GestesProspect({
           aria-expanded={confirmation.ouverte}
           aria-disabled={effacement.obstacle ? true : undefined}
           aria-describedby={effacement.obstacle ? 'effacement-obstacle' : undefined}
-          disabled={archivage || confirmation.ouverte}
+          disabled={archivage || confirmation.ouverte || confirmationArchivage.ouverte}
           onClick={(e) => {
             if (effacement.obstacle) return;
             setErreurEffacement(null);
@@ -110,6 +136,15 @@ export function GestesProspect({
       <p role="status" className="text-sm text-encre-2 empty:hidden">
         {annonce}
       </p>
+      <ConfirmationArchivage
+        className="justify-self-stretch"
+        ouverte={confirmationArchivage.ouverte}
+        nom={nom}
+        files={files}
+        enCours={archivage}
+        onConfirmer={() => basculer(files)}
+        onAnnuler={fermerArchivage}
+      />
       <Confirmation
         className="justify-self-stretch"
         ouverte={confirmation.ouverte}
@@ -147,5 +182,58 @@ export function DetailEffacement({ efface, reste }: { efface: string[]; reste: s
         <p key={ligne}>{ligne}</p>
       ))}
     </div>
+  );
+}
+
+/**
+ * La confirmation d'un archivage qui retire le prospect de la file d'une ou plusieurs campagnes non terminées : elle
+ * les nomme, dit celles qui se termineraient faute de personne d'autre à appeler, et que le retrait ne se défait pas.
+ * Partagée par la fiche et la liste des prospects.
+ */
+export function ConfirmationArchivage({
+  ouverte,
+  nom,
+  files,
+  enCours,
+  onConfirmer,
+  onAnnuler,
+  className = '',
+}: {
+  ouverte: boolean;
+  nom: string;
+  files: FileEnAttente[];
+  enCours: boolean;
+  onConfirmer: () => void;
+  onAnnuler: () => void;
+  className?: string;
+}) {
+  const plusieurs = files.length > 1;
+  return (
+    <Confirmation
+      className={className}
+      ouverte={ouverte}
+      ton="alerte"
+      question={`Archiver ${nom} et le retirer de ${plusieurs ? `${files.length} files` : 'la file'} ?`}
+      libelleConfirmer="Archiver et retirer"
+      enCours={enCours}
+      libelleEnCours="Archivage…"
+      onConfirmer={onConfirmer}
+      onAnnuler={onAnnuler}
+    >
+      <div className="grid gap-2">
+        <div>
+          <p>{plusieurs ? 'Il attend dans la file de ces campagnes :' : 'Il attend dans la file de cette campagne :'}</p>
+          <ul className="list-disc pl-4 marker:text-encre-3">
+            {files.map((f) => (
+              <li key={f.id}>
+                {f.libelle}
+                {f.derniere ? ' : il y est le dernier à appeler, elle se terminera' : ''}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p>Il ne sera pas appelé dans {plusieurs ? 'ces campagnes' : 'cette campagne'}. Le retrait ne se défait pas : réactivé, il ne revient dans aucune file.</p>
+      </div>
+    </Confirmation>
   );
 }
