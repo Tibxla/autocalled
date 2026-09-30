@@ -1,7 +1,7 @@
 /**
- * Quand proposer « Reconnecter le téléphone ». La liaison Bluetooth du téléphone passerelle peut se figer
- * (téléphone en veille) alors que la ligne le croit connecté : l'action doit rester à portée dès qu'aucun
- * appel n'est en cours, et revenir à côté de chaque échec dû au téléphone.
+ * Quand proposer « Reconnecter le téléphone ». Sur les écrans de travail (accueil, régie, fiches), seulement quand
+ * elle sert : téléphone dit déconnecté, ou échec dû au téléphone. La page Téléphone la garde toujours à portée, pour
+ * le cas rare d'une liaison figée (téléphone en veille) que la ligne croit encore connectée.
  *
  * Jamais quand la ligne est injoignable : la reconnexion passe par ce même service, qui ne répond pas.
  * Fonctions pures, testées (reconnexion.test.ts).
@@ -29,13 +29,14 @@ type LigneAccueil = { joignable: false } | { joignable: true; connecte: boolean;
 
 /**
  * Accueil, bande « Ligne libre » (fin d'appel, campagne prête ou suspendue, ligne libre) : la ligne répond et ne
- * porte aucun appel. Normale quand le téléphone est dit déconnecté (une fin d'appel s'affiche avant la ligne
- * coupée) ou qu'un échec vient du téléphone ; discrète sinon, pour une liaison figée que la ligne ignore.
+ * porte aucun appel. L'action n'apparaît que si le téléphone est dit déconnecté (une fin d'appel s'affiche avant la
+ * ligne coupée) ou qu'un échec vient du téléphone ; téléphone connecté, l'accueil se tait (la page Téléphone la garde
+ * pour une liaison figée). Le type garde « discret » pour les appelants, qui ne le reçoivent plus d'ici.
  * Null : pas d'action.
  */
 export function reconnexionAccueil(ligne: LigneAccueil, echec: string | null = null): 'normal' | 'discret' | null {
   if (!ligne.joignable || ligne.appelEnCours || ligne.appelId) return null;
-  return !ligne.connecte || echecDuTelephone(echec) ? 'normal' : 'discret';
+  return !ligne.connecte || echecDuTelephone(echec) ? 'normal' : null;
 }
 
 type EtatPont = 'joignable' | 'injoignable' | 'deconnecte' | 'inconnu';

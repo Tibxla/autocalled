@@ -34,14 +34,14 @@ describe('reconnexionTelephone (page Téléphone)', () => {
 });
 
 describe('reconnexionAccueil (bande « Ligne libre »)', () => {
-  it('discrète sur une ligne libre dite connectée (liaison figée)', () => {
-    expect(reconnexionAccueil(libre)).toBe('discret');
+  it('rien sur une ligne libre dite connectée : l’accueil se tait, la page Téléphone garde l’action', () => {
+    expect(reconnexionAccueil(libre)).toBeNull();
   });
 
   it('normale téléphone déconnecté ou après un échec du téléphone', () => {
     expect(reconnexionAccueil({ ...libre, connecte: false })).toBe('normal');
     expect(reconnexionAccueil(libre, 'Le téléphone passerelle n’a pas composé, même après reconnexion.')).toBe('normal');
-    expect(reconnexionAccueil(libre, 'Numéro invalide.')).toBe('discret');
+    expect(reconnexionAccueil(libre, 'Numéro invalide.')).toBeNull();
   });
 
   it('jamais ligne injoignable ni pendant un appel', () => {
