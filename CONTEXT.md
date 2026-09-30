@@ -33,7 +33,7 @@ Personne démarchée pour le compte d'une entreprise, décrite par une fiche dur
 _Avoid_ : client, contact, lead, cible
 
 **Prospect archivé** :
-Prospect retiré des listes et des choix de campagne, qui n'est plus appelé tant qu'il l'est ; s'il attendait dans une file, il en est retiré. Ses appels, ses bilans et le consentement de son numéro restent, et la réactivation le fait revenir (dans aucune file). Un réimport de sa fiche ne le réactive pas.
+Prospect retiré des listes et des choix de campagne, qui n'est plus appelé tant qu'il l'est ; s'il attendait dans une file, il en est retiré, après une confirmation qui nomme les campagnes. Ses appels, ses bilans et le consentement de son numéro restent, et la réactivation le fait revenir (dans aucune file). Un réimport de sa fiche ne le réactive pas.
 _Avoid_ : supprimé, désactivé, masqué
 
 **Effacement** :
@@ -177,7 +177,7 @@ _Avoid_ : takeover, transfert, reprise
 ## Pilotage par Claude Code
 
 **Confirmation** :
-L'accord que l'opérateur donne lui-même, sur une question rédigée par le serveur, avant un geste qui fait sonner un téléphone, révoque un numéro, efface une personne, envoie une invitation, desserre un garde-fou ou change ce que l'assistante dit au prospect. Le modèle ne peut pas y répondre à sa place. Les freins (raccrocher, suspendre, retirer de la file, terminer une campagne, resserrer un garde-fou, archiver un prospect) n'en demandent pas ; l'interface demande tout de même une confirmation en ligne avant de retirer un prospect ou de terminer une campagne, deux gestes qui ne se défont pas.
+L'accord que l'opérateur donne lui-même, sur une question rédigée par le serveur, avant un geste qui fait sonner un téléphone, révoque un numéro, efface une personne, envoie une invitation, desserre un garde-fou ou change ce que l'assistante dit au prospect. Le modèle ne peut pas y répondre à sa place. Les freins (raccrocher, suspendre, retirer de la file, terminer une campagne, resserrer un garde-fou, archiver un prospect) n'en demandent pas, à une exception : archiver un prospect qui attend dans la file d'une campagne non terminée l'en retire pour de bon, et demande l'accord dans Claude Code comme dans l'interface. L'interface demande aussi une confirmation en ligne avant de retirer un prospect ou de terminer une campagne, deux gestes qui ne se défont pas.
 _Avoid_ : validation, approbation, consentement
 
 **Journal de Claude Code** :
