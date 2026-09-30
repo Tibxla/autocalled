@@ -50,3 +50,18 @@ export function reconnexionRegie(pont: { etat: EtatPont } | null, raison: string
 export function reconnexionFiche(blocageCourt: string | null, erreur: string | null): boolean {
   return blocageCourt === 'déconnecté' || echecDuTelephone(erreur);
 }
+
+type EtatLigneRelevee = 'releve' | 'inconnu' | 'injoignable' | 'deconnecte' | 'libre' | 'en-appel';
+
+/**
+ * Fiche d'appel : un appel téléphone parti en échec sans conversation, faute de téléphone (composition refusée ou sans
+ * réponse, canal son jamais ouvert, téléphone absent de la liaison). Jamais ligne injoignable, pendant un appel, ni
+ * avant le premier relevé de la ligne : l'action n'apparaît pas pour disparaître aussitôt.
+ */
+export function reconnexionAppel(
+  appel: { ligne: string; statut: string; conversation: boolean; erreur: string | null },
+  etatLigne: EtatLigneRelevee,
+): boolean {
+  if (appel.ligne !== 'bluetooth' || appel.statut !== 'echec' || appel.conversation || !echecDuTelephone(appel.erreur)) return false;
+  return etatLigne === 'libre' || etatLigne === 'deconnecte' || etatLigne === 'inconnu';
+}

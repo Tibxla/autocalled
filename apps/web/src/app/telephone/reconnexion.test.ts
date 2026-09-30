@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { echecDuTelephone, reconnexionAccueil, reconnexionFiche, reconnexionRegie, reconnexionTelephone } from './reconnexion';
+import { echecDuTelephone, reconnexionAccueil, reconnexionAppel, reconnexionFiche, reconnexionRegie, reconnexionTelephone } from './reconnexion';
 
 const libre = { joignable: true as const, connecte: true, appelEnCours: false, appelId: null };
 
@@ -76,5 +76,32 @@ describe('reconnexionFiche', () => {
     expect(reconnexionFiche('injoignable', null)).toBe(false);
     expect(reconnexionFiche('en appel', null)).toBe(false);
     expect(reconnexionFiche('plafond atteint', 'Plafond de 15 appels par heure atteint.')).toBe(false);
+  });
+});
+
+describe('reconnexionAppel (fiche d’appel)', () => {
+  const echec = { ligne: 'bluetooth', statut: 'echec', conversation: false, erreur: 'Le téléphone passerelle n’a pas composé, même après reconnexion.' };
+
+  it('appel téléphone en échec faute de téléphone, ligne libre, déconnectée ou d’état inconnu', () => {
+    expect(reconnexionAppel(echec, 'libre')).toBe(true);
+    expect(reconnexionAppel(echec, 'deconnecte')).toBe(true);
+    expect(reconnexionAppel(echec, 'inconnu')).toBe(true);
+    expect(reconnexionAppel({ ...echec, erreur: 'Composition impossible : aucun téléphone passerelle en ligne : est-il connecté en Bluetooth ?' }, 'deconnecte')).toBe(true);
+    expect(reconnexionAppel({ ...echec, erreur: 'Le téléphone passerelle n’a pas ouvert le canal son, même après reconnexion.' }, 'libre')).toBe(true);
+  });
+
+  it('jamais ligne injoignable, pendant un appel, ni avant le premier relevé', () => {
+    expect(reconnexionAppel(echec, 'injoignable')).toBe(false);
+    expect(reconnexionAppel(echec, 'en-appel')).toBe(false);
+    expect(reconnexionAppel(echec, 'releve')).toBe(false);
+  });
+
+  it('ni pour un autre échec, une autre ligne, une analyse en échec ou un appel abouti', () => {
+    expect(reconnexionAppel({ ...echec, erreur: 'Le pont Bluetooth ne répond pas : le service autocalled-pont tourne-t-il ?' }, 'libre')).toBe(false);
+    expect(reconnexionAppel({ ...echec, erreur: 'Plafond d’appels atteint avant la recomposition : l’appel n’est pas reparti (chaque composition compte).' }, 'libre')).toBe(false);
+    expect(reconnexionAppel({ ...echec, erreur: null }, 'libre')).toBe(false);
+    expect(reconnexionAppel({ ...echec, ligne: 'navigateur' }, 'libre')).toBe(false);
+    expect(reconnexionAppel({ ...echec, conversation: true }, 'libre')).toBe(false);
+    expect(reconnexionAppel({ ...echec, statut: 'termine' }, 'libre')).toBe(false);
   });
 });
