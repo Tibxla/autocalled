@@ -255,7 +255,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
               </p>
               {preparation?.ok ? (
                 <details className="group max-w-[68ch]">
-                  <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-2 text-md text-encre-2 hover:text-encre pointer-coarse:h-11 [&::-webkit-details-marker]:hidden">
+                  <summary className="-mx-1.5 inline-flex h-9 cursor-pointer list-none items-center gap-2 rounded-[4px] px-1.5 text-md text-encre-2 hover:text-encre pointer-coarse:h-11 pointer-coarse:active:bg-survol [&::-webkit-details-marker]:hidden">
                     <Chevron className="stroke-encre-3 group-open:rotate-90" />
                     <span className="decoration-souligne underline-offset-4 group-hover:underline pointer-coarse:underline">Ce que {nomAssistante} saura en appelant</span>
                   </summary>

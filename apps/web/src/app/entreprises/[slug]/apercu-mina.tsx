@@ -16,7 +16,7 @@ const GROUPES: { titre: string; cles: [CleVariable, string][] }[] = [
       ['entreprise_cible', 'Pour qui'],
       ['entreprise_arguments', 'Ce qui fait la différence'],
       ['entreprise_prix_consigne', 'Consigne sur le prix'],
-      ['entreprise_interdits', 'À ne jamais dire'],
+      ['entreprise_interdits', 'À ne jamais dire ni promettre'],
       ['entreprise_complements', 'Informations complémentaires'],
       ['rendez_vous', 'Rendez-vous'],
     ],
@@ -122,9 +122,9 @@ export function ApercuMina({
         if (ouverture) charger(prospectId, versionId);
       }}
     >
-      <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-2 text-md text-encre-2 hover:text-encre pointer-coarse:h-11 [&::-webkit-details-marker]:hidden">
+      <summary className="-mx-1.5 inline-flex h-9 cursor-pointer list-none items-center gap-2 rounded-[4px] px-1.5 text-md text-encre-2 hover:text-encre pointer-coarse:h-11 pointer-coarse:active:bg-survol [&::-webkit-details-marker]:hidden">
         <Chevron className="stroke-encre-3 group-open:rotate-90" />
-        <span className="decoration-souligne underline-offset-4 group-hover:underline">{intitule}</span>
+        <span className="decoration-souligne underline-offset-4 group-hover:underline pointer-coarse:underline">{intitule}</span>
       </summary>
 
       <div className="grid gap-4 pt-2 pb-2" aria-busy={enCours}>
