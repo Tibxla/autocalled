@@ -55,7 +55,7 @@ export function ChoixEntreprise({ slug, autres }: { slug: string; autres: { slug
             <Link
               href={`/entreprises/${e.slug}${suffixe}`}
               onClick={() => setOuvert(false)}
-              className="block truncate px-3 py-2 text-md text-encre-2 hover:bg-survol hover:text-encre focus-interne"
+              className="block truncate px-3 py-2 text-md text-encre-2 hover:bg-survol hover:text-encre focus-interne pointer-coarse:py-3 pointer-coarse:active:bg-survol"
             >
               {e.nom}
             </Link>
