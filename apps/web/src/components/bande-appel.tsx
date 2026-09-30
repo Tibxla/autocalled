@@ -795,27 +795,31 @@ export function VueBandeAppel({
 
       {condensee && horsEcran ? (
         <div className="fixed inset-x-0 top-(--hauteur-barre) z-20 flex h-11 items-center gap-4 border-b border-filet bg-fond px-(--gouttiere) text-md max-sm:h-[52px] pointer-coarse:h-[52px]">
-          <span className="min-w-0 truncate font-semibold max-sm:max-w-[40%]">{identite?.prospect ?? nomProspect}</span>
+          {/* Sous 640 px, le prénom seul : les deux touches prennent presque toute la largeur. */}
+          <span className="min-w-0 truncate font-semibold max-sm:max-w-[40%]">
+            <span className="sm:hidden">{identite ? prenom(identite.prospect) : nomProspect}</span>
+            <span className="max-sm:hidden">{identite?.prospect ?? nomProspect}</span>
+          </span>
           <span className={`shrink-0 text-sm max-sm:hidden ${couleurEtat}`}>{texteEtat}</span>
           <span className="max-sm:hidden">
             {analyseCentree ? null : <Chrono chrono={chrono} maintenant={maintenant} enLigne={vivant} etat={etat} />}
           </span>
           <span className="min-w-0 flex-1 truncate text-encre-2 max-sm:hidden">{tourMina ? fin(tourMina.texte, 60) : ''}</span>
           {termine ? null : (
-            <div className="-mr-1.5 ml-auto flex shrink-0 items-center gap-1 pointer-coarse:mr-0 max-sm:gap-4">
+            <div className="-mr-1.5 ml-auto flex shrink-0 items-center gap-1 pointer-coarse:mr-0 max-sm:gap-3">
               {voirEcoute ? (
                 <Action touche="E" onClick={basculerEcoute} className="h-8 max-sm:hidden">
                   {ecoute.active ? 'Arrêter l’écoute' : 'Écouter'}
                 </Action>
               ) : null}
               {voirPrise ? (
-                <Action ton="fort" forme="relief" touche="Espace" onClick={ouvrirPrise} className="h-8">
+                <Action ton="fort" forme="relief" touche="Espace" onClick={ouvrirPrise} className="h-8 max-sm:px-2.5!">
                   Prendre la main
                 </Action>
               ) : null}
               {voirRaccrocher ? (
-                // Sous 640 px, un filet sépare Raccrocher (immédiat) de Prendre la main (sous confirmation).
-                <span className="flex items-center max-sm:self-stretch max-sm:border-l max-sm:border-filet max-sm:pl-4">
+                // Sous 640 px, un filet sépare Raccrocher (immédiat) de Prendre la main (sous confirmation) : 25 px en tout.
+                <span className="flex items-center max-sm:self-stretch max-sm:border-l max-sm:border-filet max-sm:pl-3">
                   <Action
                     ton="alerte"
                     forme="relief"
@@ -823,7 +827,7 @@ export function VueBandeAppel({
                     enCours={raccrochage.enCours}
                     libelleEnCours="Raccrochage…"
                     disabled={raccrochage.enCours}
-                    className="h-8"
+                    className="h-8 max-sm:px-2.5!"
                   >
                     Raccrocher
                   </Action>
