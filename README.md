@@ -341,7 +341,7 @@ La ligne navigateur suit le même chemin sans pont ni téléphone : le navigateu
 
 **Matériel, pour la ligne téléphone seulement** : une clé Bluetooth reconnue par le noyau (la TP-Link UB500 l'est depuis Linux 5.16) et un téléphone avec sa carte SIM, posé à côté du serveur. Un téléphone dédié est préférable : tant qu'il est connecté, le serveur voit ses appels. Sans ce matériel, l'assistante se teste par la ligne navigateur et la simulation.
 
-Le service `autocalled-web` suppose le dépôt dans `~/projects/autocalled` (chemin écrit dans [`deploy/systemd/autocalled-web.service`](deploy/systemd/autocalled-web.service)).
+Le dépôt se clone où tu veux : les installateurs écrivent son chemin, et celui de Node, pnpm et Claude Code, dans les unités systemd à partir des modèles de [`deploy/systemd/`](deploy/systemd/).
 
 ### Variables d'environnement
 

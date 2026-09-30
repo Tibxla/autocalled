@@ -62,6 +62,6 @@ La branche `livraison/mcp-securite` (worktree `autocalled-livraison`) n'est ni f
 - `pkill -f <motif>` dans une commande dont le texte contient ce motif se tue lui-même : viser le PID.
 - Hors de Next (serveur MCP, scripts), `next/navigation` ne se charge pas sous `--conditions=react-server`, et `after()` lève : les pages lisent par `lib/pages.ts` (404), le reste de `lib/` par `lib/donnees.ts`, et les tâches de fond passent par `enFond` (`lib/fond.ts`).
 - Les tests de `apps/web` vident la base `autocalled_test` entre deux cas : ils refusent toute base dont le nom ne finit pas par `_test`. Deux séries de tests lancées en même temps sur cette base se gênent : un échec de ligne manquante ou de doublon se relance seul avant d'être cherché.
-- Le service `autocalled-web` sert `~/projects/autocalled` (chemin écrit dans son unité) : un worktree ne se sert pas par lui.
+- Le service `autocalled-web` sert la copie depuis laquelle `scripts/installer-services.sh` a été lancé (chemin écrit dans son unité à l'installation) : un worktree ne se sert pas par lui, sauf à y relancer l'installateur.
 - Le serveur MCP valide le prompt contre les variables du code de la copie où il tourne, pas contre celles de la production.
 - `next build` signale un accès dynamique au disque dans `lib/appels.ts` (dossier des enregistrements) : avertissement de traçage sans effet sur le service, qui tourne depuis le dépôt.

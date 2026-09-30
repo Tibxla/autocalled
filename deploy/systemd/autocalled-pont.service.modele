@@ -1,5 +1,5 @@
 # Pont Bluetooth (ADR 0007) : compose sur le téléphone passerelle pour l'application.
-# Installation : scripts/installer-pont.sh (remplace @RACINE@).
+# Modèle : scripts/installer-pont.sh y écrit le dossier du dépôt (marqueur RACINE entre arobases).
 [Unit]
 Description=Autocalled, pont Bluetooth vers le téléphone passerelle
 After=network-online.target

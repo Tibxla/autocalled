@@ -1,14 +1,15 @@
 # Interface opérateur (Next.js), servie sur le tailnet par `tailscale serve --https=8449`.
-# Installation : scripts/installer-services.sh
+# Modèle : scripts/installer-services.sh y écrit le dossier du dépôt (marqueur RACINE entre arobases) et le PATH
+# qui mène à node, pnpm et claude (marqueur PATH entre arobases), puis l’installe dans ~/.config/systemd/user/.
 [Unit]
 Description=Autocalled, interface opérateur
 After=network-online.target
 
 [Service]
-WorkingDirectory=%h/projects/autocalled/apps/web
+WorkingDirectory=@RACINE@/apps/web
 Environment=NODE_ENV=production
-Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=%h/projects/autocalled/apps/web/node_modules/.bin/next start -H 127.0.0.1 -p 3020
+Environment=PATH=@PATH@
+ExecStart=@RACINE@/apps/web/node_modules/.bin/next start -H 127.0.0.1 -p 3020
 Restart=on-failure
 RestartSec=5
 # Enregistrements au seul compte du service ; aucune élévation (sudo, setuid) depuis l'application ni depuis
