@@ -188,7 +188,7 @@ export function FormulaireImport({
             ref={champ}
             type="file"
             name="fiches"
-            accept=".md,text/markdown"
+            accept=".md,text/markdown,text/plain"
             multiple
             required
             className="sr-only"
@@ -196,7 +196,7 @@ export function FormulaireImport({
           />
         </label>
 
-        <label className="flex items-start gap-3">
+        <label className="flex cursor-pointer items-start gap-3 pointer-coarse:min-h-11 pointer-coarse:py-1">
           <input type="checkbox" name="consentement" required className="mt-1 size-4 shrink-0 accent-[var(--encre)]" />
           <span className="grid gap-1">
             <span className="text-md">Chaque personne de cette liste a accepté ce texte :</span>
