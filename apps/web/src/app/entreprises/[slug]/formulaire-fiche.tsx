@@ -3,6 +3,7 @@
 import type { PlageHoraire } from '@autocalled/domain';
 import { useState } from 'react';
 import { NomDeLAssistante, useNomAssistante } from '@/components/assistante';
+import { BarreActions } from '@/components/barre-actions';
 import { useRaccourci } from '@/components/clavier';
 import { ChampConnu, MessageConflit, useRechargement } from '@/components/conflit';
 import { Action, Champ, Compteur, Message, Saisie, Selection, TitreSection, ZoneTexte } from '@/components/ui';
@@ -197,19 +198,43 @@ function Formulaire({ fiche, recharger, rechargement }: { fiche: Fiche; recharge
   };
 
   const statut = enCours ? null : modifie ? (
-    <span className="text-encre-2">Modifications non enregistrées</span>
+    <span className="text-encre-2">
+      <span className="sm:hidden">Non enregistré</span>
+      <span className="max-sm:hidden">Modifications non enregistrées</span>
+    </span>
   ) : etat?.ok ? (
     <span className="text-encre-3">{etat.message ?? 'Fiche enregistrée.'}</span>
   ) : null;
 
+  const messageConflit =
+    etat?.conflit && etat.message ? (
+      <MessageConflit message={etat.message} jeton={etat.conflit.jeton} onRecharger={recharger} rechargement={rechargement} desactive={enCours} />
+    ) : etat && !etat.ok && etat.message ? (
+      <Message ton="alerte">{etat.message}</Message>
+    ) : null;
+  const messages =
+    fautifs.length > 0 || messageConflit ? (
+      <>
+        {fautifs.length > 0 ? (
+          <Message ton="alerte">
+            {fautifs.length} {fautifs.length > 1 ? 'champs à corriger' : 'champ à corriger'} :{' '}
+            {fautifs.map((c, i) => (
+              <span key={c.cle}>
+                {i > 0 ? ', ' : ''}
+                <a href={`#${c.id}`} onClick={allerAuChamp(c.id)} className="underline underline-offset-4">
+                  {c.libelle}
+                </a>
+              </span>
+            ))}
+          </Message>
+        ) : null}
+        {messageConflit}
+      </>
+    ) : null;
+
   return (
-    // Marge basse de défilement égale à la hauteur de la barre collée (--barre) : un champ atteint au clavier
-    // s'arrête au-dessus de « Enregistrer la fiche », jamais dessous.
-    <form
-      {...proprietes}
-      aria-label="Fiche de l’entreprise"
-      className="grid gap-12 [--barre:4rem] [&_:is(input,textarea,select,summary)]:scroll-mb-(--barre)"
-    >
+    // Un champ atteint au clavier s'arrête au-dessus de la barre d'actions : règle `form:has(.barre-actions)` de globals.css.
+    <form {...proprietes} aria-label="Fiche de l’entreprise" className="grid gap-12">
       <ChampConnu valeur={fiche.modifieLe.toISOString()} />
       <section aria-labelledby="titre-mina" className="grid max-w-[44rem] gap-6">
         <TitreSection id="titre-mina">Ce que {nomAssistante} dit de l’entreprise</TitreSection>
@@ -307,7 +332,7 @@ function Formulaire({ fiche, recharger, rechargement }: { fiche: Fiche; recharge
               const inversee = p.actif && p.debut >= p.fin;
               return (
                 <div key={jour} className={`flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-filet py-2 last:border-b-0 ${p.actif ? '' : 'text-encre-3'}`}>
-                  <label className="flex w-[7.5rem] items-center gap-2.5 text-md pointer-coarse:min-h-11">
+                  <label className="flex w-[7.5rem] items-center gap-2.5 text-md max-sm:w-24 pointer-coarse:min-h-11">
                     <input
                       id={`plage-${jour}`}
                       type="checkbox"
@@ -354,44 +379,12 @@ function Formulaire({ fiche, recharger, rechargement }: { fiche: Fiche; recharge
         </fieldset>
       </section>
 
-      {/* self-end : la barre garde la hauteur de son contenu au lieu de s'étirer sur sa rangée de grille. */}
-      <div className="sticky bottom-0 z-10 -mx-(--gouttiere) -mb-24 grid gap-2 self-end border-t border-filet bg-fond px-(--gouttiere) py-3 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        {fautifs.length > 0 ? (
-          <Message ton="alerte" className="max-w-[44rem]">
-            {fautifs.length} {fautifs.length > 1 ? 'champs à corriger' : 'champ à corriger'} :{' '}
-            {fautifs.map((c, i) => (
-              <span key={c.cle}>
-                {i > 0 ? ', ' : ''}
-                <a href={`#${c.id}`} onClick={allerAuChamp(c.id)} className="underline underline-offset-4">
-                  {c.libelle}
-                </a>
-              </span>
-            ))}
-          </Message>
-        ) : null}
-        {etat?.conflit && etat.message ? (
-          <MessageConflit
-            message={etat.message}
-            jeton={etat.conflit.jeton}
-            onRecharger={recharger}
-            rechargement={rechargement}
-            desactive={enCours}
-            className="max-w-[44rem]"
-          />
-        ) : etat && !etat.ok && etat.message ? (
-          <Message ton="alerte" className="max-w-[44rem]">
-            {etat.message}
-          </Message>
-        ) : null}
-        <div className="flex max-w-[44rem] flex-wrap items-center justify-between gap-x-6 gap-y-1">
-          <Action type="submit" ton="fort" touche="Ctrl Entrée" enCours={enCours} libelleEnCours="Enregistrement…" disabled={enCours} className="-ml-1.5">
-            Enregistrer la fiche
-          </Action>
-          <p role="status" className="text-sm">
-            {statut}
-          </p>
-        </div>
-      </div>
+      {/* Les rangées de la barre suivent la colonne du formulaire (44 rem) ; la barre, elle, va d'un bord à l'autre. */}
+      <BarreActions statut={statut} messages={messages} className="[&>div]:max-w-[44rem]">
+        <Action type="submit" ton="fort" touche="Ctrl Entrée" enCours={enCours} libelleEnCours="Enregistrement…" disabled={enCours} className="-ml-1.5">
+          Enregistrer la fiche
+        </Action>
+      </BarreActions>
     </form>
   );
 }
