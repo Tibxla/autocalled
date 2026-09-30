@@ -4,7 +4,10 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useLigne } from './etat-ligne-telephone';
 import { affichageLigne, TraitLigne } from './ligne-statut';
-import { estCourante, NAVIGATION_PRINCIPALE } from './navigation';
+import { estCourante, NAVIGATION_PRINCIPALE, sansEntreesLarges } from './navigation';
+
+/** Cinq entrées : « Assistante » n'y tient pas, Réglages la porte et s'allume pour elle. */
+const ENTREES = sansEntreesLarges(NAVIGATION_PRINCIPALE);
 
 function minusculeInitiale(texte: string): string {
   return texte.charAt(0).toLocaleLowerCase('fr') + texte.slice(1);
@@ -30,7 +33,7 @@ export function NavBas() {
       aria-label="Navigation principale"
       className="nav-bas fixed inset-x-0 bottom-0 z-30 flex border-t border-filet bg-fond pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] sm:hidden"
     >
-      {NAVIGATION_PRINCIPALE.map((entree) => {
+      {ENTREES.map((entree) => {
         const courante = estCourante(chemin, entree);
         const telephone = entree.href === '/telephone';
         return (

@@ -17,6 +17,7 @@ export function LienNav({
   aussi = [],
   variante = 'principale',
   compte,
+  className = '',
 }: {
   href: string;
   children: React.ReactNode;
@@ -24,6 +25,7 @@ export function LienNav({
   aussi?: string[];
   variante?: 'principale' | 'onglet';
   compte?: number | string;
+  className?: string;
 }) {
   const chemin = usePathname();
   const actif = estCourante(chemin, { href, exact, aussi });
@@ -33,7 +35,7 @@ export function LienNav({
     <Link
       href={href}
       aria-current={actif ? 'page' : undefined}
-      className={`relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-encre-3 transition-colors duration-150 hover:text-encre-2 pointer-coarse:active:text-encre-2 aria-[current=page]:text-encre ${taille} after:absolute after:inset-x-0 after:top-[calc(50%+11px)] after:h-px after:bg-souligne after:opacity-0 hover:after:opacity-100 aria-[current=page]:after:h-[1.5px] aria-[current=page]:after:bg-encre aria-[current=page]:after:opacity-100`}
+      className={`relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-encre-3 transition-colors duration-150 hover:text-encre-2 pointer-coarse:active:text-encre-2 aria-[current=page]:text-encre ${taille} after:absolute after:inset-x-0 after:top-[calc(50%+11px)] after:h-px after:bg-souligne after:opacity-0 hover:after:opacity-100 aria-[current=page]:after:h-[1.5px] aria-[current=page]:after:bg-encre aria-[current=page]:after:opacity-100 ${className}`}
     >
       {children}
       {compte !== undefined ? <span className="font-mono text-encre-3">{compte}</span> : null}
