@@ -20,6 +20,10 @@ _Avoid_ : utilisateur, admin, client
 Le business que l'assistante représente pendant un appel : son offre, ses arguments, ses objections fréquentes. L'opérateur en configure plusieurs et en choisit une avant chaque appel.
 _Avoid_ : client, business, compte, tenant
 
+**Informations complémentaires** :
+Texte libre de la fiche d'une entreprise, 1 500 caractères au plus, que l'assistante n'emploie que si la conversation y mène (« Parking : gratuit devant le gîte »). Vide, il n'est pas transmis, comme tout champ vide de la fiche de l'entreprise : l'assistante n'en parle pas et n'invente rien.
+_Avoid_ : notes, champ libre, champs personnalisés
+
 **Mode vitrine** :
 Accès public en lecture seule aux appels déjà passés et à leurs bilans, sans possibilité d'en lancer.
 _Avoid_ : démo publique, mode invité

@@ -24,9 +24,9 @@ Nature : **L** lecture, **É** écriture, **É !** écriture destructive ; **⇄
 | Outil | Entrées | Nature | Confirmation | Rôle |
 |---|---|---|---|---|
 | `lister_entreprises` | aucune | L | non | entreprises et leurs comptes |
-| `lire_entreprise` | `entreprise` | L | non | fiche, objections, issues, scripts et versions, usage |
+| `lire_entreprise` | `entreprise` | L | non | fiche (dont `complements`), objections, issues, scripts et versions, usage |
 | `creer_entreprise` | `nom` | É | non | crée l’entreprise, rend son slug |
-| `modifier_fiche_entreprise` | `entreprise`, `champs?`, `plages?`, `connu?` | É | oui si le nom change, ou pour tout champ pendant une campagne téléphone en cours de l’entreprise | fiche et plages, champs donnés seulement |
+| `modifier_fiche_entreprise` | `entreprise`, `champs?`, `plages?`, `connu?` | É | oui si le nom change, ou pour tout champ pendant une campagne téléphone en cours de l’entreprise | fiche et plages, champs donnés seulement ; `complements` : informations complémentaires, 1 500 caractères au plus ; un champ de texte vide n’est pas transmis à l’assistante |
 | `supprimer_entreprise` | `entreprise` | É ! | oui | entreprise vide créée par erreur |
 
 ## Objections
@@ -97,7 +97,7 @@ Nature : **L** lecture, **É** écriture, **É !** écriture destructive ; **⇄
 | `analyser_versions` | `entreprise`, `avecSimules?` | L | non | chiffres par version de script, par configuration de l’assistante, par objection |
 | `rappels_du_jour` | aucune | L | non | rappels datés à faire aujourd’hui ou en retard ; moment dit par le prospect dans le bloc balisé |
 | `lire_journee` | aucune | L | non | appels et campagnes du jour ; résumés dans le bloc balisé |
-| `apercu_variables_appel` | `entreprise`, `prospect?`, `versionScriptId?` | L | non | variables et premier message que recevrait l’assistante ; contexte de la fiche et historique dans le bloc `<variables>` |
+| `apercu_variables_appel` | `entreprise`, `prospect?`, `versionScriptId?` | L | non | variables et premier message que recevrait l’assistante, textes par défaut (`parDefaut`) et champs vides de la fiche non transmis (`nonTransmis`) ; contexte de la fiche et historique dans le bloc `<variables>` |
 
 ## Agenda
 
