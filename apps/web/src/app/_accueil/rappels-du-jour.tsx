@@ -66,7 +66,7 @@ export function RappelsDuJour({ rappels, sansDate, maintenant }: { rappels: Rapp
         À rappeler aujourd’hui
         <span className="ml-2.5 font-mono text-md font-normal text-encre-3">{rappels.length}</span>
         {enRetard > 0 ? (
-          <span className="text-md font-normal text-alerte">
+          <span className="text-md font-normal whitespace-nowrap text-alerte">
             {' · '}
             <span className="font-mono">{enRetard}</span> en retard
           </span>

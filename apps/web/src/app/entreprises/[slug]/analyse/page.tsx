@@ -177,7 +177,9 @@ export default async function PageAnalyse({
                                     <span className="font-mono">
                                       {Math.round(v.tauxRendezVous * 100)}
                                       {'\u202f'}%<span className="font-sans text-encre-3 sm:hidden"> de rendez-vous</span>{' '}
-                                      <span className="text-encre-3">({v.rendezVous} sur {v.conversations})</span>
+                                      <span className="whitespace-nowrap text-encre-3">
+                                        ({v.rendezVous} <span className="font-sans">sur</span> {v.conversations})
+                                      </span>
                                     </span>
                                     <Barre valeur={v.tauxRendezVous} />
                                   </span>
