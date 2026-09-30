@@ -5,7 +5,7 @@
       "first_message": "",
       "language": "fr",
       "prompt": {
-        "llm": "glm-45-air-fp8",
+        "llm": "claude-haiku-4-5",
         "temperature": 0.7,
         "built_in_tools": {
           "end_call": {
@@ -222,7 +222,7 @@
     "tts": {
       "voice_id": "ebRwkdEFVZIx2A6YucFh",
       "model_id": "eleven_v4_turbo",
-      "stability": 0.45,
+      "stability": 0.55,
       "similarity_boost": 0.8,
       "speed": 1
     },
@@ -254,17 +254,14 @@
       ],
       "merge_with_default_ignore_terms": true,
       "soft_timeout_config": {
-        "timeout_seconds": 1.2,
+        "timeout_seconds": 3,
         "message": "Hmm…",
         "additional_soft_timeout_messages": [
-          "Alors…",
-          "Euh, attendez…",
-          "Voyons voir…",
-          "Oui, oui…"
+          "Alors…"
         ],
         "use_llm_generated_message": false,
         "randomize_fillers": true,
-        "max_soft_timeouts_per_generation": 5,
+        "max_soft_timeouts_per_generation": 2,
         "disable_until_first_user_message": true
       }
     },
