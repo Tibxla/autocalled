@@ -104,14 +104,13 @@ function sansAccents(texte: string): string {
 }
 
 /**
- * Le retour d'un geste, écrit dans la ligne. `place` et `rang` : un prospect sauté garde sa place et son rang
- * d'avant le geste tant que la liste n'est pas relue (la page, elle, l'a déjà renvoyé en fin de file).
+ * Le retour d'un geste, écrit dans la ligne. `place` : un prospect sauté garde sa place d'avant le geste tant
+ * que la liste n'est pas relue (la page, elle, l'a déjà renvoyé en fin de file) ; son rang dit déjà le nouveau.
  */
 interface Retour {
   texte: string;
   ton: 'neutre' | 'alerte';
   place?: number;
-  rang?: number;
 }
 
 /** Les prospects sautés remis à la place qu'ils avaient au moment du geste, tant qu'ils sont encore à appeler. */
@@ -221,16 +220,15 @@ export function File({
       setAnnonce(`${e.nom} est déjà le dernier à appeler.`);
       return;
     }
-    // Place et rang d'avant le geste, dans la liste telle qu'elle s'affiche (un prospect déjà sauté compris).
+    // Place d'avant le geste, dans la liste telle qu'elle s'affiche (un prospect déjà sauté compris).
     const place = ordonner(entrees, retours).findIndex((x) => x.prospectId === id);
-    const rang = retours.get(id)?.rang ?? e.rang;
     ecrire(id, null);
     attendre(id, true);
     demarrer(async () => {
       try {
         if (quoi === 'sauter') {
           const r = await sauterDansLaFile(campagneId, id);
-          ecrire(id, r.ok ? { texte: 'Repasse en fin de file', ton: 'neutre', place, rang } : { texte: r.raison, ton: 'alerte' });
+          ecrire(id, r.ok ? { texte: 'Repasse en fin de file', ton: 'neutre', place } : { texte: r.raison, ton: 'alerte' });
           setAnnonce(r.ok ? `${e.nom} repasse en fin de file.` : r.raison);
         } else {
           const r = await retirerDeLaFile(campagneId, id);
@@ -406,7 +404,7 @@ export function File({
                       etat={e.etat === 'en-appel' ? 'vivante' : e.etat === 'sautee' || e.etat === 'retiree' || saute ? 'attenuee' : 'normale'}
                     >
                       <Cellule mono className="max-sm:order-1 max-sm:w-7">
-                        {saute ? (retour?.rang ?? e.rang) : e.rang}
+                        {e.rang}
                       </Cellule>
                       <Cellule tronquee titre={e.societe ? `${e.nom} · ${e.societe}` : e.nom} className="max-sm:order-2 max-sm:flex-1">
                         <LienLigne href={e.appel ? `/appels/${e.appel.id}${depuis}` : `/entreprises/${slug}/prospects/${e.prospectId}`}>

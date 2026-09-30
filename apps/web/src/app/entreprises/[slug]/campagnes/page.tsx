@@ -140,9 +140,10 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
                 const version = libelleVersion.get(c.versionScriptId) ?? 'Version supprimée';
                 const rendezVous = rendezVousParCampagne.get(c.id) ?? 0;
                 return (
-                  <LigneTable key={c.id} etat={c.statut === 'en-cours' && comptes.enAppel > 0 ? 'vivante' : 'normale'}>
+                  // Sous 640 px, date, statut, compte et rendez-vous tiennent sur la première rangée jusqu'à 360 px.
+                  <LigneTable key={c.id} etat={c.statut === 'en-cours' && comptes.enAppel > 0 ? 'vivante' : 'normale'} className="max-sm:gap-x-2.5">
                     <Cellule className="max-sm:order-1 max-sm:flex-1">
-                      <LienLigne href={`/campagnes/${c.id}`} className="font-mono text-xs text-encre-2">
+                      <LienLigne href={`/campagnes/${c.id}`} className="font-mono text-xs whitespace-nowrap text-encre-2">
                         {dateCourte(c.creeLe)}
                       </LienLigne>
                     </Cellule>
@@ -168,9 +169,9 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
                     <Cellule
                       align="droite"
                       unite="rendez-vous"
-                      className={`font-mono text-xs max-sm:order-3 ${rendezVous > 0 ? 'text-encre' : 'text-encre-3 max-sm:hidden'}`}
+                      className={`text-sm text-encre-3 max-sm:order-3 ${rendezVous > 0 ? '' : 'max-sm:hidden'}`}
                     >
-                      {rendezVous}
+                      <span className={`font-mono text-xs ${rendezVous > 0 ? 'text-encre' : ''}`}>{rendezVous}</span>
                     </Cellule>
                   </LigneTable>
                 );
