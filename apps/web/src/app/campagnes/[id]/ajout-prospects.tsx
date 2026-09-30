@@ -2,6 +2,7 @@
 
 import type { IssueSysteme } from '@autocalled/domain';
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { BarreActions } from '@/components/barre-actions';
 import { useRaccourci } from '@/components/clavier';
 import { Action, EtatVide, Filtre, Filtres, Message, Recherche, TitreSection } from '@/components/ui';
 import { ajouterDansLaFile } from '../actions';
@@ -11,6 +12,9 @@ import { ajouterDansLaFile } from '../actions';
  * passent en fin de file et une campagne en cours les appellera à leur tour. Aucune case n'est cochée d'office :
  * l'opérateur choisit. Seuls sont proposés les prospects de l'entreprise au numéro autorisé et absents de la
  * file ; le serveur refait ces contrôles au moment d'ajouter.
+ *
+ * Sous 640 px, la liste ne défile plus dans un cadre : la page défile, et « Ajouter » vit dans une barre
+ * d'actions collée en bas (BarreActions).
  */
 
 export interface ProspectAjoutable {
@@ -196,12 +200,21 @@ function FormulaireAjout({
   }
 
   return (
-    <div className="grid gap-3">
+    // Un formulaire, pour que le champ au focus remonte au-dessus de la barre d'actions (globals.css).
+    <form
+      aria-label="Ajouter des prospects à la file"
+      className="grid gap-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (coches.size > 0 && !enCours) ajouter();
+      }}
+    >
       <p className="text-sm text-encre-3">
         Prospects de l’entreprise au numéro autorisé, absents de la file. Ils passent en fin de file, dans l’ordre alphabétique ; personne n’est appelé
         maintenant.
       </p>
-      <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
+      {/* Sous 640 px, la recherche en tête, pleine largeur, puis la rangée de filtres qui défile. */}
+      <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3 max-sm:grid max-sm:grid-cols-1">
         <Filtres libelle="Filtrer les prospects à ajouter">
           <Filtre actif={filtre === null} compte={ajoutables.length} onClick={() => setFiltre(null)}>
             Tous
@@ -212,7 +225,13 @@ function FormulaireAjout({
             </Filtre>
           ))}
         </Filtres>
-        <Recherche sansFormulaire instantane={setTexte} placeholder="Chercher un prospect" libelle="Chercher un prospect à ajouter" />
+        <Recherche
+          sansFormulaire
+          instantane={setTexte}
+          placeholder="Chercher un prospect"
+          libelle="Chercher un prospect à ajouter"
+          className="w-full max-sm:order-first sm:w-[300px]"
+        />
       </div>
       <div className="-mx-1.5 flex flex-wrap items-center gap-x-4">
         <Action ton="discret" disabled={visibles.length === 0} onClick={() => toutCocher(true)}>
@@ -225,14 +244,19 @@ function FormulaireAjout({
       </div>
 
       {visibles.length === 0 ? <EtatVide forme="filtre" titre="Aucun prospect ne correspond." /> : null}
-      <ul ref={liste} className="max-h-[50vh] overflow-y-auto border-t border-filet">
+      {/* Un cadre qui défile au bureau seulement : au doigt, jamais de défilement dans le défilement. */}
+      <ul ref={liste} className="border-t border-filet sm:max-h-[50vh] sm:overflow-y-auto">
         {ajoutables.map((p) => (
           <li key={p.id} hidden={!visible(p)}>
             <label className="flex min-h-[38px] cursor-pointer items-center gap-3 border-b border-filet px-1 py-1.5 text-md transition-colors duration-100 hover:bg-survol pointer-coarse:min-h-11">
               <input type="checkbox" checked={coches.has(p.id)} onChange={() => basculer(p.id)} className="size-4 shrink-0 accent-[var(--encre)]" />
-              <span className="min-w-0 flex-1 truncate">
-                <span className="font-medium">{p.nom}</span>
-                {p.societe ? <span className="text-encre-3"> · {p.societe}</span> : null}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">
+                  <span className="font-medium">{p.nom}</span>
+                  {p.societe ? <span className="text-encre-3"> · {p.societe}</span> : null}
+                </span>
+                {/* Sous 640 px, la dernière issue passe sous le nom. */}
+                <span className="block truncate text-sm text-encre-3 sm:hidden">{p.derniere ? p.derniere.libelle : 'Jamais appelé'}</span>
               </span>
               <span className="shrink-0 text-sm text-encre-3 max-sm:hidden">{p.derniere ? p.derniere.libelle : 'Jamais appelé'}</span>
             </label>
@@ -240,21 +264,34 @@ function FormulaireAjout({
         ))}
       </ul>
 
-      {erreur ? <Message ton="alerte">{erreur}</Message> : null}
-
-      <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-        <Action ton="fort" disabled={coches.size === 0 || enCours} enCours={enCours} libelleEnCours="Ajout…" onClick={ajouter}>
-          Ajouter {coches.size} prospect{coches.size > 1 ? 's' : ''} à la file
+      {/* Dans un volet que la file suit : pas de marge négative de fin de page. */}
+      <BarreActions
+        className="mb-0!"
+        messages={erreur ? <Message ton="alerte">{erreur}</Message> : null}
+        statut={
+          cochesMasques > 0 ? (
+            <span className="text-encre-2">
+              dont <span className="font-mono">{cochesMasques}</span> hors du filtre
+            </span>
+          ) : null
+        }
+      >
+        <Action
+          ton="fort"
+          type="submit"
+          className="-ml-1.5"
+          disabled={coches.size === 0 || enCours}
+          enCours={enCours}
+          libelleEnCours="Ajout…"
+          aria-label={`Ajouter ${coches.size} prospect${coches.size > 1 ? 's' : ''} à la file`}
+        >
+          Ajouter {coches.size}
+          <span className="max-sm:hidden"> prospect{coches.size > 1 ? 's' : ''} à la file</span>
         </Action>
         <Action ton="discret" touche="Échap" disabled={enCours} onClick={onAnnuler}>
           Annuler
         </Action>
-        {cochesMasques > 0 ? (
-          <span className="px-1.5 text-sm text-encre-2">
-            dont <span className="font-mono">{cochesMasques}</span> hors du filtre
-          </span>
-        ) : null}
-      </div>
-    </div>
+      </BarreActions>
+    </form>
   );
 }
