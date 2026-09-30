@@ -12,7 +12,7 @@ import {
 } from '@autocalled/domain';
 import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { appels, campagnes, consentements, entreprises, imports, type Origine, prospects, textesConsentement } from '@/db/schema';
+import { appels, campagnes, consentements, entreprises, imports, type Origine, prospects, scripts, textesConsentement, versionsScript } from '@/db/schema';
 import type { Conflit, Refus } from './entreprises';
 import { numeroLisible } from './format';
 import { OPPOSITION_ILLISIBLE, numerosOpposes } from './opposition';
@@ -230,18 +230,94 @@ export async function modifierProspect(
 
 const FICHE_CHANGEE = 'La fiche a changé depuis ta lecture (import ou autre correction) : relis-la avant de la corriger.';
 
+/** Une campagne non terminée dans la file de laquelle un prospect attend encore d'être appelé. */
+export interface FileEnAttente {
+  id: string;
+  /** « Campagne du 29/09 · Accroche courte v3, en cours » : de quoi la reconnaître sans son identifiant. */
+  libelle: string;
+  /** Il y est le dernier à appeler : l'en retirer la termine. */
+  derniere: boolean;
+}
+
+const STATUT_CAMPAGNE: Record<string, string> = { prete: 'prête', 'en-cours': 'en cours', 'en-pause': 'suspendue' };
+const JOUR_MOIS = new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', timeZone: 'Europe/Paris' });
+
+/** Le libellé d'une campagne dans une confirmation (interface et Claude Code). */
+export function libelleCampagne(c: { creeLe: Date; script: string | null; numero: number | null; statut: string }): string {
+  const version = c.script ? ` · ${c.script}${c.numero !== null ? ` v${c.numero}` : ''}` : '';
+  return `Campagne du ${JOUR_MOIS.format(c.creeLe)}${version}, ${STATUT_CAMPAGNE[c.statut] ?? c.statut}`;
+}
+
+type Lecteur = Pick<typeof db, 'select'>;
+
+/**
+ * Les campagnes non terminées de l'entreprise dont la file attend encore ce prospect (à appeler), dans l'ordre de
+ * leur identifiant : ce qu'un archivage retirerait. Lu par la fiche, la liste des prospects et Claude Code pour
+ * nommer ces campagnes dans la confirmation, puis relu sous verrou par `archiverProspect`.
+ */
+export async function filesEnAttente(entrepriseId: string, prospectId: string, lecteur: Lecteur = db): Promise<FileEnAttente[]> {
+  const lignes = await lecteur
+    .select({ id: campagnes.id, creeLe: campagnes.creeLe, statut: campagnes.statut, entrees: campagnes.entrees, script: scripts.nom, numero: versionsScript.numero })
+    .from(campagnes)
+    .leftJoin(versionsScript, eq(versionsScript.id, campagnes.versionScriptId))
+    .leftJoin(scripts, eq(scripts.id, versionsScript.scriptId))
+    .where(
+      and(
+        eq(campagnes.entrepriseId, entrepriseId),
+        ne(campagnes.statut, 'terminee'),
+        sql`exists (select 1 from jsonb_array_elements(${campagnes.entrees}) e where e->>'prospectId' = ${prospectId} and e->>'etat' = 'a-appeler')`,
+      ),
+    )
+    .orderBy(campagnes.id);
+  return lignes.map((c) => ({
+    id: c.id,
+    libelle: libelleCampagne(c),
+    derniere: !c.entrees.some((e) => e.prospectId !== prospectId && (e.etat === 'a-appeler' || e.etat === 'en-appel')),
+  }));
+}
+
+/** Les files d'attente de plusieurs prospects d'une entreprise, en une lecture : pour la liste des prospects. */
+export async function filesEnAttenteDesProspects(entrepriseId: string): Promise<Map<string, FileEnAttente[]>> {
+  const lignes = await db
+    .select({ id: campagnes.id, creeLe: campagnes.creeLe, statut: campagnes.statut, entrees: campagnes.entrees, script: scripts.nom, numero: versionsScript.numero })
+    .from(campagnes)
+    .leftJoin(versionsScript, eq(versionsScript.id, campagnes.versionScriptId))
+    .leftJoin(scripts, eq(scripts.id, versionsScript.scriptId))
+    .where(and(eq(campagnes.entrepriseId, entrepriseId), ne(campagnes.statut, 'terminee')))
+    .orderBy(campagnes.id);
+  const parProspect = new Map<string, FileEnAttente[]>();
+  for (const c of lignes) {
+    const restants = c.entrees.filter((e) => e.etat === 'a-appeler' || e.etat === 'en-appel');
+    for (const e of c.entrees) {
+      if (e.etat !== 'a-appeler') continue;
+      const file = { id: c.id, libelle: libelleCampagne(c), derniere: restants.every((r) => r.prospectId === e.prospectId) };
+      parProspect.set(e.prospectId, [...(parProspect.get(e.prospectId) ?? []), file]);
+    }
+  }
+  return parProspect;
+}
+
+/** Les campagnes lues en plus de celles confirmées, nommées pour le refus. */
+function filesNonConfirmees(files: readonly FileEnAttente[], confirmees: readonly string[]): FileEnAttente[] {
+  return files.filter((f) => !confirmees.includes(f.id));
+}
+
 /**
  * Archive un prospect (ADR 0013) : il sort des listes par défaut et des choix de campagne, et ne peut plus être
  * appelé ni ajouté à une campagne tant qu'il l'est. Ses appels, bilans et le consentement de son numéro restent.
- * Réversible, donc sans confirmation : c'est un frein. S'il attend dans la file d'une campagne non terminée, il en est
+ * Réversible, donc sans confirmation, sauf s'il attend dans la file d'une campagne non terminée : il en est alors
  * retiré (motif « retrait », trace gardée) sous le verrou de la campagne, pour qu'aucun enchaînement ne le compose ni
- * ne le marque « non autorisé » entre-temps ; le réactiver ne l'y remet pas. Refusé pendant un appel avec lui.
+ * ne le marque « non autorisé » entre-temps, et ce retrait ne se défait pas (le réactiver ne l'y remet pas) : il est
+ * confirmé. `filesConfirmees` : les campagnes nommées dans cette confirmation (vide sans confirmation). Une file où il
+ * attend sans y figurer (sans confirmation, ou ajouté entre la lecture et le geste) refuse tout et rend `aConfirmer`,
+ * les files à nommer dans la confirmation. Refusé pendant un appel avec lui.
  */
 export async function archiverProspect(
   entrepriseId: string,
   prospectId: string,
   par: Origine,
-): Promise<{ ok: true; deja: boolean; retireDe: string[]; terminees: string[] } | Refus> {
+  filesConfirmees: readonly string[],
+): Promise<{ ok: true; deja: boolean; retireDe: string[]; terminees: string[] } | (Refus & { aConfirmer?: FileEnAttente[] })> {
   return db.transaction(async (tx) => {
     const [p] = await tx
       .select({ archiveLe: prospects.archiveLe })
@@ -267,6 +343,15 @@ export async function archiverProspect(
       .for('update');
     if (files.some((c) => c.entrees.some((e) => e.prospectId === prospectId && e.etat === 'en-appel'))) {
       return { ok: false as const, raison: 'Ce prospect est en appel dans une campagne : archive-le quand l’appel sera fini.' };
+    }
+    // Campagnes verrouillées ci-dessus : leur file ne bouge plus jusqu'à la fin de la transaction.
+    const nouvelles = filesNonConfirmees(await filesEnAttente(entrepriseId, prospectId, tx), filesConfirmees);
+    if (nouvelles.length) {
+      return {
+        ok: false as const,
+        raison: `Ce prospect attend dans la file de ${nouvelles.map((f) => f.libelle).join(' ; ')} : rien n’est archivé tant que son retrait de ${nouvelles.length > 1 ? 'ces files' : 'cette file'} n’est pas confirmé.`,
+        aConfirmer: nouvelles,
+      };
     }
     const trace = { le: new Date().toISOString(), par };
     const terminees: string[] = [];

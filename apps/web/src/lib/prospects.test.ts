@@ -12,6 +12,8 @@ import {
   archiverProspect,
   consentementsDuNumero,
   FicheChangee,
+  filesEnAttente,
+  filesEnAttenteDesProspects,
   importerFiches,
   modifierProspect,
   reactiverProspect,
@@ -154,7 +156,11 @@ describe('archiverProspect et reactiverProspect', () => {
     await db.update(campagnes).set({ statut: 'terminee' }).where(eq(campagnes.id, terminee));
     await db.insert(appels).values({ entrepriseId: e.id, prospectId: 'julie', versionScriptId, ligne: 'simulation', numero: '+33639980001', statut: 'termine' });
 
-    expect(await archiverProspect(e.id, 'julie', 'interface')).toEqual({ ok: true, deja: false, retireDe: [campagneId], terminees: [] });
+    // La file où il attend est nommée pour la confirmation ; la campagne terminée n'y est pas.
+    const files = await filesEnAttente(e.id, 'julie');
+    expect(files).toEqual([{ id: campagneId, libelle: expect.stringMatching(/^Campagne du \d\d\/\d\d · Découverte v1, prête$/), derniere: false }]);
+    expect((await filesEnAttenteDesProspects(e.id)).get('julie')).toEqual(files);
+    expect(await archiverProspect(e.id, 'julie', 'interface', [campagneId])).toEqual({ ok: true, deja: false, retireDe: [campagneId], terminees: [] });
 
     const [c] = await db.select().from(campagnes).where(eq(campagnes.id, campagneId));
     expect(c?.entrees[0]).toMatchObject({ prospectId: 'julie', etat: 'retiree', motif: 'retrait', par: 'interface' });
@@ -167,7 +173,7 @@ describe('archiverProspect et reactiverProspect', () => {
     expect(await db.$count(appels)).toBe(1);
     expect((await autorisationsDe(['+33639980001'])).get('+33639980001')?.autorise).toBe(true);
     // Idempotent ; un réimport le laisse archivé et le dit.
-    expect(await archiverProspect(e.id, 'julie', 'mcp')).toMatchObject({ ok: true, deja: true });
+    expect(await archiverProspect(e.id, 'julie', 'mcp', [])).toMatchObject({ ok: true, deja: true });
     expect(await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01', 'Autre contexte.')])).toMatchObject({ etat: 'fait', misAJour: ['julie'], archives: ['julie'] });
 
     expect(await reactiverProspect(e.id, 'julie')).toEqual({ ok: true, deja: false });
@@ -182,8 +188,34 @@ describe('archiverProspect et reactiverProspect', () => {
     const { versionScriptId } = await creerScript(e.id, 'Découverte');
     const campagneId = await enregistrerCampagne(e.id, { versionScriptId, ligne: 'simulation', prospects: ['julie'] });
 
-    expect(await archiverProspect(e.id, 'julie', 'interface')).toMatchObject({ ok: true, terminees: [campagneId] });
+    expect((await filesEnAttente(e.id, 'julie'))[0]?.derniere).toBe(true);
+    expect(await archiverProspect(e.id, 'julie', 'interface', [campagneId])).toMatchObject({ ok: true, terminees: [campagneId] });
     expect((await db.select().from(campagnes))[0]?.statut).toBe('terminee');
+  });
+
+  it('refuse, sans rien changer, une file où il attend sans avoir été confirmée', async () => {
+    const e = await entrepriseDeTest();
+    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01'), fiche('marc', 'Marc Fictif', '06 39 98 00 02')]);
+    const { versionScriptId } = await creerScript(e.id, 'Découverte');
+    const premiere = await enregistrerCampagne(e.id, { versionScriptId, ligne: 'simulation', prospects: ['julie', 'marc'] });
+
+    // Sans confirmation (lu hors de toute file), puis ajouté à une seconde file entre la lecture et le geste.
+    const sans = await archiverProspect(e.id, 'julie', 'interface', []);
+    expect(sans).toMatchObject({
+      ok: false,
+      raison: expect.stringMatching(/attend dans la file de Campagne du .* rien n’est archivé tant que son retrait de cette file n’est pas confirmé/),
+      aConfirmer: [{ id: premiere, libelle: expect.stringContaining('Découverte v1'), derniere: false }],
+    });
+    const seconde = await enregistrerCampagne(e.id, { versionScriptId, ligne: 'simulation', prospects: ['julie'] });
+    expect(await archiverProspect(e.id, 'julie', 'interface', [premiere])).toMatchObject({ ok: false, aConfirmer: [{ id: seconde, derniere: true }] });
+    expect(await db.$count(prospects, isNotNull(prospects.archiveLe))).toBe(0);
+    expect((await db.select().from(campagnes).where(eq(campagnes.id, premiere)))[0]?.entrees[0]).toEqual({ prospectId: 'julie', etat: 'a-appeler' });
+
+    // Confirmée pour les deux : retiré des deux. Une file confirmée qu'il a quittée entre-temps ne gêne pas.
+    expect(await archiverProspect(e.id, 'julie', 'interface', [premiere, seconde, '00000000-0000-4000-8000-000000000000'])).toMatchObject({
+      ok: true,
+      retireDe: [premiere, seconde].sort(),
+    });
   });
 
   it('refuse pendant un appel avec lui, isolé ou de campagne', async () => {
@@ -197,9 +229,9 @@ describe('archiverProspect et reactiverProspect', () => {
       .set({ statut: 'en-cours', entrees: [{ prospectId: 'marc', etat: 'en-appel', appelId: a!.id }] })
       .where(eq(campagnes.id, campagneId));
 
-    expect(await archiverProspect(e.id, 'julie', 'interface')).toMatchObject({ ok: false, raison: expect.stringContaining('en cours') });
-    expect(await archiverProspect(e.id, 'marc', 'interface')).toMatchObject({ ok: false, raison: expect.stringContaining('en appel dans une campagne') });
-    expect(await archiverProspect(e.id, 'personne', 'interface')).toMatchObject({ ok: false });
+    expect(await archiverProspect(e.id, 'julie', 'interface', [])).toMatchObject({ ok: false, raison: expect.stringContaining('en cours') });
+    expect(await archiverProspect(e.id, 'marc', 'interface', [campagneId])).toMatchObject({ ok: false, raison: expect.stringContaining('en appel dans une campagne') });
+    expect(await archiverProspect(e.id, 'personne', 'interface', [])).toMatchObject({ ok: false });
     expect(await db.$count(prospects, isNotNull(prospects.archiveLe))).toBe(0);
   });
 
@@ -219,7 +251,7 @@ describe('archiverProspect et reactiverProspect', () => {
     });
     expect((await rappelsDuJour()).rappels).toHaveLength(1);
 
-    await archiverProspect(e.id, 'julie', 'interface');
+    await archiverProspect(e.id, 'julie', 'interface', []);
 
     expect((await rappelsDuJour()).rappels).toHaveLength(0);
   });
