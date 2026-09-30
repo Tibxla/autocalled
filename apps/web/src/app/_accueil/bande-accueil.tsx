@@ -1,7 +1,6 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { useId, useRef, useState, useTransition } from 'react';
 import { lancerCampagne, suspendreCampagne } from '@/app/campagnes/actions';
 import { useNomAssistante } from '@/components/assistante';
@@ -10,6 +9,7 @@ import { BandeAppel, ChronoAnalyse, type IdentiteAppel } from '@/components/band
 import { useRaccourci } from '@/components/clavier';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
 import { useLigne } from '@/components/etat-ligne-telephone';
+import { LienTexte } from '@/components/lien-texte';
 import { dateCourte, duree, etatAppel, FUSEAU, heure, LIGNES_COURTES } from '@/components/format-appel';
 import { estimation } from '@/components/garde-fous';
 import { GlypheEtape, PointCreux } from '@/components/ui';
@@ -35,6 +35,12 @@ function identiteCampagne(c: CampagneJour): string {
 }
 
 const pluriel = (n: number, un: string, plusieurs: string) => `${n} ${n > 1 ? plusieurs : un}`;
+
+/**
+ * L'action en relief d'une bande, sous 640 px : en tête des gestes, sur toute la largeur. Les autres gestes restent du
+ * texte, à la ligne dessous.
+ */
+const GESTE_PLEIN = 'max-sm:order-first max-sm:w-full';
 
 export function BandeAccueil({
   situation,
@@ -120,9 +126,11 @@ export function BandeAccueil({
         <SansAppel situation={s} ligne={ligne} telephoneRecents={telephoneRecents} confirmationInitiale={confirmationInitiale} />
       )}
       {bande?.statut === 'traitement' && s.type === 'fin-appel' ? (
-        <div className="-mx-1.5 flex flex-wrap items-center justify-end gap-x-4 gap-y-1">
+        <div className="-mx-1.5 flex flex-wrap items-center justify-end gap-x-4 gap-y-1 pointer-coarse:mx-0 max-sm:justify-start">
           {s.bloquee ? <p className="text-sm text-alerte">L’analyse ne progresse plus.</p> : null}
-          <LienEntree href={lienAppel(s.appel.id)}>Ouvrir l’appel</LienEntree>
+          <LienEntree href={lienAppel(s.appel.id)} className="max-sm:w-full">
+            Ouvrir l’appel
+          </LienEntree>
         </div>
       ) : null}
       {campagneTelephone && (s.type === 'appel' || s.type === 'fin-appel') ? <SuspendreEnAppel campagne={campagneTelephone} /> : null}
@@ -152,7 +160,7 @@ function SansAppel({
           tonTitre="antenne"
           phrase="Le téléphone passerelle est en communication, sans appel d’Autocalled à suivre ici."
           actions={
-            <LienAction ton="fort" href="/telephone">
+            <LienAction ton="fort" href="/telephone" className={GESTE_PLEIN}>
               Ouvrir Téléphone
             </LienAction>
           }
@@ -169,7 +177,7 @@ function SansAppel({
           {...(s.campagne ? { contexte: `${identiteCampagne(s.campagne)} · ${s.campagne.statut === 'en-cours' ? 'en cours' : 'suspendue'}` } : {})}
           phrase={s.phrase}
           actions={
-            <LienAction ton="fort" href="/telephone">
+            <LienAction ton="fort" href="/telephone" className={GESTE_PLEIN}>
               Ouvrir Téléphone
             </LienAction>
           }
@@ -209,7 +217,9 @@ function SansAppel({
 /**
  * Même squelette que la bande vivante : rangée 1 (titre de situation à gauche, gestes à droite), sous-titre
  * centré (contexte, phrase principale, détail), axe de la piste immobile. Sous 640 px : une colonne, les
- * gestes en pleine largeur après la phrase, sans touches.
+ * gestes juste sous le titre, avant la phrase, à portée du pouce sans défiler ; l'action en relief en tête sur
+ * toute la largeur (GESTE_PLEIN), ou un pavé de deux colonnes pour les commandes d'une campagne qui tourne.
+ * L'axe de la piste ne s'y dessine pas : sans appel, il ne dit rien.
  */
 function Cadre({
   etiquette,
@@ -221,6 +231,7 @@ function Cadre({
   detail,
   tonDetail = 'discret',
   actions,
+  pave = false,
   sousActions,
 }: {
   etiquette: string;
@@ -232,6 +243,8 @@ function Cadre({
   detail?: React.ReactNode;
   tonDetail?: 'discret' | 'alerte';
   actions?: React.ReactNode;
+  /** Sous 640 px, les gestes en pavé de deux colonnes, tous en relief (Suspendre, Ouvrir la régie). */
+  pave?: boolean;
   sousActions?: React.ReactNode;
 }) {
   const longueur = typeof phrase === 'string' ? phrase.length : 0;
@@ -246,18 +259,22 @@ function Cadre({
           {titre}
         </h2>
         {actions ? (
-          <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 max-sm:order-3 max-sm:mx-0 max-sm:grid max-sm:grid-cols-1 max-sm:[&_.touche]:hidden max-sm:[&>*]:h-11 max-sm:[&>*]:justify-center">
+          <div
+            className={`-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 pointer-coarse:mx-0 max-sm:order-2 max-sm:justify-start ${
+              pave ? 'max-sm:grid max-sm:grid-cols-2 max-sm:gap-2' : ''
+            }`}
+          >
             {actions}
           </div>
         ) : null}
       </div>
       {sousActions ? <div className="grid gap-2 max-sm:order-4">{sousActions}</div> : null}
-      <div className="flex min-h-[84px] flex-col items-center justify-end gap-1.5 pt-1.5 pb-0.5 text-center max-sm:order-2 max-sm:min-h-0">
+      <div className="flex min-h-[84px] flex-col items-center justify-end gap-1.5 pt-1.5 pb-0.5 text-center max-sm:order-3 max-sm:min-h-0">
         {contexte ? <p className="max-w-full text-lg text-encre-2 text-balance">{contexte}</p> : null}
         <div className={`font-medium tracking-[-0.01em] text-balance max-sm:text-xl ${classeTaille}`}>{phrase}</div>
         {detail ? <div className={`max-w-[72ch] text-md ${tonDetail === 'alerte' ? 'text-alerte' : 'text-encre-3'}`}>{detail}</div> : null}
       </div>
-      <div className="max-sm:order-5">
+      <div className="max-sm:hidden">
         <AxePiste />
       </div>
     </section>
@@ -301,11 +318,18 @@ function LigneCoupee({ situation: s }: { situation: Extract<Situation, { type: '
       actions={
         <>
           {deconnecte ? (
-            <Action ton="fort" enCours={reconnexion.enCours} libelleEnCours="Reconnexion…" disabled={reconnexion.enCours} onClick={reconnexion.lancer}>
+            <Action
+              ton="fort"
+              enCours={reconnexion.enCours}
+              libelleEnCours="Reconnexion…"
+              disabled={reconnexion.enCours}
+              onClick={reconnexion.lancer}
+              className={GESTE_PLEIN}
+            >
               Reconnecter le téléphone
             </Action>
           ) : null}
-          <LienAction ton={deconnecte ? 'normal' : 'fort'} href="/telephone">
+          <LienAction ton={deconnecte ? 'normal' : 'fort'} href="/telephone" {...(deconnecte ? {} : { className: GESTE_PLEIN })}>
             Ouvrir Téléphone
           </LienAction>
         </>
@@ -315,7 +339,7 @@ function LigneCoupee({ situation: s }: { situation: Extract<Situation, { type: '
 }
 
 /** Lien fort précédé de « Entrée » : Entrée l'ouvre quand le focus n'est nulle part ailleurs (sur la page). */
-function LienEntree({ href, children }: { href: string; children: string }) {
+function LienEntree({ href, children, className = GESTE_PLEIN }: { href: string; children: string; className?: string }) {
   const lien = useRef<HTMLAnchorElement>(null);
   useRaccourci({
     touche: 'Enter',
@@ -328,7 +352,7 @@ function LienEntree({ href, children }: { href: string; children: string }) {
     },
   });
   return (
-    <LienAction ref={lien} ton="fort" touche="Entrée" aria-keyshortcuts="Enter" href={href}>
+    <LienAction ref={lien} ton="fort" touche="Entrée" aria-keyshortcuts="Enter" href={href} className={className}>
       {children}
     </LienAction>
   );
@@ -491,14 +515,17 @@ function SuspendreEnAppel({ campagne: c }: { campagne: CampagneJour }) {
   const { enCours, erreur, suspendre } = useSuspendre(c.id);
   return (
     <div className="grid gap-1.5 border-t border-filet pt-3">
-      <div className="-mx-1.5 flex flex-wrap items-center justify-end gap-x-4 gap-y-1 max-sm:[&_.touche]:hidden">
-        <span className="px-1.5 text-sm text-encre-3 max-sm:basis-full">
+      {/* Sous 640 px, pavé de deux touches : les commandes d'une campagne qui tourne. */}
+      <div className="-mx-1.5 flex flex-wrap items-center justify-end gap-x-4 gap-y-1 pointer-coarse:mx-0 max-sm:grid max-sm:grid-cols-2 max-sm:gap-2">
+        <span className="px-1.5 text-sm text-encre-3 max-sm:col-span-2 pointer-coarse:px-0">
           Campagne {c.entreprise} · <span className="font-mono">{c.comptes.traites}</span> traités sur <span className="font-mono">{c.comptes.total}</span>
         </span>
-        <Action onClick={suspendre} enCours={enCours} libelleEnCours="Suspension…" disabled={enCours} aria-describedby={`aide-suspendre-appel-${c.id}`}>
+        <Action forme="relief" onClick={suspendre} enCours={enCours} libelleEnCours="Suspension…" disabled={enCours} aria-describedby={`aide-suspendre-appel-${c.id}`}>
           Suspendre
         </Action>
-        <LienAction href={`/campagnes/${c.id}`}>Ouvrir la régie</LienAction>
+        <LienAction forme="relief" href={`/campagnes/${c.id}`}>
+          Ouvrir la régie
+        </LienAction>
       </div>
       <p id={`aide-suspendre-appel-${c.id}`} className="text-sm text-encre-3 sm:text-right">
         Suspendre : l’appel en cours va à son terme, aucun autre ne part.
@@ -532,19 +559,20 @@ function EntreDeux({ campagne: c, ligne }: { campagne: CampagneJour; ligne: Etat
             <>
               {' '}
               · pause de <span className="font-mono">{pause}</span> s entre deux appels, réglée sur{' '}
-              <Link href="/telephone" className="decoration-souligne underline-offset-4 hover:underline">
-                Téléphone
-              </Link>
+              <LienTexte href="/telephone">Téléphone</LienTexte>
             </>
           ) : null}
         </>
       }
+      pave
       actions={
         <>
-          <Action onClick={suspendre} enCours={enCours} libelleEnCours="Suspension…" disabled={enCours} aria-describedby={`aide-suspendre-${c.id}`}>
+          <Action forme="relief" onClick={suspendre} enCours={enCours} libelleEnCours="Suspension…" disabled={enCours} aria-describedby={`aide-suspendre-${c.id}`}>
             Suspendre
           </Action>
-          <LienAction href={`/campagnes/${c.id}`}>Ouvrir la régie</LienAction>
+          <LienAction forme="relief" href={`/campagnes/${c.id}`}>
+            Ouvrir la régie
+          </LienAction>
         </>
       }
       sousActions={
@@ -621,6 +649,7 @@ function CampagneArretee({
         aria-expanded={telephone ? ouverte : undefined}
         aria-describedby={blocage ? `blocage-${c.id}` : undefined}
         onClick={() => (telephone ? confirmation.ouvrir(bouton.current) : lancer())}
+        className={GESTE_PLEIN}
       >
         {libelle}
       </Action>
@@ -663,7 +692,7 @@ function CampagneArretee({
       actions={
         <>
           {geste}
-          <LienAction ton={geste ? 'normal' : 'fort'} href={`/campagnes/${c.id}`}>
+          <LienAction ton={geste ? 'normal' : 'fort'} href={`/campagnes/${c.id}`} {...(geste ? {} : { className: GESTE_PLEIN })}>
             Ouvrir la régie
           </LienAction>
           {reconnexion.action}
@@ -739,7 +768,7 @@ function Libre({
         phrase={`Aucune entreprise pour l’instant : ${nomAssistante} a besoin d’une fiche, d’un script et de prospects pour appeler.`}
         actions={
           <>
-            <LienAction ton="fort" href="/entreprises">
+            <LienAction ton="fort" href="/entreprises" className={GESTE_PLEIN}>
               Crée la première entreprise
             </LienAction>
             {reconnexion.action}
@@ -757,9 +786,9 @@ function Libre({
         dernier ? (
           <span className="text-encre-2">
             Dernier appel à <span className="font-mono">{heure(dernier.debutLe)}</span> :{' '}
-            <Link href={lienAppel(dernier.id)} className="text-encre decoration-souligne underline-offset-4 hover:underline">
+            <LienTexte href={lienAppel(dernier.id)} className="text-encre">
               {dernier.prospect}
-            </Link>
+            </LienTexte>
             , {etatAppel(dernier, { libellePerso: dernier.libellePerso }).libelle}
           </span>
         ) : (
@@ -768,7 +797,7 @@ function Libre({
       }
       actions={
         <>
-          <LienAction ton="fort" href={entrepriseSlug ? `/entreprises/${entrepriseSlug}/campagnes` : '/entreprises'}>
+          <LienAction ton="fort" href={entrepriseSlug ? `/entreprises/${entrepriseSlug}/campagnes` : '/entreprises'} className={GESTE_PLEIN}>
             Préparer une campagne
           </LienAction>
           {reconnexion.action}
