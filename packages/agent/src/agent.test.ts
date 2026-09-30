@@ -229,6 +229,12 @@ describe('différence à relire', () => {
     });
   });
 
+  it('ignore l’ordre des clés dans un tableau d’objets (une version relue de Postgres, en jsonb)', () => {
+    const outils = (ordre: 'a' | 'b') =>
+      extraireGere({ conversation_config: { agent: { prompt: { tools: [ordre === 'a' ? { name: 'proposer_creneaux', type: 'client' } : { type: 'client', name: 'proposer_creneaux' }] } } } });
+    expect(difference({ prompt: PROMPT, configuration: outils('a') }, { prompt: PROMPT, configuration: outils('b') }).vide).toBe(true);
+  });
+
   it('abrège les longues portions inchangées', () => {
     const lignes = Array.from({ length: 10 }, (_, i) => `l${i}`);
     const apres = [...lignes];

@@ -6,6 +6,7 @@ import { db } from '@/db';
 import { appels, entreprises, prospects, rendezVous } from '@/db/schema';
 import { calendrierConfigure, etatAgenda } from '@/lib/agenda';
 import { derniereVersionAssistante } from '@/lib/assistante';
+import { ORIGINE_VERSION } from '@/lib/vue-assistante';
 import { clientGoogle, connexion } from '@/lib/google';
 import { journalMcpRecent, rendezVousRecents } from '@/lib/lecture';
 import { assistantePourLaPage } from '@/lib/pages';
@@ -36,12 +37,6 @@ function ilYA(minutes: number): string {
   return `il y a ${Math.floor(heures / 24)} jours`;
 }
 
-/** D'où vient la dernière configuration ElevenLabs consignée (versions_assistante). */
-const ORIGINE_CONFIGURATION = {
-  mcp: 'poussée par Claude Code',
-  cli: 'poussée en ligne de commande',
-  distante: 'rapatriée du tableau de bord ElevenLabs',
-} as const;
 
 const SECTION = 'grid scroll-mt-[calc(var(--hauteur-barre)+16px)] gap-5';
 
@@ -144,7 +139,8 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
           <TitreSection id="titre-assistante">Assistante</TitreSection>
           <p className="max-w-[62ch] text-sm text-encre-2">
             Son nom et son premier message valent dès l’appel suivant. Son prompt, sa voix et son tour de parole partent chez ElevenLabs par
-            une poussée. Tout se règle depuis Claude Code, qui demande ton accord avant que quoi que ce soit change pour les prospects.
+            une poussée. Tout se règle sur la page Assistante ou par Claude Code, avec ton accord avant que quoi que ce soit change pour les
+            prospects ; le prompt, lui, se modifie par Claude Code.
           </p>
           <dl className="border-t border-filet">
             <LigneDefinition intitule="Nom">{nom}</LigneDefinition>
@@ -170,7 +166,7 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
               {configuration ? (
                 <>
                   <span className="font-mono text-sm">{configuration.versionId.slice(-8)}</span>
-                  <span className="text-encre-3"> · {ORIGINE_CONFIGURATION[configuration.origine]}</span>
+                  <span className="text-encre-3"> · {ORIGINE_VERSION[configuration.origine] ?? configuration.origine}</span>
                   <span className="block text-sm text-encre-3">
                     Consignée le{' '}
                     <time dateTime={configuration.consigneLe.toISOString()} className="font-mono">
@@ -182,17 +178,19 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
               ) : (
                 <span className="text-encre-2">
                   aucune consignée
-                  <span className="block text-sm text-encre-3">Elle le sera à la première poussée par Claude Code.</span>
+                  <span className="block text-sm text-encre-3">Elle le sera à la première poussée, depuis la page Assistante ou par Claude Code.</span>
                 </span>
               )}
             </LigneDefinition>
           </dl>
-          {/* L'action de la section : la page Assistante (prompt, configuration, outils, ce qu'elle voit), en lecture seule. */}
+          {/* L'action de la section : la page Assistante (prompt, configuration, outils, ce qu'elle voit), où elle se règle, sauf le prompt. */}
           <div className="-mx-1.5 grid justify-items-start gap-1 pointer-coarse:mx-0">
             <LienAction href="/assistante" ton="fort" className="max-sm:h-auto max-sm:min-h-11 max-sm:py-2 max-sm:whitespace-normal">
-              Voir et télécharger la configuration de l’assistante
+              Voir et régler l’assistante
             </LienAction>
-            <p className="px-1.5 text-sm text-encre-3 pointer-coarse:px-0">Prompt, voix, outils et ce que {nom} reçoit pour un appel choisi.</p>
+            <p className="px-1.5 text-sm text-encre-3 pointer-coarse:px-0">
+              Nom, premier message, voix et réglages, poussée vers ElevenLabs et historique ; le prompt s’y lit et se télécharge.
+            </p>
           </div>
         </section>
 

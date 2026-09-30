@@ -1,4 +1,4 @@
-import { CHEMIN_PROMPT, extraireGere, type Json, avecPrompt } from './configuration.ts';
+import { CHEMIN_PROMPT, extraireGere, type Json, avecPrompt, trier } from './configuration.ts';
 
 /**
  * Ce qui change d'une configuration à l'autre, rédigé pour être relu par l'opérateur avant une poussée :
@@ -109,7 +109,8 @@ export function difference(
   const b = feuilles(extraireGere(avecPrompt(apres.configuration, apres.prompt)));
   const chemins = [...new Set([...a.keys(), ...b.keys()])].sort();
   const champs = chemins
-    .filter((c) => JSON.stringify(a.get(c)) !== JSON.stringify(b.get(c)))
+    // Clés triées : un tableau d'objets relu de Postgres (jsonb) ne change pas pour un simple ordre de clés.
+    .filter((c) => JSON.stringify(trier(a.get(c))) !== JSON.stringify(trier(b.get(c))))
     .map((chemin) => ({ chemin, avant: a.get(chemin), apres: b.get(chemin) }));
 
   const sections: string[] = [];

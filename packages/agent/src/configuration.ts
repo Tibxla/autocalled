@@ -86,7 +86,8 @@ export function extraireGere(config: Json): Json {
   return gere;
 }
 
-function trier(valeur: unknown): unknown {
+/** Les clés de chaque objet dans l'ordre alphabétique : deux valeurs égales s'écrivent pareil, quel que soit l'ordre reçu (jsonb le change). */
+export function trier(valeur: unknown): unknown {
   if (Array.isArray(valeur)) return valeur.map(trier);
   if (valeur && typeof valeur === 'object') {
     return Object.fromEntries(
