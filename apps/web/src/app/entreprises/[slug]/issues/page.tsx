@@ -2,7 +2,7 @@ import { type IssueSysteme, ISSUES_SYSTEME, LIBELLES_ISSUES, SENS_ISSUES } from 
 import { and, asc, eq, isNotNull, ne, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { BoutonArchive } from '@/components/bouton-archive';
-import { LienAction, Page } from '@/components/ui';
+import { LienTexte, Page } from '@/components/ui';
 import { db } from '@/db';
 import { appels, issuesPersonnalisees } from '@/db/schema';
 import { entrepriseParSlug } from '@/lib/pages';
@@ -40,9 +40,12 @@ export default async function PageIssues({ params }: { params: Promise<{ slug: s
   return (
     <Page largeur="lecture">
       <div className="grid max-w-[52rem] grid-cols-[minmax(0,1fr)] gap-6">
+        {/* Sous 640 px, la première phrase seule : le reste repousserait la liste sous le premier écran. */}
         <p className="max-w-[62ch] text-sm text-encre-3">
-          Chaque appel se termine sur une seule issue. Les sept issues système sont fixes&nbsp;; les issues personnalisées de l’entreprise les
-          détaillent, et le bilan choisit la plus précise.
+          Chaque appel se termine sur une seule issue.{' '}
+          <span className="max-sm:hidden">
+            Les sept issues système sont fixes&nbsp;; les issues personnalisées de l’entreprise les détaillent, et le bilan choisit la plus précise.
+          </span>
         </p>
 
         <ul aria-label="Issues" className="border-t border-filet">
@@ -57,19 +60,18 @@ export default async function PageIssues({ params }: { params: Promise<{ slug: s
                     <span className="font-medium">{libelle}</span>
                     <span className="text-sm text-encre-3">{SENS_AFFICHE[issue] ?? `${majuscule(SENS_ISSUES[issue])}.`}</span>
                   </div>
-                  <LienAction
-                    ton="discret"
+                  <LienTexte
                     href={`/appels?entreprise=${encodeURIComponent(slug)}&issue=${issue}`}
                     aria-label={`${nombre} ${nombre > 1 ? 'appels réels' : 'appel réel'} de l’entreprise terminé${nombre > 1 ? 's' : ''} sur « ${libelle} »`}
-                    className="-mr-1.5"
+                    className="text-sm whitespace-nowrap text-encre-3 hover:text-encre-2"
                   >
-                    Appels <span className="font-mono">{nombre}</span>
-                  </LienAction>
+                    <span className="font-mono">{nombre}</span> {nombre > 1 ? 'appels' : 'appel'}
+                  </LienTexte>
                 </div>
                 {precisions.length > 0 ? (
                   <ul aria-label={`Issues personnalisées de « ${libelle} »`} className="grid pl-4">
                     {precisions.map((p) => (
-                      <li key={p.id} className={`flex min-h-9 flex-wrap items-center gap-x-4 text-md ${p.archivee ? 'text-encre-3' : ''}`}>
+                      <li key={p.id} className={`flex min-h-9 flex-wrap items-center gap-x-4 text-md pointer-coarse:min-h-11 ${p.archivee ? 'text-encre-3' : ''}`}>
                         <span className="min-w-0 flex-1">
                           {p.libelle}
                           {p.archivee ? <span className="text-sm"> · archivée</span> : null}
