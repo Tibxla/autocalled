@@ -308,7 +308,7 @@ export function ListeObjections({
           </TitreSection>
           <ul>
             {archivees.map((o) => (
-              <li key={o.id} className="flex min-h-[38px] flex-wrap items-center gap-x-4 border-b border-filet py-1 text-encre-3">
+              <li key={o.id} className="flex min-h-[38px] flex-wrap items-center gap-x-4 border-b border-filet py-1 text-encre-3 pointer-coarse:min-h-11">
                 <span className="min-w-0 flex-1">{o.libelle}</span>
                 <BoutonArchive
                   archivee

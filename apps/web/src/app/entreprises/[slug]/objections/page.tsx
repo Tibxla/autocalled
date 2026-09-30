@@ -56,9 +56,10 @@ export default async function PageObjections({
   return (
     <Page largeur="lecture">
       <div className="grid max-w-[52rem] grid-cols-[minmax(0,1fr)] gap-6">
+        {/* Sous 640 px, la première phrase seule. */}
         <p className="max-w-[62ch] text-sm text-encre-3">
-          {nom} traite chaque objection en quatre temps : creuser, reformuler, argumenter, contrôler (CRAC). Les bilans disent à quel
-          temps une objection a coincé.
+          {nom} traite chaque objection en quatre temps : creuser, reformuler, argumenter, contrôler (CRAC).{' '}
+          <span className="max-sm:hidden">Les bilans disent à quel temps une objection a coincé.</span>
         </p>
         <ListeObjections
           entrepriseId={entreprise.id}

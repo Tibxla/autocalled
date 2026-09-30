@@ -64,11 +64,11 @@ export default async function PageEntreprises() {
                       {e.nombreScripts}
                       <span className="sm:hidden"> {e.nombreScripts > 1 ? 'scripts' : 'script'}</span>
                     </Cellule>
-                    <Cellule tronquee className={`max-sm:order-1 ${manque ? 'text-encre-3' : 'text-encre-2'}`}>
+                    <Cellule tronquee className={`max-sm:order-2 ${manque ? 'text-encre-3' : 'text-encre-2'}`}>
                       {manque ?? 'Prête'}
                     </Cellule>
-                    {/* Sous 640 px : nom et état sur la première rangée, les comptes sur la seconde. */}
-                    <span aria-hidden="true" className="h-0 basis-full max-sm:order-2 sm:hidden" />
+                    {/* Sous 640 px : le nom seul sur la première rangée, rien qui le coupe ; l'état ouvre la seconde, les comptes suivent. */}
+                    <span aria-hidden="true" className="h-0 basis-full max-sm:order-1 sm:hidden" />
                   </LigneTable>
                 );
               })}

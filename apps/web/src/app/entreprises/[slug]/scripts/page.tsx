@@ -1,10 +1,9 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { BoutonArchive } from '@/components/bouton-archive';
 import { NavigationListe } from '@/components/clavier';
 import { comptesCampagne, FUSEAU } from '@/components/format-appel';
-import { Cellule, CelluleEnTete, EnTeteTable, EtatVide, LienLigne, LigneTable, Page, TableDense, TitreSection } from '@/components/ui';
+import { Cellule, CelluleEnTete, EnTeteTable, EtatVide, LienLigne, LienTexte, LigneTable, Page, TableDense, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { campagnes, scripts, versionsScript } from '@/db/schema';
 import { analyseEntreprise } from '@/lib/lecture';
@@ -60,9 +59,10 @@ export default async function PageScripts({ params }: { params: Promise<{ slug: 
   return (
     <Page largeur="lecture">
       <div className="grid max-w-[60rem] grid-cols-[minmax(0,1fr)] gap-6">
+        {/* Sous 640 px, la première phrase seule. */}
         <p className="max-w-[62ch] text-sm text-encre-3">
-          Un script est un plan que {nom} suit sans le réciter. Chaque modification crée une nouvelle version, pour que les bilans
-          comparent des choses comparables.
+          Un script est un plan que {nom} suit sans le réciter.{' '}
+          <span className="max-sm:hidden">Chaque modification crée une nouvelle version, pour que les bilans comparent des choses comparables.</span>
         </p>
         <section aria-labelledby="titre-scripts">
           <CreationScript entrepriseId={entreprise.id} slug={slug} compte={lignes.length} />
@@ -126,13 +126,10 @@ export default async function PageScripts({ params }: { params: Promise<{ slug: 
             </TitreSection>
             <ul>
               {archives.map((s) => (
-                <li key={s.id} className="flex min-h-[38px] flex-wrap items-center gap-x-4 border-b border-filet py-1 text-encre-3">
-                  <Link
-                    href={`/entreprises/${slug}/scripts/${s.id}`}
-                    className="min-w-0 flex-1 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline"
-                  >
+                <li key={s.id} className="flex min-h-[38px] flex-wrap items-center gap-x-4 border-b border-filet py-1 text-encre-3 pointer-coarse:min-h-11">
+                  <LienTexte href={`/entreprises/${slug}/scripts/${s.id}`} className="min-w-0 flex-1 hover:text-encre-2">
                     {s.nom}
-                  </Link>
+                  </LienTexte>
                   <BoutonArchive archivee masculin nom={s.nom} action={basculerArchiveScript.bind(null, entreprise.id, s.id, false)} />
                 </li>
               ))}
