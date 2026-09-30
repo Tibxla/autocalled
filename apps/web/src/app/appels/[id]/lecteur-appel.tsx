@@ -287,10 +287,10 @@ export function LecteurAppel({
                         <button
                           type="button"
                           onClick={() => aller(index)}
-                          className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-2.5 justify-self-start rounded-[4px] py-0.5 text-left text-sm text-encre-2 transition-colors duration-150 hover:text-encre"
+                          className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-2.5 justify-self-start rounded-[4px] py-0.5 text-left text-sm text-encre-2 transition-colors duration-150 hover:text-encre pointer-coarse:py-2.5 pointer-coarse:active:bg-survol"
                         >
                           <span className="font-mono text-xs text-encre-3">{horodatage(tour.secondes)}</span>
-                          <span className="decoration-souligne underline-offset-4 hover:underline">« {o.citation} »</span>
+                          <span className="decoration-souligne underline-offset-4 hover:underline pointer-coarse:underline">« {o.citation} »</span>
                         </button>
                       ) : (
                         <p className="grid gap-0.5 text-sm">
@@ -343,7 +343,7 @@ export function LecteurAppel({
         ) : null}
 
         {audioDispo ? (
-          <div className="sticky top-(--hauteur-barre) z-10 -mx-1.5 flex items-center gap-4 border-b border-filet bg-fond py-2">
+          <div className="sticky top-(--hauteur-barre) z-10 -mx-1.5 flex items-center gap-4 border-b border-filet bg-fond py-2 pointer-coarse:mx-0">
             <Action
               ton="fort"
               touche="Espace"
@@ -357,7 +357,7 @@ export function LecteurAppel({
             <span className="shrink-0 font-mono text-sm text-encre-3 tabular-nums">
               <span className="text-encre-2">{horodatage(instant)}</span> / {horodatage(dureeTotale)}
             </span>
-            <div className="relative h-6 min-w-0 flex-1 rounded-[3px] has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-focus">
+            <div className="relative h-6 min-w-0 flex-1 rounded-[3px] pointer-coarse:h-11 has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-focus">
               <span aria-hidden="true" className="absolute inset-x-0 top-1/2 h-px bg-filet-fort" />
               <span aria-hidden="true" className="absolute top-1/2 left-0 h-0.5 -translate-y-1/2 bg-encre" style={{ width: `${progression}%` }} />
               <span

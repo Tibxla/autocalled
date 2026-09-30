@@ -1,11 +1,10 @@
 import { bilanEntier, type IssueSysteme, LIBELLES_ISSUES } from '@autocalled/domain';
 import { eq } from 'drizzle-orm';
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
 import { FUSEAU, LIGNES_LONGUES, duree, etatAppel, heure, jourCourt, numeroMasque, prenom } from '@/components/format-appel';
-import { EtatVide, GlypheEtape, LienAction, Message, Page, TitreSection } from '@/components/ui';
+import { classesAction, EtatVide, GlypheEtape, LienAction, LienTexte, Message, Page, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { campagnes, scripts } from '@/db/schema';
 import { DUREE_MAX_ANALYSE_S } from '@/lib/appels';
@@ -43,6 +42,12 @@ function ecouleDepuis(d: Date): number {
 
 const FORMAT_JOUR_LONG = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: FUSEAU });
 const FORMAT_JOUR_MOIS = new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', timeZone: FUSEAU });
+
+/**
+ * Point de séparation porté par l'élément qui le précède : un « · » ne peut pas ouvrir une ligne quand la rangée passe
+ * à la ligne. Muet pour les lecteurs d'écran (texte de remplacement vide).
+ */
+const SEPARE = "not-last:after:ml-2 not-last:after:text-encre-3 not-last:after:content-['·'_/_'']";
 
 /** D'où vient l'opérateur : libellé et lien du retour, et la liste d'appels d'origine s'il y en a une. */
 function origine(depuis: string | undefined, nomProspect: string): { href: string; libelle: string; liste: URL | null } {
@@ -143,13 +148,9 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
     );
   if (appel.campagneId && campagne)
     meta.push(
-      <Link
-        key="campagne"
-        href={`/campagnes/${appel.campagneId}`}
-        className="decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline"
-      >
+      <LienTexte key="campagne" href={`/campagnes/${appel.campagneId}`} className="hover:text-encre-2">
         Campagne du <span className="font-mono">{FORMAT_JOUR_MOIS.format(campagne.creeLe)}</span>
-      </Link>,
+      </LienTexte>,
     );
   meta.push(
     <span key="numero" title={numero} className="font-mono">
@@ -196,14 +197,14 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
   } else if (appel.statut === 'en-cours') {
     etatDirect = (
       <Message ton="neutre" titre="Appel resté ouvert : la page qui le portait a été fermée pendant l’appel.">
-        {appel.conversationId ? <div className="-mx-1.5 pt-1.5">{rapatrier()}</div> : 'Rien à rapatrier : la conversation n’a pas été ouverte.'}
+        {appel.conversationId ? <div className="-mx-1.5 pt-1.5 pointer-coarse:mx-0">{rapatrier()}</div> : 'Rien à rapatrier : la conversation n’a pas été ouverte.'}
       </Message>
     );
   } else if (appel.statut === 'traitement' && analyseBloquee) {
     etatDirect = (
       <Message ton="neutre" titre="L’analyse ne progresse plus.">
         Le rapatriement a commencé il y a plus de cinq minutes sans aboutir.
-        {appel.conversationId ? <div className="-mx-1.5 pt-1.5">{rapatrier()}</div> : null}
+        {appel.conversationId ? <div className="-mx-1.5 pt-1.5 pointer-coarse:mx-0">{rapatrier()}</div> : null}
       </Message>
     );
   } else if (appel.statut === 'traitement') {
@@ -223,7 +224,7 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
   } else if (appel.statut === 'echec') {
     etatDirect = (
       <Message ton="alerte" titre={`L’analyse a échoué : ${appel.erreur ?? 'aucune raison enregistrée.'}`}>
-        <div className="-mx-1.5 pt-1.5">
+        <div className="-mx-1.5 pt-1.5 pointer-coarse:mx-0">
           <BoutonRelancer appelId={appel.id} libelle="Relancer l’analyse" ton="fort" />
         </div>
       </Message>
@@ -289,7 +290,7 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
               {rdv.statut === 'cree' ? <span className="text-sm text-encre-3"> · Événement créé dans l’agenda</span> : null}
               {rdv.statut === 'a-creer' ? <span className="text-sm text-encre-3"> · Événement à créer</span> : null}
             </p>
-            <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+            <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 pointer-coarse:mx-0">
               {rdv.statut === 'echec' ? (
                 <>
                   <span className="px-1.5 text-alerte">Création échouée : {rdv.erreur ?? 'raison inconnue.'}</span>
@@ -297,12 +298,8 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
                 </>
               ) : null}
               {rdv.lienVisio ? (
-                <a
-                  href={rdv.lienVisio}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex h-9 items-center rounded-[4px] px-1.5 text-md font-medium text-encre-2 decoration-souligne underline-offset-4 hover:text-encre hover:underline pointer-coarse:h-11"
-                >
+                // L'action de la zone du rendez-vous : au doigt, en relief, comme toute action forte.
+                <a href={rdv.lienVisio} target="_blank" rel="noreferrer" className={classesAction('fort', 'relief')}>
                   Ouvrir la visio
                 </a>
               ) : null}
@@ -431,19 +428,23 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
             </LienAction>
           </div>
           <h1 className="text-xl font-semibold tracking-[-0.01em] text-balance">{nomProspect}</h1>
-          <p className="text-md text-encre-3">
-            <Link href={`/entreprises/${entreprise.slug}`} className="decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline">
-              {entreprise.nom}
-            </Link>
-            {' · '}
-            <Link href={ficheProspect} className="decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline">
-              {prospect?.societe || 'Fiche du prospect'}
-            </Link>
+          {/* Le lien vers la fiche le dit : « Fiche du prospect », pas seulement un nom de société. */}
+          <p className="flex flex-wrap gap-x-2 text-md text-encre-3">
+            <span className={SEPARE}>
+              <LienTexte href={`/entreprises/${entreprise.slug}`} className="hover:text-encre-2">
+                {entreprise.nom}
+              </LienTexte>
+            </span>
+            {prospect?.societe ? <span className={SEPARE}>{prospect.societe}</span> : null}
+            <span className={SEPARE}>
+              <LienTexte href={ficheProspect} className="text-encre-2 hover:text-encre">
+                Fiche du prospect
+              </LienTexte>
+            </span>
           </p>
           <p className="flex flex-wrap gap-x-2 text-sm text-encre-3">
             {meta.map((m, i) => (
-              <span key={i} className="inline-flex gap-x-2">
-                {i > 0 ? <span aria-hidden="true">·</span> : null}
+              <span key={i} className={SEPARE}>
                 {m}
               </span>
             ))}
