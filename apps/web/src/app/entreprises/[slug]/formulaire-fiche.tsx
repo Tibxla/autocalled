@@ -19,7 +19,7 @@ const HEURES = Array.from({ length: 31 }, (_, i) => {
 });
 
 /** Limites de lib/schemas.ts (ficheSchema), affichées par les compteurs. */
-const LIMITES = { offre: 400, cible: 400, arguments: 1200, prixConsigne: 400, interdits: 600 } as const;
+const LIMITES = { offre: 400, cible: 400, arguments: 1200, prixConsigne: 400, interdits: 600, complements: 1500 } as const;
 type ChampLimite = keyof typeof LIMITES;
 
 /** Nom de chaque champ dans le message de refus, dans l'ordre de la page, avec l'id qui reçoit le focus. */
@@ -30,6 +30,7 @@ const CHAMPS: { cle: string; libelle: string; id: string }[] = [
   { cle: 'arguments', libelle: 'Ce qui fait la différence', id: 'arguments' },
   { cle: 'prixConsigne', libelle: 'Consigne sur le prix', id: 'prixConsigne' },
   { cle: 'interdits', libelle: 'À ne jamais dire ni promettre', id: 'interdits' },
+  { cle: 'complements', libelle: 'Informations complémentaires', id: 'complements' },
   { cle: 'interlocuteur', libelle: 'Avec qui', id: 'interlocuteur' },
   { cle: 'dureeRendezVousMinutes', libelle: 'Durée', id: 'dureeRendezVousMinutes' },
   { cle: 'delaiMinimumHeures', libelle: 'Pas avant', id: 'delaiMinimumHeures' },
@@ -45,6 +46,7 @@ interface Fiche {
   arguments: string;
   prixConsigne: string;
   interdits: string;
+  complements: string;
   dureeRendezVousMinutes: number;
   interlocuteur: string;
   plagesRendezVous: PlageHoraire[];
@@ -145,6 +147,7 @@ function Formulaire({ fiche, recharger, rechargement }: { fiche: Fiche; recharge
     arguments: fiche.arguments.length,
     prixConsigne: fiche.prixConsigne.length,
     interdits: fiche.interdits.length,
+    complements: fiche.complements.length,
   }));
   const suivre = (cle: ChampLimite) => (ev: React.FormEvent<HTMLTextAreaElement>) => {
     const n = ev.currentTarget.value.length;
@@ -210,6 +213,9 @@ function Formulaire({ fiche, recharger, rechargement }: { fiche: Fiche; recharge
       <ChampConnu valeur={fiche.modifieLe.toISOString()} />
       <section aria-labelledby="titre-mina" className="grid max-w-[44rem] gap-6">
         <TitreSection id="titre-mina">Ce que {nomAssistante} dit de l’entreprise</TitreSection>
+        <p className="max-w-[62ch] text-sm text-encre-2">
+          Un champ laissé vide n’est pas transmis : {nomAssistante} n’en parle pas et n’invente rien.
+        </p>
         <Champ libelle="Nom" htmlFor="nom" erreur={e.nom}>
           <Saisie id="nom" name="nom" defaultValue={fiche.nom} required maxLength={80} autoComplete="off" />
         </Champ>
@@ -239,6 +245,15 @@ function Formulaire({ fiche, recharger, rechargement }: { fiche: Fiche; recharge
         </Champ>
         <Champ libelle="À ne jamais dire ni promettre" htmlFor="interdits" erreur={e.interdits} complement={compteur('interdits')}>
           <ZoneTexte id="interdits" name="interdits" defaultValue={fiche.interdits} onInput={suivre('interdits')} />
+        </Champ>
+        <Champ
+          libelle="Informations complémentaires"
+          htmlFor="complements"
+          erreur={e.complements}
+          aide={`Ce que ${nomAssistante} peut dire si la conversation y mène, par exemple « Parking : gratuit devant le gîte ».`}
+          complement={compteur('complements')}
+        >
+          <ZoneTexte id="complements" name="complements" defaultValue={fiche.complements} onInput={suivre('complements')} />
         </Champ>
       </section>
 

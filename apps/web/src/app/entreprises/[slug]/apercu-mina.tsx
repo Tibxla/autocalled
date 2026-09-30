@@ -17,6 +17,7 @@ const GROUPES: { titre: string; cles: [CleVariable, string][] }[] = [
       ['entreprise_arguments', 'Ce qui fait la différence'],
       ['entreprise_prix_consigne', 'Consigne sur le prix'],
       ['entreprise_interdits', 'À ne jamais dire'],
+      ['entreprise_complements', 'Informations complémentaires'],
       ['rendez_vous', 'Rendez-vous'],
     ],
   },
@@ -207,6 +208,7 @@ export function ApercuMina({
                       {g.cles.map(([cle, libelle]) => {
                         const depend = sansProspect && apercu.dependDuProspect.includes(cle);
                         const parDefaut = apercu.parDefaut.includes(cle);
+                        const nonTransmis = apercu.nonTransmis.includes(cle);
                         return (
                           <div key={cle} className="grid gap-0.5 py-1.5 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-4">
                             <dt className="grid content-start text-sm text-encre-3">
@@ -216,6 +218,8 @@ export function ApercuMina({
                             <dd className="min-w-0 text-md break-words whitespace-pre-line">
                               {depend ? (
                                 <span className="text-encre-3">selon la fiche du prospect</span>
+                              ) : nonTransmis ? (
+                                <span className="text-encre-3">Non renseigné, non transmis.</span>
                               ) : (
                                 <>
                                   <span className={parDefaut ? 'text-encre-2' : 'text-encre'}>{apercu.variables[cle]}</span>

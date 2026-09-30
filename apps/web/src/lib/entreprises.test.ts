@@ -96,6 +96,7 @@ describe('garde contre les modifications concurrentes', () => {
     arguments: '',
     prixConsigne: '',
     interdits: '',
+    complements: '',
     dureeRendezVousMinutes: 30,
     interlocuteur: '',
     delaiMinimumHeures: 24,

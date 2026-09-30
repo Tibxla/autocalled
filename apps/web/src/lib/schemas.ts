@@ -40,6 +40,8 @@ export const ficheSchema = z.object({
   arguments: texte(1200),
   prixConsigne: texte(400),
   interdits: texte(600),
+  // Sans valeur par défaut : un formulaire ouvert avant l'arrivée du champ est refusé au lieu de l'effacer.
+  complements: texte(1500),
   dureeRendezVousMinutes: entier(15, 120, { min: 'Quinze minutes au moins.', max: 'Deux heures au plus.' }),
   interlocuteur: chaine().max(60, 'Soixante caractères au plus.').regex(SANS_CONTROLE, UNE_LIGNE),
   delaiMinimumHeures: entier(0, 168, { min: 'Zéro au moins.', max: 'Une semaine au plus.' }),
