@@ -126,7 +126,7 @@ export function Recapitulatif({
         {suite.length > 0 ? (
           <details className="group">
             <summary className="flex h-9 cursor-pointer list-none items-center gap-2 text-md text-encre-3 hover:text-encre-2 pointer-coarse:h-11 [&::-webkit-details-marker]:hidden">
-              <span className="decoration-souligne underline-offset-4 group-hover:underline">
+              <span className="decoration-souligne underline-offset-4 group-hover:underline pointer-coarse:underline">
                 <span className="group-open:hidden">
                   et <span className="font-mono">{suite.length}</span> autre{suite.length > 1 ? 's' : ''}
                 </span>
