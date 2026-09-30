@@ -4,7 +4,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useRaccourci } from '@/components/clavier';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
 import { ChampConnu, MessageConflit } from '@/components/conflit';
-import { Action, Champ, Message, Saisie, ZoneTexte } from '@/components/ui';
+import { BarreActions } from '@/components/barre-actions';
+import { Action, Champ, Message, ZoneTexte } from '@/components/ui';
 import { useFormulaire } from '@/components/use-formulaire';
 import type { Etape } from '@/db/schema';
 import type { EtatFormulaire } from '@/lib/formulaire';
@@ -37,6 +38,10 @@ const formulations = (texte: string) =>
  * Champs contrôlés (déplacer, retirer et annuler un retrait gardent la saisie) ; seules les étapes non
  * retirées sont envoyées, dans l'ordre affiché. useFormulaire garde la saisie après un refus du serveur
  * (version identique à la précédente) et avertit avant de fermer l'onglet.
+ *
+ * L'intention est une zone de texte d'une ligne qui grandit avec son contenu (une intention longue se lit en entier
+ * au téléphone) ; Entrée n'y saute pas de ligne, Ctrl+Entrée enregistre. L'enregistrement vit dans une BarreActions
+ * collée en bas, avec le statut, les refus et la confirmation d'« Abandonner », qui y remplace les actions.
  */
 export function EditeurVersion({
   entrepriseId,
@@ -201,14 +206,22 @@ export function EditeurVersion({
   return (
     <form {...proprietes} onSubmit={envoyer} aria-label={`Nouvelle version v${prochainNumero}`} className="grid gap-4">
       <ChampConnu valeur={String(prochainNumero - 1)} />
-      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-        <p className="text-sm text-encre-3">
-          À partir de la <span className="font-mono">v{origine}</span> : l’enregistrement crée la{' '}
-          <span className="font-mono">v{prochainNumero}</span>, la <span className="font-mono">v{origine}</span> ne change pas.
+      <div className="grid gap-1">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+          <p className="text-sm text-encre-3">
+            À partir de la <span className="font-mono">v{origine}</span> : l’enregistrement crée la{' '}
+            <span className="font-mono">v{prochainNumero}</span>, la <span className="font-mono">v{origine}</span> ne change pas.
+          </p>
+          <span className={`font-mono text-sm ${actives.length > MAX_ETAPES ? 'text-alerte' : 'text-encre-3'}`}>
+            {actives.length}/{MAX_ETAPES} étapes
+          </span>
+        </div>
+        {/* Dite une fois pour toutes les étapes. */}
+        <p className="max-w-[68ch] text-sm text-encre-3">
+          Formulations d’exemple : une par ligne, entre une et quatre par étape. Tu peux écrire{' '}
+          <span className="font-mono">{'{{assistante_nom}}'}</span>, <span className="font-mono">{'{{prospect_nom}}'}</span>,{' '}
+          <span className="font-mono">{'{{prospect_societe}}'}</span> : remplacés au début de l’appel.
         </p>
-        <span className={`font-mono text-xs ${actives.length > MAX_ETAPES ? 'text-alerte' : 'text-encre-3'}`}>
-          {actives.length}/{MAX_ETAPES} étapes
-        </span>
       </div>
 
       <ol className="border-t border-filet">
@@ -234,22 +247,28 @@ export function EditeurVersion({
               <span className="font-mono text-sm text-encre-3 sm:pt-7">{n}</span>
               <div className="grid gap-4">
                 <Champ libelle={`Étape ${n}, intention`} htmlFor={idChamp(l.cle, 'intention')} erreur={erreurs[`${l.cle}:intention`]}>
-                  <Saisie
+                  <ZoneTexte
                     id={idChamp(l.cle, 'intention')}
                     name="intention"
+                    rows={1}
                     value={l.intention}
-                    onChange={(ev) => changer(l.cle, { intention: ev.target.value })}
+                    // Une intention tient sur une ligne : ni Entrée ni un collage n'y mettent de saut de ligne.
+                    onChange={(ev) => changer(l.cle, { intention: ev.target.value.replace(/\s*\n\s*/g, ' ') })}
+                    onKeyDown={(ev) => {
+                      if (ev.key === 'Enter' && !ev.ctrlKey && !ev.metaKey) ev.preventDefault();
+                    }}
+                    enterKeyHint="next"
                     placeholder="Ce que l’étape doit obtenir"
                     autoComplete="off"
+                    className="min-h-0! resize-none! text-md"
                   />
                 </Champ>
                 <Champ
                   libelle="Formulations d’exemple"
                   htmlFor={idChamp(l.cle, 'exemples')}
-                  aide="Une par ligne, entre une et quatre. Tu peux écrire {{assistante_nom}}, {{prospect_nom}}, {{prospect_societe}} : remplacés au début de l’appel."
                   erreur={erreurs[`${l.cle}:exemples`]}
                   complement={
-                    <span className={`font-mono text-xs ${nombre > MAX_FORMULATIONS ? 'text-alerte' : 'text-encre-3'}`}>
+                    <span className={`font-mono text-sm ${nombre > MAX_FORMULATIONS ? 'text-alerte' : 'text-encre-3'}`}>
                       {nombre}/{MAX_FORMULATIONS} formulations
                     </span>
                   }
@@ -264,21 +283,24 @@ export function EditeurVersion({
                   />
                 </Champ>
               </div>
-              <div className="-mx-1.5 flex items-start gap-1 sm:flex-col sm:items-end sm:pt-6">
-                <Action id={`${idBase}-monter-${l.cle}`} ton="discret" className="text-base" aria-label={`Monter l’étape ${n}`} disabled={n === 1} onClick={() => deplacer(l.cle, -1)}>
-                  ↑
+              {/* Sous 640 px, « Monter » et « Descendre » en toutes lettres, Retirer à l'autre bout. */}
+              <div className="-mx-1.5 flex items-start gap-2 sm:flex-col sm:items-end sm:gap-1 sm:pt-6">
+                <Action id={`${idBase}-monter-${l.cle}`} ton="discret" className="sm:text-base" aria-label={`Monter l’étape ${n}`} disabled={n === 1} onClick={() => deplacer(l.cle, -1)}>
+                  <span className="sm:hidden">Monter</span>
+                  <span className="max-sm:hidden">↑</span>
                 </Action>
                 <Action
                   id={`${idBase}-descendre-${l.cle}`}
                   ton="discret"
-                  className="text-base"
+                  className="sm:text-base"
                   aria-label={`Descendre l’étape ${n}`}
                   disabled={n === actives.length}
                   onClick={() => deplacer(l.cle, 1)}
                 >
-                  ↓
+                  <span className="sm:hidden">Descendre</span>
+                  <span className="max-sm:hidden">↓</span>
                 </Action>
-                <Action ton="discret" aria-label={`Retirer l’étape ${n}`} disabled={actives.length === 1} onClick={() => retirer(l.cle)}>
+                <Action ton="discret" className="max-sm:ml-auto" aria-label={`Retirer l’étape ${n}`} disabled={actives.length === 1} onClick={() => retirer(l.cle)}>
                   Retirer
                 </Action>
               </div>
@@ -294,48 +316,63 @@ export function EditeurVersion({
         {actives.length >= MAX_ETAPES ? <span className="text-sm text-encre-3">Dix étapes au plus</span> : null}
       </div>
 
-      {erreurGenerale ? <Message ton="alerte">{erreurGenerale}</Message> : null}
-      {etat?.conflit && etat.message ? (
-        <MessageConflit
-          message={etat.message}
-          jeton={etat.conflit.jeton}
-          onRecharger={onRecharger}
-          libelleEcraser={`Enregistrer quand même comme v${Number(etat.conflit.jeton) + 1}`}
-          explication={`Recharger ferme l’éditeur et montre la v${etat.conflit.jeton} ; enregistrer quand même crée la v${Number(etat.conflit.jeton) + 1} avec ta saisie.`}
-          desactive={enCours || confirmation.ouverte}
-        />
-      ) : refusServeur ? (
-        <Message ton="alerte">{refusServeur}</Message>
-      ) : null}
-
-      <div className="sticky bottom-0 z-10 -mx-(--gouttiere) grid gap-2 border-t border-filet bg-fond px-(--gouttiere) py-3">
-        <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-          <Action type="submit" ton="fort" touche="Ctrl Entrée" enCours={enCours} libelleEnCours="Enregistrement…" disabled={enCours || confirmation.ouverte}>
+      <BarreActions
+        className="mb-0!"
+        messages={
+          confirmation.ouverte ? (
+            <Confirmation
+              ouverte
+              question="Abandonner les modifications ?"
+              libelleConfirmer="Abandonner"
+              libelleAnnuler="Continuer l’édition"
+              ton="alerte"
+              onConfirmer={() => {
+                confirmation.fermer();
+                onFermer();
+              }}
+              onAnnuler={confirmation.fermer}
+              className="max-w-[44rem]"
+            >
+              Rien n’est enregistré : la <span className="font-mono">v{origine}</span> reste telle quelle.
+            </Confirmation>
+          ) : erreurGenerale || (etat?.conflit && etat.message) || refusServeur ? (
+            <>
+              {erreurGenerale ? <Message ton="alerte">{erreurGenerale}</Message> : null}
+              {etat?.conflit && etat.message ? (
+                <MessageConflit
+                  message={etat.message}
+                  jeton={etat.conflit.jeton}
+                  onRecharger={onRecharger}
+                  libelleEcraser={`Enregistrer quand même comme v${Number(etat.conflit.jeton) + 1}`}
+                  explication={`Recharger ferme l’éditeur et montre la v${etat.conflit.jeton} ; enregistrer quand même crée la v${Number(etat.conflit.jeton) + 1} avec ta saisie.`}
+                  desactive={enCours}
+                />
+              ) : refusServeur ? (
+                <Message ton="alerte">{refusServeur}</Message>
+              ) : null}
+            </>
+          ) : null
+        }
+        statut={
+          modifie && !confirmation.ouverte ? (
+            <span className="text-encre-2">
+              <span className="sm:hidden">Non enregistré</span>
+              <span className="max-sm:hidden">Modifications non enregistrées</span>
+            </span>
+          ) : null
+        }
+      >
+        {/* La confirmation d'« Abandonner » prend la place des actions tant qu'elle est ouverte ; masquées et non
+            démontées, elles rendent le focus à « Abandonner » quand on la referme. */}
+        <div className={`-mx-1.5 items-center gap-x-4 pointer-coarse:mx-0 ${confirmation.ouverte ? 'hidden' : 'flex'}`}>
+          <Action type="submit" ton="fort" touche="Ctrl Entrée" enCours={enCours} libelleEnCours="Enregistrement…" disabled={enCours}>
             Enregistrer comme v{prochainNumero}
           </Action>
-          <Action ton="discret" onClick={abandonner} disabled={enCours || confirmation.ouverte} aria-expanded={confirmation.ouverte}>
+          <Action ton="discret" onClick={abandonner} disabled={enCours} aria-expanded={confirmation.ouverte}>
             Abandonner
           </Action>
-          <span role="status" className="px-1.5 text-sm text-encre-2">
-            {modifie ? 'Modifications non enregistrées' : null}
-          </span>
         </div>
-        <Confirmation
-          ouverte={confirmation.ouverte}
-          question="Abandonner les modifications ?"
-          libelleConfirmer="Abandonner"
-          libelleAnnuler="Continuer l’édition"
-          ton="alerte"
-          onConfirmer={() => {
-            confirmation.fermer();
-            onFermer();
-          }}
-          onAnnuler={confirmation.fermer}
-          className="max-w-[44rem]"
-        >
-          Rien n’est enregistré : la <span className="font-mono">v{origine}</span> reste telle quelle.
-        </Confirmation>
-      </div>
+      </BarreActions>
     </form>
   );
 }
