@@ -41,6 +41,27 @@ describe('configuration d’une entreprise', () => {
     expect(e?.plagesRendezVous).toEqual([{ jour: 2, debut: '09:00', fin: '12:00' }]);
   });
 
+  it('lit et écrit les informations complémentaires, bornées à 1 500 caractères, sous la garde de `connu`', async () => {
+    await entrepriseDeTest();
+    const lue = (await appeler('lire_entreprise', { entreprise: 'gite-fictif' })).json as { modifieLe: string; fiche: { complements: string } };
+    expect(lue.fiche.complements).toBe('');
+
+    const ecrite = await appeler('modifier_fiche_entreprise', { entreprise: 'gite-fictif', champs: { complements: 'Parking : gratuit devant le gîte.' }, connu: lue.modifieLe });
+    expect(ecrite).toMatchObject({ erreur: false, json: { fiche: { complements: 'Parking : gratuit devant le gîte.' } } });
+    expect(((await appeler('lire_entreprise', { entreprise: 'gite-fictif' })).json as { fiche: { complements: string } }).fiche.complements).toBe(
+      'Parking : gratuit devant le gîte.',
+    );
+
+    const trop = await appeler('modifier_fiche_entreprise', { entreprise: 'gite-fictif', champs: { complements: 'x'.repeat(1501) } });
+    expect(trop).toMatchObject({ erreur: true, texte: expect.stringContaining('1500 caractères au plus.') });
+    // `connu` lu avant l'écriture précédente : périmé, refusé.
+    expect(await appeler('modifier_fiche_entreprise', { entreprise: 'gite-fictif', champs: { complements: 'Autre chose.' }, connu: lue.modifieLe })).toMatchObject({
+      erreur: true,
+      texte: expect.stringContaining('par Claude Code'),
+    });
+    expect((await db.select({ complements: entreprises.complements }).from(entreprises))[0]?.complements).toBe('Parking : gratuit devant le gîte.');
+  });
+
   it('refuse une fiche que le formulaire refuserait', async () => {
     await entrepriseDeTest();
 

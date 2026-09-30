@@ -73,6 +73,19 @@ describe('fiche de l’entreprise', () => {
     expect(messages[0]).toContain('prixConsigne « Dès 490 €. » → « Gratuit. »');
     expect(messages[0]).toContain('Une campagne téléphone est en cours');
   });
+
+  it('pendant une campagne téléphone, changer les informations complémentaires demande aussi l’accord', async () => {
+    const e = await entrepriseDeTest();
+    await campagneEnCours(e.id);
+    const { appeler, messages } = await connecter('refuser');
+
+    const r = await appeler('modifier_fiche_entreprise', { entreprise: 'gite-fictif', champs: { complements: 'Parking : gratuit devant le gîte.' } });
+
+    expect(r.erreur).toBe(true);
+    expect(messages[0]).toContain('complements (vide) → « Parking : gratuit devant le gîte. »');
+    expect(messages[0]).toContain('Une campagne téléphone est en cours');
+    expect((await db.select().from(entreprises).where(eq(entreprises.id, e.id)))[0]?.complements).toBe('');
+  });
 });
 
 describe('objections pendant une campagne téléphone', () => {

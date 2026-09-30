@@ -132,7 +132,7 @@ export function outilsDeLecture(declarer: Declarer): void {
     'lire_entreprise',
     {
       description:
-        'Fiche complète d’une entreprise (avec `modifieLe`, à repasser en `connu`), objections dans l’ordre reçu par l’assistante (archivées comprises), issues personnalisées, scripts (archivés compris, avec ce qui les utilise encore) et leurs versions.',
+        'Fiche complète d’une entreprise (avec `modifieLe`, à repasser en `connu` ; `complements` : les informations complémentaires ; un champ de texte vide n’est pas transmis à l’assistante), objections dans l’ordre reçu par l’assistante (archivées comprises), issues personnalisées, scripts (archivés compris, avec ce qui les utilise encore) et leurs versions.',
       entree: z.strictObject({ entreprise: champEntreprise }),
       annotations: LECTURE,
     },
@@ -162,6 +162,7 @@ export function outilsDeLecture(declarer: Declarer): void {
           arguments: e.arguments,
           prixConsigne: e.prixConsigne,
           interdits: e.interdits,
+          complements: e.complements,
           interlocuteur: e.interlocuteur,
           dureeRendezVousMinutes: e.dureeRendezVousMinutes,
           delaiMinimumHeures: e.delaiMinimumHeures,
@@ -566,7 +567,7 @@ export function outilsDeLecture(declarer: Declarer): void {
     'apercu_variables_appel',
     {
       description:
-        'Les variables exactes que l’assistante recevrait (prospect et version facultatifs : la première version lançable par défaut), son premier message composé, les mots-clés de la reconnaissance vocale, et les variables restées à leur texte par défaut. Rien n’est appelé ; un numéro non autorisé est signalé, pas refusé. Sert à régler le prompt et le script.',
+        'Les variables exactes que l’assistante recevrait (prospect et version facultatifs : la première version lançable par défaut), son premier message composé, les mots-clés de la reconnaissance vocale, les variables restées à leur texte par défaut (`parDefaut`), et les champs de la fiche de l’entreprise laissés vides, non transmis : leur variable part vide et l’assistante n’en parle pas (`nonTransmis`). Rien n’est appelé ; un numéro non autorisé est signalé, pas refusé. Sert à régler le prompt et le script.',
       entree: z.strictObject({ entreprise: champEntreprise, prospect: champProspect.optional(), versionScriptId: champVersion.optional() }),
       annotations: LECTURE,
     },

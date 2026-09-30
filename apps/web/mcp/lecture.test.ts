@@ -235,6 +235,11 @@ describe('outils de lecture', () => {
       premierMessage: 'Allô ?',
       prospect: { id: 'julie', refus: null },
     });
+    // La fiche de test est vide : ses six champs de texte ne sont pas transmis, et le disent.
+    expect(apercu.json).toMatchObject({
+      variables: expect.objectContaining({ entreprise_offre: '', entreprise_complements: '' }),
+      nonTransmis: expect.arrayContaining(['entreprise_offre', 'entreprise_interdits', 'entreprise_complements']),
+    });
 
     const { revoquerNumero } = await import('@/lib/prospects');
     await revoquerNumero('+33639980001');

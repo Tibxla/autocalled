@@ -53,7 +53,7 @@ export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): v
     'modifier_fiche_entreprise',
     {
       description:
-        'Modifie la fiche d’une entreprise : seuls les champs donnés changent, le reste est gardé. `plages` remplace toutes les plages de rendez-vous (jour 1 = lundi … 7 = dimanche, heures HH:MM). Changer `nom` ne change pas l’identifiant (slug). `connu` : le `modifieLe` de lire_entreprise, refus si la fiche a changé depuis. Changer le nom (l’assistante se présente en son nom), ou tout champ de la fiche pendant une campagne téléphone en cours de l’entreprise, demande la confirmation de l’opérateur.',
+        'Modifie la fiche d’une entreprise : seuls les champs donnés changent, le reste est gardé. `complements` : informations complémentaires, texte libre de 1 500 caractères au plus, que l’assistante n’emploie que si la conversation y mène. Un champ de texte vide (offre, cible, arguments, prixConsigne, interdits, complements) n’est pas transmis à l’assistante. `plages` remplace toutes les plages de rendez-vous (jour 1 = lundi … 7 = dimanche, heures HH:MM). Changer `nom` ne change pas l’identifiant (slug). `connu` : le `modifieLe` de lire_entreprise, refus si la fiche a changé depuis. Changer le nom (l’assistante se présente en son nom), ou tout champ de la fiche pendant une campagne téléphone en cours de l’entreprise, demande la confirmation de l’opérateur.',
       entree: z.strictObject({
         entreprise: champEntreprise,
         champs: ficheSchema.partial().strict().default({}),
