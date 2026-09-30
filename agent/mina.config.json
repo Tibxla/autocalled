@@ -259,7 +259,7 @@
       "speed": 1
     },
     "turn": {
-      "turn_eagerness": "normal",
+      "turn_eagerness": "eager",
       "turn_timeout": 7,
       "speculative_turn": false,
       "interruption_ignore_terms": [
