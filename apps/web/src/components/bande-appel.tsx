@@ -6,6 +6,7 @@ import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, 
 import { demanderAnalyse, raccrocherAppelTelephone } from '@/app/appels/actions';
 import { usePriseDeMain, type EtatPrise } from '@/app/appels/[id]/prise-de-main';
 import { Action, LienAction } from './action';
+import { LIEN_TEXTE } from './lien-texte';
 import { useNomAssistante } from './assistante';
 import { toucheAria, useRaccourcis } from './clavier';
 import { Confirmation, useConfirmation } from './confirmation';
@@ -542,13 +543,18 @@ export function VueBandeAppel({
     },
   ]);
 
-  // Version condensée : collée sous la barre quand la bande est sortie de l'écran par le haut.
-  const bande = useRef<HTMLElement>(null);
+  // Version condensée : collée sous la barre dès que les commandes sont passées sous elle. Le repère suit la rangée
+  // des commandes, pas toute la bande : sur un téléphone, la réplique et la piste occupent l'écran bien après
+  // que les gestes en sont sortis.
+  const repere = useRef<HTMLDivElement>(null);
   const [horsEcran, setHorsEcran] = useState(false);
   useEffect(() => {
-    const el = bande.current;
+    const el = repere.current;
     if (!condensee || !el) return;
-    const observateur = new IntersectionObserver(([e]) => setHorsEcran(Boolean(e && !e.isIntersecting && e.boundingClientRect.top < 0)));
+    const barre = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hauteur-barre')) || 0;
+    const observateur = new IntersectionObserver(([e]) => setHorsEcran(Boolean(e && !e.isIntersecting && e.boundingClientRect.top < barre)), {
+      rootMargin: `-${barre}px 0px 0px 0px`,
+    });
     observateur.observe(el);
     return () => observateur.disconnect();
   }, [condensee]);
@@ -579,9 +585,12 @@ export function VueBandeAppel({
   const etapeEnCours = enLigne && prise.etat !== 'active' && etat !== 'prise-en-main' ? etapeAffichee(etape, etapes) : null;
 
   const boutons = telephone ? (
-    <div className="-mx-1.5 flex flex-wrap items-center gap-x-1 gap-y-1 max-sm:grid max-sm:w-full max-sm:grid-cols-2 max-sm:[&_.touche]:hidden max-sm:[&>button]:h-11 max-sm:[&>button]:justify-center">
+    // Pavé de touches au doigt : chaque commande de l'appel prend le relief de sa touche ; Raccrocher seul sur sa
+    // rangée sous 640 px, sur voile brique, toujours immédiat (frein, ADR 0009).
+    <div className="-mx-1.5 flex flex-wrap items-center gap-x-1 gap-y-1 pointer-coarse:mx-0 pointer-coarse:gap-x-2 max-sm:grid max-sm:w-full max-sm:grid-cols-2 max-sm:gap-2">
       {voirEcoute ? (
         <Action
+          forme="relief"
           touche="E"
           aria-keyshortcuts={raccourcis ? toucheAria('e') : undefined}
           onClick={basculerEcoute}
@@ -593,12 +602,21 @@ export function VueBandeAppel({
         </Action>
       ) : null}
       {voirPrise ? (
-        <Action ref={boutonPrise} ton="fort" touche="Espace" aria-keyshortcuts={raccourcis ? toucheAria(' ') : undefined} onClick={ouvrirPrise} aria-expanded={priseOuverte}>
+        <Action
+          ref={boutonPrise}
+          ton="fort"
+          forme="relief"
+          touche="Espace"
+          aria-keyshortcuts={raccourcis ? toucheAria(' ') : undefined}
+          onClick={ouvrirPrise}
+          aria-expanded={priseOuverte}
+        >
           Prendre la main
         </Action>
       ) : null}
       {voirMicro ? (
         <Action
+          forme="relief"
           touche="M"
           aria-keyshortcuts={raccourcis ? toucheAria('m') : undefined}
           onClick={onBasculerMicro}
@@ -609,7 +627,15 @@ export function VueBandeAppel({
         </Action>
       ) : null}
       {voirRaccrocher ? (
-        <Action ton="alerte" className="sm:ml-6 max-sm:col-span-2 max-sm:mt-2" onClick={raccrocher} enCours={raccrochage.enCours} libelleEnCours="Raccrochage…" disabled={raccrochage.enCours}>
+        <Action
+          ton="alerte"
+          forme="relief"
+          className="sm:ml-6 max-sm:col-span-2 max-sm:mt-4"
+          onClick={raccrocher}
+          enCours={raccrochage.enCours}
+          libelleEnCours="Raccrochage…"
+          disabled={raccrochage.enCours}
+        >
           Raccrocher
         </Action>
       ) : null}
@@ -620,13 +646,13 @@ export function VueBandeAppel({
 
   return (
     <>
-      <section ref={bande} aria-label="Appel en cours" className="grid min-w-0 grid-cols-1 gap-3.5">
+      <section aria-label="Appel en cours" className="grid min-w-0 grid-cols-1 gap-3.5">
         {/* Rangée 1 : qui, où en est l'appel, les gestes. */}
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
           {identite ? (
             <div className="flex min-w-0 flex-wrap items-baseline gap-x-3.5 gap-y-0.5">
               {identite.lien ? (
-                <Link href={identite.lien} className="text-lg font-semibold decoration-souligne underline-offset-4 hover:underline">
+                <Link href={identite.lien} className={`text-lg font-semibold ${LIEN_TEXTE}`}>
                   {identite.prospect}
                 </Link>
               ) : (
@@ -650,6 +676,7 @@ export function VueBandeAppel({
             {termine ? null : boutons}
           </div>
         </div>
+        <div ref={repere} aria-hidden="true" className="-mt-3.5 -mb-px h-px" />
 
         {/* Confirmations et messages, dans le flux, sous les gestes. */}
         {voirPrise || priseOuverte ? (
@@ -698,14 +725,14 @@ export function VueBandeAppel({
             <p>Le fil de cet appel ne répond plus (ligne arrêtée ou redémarrée).</p>
             {!conversation ? <p className="text-encre-3">Rien à rapatrier : la conversation n’a pas été ouverte.</p> : null}
             {raccrocherPerdu ? <p>Si le téléphone sonne encore, raccroche d’ici.</p> : null}
-            <div className="-mx-1.5 flex flex-wrap gap-x-4">
+            <div className="-mx-1.5 flex flex-wrap gap-x-4 pointer-coarse:mx-0 max-sm:grid max-sm:justify-items-start max-sm:gap-y-3">
               {raccrocherPerdu ? (
-                <Action ton="alerte" onClick={raccrocher} enCours={raccrochage.enCours} libelleEnCours="Raccrochage…" disabled={raccrochage.enCours}>
+                <Action ton="alerte" forme="relief" onClick={raccrocher} enCours={raccrochage.enCours} libelleEnCours="Raccrochage…" disabled={raccrochage.enCours}>
                   Raccrocher
                 </Action>
               ) : null}
               {conversation && onRapatrier ? (
-                <Action ton="fort" onClick={onRapatrier} enCours={rapatriementEnCours} libelleEnCours="Rapatriement…" disabled={rapatriementEnCours}>
+                <Action ton="fort" forme={raccrocherPerdu ? 'texte' : 'relief'} onClick={onRapatrier} enCours={rapatriementEnCours} libelleEnCours="Rapatriement…" disabled={rapatriementEnCours}>
                   Rapatrier la conversation et le bilan
                 </Action>
               ) : null}
@@ -767,29 +794,40 @@ export function VueBandeAppel({
       </section>
 
       {condensee && horsEcran ? (
-        <div className="fixed inset-x-0 top-(--hauteur-barre) z-20 flex h-11 items-center gap-4 border-b border-filet bg-fond px-(--gouttiere) text-md">
-          <span className="min-w-0 truncate font-semibold max-sm:max-w-[6rem]">{identite?.prospect ?? nomProspect}</span>
+        <div className="fixed inset-x-0 top-(--hauteur-barre) z-20 flex h-11 items-center gap-4 border-b border-filet bg-fond px-(--gouttiere) text-md max-sm:h-[52px] pointer-coarse:h-[52px]">
+          <span className="min-w-0 truncate font-semibold max-sm:max-w-[40%]">{identite?.prospect ?? nomProspect}</span>
           <span className={`shrink-0 text-sm max-sm:hidden ${couleurEtat}`}>{texteEtat}</span>
           <span className="max-sm:hidden">
             {analyseCentree ? null : <Chrono chrono={chrono} maintenant={maintenant} enLigne={vivant} etat={etat} />}
           </span>
           <span className="min-w-0 flex-1 truncate text-encre-2 max-sm:hidden">{tourMina ? fin(tourMina.texte, 60) : ''}</span>
           {termine ? null : (
-            <div className="-mr-1.5 ml-auto flex shrink-0 items-center gap-1 max-sm:[&_.touche]:hidden">
+            <div className="-mr-1.5 ml-auto flex shrink-0 items-center gap-1 pointer-coarse:mr-0 max-sm:gap-4">
               {voirEcoute ? (
                 <Action touche="E" onClick={basculerEcoute} className="h-8 max-sm:hidden">
                   {ecoute.active ? 'Arrêter l’écoute' : 'Écouter'}
                 </Action>
               ) : null}
               {voirPrise ? (
-                <Action ton="fort" touche="Espace" onClick={ouvrirPrise} className="h-8">
+                <Action ton="fort" forme="relief" touche="Espace" onClick={ouvrirPrise} className="h-8">
                   Prendre la main
                 </Action>
               ) : null}
               {voirRaccrocher ? (
-                <Action ton="alerte" onClick={raccrocher} enCours={raccrochage.enCours} libelleEnCours="Raccrochage…" disabled={raccrochage.enCours} className="h-8">
-                  Raccrocher
-                </Action>
+                // Sous 640 px, un filet sépare Raccrocher (immédiat) de Prendre la main (sous confirmation).
+                <span className="flex items-center max-sm:self-stretch max-sm:border-l max-sm:border-filet max-sm:pl-4">
+                  <Action
+                    ton="alerte"
+                    forme="relief"
+                    onClick={raccrocher}
+                    enCours={raccrochage.enCours}
+                    libelleEnCours="Raccrochage…"
+                    disabled={raccrochage.enCours}
+                    className="h-8"
+                  >
+                    Raccrocher
+                  </Action>
+                </span>
               ) : null}
             </div>
           )}

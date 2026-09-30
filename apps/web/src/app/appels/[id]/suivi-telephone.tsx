@@ -5,8 +5,9 @@ import { BandeAppel, type IdentiteAppel } from '@/components/bande-appel';
 /**
  * Suivi en direct d'un appel sur la ligne téléphone, dans la fiche d'appel : une enveloppe de BandeAppel en
  * variante fiche (fil déplié). Écoute, prise de main, micro, raccrochage, confirmations, fil perdu et
- * raccourcis vivent dans la bande. La fiche la rend à la même place et avec la même clé pour les statuts
- * en-cours puis traitement : le fil reste affiché pendant le rapatriement.
+ * raccourcis vivent dans la bande ; sa version condensée se colle en haut quand les commandes sortent de
+ * l'écran. La fiche la rend à la même place et avec la même clé pour les statuts en-cours puis traitement :
+ * le fil reste affiché pendant le rapatriement.
  */
 export function SuiviTelephone({
   appelId,
@@ -36,6 +37,8 @@ export function SuiviTelephone({
     <BandeAppel
       appelId={appelId}
       variante="fiche"
+      // Les commandes restent à portée quand le fil déplié les fait sortir de l'écran.
+      condensee
       statut={statut}
       conversation={conversation}
       {...(debutLe ? { debutLe } : {})}
