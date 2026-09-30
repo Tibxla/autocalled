@@ -4,7 +4,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
 import { FUSEAU, LIGNES_LONGUES, duree, etatAppel, heure, jourCourt, numeroMasque, prenom } from '@/components/format-appel';
-import { EtatVide, GlypheEtape, LienAction, LienTexte, Message, Page, TitreSection } from '@/components/ui';
+import { EtatVide, GlypheEtape, LienAction, LienTexte, Message, Page, TitreSection, classesAction } from '@/components/ui';
 import { db } from '@/db';
 import { campagnes, scripts } from '@/db/schema';
 import { DUREE_MAX_ANALYSE_S } from '@/lib/appels';
@@ -16,7 +16,6 @@ import { lireFiltresAppels } from '../filtres';
 import { Actualisation, Ecoule } from './actualisation';
 import { BoutonRelancer } from './bouton-relancer';
 import { LecteurAppel } from './lecteur-appel';
-import { LienVisio } from './lien-visio';
 import { SuiviTelephone } from './suivi-telephone';
 
 const lire = cache(lireAppel);
@@ -299,7 +298,11 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
                 </>
               ) : null}
               {/* L'action de la zone du rendez-vous : au doigt, en relief, comme toute action forte. */}
-              {rdv.lienVisio ? <LienVisio href={rdv.lienVisio} /> : null}
+              {rdv.lienVisio ? (
+                <a href={rdv.lienVisio} target="_blank" rel="noreferrer" className={classesAction('fort', 'relief')}>
+                  Ouvrir la visio
+                </a>
+              ) : null}
             </div>
             {rdv.email ? (
               <p className="text-encre-3">
