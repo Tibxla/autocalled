@@ -264,7 +264,7 @@ export function DetailTelephone({ telephone }: { telephone: EtatTelephone }) {
         {telephone.adresse ? (
           <details className="mt-0.5 text-sm text-encre-3">
             {/* Au doigt, 44 px de haut et souligné : le marqueur du détail reste (pas de flex). */}
-            <summary className="w-fit cursor-pointer decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline pointer-coarse:py-3 pointer-coarse:underline">
+            <summary className="w-fit cursor-pointer decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline pointer-coarse:py-[13px] pointer-coarse:underline">
               Afficher l’adresse complète
             </summary>
             <span className="font-mono text-xs text-encre-2">{telephone.adresse}</span>

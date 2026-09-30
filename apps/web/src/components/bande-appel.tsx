@@ -652,7 +652,7 @@ export function VueBandeAppel({
           {identite ? (
             <div className="flex min-w-0 flex-wrap items-baseline gap-x-3.5 gap-y-0.5">
               {identite.lien ? (
-                <Link href={identite.lien} className={`text-lg font-semibold ${LIEN_TEXTE}`}>
+                <Link href={identite.lien} className={`text-lg font-semibold pointer-coarse:py-3 ${LIEN_TEXTE}`}>
                   {identite.prospect}
                 </Link>
               ) : (

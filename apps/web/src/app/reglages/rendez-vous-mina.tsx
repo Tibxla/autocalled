@@ -122,7 +122,7 @@ function Ligne({ ligne: { rdv, prospect, appelId }, maintenant }: { ligne: Ligne
             href={rdv.lienVisio}
             target="_blank"
             rel="noopener noreferrer"
-            className={`text-encre-2 hover:text-encre pointer-coarse:py-3 ${LIEN_TEXTE}`}
+            className={`text-encre-2 hover:text-encre pointer-coarse:py-3.5 ${LIEN_TEXTE}`}
           >
             Ouvrir la visio
           </a>
