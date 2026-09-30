@@ -132,9 +132,10 @@ export function FormulaireCampagne({
         </Champ>
         <fieldset className="grid min-w-0 gap-1">
           <legend className="mb-1.5 text-sm font-medium">Ligne</legend>
+          {/* Bouton calé sur la première ligne : le libellé passe sur deux lignes en fenêtre étroite. */}
           {LIGNES.map((l, i) => (
-            <label key={l.valeur} className="flex min-h-7 cursor-pointer items-center gap-2.5 text-md pointer-coarse:min-h-11">
-              <input type="radio" name="ligne" value={l.valeur} defaultChecked={i === 0} className="size-4 accent-[var(--encre)]" />
+            <label key={l.valeur} className="flex min-h-7 cursor-pointer items-start gap-2.5 py-1 text-md pointer-coarse:min-h-11 pointer-coarse:py-3">
+              <input type="radio" name="ligne" value={l.valeur} defaultChecked={i === 0} className="mt-0.5 size-4 shrink-0 accent-[var(--encre)]" />
               <span>
                 <span className="font-medium">{l.libelle}</span>
                 <span className="text-encre-3"> : {l.aide(nomAssistante)}</span>
@@ -227,10 +228,9 @@ export function FormulaireCampagne({
         </ul>
       </fieldset>
 
-      {/* Dans un volet que la liste des campagnes suit : pas de marge négative de fin de page ;
-          une colonne bornée, sinon le statut non coupé élargit la barre au-delà de l'écran. */}
+      {/* Dans un volet que la liste des campagnes suit : pas de marge négative de fin de page. */}
       <BarreActions
-        className="mb-0! grid-cols-1"
+        className="mb-0!"
         messages={etat?.message ? <Message ton="alerte">{etat.message}</Message> : null}
         statut={
           cochesMasques > 0 ? (
