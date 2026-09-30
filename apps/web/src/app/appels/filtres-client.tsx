@@ -27,7 +27,7 @@ export function FiltreSelection({
   options,
   parametres,
   changements = {},
-  className = 'w-56 max-w-full',
+  className = 'w-56 max-w-full max-sm:w-full',
 }: {
   cle: string;
   libelle: string;
@@ -42,7 +42,7 @@ export function FiltreSelection({
   const router = useRouter();
   const id = useId();
   return (
-    <div className="flex items-center">
+    <div className="flex items-center max-sm:w-full">
       <label htmlFor={id} className="sr-only">
         {libelle}
       </label>

@@ -5,6 +5,7 @@ import { cleJour, FUSEAU, prenom } from '@/components/format-appel';
 import { FILTRES_ISSUE, ListeAppels, type ExtraitAppel, type LigneAppel } from '@/components/liste-appels';
 import { EnTetePage, EtatVide, Filtre, Filtres, LienAction, Page, Recherche } from '@/components/ui';
 import { lienAvec } from '@/components/url';
+import { GroupeFiltres, VoletFiltres } from '@/components/volet-filtres';
 import { db } from '@/db';
 import { appels, entreprises, issuesPersonnalisees } from '@/db/schema';
 import { comptesAppels, comptesParJour, pageAppels, PERIODES } from '@/lib/lecture';
@@ -18,8 +19,6 @@ export const metadata: Metadata = { title: 'Appels' };
 
 /** Appels par page ; « Appels plus anciens » (N) passe à la suivante par curseur, filtres gardés. */
 const PAS = 100;
-/** Sous 640 px : une rangée de filtres qui défile seule, dans la gouttière, sans barre visible. */
-const RANGEE_MOBILE = 'max-sm:flex-nowrap max-sm:overflow-x-auto max-sm:-mx-(--gouttiere) max-sm:px-(--gouttiere) max-sm:[scrollbar-width:none]';
 /** Au-delà, la liste s'affiche sans savoir quel appel la ligne porte : un pont qui pend ne la bloque pas. */
 const ATTENTE_PONT_MS = 1500;
 
@@ -29,6 +28,8 @@ const LIBELLES_PERIODES: Record<(typeof PERIODES)[number], string> = {
   '30-jours': '30 jours',
   tout: 'Tout',
 };
+
+const FORMAT_JOUR_COURT = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', timeZone: FUSEAU });
 
 const FORMAT_JOUR = new Intl.DateTimeFormat('fr-FR', {
   weekday: 'long',
@@ -136,6 +137,7 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
       libellePerso: a.libellePerso,
       extrait: q ? extraitDe(a.transcription, q, nom, nomAssistante) : null,
       rappel: { le: a.rappelLe, quand: a.rappelQuand, texte: a.rappelTexte },
+      ...(rappels ? { ficheProspect: `/entreprises/${a.entrepriseSlug}/prospects/${a.prospectId}` } : {}),
     };
   });
 
@@ -160,6 +162,88 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
   const jourPrecis = periode && !(PERIODES as readonly string[]).includes(periode) ? periode : '';
   const population = ligne === 'simulation' ? 'appels simulés' : 'appels réels';
 
+  // Sous 640 px, les familles secondaires (ligne, période, entreprise, version, issues personnalisées) passent dans le
+  // volet « Filtres » ; son résumé dit celles qui sont actives, « Effacer les filtres » ne retire qu'elles.
+  const persoChoisie = issue?.startsWith('perso:') ? (persos.find((p) => `perso:${p.id}` === issue)?.libelle ?? null) : null;
+  const resumeVolet = [
+    ligne ? (LIGNES_FILTRE.find((l) => l.valeur === ligne)?.libelle ?? null) : null,
+    jourPrecis
+      ? FORMAT_JOUR_COURT.format(new Date(`${jourPrecis}T12:00:00Z`))
+      : periode && periode !== 'tout'
+        ? (LIBELLES_PERIODES[periode as (typeof PERIODES)[number]] ?? null)
+        : null,
+    entreprise?.nom ?? null,
+    parametres.version ? (versions.find((v) => v.id === parametres.version)?.libelle ?? null) : null,
+    persoChoisie,
+  ].filter((x): x is string => Boolean(x));
+  const effacerVolet =
+    resumeVolet.length > 0 ? lien({ ligne: null, periode: null, entreprise: null, version: null, ...(persoChoisie ? { issue: null } : {}) }) : null;
+
+  const filtreLigne = (
+    <>
+      <Filtre actif={!ligne} href={lien({ ligne: null })}>
+        Réels
+      </Filtre>
+      {lignesProposees.map((l) => (
+        <Filtre key={l.valeur} actif={ligne === l.valeur} href={lien({ ligne: l.valeur })}>
+          {l.libelle}
+        </Filtre>
+      ))}
+    </>
+  );
+  const filtrePeriode = PERIODES.map((cle) => (
+    <Filtre key={cle} actif={cle === 'tout' ? !periode : periode === cle} href={lien({ periode: cle === 'tout' ? null : cle })}>
+      {LIBELLES_PERIODES[cle]}
+    </Filtre>
+  ));
+  const filtresPerso = persosProposees.map((p) => (
+    <Filtre
+      key={p.id}
+      actif={issue === `perso:${p.id}`}
+      compte={comptes.parPerso[`perso:${p.id}`] ?? 0}
+      href={lien({
+        issue: issue === `perso:${p.id}` ? null : `perso:${p.id}`,
+        rappels: null,
+      })}
+    >
+      {p.libelle}
+    </Filtre>
+  ));
+  const choixEntreprise = (className?: string) =>
+    listeEntreprises.length > 1 || parametres.entreprise ? (
+      <FiltreSelection
+        cle="entreprise"
+        libelle="Entreprise"
+        vide="Toutes les entreprises"
+        valeur={parametres.entreprise ?? ''}
+        options={listeEntreprises.map((e) => ({
+          valeur: e.slug,
+          libelle: e.nom,
+        }))}
+        parametres={sansCurseur}
+        changements={{
+          version: null,
+          ...(issue?.startsWith('perso:') ? { issue: null } : {}),
+        }}
+        {...(className ? { className } : {})}
+      />
+    ) : null;
+  const choixVersion = (className?: string) =>
+    versions.length > 1 || parametres.version ? (
+      <FiltreSelection
+        cle="version"
+        libelle="Version de script"
+        vide="Toutes les versions"
+        valeur={parametres.version ?? ''}
+        options={versions.map((v) => ({
+          valeur: v.id,
+          libelle: v.libelle,
+        }))}
+        parametres={sansCurseur}
+        {...(className ? { className } : {})}
+      />
+    ) : null;
+
   return (
     <Page>
       <EnTetePage
@@ -176,7 +260,10 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
       />
 
       <div className="grid gap-2.5 border-b border-filet pb-3">
-        <Filtres libelle={`Issue, ${population}`} className={RANGEE_MOBILE}>
+        {/* Dès 640 px : les rangées de filtres habituelles. Sous 640 px, elles cèdent la place à une seule rangée qui
+            défile (Tous, Rappels à faire, issues) et au volet « Filtres » ; les liens de filtre sont doublés, jamais la
+            recherche, rendue une seule fois et remontée en tête. */}
+        <Filtres libelle={`Issue, ${population}`} className="max-sm:hidden">
           <Filtre actif={!issue && !rappels} compte={comptes.total} href={lien({ issue: null, rappels: null })}>
             Tous
           </Filtre>
@@ -187,86 +274,63 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
           ))}
         </Filtres>
         {persosProposees.length > 0 ? (
-          <div className="flex flex-wrap items-baseline gap-x-[22px] gap-y-1 text-sm">
+          <div className="flex flex-wrap items-baseline gap-x-[22px] gap-y-1 text-sm max-sm:hidden">
             <span aria-hidden="true" className="text-encre-3">
               Issues personnalisées
             </span>
             <Filtres libelle="Issues personnalisées de l’entreprise" className="text-sm!">
-              {persosProposees.map((p) => (
-                <Filtre
-                  key={p.id}
-                  actif={issue === `perso:${p.id}`}
-                  compte={comptes.parPerso[`perso:${p.id}`] ?? 0}
-                  href={lien({
-                    issue: issue === `perso:${p.id}` ? null : `perso:${p.id}`,
-                    rappels: null,
-                  })}
-                >
-                  {p.libelle}
-                </Filtre>
-              ))}
+              {filtresPerso}
             </Filtres>
           </div>
         ) : null}
-        <div className={`flex flex-wrap items-center gap-x-10 gap-y-2 text-sm ${RANGEE_MOBILE}`}>
+        <div className="flex flex-wrap items-center gap-x-10 gap-y-2 text-sm max-sm:hidden">
           {/* Un rappel convenu reste à faire tant qu'aucun appel plus récent n'est parti vers le prospect. Ce n'est pas une issue. */}
-          <Filtres libelle="Rappels" className="text-sm! max-sm:shrink-0">
+          <Filtres libelle="Rappels" className="text-sm!">
             <Filtre actif={rappels} compte={compteRappels} href={lien({ rappels: rappels ? null : '1', issue: null })}>
               Rappels à faire
             </Filtre>
           </Filtres>
-          <Filtres libelle="Ligne" className="text-sm! max-sm:shrink-0 max-sm:flex-nowrap">
-            <Filtre actif={!ligne} href={lien({ ligne: null })}>
-              Réels
-            </Filtre>
-            {lignesProposees.map((l) => (
-              <Filtre key={l.valeur} actif={ligne === l.valeur} href={lien({ ligne: l.valeur })}>
-                {l.libelle}
-              </Filtre>
-            ))}
+          <Filtres libelle="Ligne" className="text-sm!">
+            {filtreLigne}
           </Filtres>
-          <div className="flex flex-wrap items-center gap-x-[22px] gap-y-1 max-sm:shrink-0 max-sm:flex-nowrap">
-            <Filtres libelle="Période" className="text-sm! max-sm:flex-nowrap">
-              {PERIODES.map((cle) => (
-                <Filtre key={cle} actif={cle === 'tout' ? !periode : periode === cle} href={lien({ periode: cle === 'tout' ? null : cle })}>
-                  {LIBELLES_PERIODES[cle]}
-                </Filtre>
-              ))}
+          <div className="flex flex-wrap items-center gap-x-[22px] gap-y-1">
+            <Filtres libelle="Période" className="text-sm!">
+              {filtrePeriode}
             </Filtres>
             <FiltreJour valeur={jourPrecis} parametres={sansCurseur} />
           </div>
         </div>
-        {/* Sous 640 px, la recherche remonte juste sous le titre, comme sur l'accueil ; les listes déroulantes restent en bas. */}
+
+        <Filtres libelle={`Issue et rappels, ${population}`} className="sm:hidden">
+          <Filtre actif={!issue && !rappels} compte={comptes.total} href={lien({ issue: null, rappels: null })}>
+            Tous
+          </Filtre>
+          <Filtre actif={rappels} compte={compteRappels} href={lien({ rappels: rappels ? null : '1', issue: null })}>
+            Rappels à faire
+          </Filtre>
+          {FILTRES_ISSUE.map((f) => (
+            <Filtre key={f.cle} actif={issue === f.cle} compte={comptes.parIssue[f.cle] ?? 0} href={lien({ issue: f.cle, rappels: null })}>
+              {f.libelle}
+            </Filtre>
+          ))}
+        </Filtres>
+        <VoletFiltres resume={resumeVolet} effacer={effacerVolet}>
+          <GroupeFiltres libelle="Ligne">{filtreLigne}</GroupeFiltres>
+          <GroupeFiltres libelle="Période">
+            {filtrePeriode}
+            <FiltreJour valeur={jourPrecis} parametres={sansCurseur} />
+          </GroupeFiltres>
+          {choixEntreprise('w-full') ? <GroupeFiltres libelle="Entreprise">{choixEntreprise('w-full')}</GroupeFiltres> : null}
+          {choixVersion('w-full') ? <GroupeFiltres libelle="Version de script">{choixVersion('w-full')}</GroupeFiltres> : null}
+          {filtresPerso.length > 0 ? <GroupeFiltres libelle="Issues personnalisées">{filtresPerso}</GroupeFiltres> : null}
+        </VoletFiltres>
+
         <div className="flex flex-wrap items-center gap-x-10 gap-y-2 text-sm max-sm:contents">
-          {listeEntreprises.length > 1 || parametres.entreprise ? (
-            <FiltreSelection
-              cle="entreprise"
-              libelle="Entreprise"
-              vide="Toutes les entreprises"
-              valeur={parametres.entreprise ?? ''}
-              options={listeEntreprises.map((e) => ({
-                valeur: e.slug,
-                libelle: e.nom,
-              }))}
-              parametres={sansCurseur}
-              changements={{
-                version: null,
-                ...(issue?.startsWith('perso:') ? { issue: null } : {}),
-              }}
-            />
-          ) : null}
-          {versions.length > 1 || parametres.version ? (
-            <FiltreSelection
-              cle="version"
-              libelle="Version de script"
-              vide="Toutes les versions"
-              valeur={parametres.version ?? ''}
-              options={versions.map((v) => ({
-                valeur: v.id,
-                libelle: v.libelle,
-              }))}
-              parametres={sansCurseur}
-            />
+          {choixEntreprise() || choixVersion() ? (
+            <div className="flex flex-wrap items-center gap-x-10 gap-y-2 max-sm:hidden">
+              {choixEntreprise()}
+              {choixVersion()}
+            </div>
           ) : null}
           <Recherche
             valeur={q}

@@ -40,6 +40,8 @@ export interface LigneAppel {
   extrait?: ExtraitAppel | null;
   /** Vue « Rappels à faire » : quand rappeler et ce que le prospect a dit. */
   rappel?: { le: Date | null; quand: RappelDate | null; texte: string | null };
+  /** Vue « Rappels à faire » : la fiche du prospect, d'où le rappel se lance (comme sur l'accueil). */
+  ficheProspect?: string;
   /** Remplace /appels/{id}. */
   lien?: string;
 }
@@ -105,11 +107,12 @@ function Glyphe({ a, vivant }: { a: LigneAppel; vivant: boolean }) {
   return <GlypheEtape etape={a.bilan.etapeAtteinte} nombre={a.nombreEtapes ?? null} rendezVous={rendezVous} />;
 }
 
+function etatDe(a: LigneAppel, vivant: boolean, maintenant: Date) {
+  return etatAppel({ ...a, erreur: a.erreur ?? null, conversationId: a.conversationId ?? null }, { vivant, libellePerso: a.libellePerso ?? null, maintenant });
+}
+
 function Issue({ a, vivant, maintenant, lien }: { a: LigneAppel; vivant: boolean; maintenant: Date; lien?: string }) {
-  const etat = etatAppel(
-    { ...a, erreur: a.erreur ?? null, conversationId: a.conversationId ?? null },
-    { vivant, libellePerso: a.libellePerso ?? null, maintenant },
-  );
+  const etat = etatDe(a, vivant, maintenant);
   const systeme = etat.cle === 'issue' && a.libellePerso ? a.issueSysteme : null;
   const libelle = vivant ? 'En cours · rejoindre' : etat.libelle;
   const contenu = (
@@ -119,7 +122,7 @@ function Issue({ a, vivant, maintenant, lien }: { a: LigneAppel; vivant: boolean
     </>
   );
   return (
-    <span className="flex min-w-0 items-center gap-2.5" title={etat.detail}>
+    <span className="flex min-w-0 items-center gap-2.5">
       <Glyphe a={a} vivant={vivant} />
       {lien ? (
         <LienLigne href={lien} prefetch={false} className="min-w-0 truncate decoration-souligne underline-offset-4 hover:underline">
@@ -132,7 +135,11 @@ function Issue({ a, vivant, maintenant, lien }: { a: LigneAppel; vivant: boolean
   );
 }
 
-function Resume({ a, avecLigne }: { a: LigneAppel; avecLigne: boolean }) {
+/**
+ * Le résumé, le passage trouvé, ou, sans l'un ni l'autre, le détail de l'état (l'erreur d'un appel non composé ou
+ * d'une analyse en échec) : rien d'utile ne se cache dans une info-bulle, qui ne s'affiche jamais au doigt.
+ */
+function Resume({ a, avecLigne, detail }: { a: LigneAppel; avecLigne: boolean; detail?: string | undefined }) {
   // Sans colonne Ligne (liste complète), un appel simulé le dit devant son résumé.
   const simule = !avecLigne && a.ligne === 'simulation' ? <span className="text-encre-3">simulé · </span> : null;
   if (a.extrait) {
@@ -149,14 +156,14 @@ function Resume({ a, avecLigne }: { a: LigneAppel; avecLigne: boolean }) {
   return (
     <span className="text-encre-3">
       {simule}
-      {a.resume ?? ''}
+      {a.resume ?? detail ?? ''}
     </span>
   );
 }
 
-function texteExtrait(a: LigneAppel): string | undefined {
+function texteExtrait(a: LigneAppel, detail?: string): string | undefined {
   if (a.extrait) return `${a.extrait.qui} : ${a.extrait.avant}${a.extrait.terme}${a.extrait.apres}`;
-  return a.resume ?? undefined;
+  return a.resume ?? detail;
 }
 
 /** Saut de rangée sous 640 px : heure, nom et durée d'abord, puis l'issue et le résumé. */
@@ -180,6 +187,7 @@ function Ligne({
   recherche: string | undefined;
 }) {
   const lien = lienDe(a, depuis, recherche);
+  const detail = etatDe(a, vivant, maintenant).detail;
   if (complete) {
     return (
       <LigneTable etat={vivant ? 'vivante' : 'normale'}>
@@ -198,8 +206,8 @@ function Ligne({
         <Cellule etat className="max-sm:order-5">
           <Issue a={a} vivant={vivant} maintenant={maintenant} />
         </Cellule>
-        <Cellule tronquee titre={texteExtrait(a)} className="max-sm:order-6 max-sm:flex-1">
-          <Resume a={a} avecLigne={false} />
+        <Cellule tronquee titre={texteExtrait(a, detail)} className="max-sm:order-6 max-sm:flex-1">
+          <Resume a={a} avecLigne={false} detail={detail} />
         </Cellule>
         <Cellule mono align="droite" className="max-sm:order-3">
           <Duree secondes={a.dureeSecondes} />
@@ -216,8 +224,8 @@ function Ligne({
       <Cellule etat className="max-sm:order-2 max-sm:flex-1">
         <Issue a={a} vivant={vivant} maintenant={maintenant} lien={lien} />
       </Cellule>
-      <Cellule tronquee titre={texteExtrait(a)} className="max-sm:order-5 max-sm:flex-1">
-        <Resume a={a} avecLigne />
+      <Cellule tronquee titre={texteExtrait(a, detail)} className="max-sm:order-5 max-sm:flex-1">
+        <Resume a={a} avecLigne detail={detail} />
       </Cellule>
       <Cellule attenuee masqueeMobile>
         {LIGNES_COURTES[a.ligne] ?? a.ligne}
@@ -230,14 +238,18 @@ function Ligne({
   );
 }
 
-/** Vue « Rappels à faire » : quand rappeler (en brique s'il est en retard), qui, ce qui a été convenu, l'appel d'origine. */
+/**
+ * Vue « Rappels à faire » : quand rappeler (en brique s'il est en retard), qui, ce qui a été convenu, le jour de l'appel
+ * d'origine. La ligne mène à la fiche du prospect, d'où le rappel se lance, comme sur l'accueil. Sous 640 px : le nom
+ * seul sur la première rangée, puis le « quand » en tête de la seconde, suivi de ce qui a été convenu.
+ */
 function LigneRappel({ a, maintenant, depuis }: { a: LigneAppel; maintenant: Date; depuis: string | undefined }) {
   const r = a.rappel;
   const retard = r?.le ? rappelEnRetard(r.le, r.quand, maintenant) : false;
-  const lien = lienDe(a, depuis, undefined);
+  const lien = a.ficheProspect ?? lienDe(a, depuis, undefined);
   return (
     <LigneTable>
-      <Cellule tronquee className="max-sm:order-3">
+      <Cellule tronquee className="max-sm:order-2 max-sm:shrink-0">
         {r?.le ? (
           <span className={retard ? 'text-encre' : 'text-encre-2'}>
             {retard ? <span className="text-alerte">En retard · </span> : null}
@@ -247,7 +259,7 @@ function LigneRappel({ a, maintenant, depuis }: { a: LigneAppel; maintenant: Dat
           <span className="text-encre-3">sans date</span>
         )}
       </Cellule>
-      <Cellule tronquee titre={[a.prospect, a.societe].filter(Boolean).join(' · ')} className="max-sm:order-1 max-sm:flex-1">
+      <Cellule tronquee titre={[a.prospect, a.societe].filter(Boolean).join(' · ')} className="max-sm:order-1 max-sm:basis-full">
         <LienLigne href={lien} prefetch={false} className="font-medium decoration-souligne underline-offset-4 hover:underline">
           {a.prospect}
         </LienLigne>
@@ -256,13 +268,12 @@ function LigneRappel({ a, maintenant, depuis }: { a: LigneAppel; maintenant: Dat
       <Cellule tronquee attenuee masqueeMobile titre={a.entreprise ?? undefined}>
         {a.entreprise}
       </Cellule>
-      <Cellule tronquee titre={r?.texte ?? undefined} className="text-encre-3 max-sm:order-5 max-sm:flex-1">
+      <Cellule tronquee titre={r?.texte ?? undefined} className="text-encre-3 max-sm:order-3 max-sm:flex-1">
         {r?.texte ? `« ${r.texte} »` : ''}
       </Cellule>
-      <Cellule mono align="droite" className="text-encre-3 max-sm:order-2">
+      <Cellule mono align="droite" masqueeMobile className="text-encre-3">
         <span title={`Appel du ${jourCourt(a.debutLe)}`}>{jourCourt(a.debutLe).split(' ')[1]}</span>
       </Cellule>
-      <Retour />
     </LigneTable>
   );
 }
@@ -321,7 +332,9 @@ export function ListeAppels({
           <CelluleEnTete>Prospect</CelluleEnTete>
           <CelluleEnTete masqueeMobile>Entreprise</CelluleEnTete>
           <CelluleEnTete>Convenu</CelluleEnTete>
-          <CelluleEnTete align="droite">Appel</CelluleEnTete>
+          <CelluleEnTete align="droite" masqueeMobile>
+            Appel
+          </CelluleEnTete>
         </EnTeteTable>
         <div role="rowgroup">
           {appels.map((a) => (
