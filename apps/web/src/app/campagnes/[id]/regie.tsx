@@ -113,7 +113,7 @@ function MessageLigne({ texte, lienTelephone, reconnecter }: { texte: string; li
   const ouvrir = lienTelephone ? <LienAction href="/telephone">Ouvrir Téléphone</LienAction> : null;
   const action = reconnecter ? (
     <div className="flex flex-wrap items-center gap-x-4">
-      <Action ton="fort" enCours={reconnexion.enCours} libelleEnCours="Reconnexion…" disabled={reconnexion.enCours} onClick={reconnexion.lancer} className="max-sm:h-11">
+      <Action ton="fort" enCours={reconnexion.enCours} libelleEnCours="Reconnexion…" disabled={reconnexion.enCours} onClick={reconnexion.lancer}>
         Reconnecter le téléphone
       </Action>
       {ouvrir}
@@ -144,17 +144,43 @@ function nomComplet(p: Prochain): string {
   return p.societe ? `${p.nom}, ${p.societe}` : p.nom;
 }
 
-function Actions({ children }: { children: React.ReactNode }) {
-  return <div className="-mx-1.5 flex flex-wrap items-center gap-x-5 gap-y-1 max-sm:grid max-sm:justify-items-start">{children}</div>;
+/**
+ * Rangée d'actions de la régie. Sous 640 px, une colonne ; `pave` : les commandes de ce qui vit (Appeler
+ * maintenant, Suspendre) forment un pavé de touches sur deux colonnes, toutes en relief au doigt, l'aide sur
+ * toute la largeur dessous. Au doigt, le relief lâche le retrait qui aligne le texte sur la colonne.
+ */
+function Actions({ children, pave = false }: { children: React.ReactNode; pave?: boolean }) {
+  return (
+    <div
+      className={`-mx-1.5 flex flex-wrap items-center gap-x-5 gap-y-1 max-sm:grid pointer-coarse:mx-0 pointer-coarse:gap-y-2 ${
+        pave ? 'max-sm:grid-cols-2 max-sm:gap-x-2 max-sm:[&>button]:w-full' : 'max-sm:justify-items-start'
+      }`}
+    >
+      {children}
+    </div>
+  );
 }
+
+/** Aide à côté d'une action : alignée sur le texte au clavier, sur le bord du relief au doigt ; toute la largeur du pavé. */
+const AIDE = 'px-1.5 text-sm text-encre-3 max-sm:col-span-full pointer-coarse:px-0';
 
 function Suspendre({ onClick, enCours }: { onClick: () => void; enCours: boolean }) {
   return (
     <>
-      <Action touche="P" raccourci="p" libelleRaccourci="Suspendre la campagne" onClick={onClick} disabled={enCours} enCours={enCours} libelleEnCours="Suspension…">
+      {/* Commande de ce qui vit : en relief au doigt, même en ton normal (pavé de touches, DESIGN.md). */}
+      <Action
+        touche="P"
+        raccourci="p"
+        libelleRaccourci="Suspendre la campagne"
+        forme="relief"
+        onClick={onClick}
+        disabled={enCours}
+        enCours={enCours}
+        libelleEnCours="Suspension…"
+      >
         Suspendre
       </Action>
-      <span className="px-1.5 text-sm text-encre-3">L’appel en cours va à son terme, aucun autre ne part.</span>
+      <span className={AIDE}>L’appel en cours va à son terme, aucun autre ne part.</span>
     </>
   );
 }
@@ -214,12 +240,12 @@ function Terminer({ campagneId, restants, enAppel }: { campagneId: string; resta
     confirmation.fermer();
   };
   return (
-    <div className="grid justify-items-start gap-2">
+    <div className="grid justify-items-start gap-2 pointer-coarse:pt-1">
       <Actions>
         <Action ton="discret" aria-expanded={confirmation.ouverte} onClick={(e) => confirmation.ouvrir(e.currentTarget)}>
           Terminer la campagne
         </Action>
-        <span className="px-1.5 text-sm text-encre-3">Les prospects restants ne seront pas appelés ; aucun appel n’est coupé.</span>
+        <span className={AIDE}>Les prospects restants ne seront pas appelés ; aucun appel n’est coupé.</span>
       </Actions>
       <Confirmation
         className="justify-self-stretch"
@@ -395,7 +421,7 @@ function RegieTelephone({
             >
               Reprendre
             </Action>
-            {blocage ? <span className="px-1.5 text-sm text-encre-3">Reprise impossible tant que la ligne ne peut pas appeler.</span> : null}
+            {blocage ? <span className={AIDE}>Reprise impossible tant que la ligne ne peut pas appeler.</span> : null}
           </Actions>
           <Confirmation
             ouverte={confirmation.ouverte}
@@ -550,7 +576,7 @@ function RegieNavigateur(props: ProprietesRegie) {
             >
               Lancer la campagne
             </Action>
-            <span className="px-1.5 text-sm text-encre-3">Le premier appel part 5 s après, au micro de cet ordinateur.</span>
+            <span className={AIDE}>Le premier appel part 5 s après, au micro de cet appareil.</span>
           </Actions>
         }
       />
@@ -585,7 +611,7 @@ function RegieNavigateur(props: ProprietesRegie) {
           >
             Reprendre
           </Action>
-          {prochain ? <span className="px-1.5 text-sm text-encre-3">Le prochain appel, {prochain.nom}, part 5 s après.</span> : null}
+          {prochain ? <span className={AIDE}>Le prochain appel, {prochain.nom}, part 5 s après.</span> : null}
         </Actions>
       </>
     );
@@ -606,7 +632,7 @@ function RegieNavigateur(props: ProprietesRegie) {
           </p>
           <p className="text-sm text-encre-3">Rien ne part tant que tu n’appelles pas ; ensuite, les appels s’enchaînent après un décompte de 5 s.</p>
         </div>
-        <Actions>
+        <Actions pave>
           <Action ton="fort" touche="Entrée" raccourci="Enter" libelleRaccourci="Appeler maintenant" onClick={() => appeler(prochain)}>
             Appeler maintenant
           </Action>
