@@ -71,13 +71,13 @@ export function GestesProspect({
 
   return (
     <div className="grid justify-items-start gap-2 border-t border-filet pt-4">
-      <div className="-mx-1.5 flex flex-wrap items-center gap-x-5 gap-y-1">
+      {/* 24 px au moins entre le frein réversible et le geste irréversible. */}
+      <div className="-mx-1.5 flex flex-wrap items-center gap-x-6 gap-y-1">
         <Action
           ton="discret"
           enCours={archivage}
           libelleEnCours={archive ? 'Réactivation…' : 'Archivage…'}
           disabled={archivage || enCours}
-          title={archive ? 'De nouveau proposé pour un appel et une campagne' : 'Plus proposé pour un appel ni une campagne ; réversible'}
           onClick={basculer}
         >
           {archive ? 'Réactiver' : 'Archiver'}

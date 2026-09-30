@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Suspense, use, useId, useState, useTransition } from 'react';
 import { demarrerAppelTelephone, lancerSimulation } from '@/app/appels/actions';
@@ -18,7 +17,8 @@ import { Action, LienAction, Message, PointCreux, Selection } from '@/components
 /**
  * Appeler un prospect depuis sa fiche : une version, une ligne, et une action dont la forme suit la gravité.
  * Navigateur (défaut) : le panneau de conversation au micro ; simulation : un clic ; téléphone : un vrai numéro
- * sonne, donc une confirmation qui redit le numéro, la version et les plafonds de la ligne.
+ * sonne, donc une confirmation qui redit le numéro, la version et les plafonds de la ligne. Sous 1024 px, l'action
+ * (et son échec) passe au-dessus du choix de la version et de la ligne : c'est le geste de l'écran.
  */
 
 type Ligne = 'navigateur' | 'simulation' | 'telephone';
@@ -87,7 +87,7 @@ export function NumeroMasquable({ lisible }: { lisible: string }) {
         {visible ? lisible : numeroMasque(lisible)}
         {visible ? null : <span className="sr-only"> (numéro masqué)</span>}
       </p>
-      <Action ton="discret" className="-mx-1.5" aria-pressed={visible} onClick={() => setVisible((v) => !v)}>
+      <Action className="-mx-1.5" aria-pressed={visible} onClick={() => setVisible((v) => !v)}>
         {visible ? 'Masquer le numéro' : 'Afficher le numéro'}
       </Action>
     </div>
@@ -142,9 +142,11 @@ export function PanneauAppel({
       <section aria-label="Appeler" className="grid gap-2 border-t border-filet pt-4">
         <p className="text-md text-encre-2">{texte}</p>
         {blocage?.lien ? (
-          <Link href={blocage.lien.href} className="justify-self-start text-md text-encre decoration-souligne underline-offset-4 hover:underline">
-            {blocage.lien.libelle}
-          </Link>
+          <div className="-mx-1.5 justify-self-start">
+            <LienAction ton="fort" href={blocage.lien.href}>
+              {blocage.lien.libelle}
+            </LienAction>
+          </div>
         ) : null}
       </section>
     );
@@ -188,7 +190,7 @@ export function PanneauAppel({
           {LIGNES.map((l) => (
             <label
               key={l.valeur}
-              className="inline-flex cursor-pointer items-baseline rounded-[4px] py-1 text-md text-encre-3 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline has-[:checked]:font-semibold has-[:checked]:text-encre has-[:checked]:no-underline has-[:checked]:shadow-[inset_0_-1.5px_0_var(--encre)] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus pointer-coarse:py-2.5"
+              className="inline-flex cursor-pointer items-baseline rounded-[4px] py-1 text-md text-encre-3 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline has-[:checked]:font-semibold has-[:checked]:text-encre has-[:checked]:no-underline has-[:checked]:shadow-[inset_0_-1.5px_0_var(--encre)] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus pointer-coarse:min-h-11 pointer-coarse:items-center"
             >
               <input
                 type="radio"
@@ -216,74 +218,79 @@ export function PanneauAppel({
         </p>
       </fieldset>
 
-      {ligne === 'navigateur' ? (
-        <AppelEnDirect key={versionId} entrepriseId={entrepriseId} prospectId={prospectId} prospectNom={prospectNom} versionScriptId={versionId} />
-      ) : ligne === 'simulation' ? (
-        <div className="-mx-1.5">
-          <Action
-            enCours={enCours}
-            libelleEnCours="Simulation…"
-            disabled={enCours}
-            onClick={() => lancer(() => lancerSimulation(entrepriseId, prospectId, versionId))}
-          >
-            Simuler l’appel de {prenom}
-          </Action>
-        </div>
-      ) : (
-        <div className="grid gap-3">
-          <Suspense
-            fallback={
-              <div className="-mx-1.5">
-                <Action ton="fort" disabled enCours libelleEnCours="Lecture de la ligne…">
-                  Appeler le {numeroMasque(numero)}
-                </Action>
-              </div>
-            }
-          >
-            <GesteTelephone promesse={telephoneBloque} echec={echecDuTelephone(erreur)}>
-              {(bloque) => (
+      <div className="max-lg:order-first">
+        {ligne === 'navigateur' ? (
+          <AppelEnDirect key={versionId} entrepriseId={entrepriseId} prospectId={prospectId} prospectNom={prospectNom} versionScriptId={versionId} />
+        ) : ligne === 'simulation' ? (
+          <div className="-mx-1.5">
+            <Action
+              ton="fort"
+              enCours={enCours}
+              libelleEnCours="Simulation…"
+              disabled={enCours}
+              onClick={() => lancer(() => lancerSimulation(entrepriseId, prospectId, versionId))}
+            >
+              Simuler l’appel de {prenom}
+            </Action>
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            <Suspense
+              fallback={
                 <div className="-mx-1.5">
-                  <Action
-                    ton="fort"
-                    disabled={enCours || bloque}
-                    aria-expanded={confirmation.ouverte}
-                    onClick={(e) => confirmation.ouvrir(e.currentTarget)}
-                  >
+                  <Action ton="fort" disabled enCours libelleEnCours="Lecture de la ligne…">
                     Appeler le {numeroMasque(numero)}
                   </Action>
                 </div>
-              )}
-            </GesteTelephone>
-          </Suspense>
-          <Confirmation
-            ouverte={confirmation.ouverte}
-            question={`Appeler ${prospectNom} sur le téléphone passerelle ?`}
-            libelleConfirmer="Appeler"
-            enCours={enCours}
-            libelleEnCours="Composition…"
-            onAnnuler={confirmation.fermer}
-            onConfirmer={() => lancer(() => demarrerAppelTelephone(entrepriseId, prospectId, versionId), confirmation.fermer)}
-          >
-            <p>
-              Le <span className="font-mono text-encre">{numero}</span> va sonner. Version : {libelleVersion}.
-            </p>
-            {ajoutMcp ? (
-              <p className="mt-1">
-                <AjoutClaudeCode le={ajoutMcp} />
+              }
+            >
+              <GesteTelephone promesse={telephoneBloque} echec={echecDuTelephone(erreur)}>
+                {(bloque) => (
+                  <div className="-mx-1.5">
+                    {/* Bloqué, l'appel reste du texte : le relief va au geste de secours, la reconnexion. */}
+                    <Action
+                      ton="fort"
+                      {...(bloque ? { forme: 'texte' as const } : {})}
+                      disabled={enCours || bloque}
+                      aria-expanded={confirmation.ouverte}
+                      onClick={(e) => confirmation.ouvrir(e.currentTarget)}
+                    >
+                      Appeler le {numeroMasque(numero)}
+                    </Action>
+                  </div>
+                )}
+              </GesteTelephone>
+            </Suspense>
+            <Confirmation
+              ouverte={confirmation.ouverte}
+              question={`Appeler ${prospectNom} sur le téléphone passerelle ?`}
+              libelleConfirmer="Appeler"
+              enCours={enCours}
+              libelleEnCours="Composition…"
+              onAnnuler={confirmation.fermer}
+              onConfirmer={() => lancer(() => demarrerAppelTelephone(entrepriseId, prospectId, versionId), confirmation.fermer)}
+            >
+              <p>
+                Le <span className="font-mono text-encre">{numero}</span> va sonner. Version : {libelleVersion}.
               </p>
-            ) : null}
-            <p className="mt-1">
-              <Suspense fallback="Lecture des plafonds de la ligne…">
-                <Plafonds promesse={plafonds} />
-              </Suspense>
-            </p>
-          </Confirmation>
-        </div>
-      )}
-      {erreur ? <Message ton="alerte">{erreur}</Message> : null}
+              {ajoutMcp ? (
+                <p className="mt-1">
+                  <AjoutClaudeCode le={ajoutMcp} />
+                </p>
+              ) : null}
+              <p className="mt-1">
+                <Suspense fallback="Lecture des plafonds de la ligne…">
+                  <Plafonds promesse={plafonds} />
+                </Suspense>
+              </p>
+            </Confirmation>
+          </div>
+        )}
+      </div>
+      {erreur ? <Message ton="alerte" className="max-lg:order-first">{erreur}</Message> : null}
       {/* Appel refusé faute de téléphone (liaison figée, hors de portée) : la reconnexion, à côté de l'échec. Page relue, l'échec périmé s'efface. */}
       {erreur && ligne === 'telephone' && reconnexionFiche(null, erreur) ? (
-        <div className="-mx-1.5 -mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
+        <div className="-mx-1.5 -mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 max-lg:order-first pointer-coarse:mt-0">
           <ActionReconnecter ton="fort" aide={AIDE_RECONNEXION} apres={() => setErreur(null)} />
         </div>
       ) : null}

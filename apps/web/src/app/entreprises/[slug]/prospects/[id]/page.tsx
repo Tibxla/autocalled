@@ -1,12 +1,11 @@
 import { bilanEntier } from '@autocalled/domain';
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { AjoutClaudeCode } from '@/components/ajout-claude-code';
 import { ListeAppels } from '@/components/liste-appels';
 import { PastilleAutorisation } from '@/components/pastille-autorisation';
 import { dateCourte, etatAppel, quandRappeler, rappelEnRetard } from '@/components/format-appel';
-import { Chevron, EtatVide, LienAction, Page, TitreSection } from '@/components/ui';
+import { Chevron, EtatVide, LienAction, LienTexte, Page, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { appels, consentements, issuesPersonnalisees, prospects, rendezVous, versionsScript } from '@/db/schema';
 import { ligneBloquee } from '@/app/_accueil/situation';
@@ -183,13 +182,16 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
     };
   }
 
+  // Sous 1024 px, une seule colonne dans l'ordre du geste : l'identité, l'appel, le numéro, l'historique, puis les
+  // gestes qui retirent (Révoquer, Archiver, Effacer). Dès 1024 px, l'encart de droite garde le numéro au-dessus de
+  // l'appel et les gestes dessous. Sous 640 px, Précédent et Suivant passent en bas de la fiche.
   return (
     <Page largeur="lecture">
-      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 pb-8">
-        <div className="grid gap-1">
-          <Link href={base} className="justify-self-start text-sm text-encre-3 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline">
+      <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-6">
+        <div className="grid gap-1 pb-8 max-sm:pb-6">
+          <LienTexte isole href={base} className="justify-self-start text-sm text-encre-3 hover:text-encre-2">
             Prospects
-          </Link>
+          </LienTexte>
           <h2 className="text-lg font-semibold tracking-[-0.01em]">{prospect.nom}</h2>
           {prospect.role || prospect.societe ? <p className="text-md text-encre-2">{[prospect.role, prospect.societe].filter(Boolean).join(', ')}</p> : null}
           {prospect.archiveLe ? (
@@ -200,10 +202,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
           ) : null}
           {dernier && etatDernier ? (
             <p className="flex flex-wrap gap-x-4 gap-y-0.5 pt-1 text-sm text-encre-3">
-              <Link href={`/appels/${dernier.id}?depuis=${encodeURIComponent(`${base}/${prospect.id}`)}`} className="decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline">
-                Dernier appel le <span className="font-mono">{dateCourte(dernier.debutLe).split(' ')[0]}</span> :{' '}
-                <span className={etatDernier.cle === 'en-cours' && dernier.id === vivantId ? 'text-antenne' : undefined}>{etatDernier.libelle}</span>
-              </Link>
+              {/* Le rappel d'abord : c'est ce qui reste à faire. */}
               {rappel ? (
                 <span className="text-encre">
                   {rappel.rappelLe ? (
@@ -217,129 +216,143 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
                   {rappel.texte ? <span className="text-encre-3"> · « {rappel.texte} »</span> : rappel.rappelLe ? null : ' : moment non précisé'}
                 </span>
               ) : null}
+              <LienTexte href={`/appels/${dernier.id}?depuis=${encodeURIComponent(`${base}/${prospect.id}`)}`} className="hover:text-encre-2 sm:-order-1">
+                Dernier appel le <span className="font-mono">{dateCourte(dernier.debutLe).split(' ')[0]}</span> :{' '}
+                <span className={etatDernier.cle === 'en-cours' && dernier.id === vivantId ? 'text-antenne' : undefined}>{etatDernier.libelle}</span>
+              </LienTexte>
             </p>
           ) : (
             <p className="pt-1 text-sm text-encre-3">Jamais appelé.</p>
           )}
         </div>
-        <nav aria-label="Autres prospects" className="-mx-1.5 flex gap-x-3">
-          {precedent ? (
-            <LienAction ton="discret" touche="K" raccourci="k" libelleRaccourci="Prospect précédent" href={`${base}/${precedent.id}`}>
-              Précédent
-            </LienAction>
-          ) : null}
-          {suivant ? (
-            <LienAction ton="discret" touche="J" raccourci="j" libelleRaccourci="Prospect suivant" href={`${base}/${suivant.id}`}>
-              Suivant
-            </LienAction>
-          ) : null}
-        </nav>
-      </div>
+        {precedent || suivant ? (
+          <nav aria-label="Autres prospects" className="self-start max-sm:order-last max-sm:mt-10 max-sm:border-t max-sm:border-filet max-sm:pt-2">
+            <div className="-mx-1.5 flex gap-x-3 max-sm:justify-between">
+              {precedent ? (
+                <LienAction ton="discret" touche="K" raccourci="k" libelleRaccourci="Prospect précédent" href={`${base}/${precedent.id}`}>
+                  Précédent
+                </LienAction>
+              ) : (
+                <span className="sm:hidden" />
+              )}
+              {suivant ? (
+                <LienAction ton="discret" touche="J" raccourci="j" libelleRaccourci="Prospect suivant" href={`${base}/${suivant.id}`}>
+                  Suivant
+                </LienAction>
+              ) : null}
+            </div>
+          </nav>
+        ) : null}
 
-      <div className="grid grid-cols-1 gap-12 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <div className="grid min-w-0 grid-cols-1 content-start gap-10">
-          <section aria-labelledby="titre-sait" className="grid gap-4">
-            <TitreSection id="titre-sait">Ce que {nomAssistante} sait</TitreSection>
-            <p className="max-w-[68ch] text-base whitespace-pre-line">{prospect.contexte || 'Pas de contexte dans la fiche.'}</p>
-            <p className="text-sm text-encre-3">
-              Fiche <span className="font-mono">{prospect.id}.md</span>, mise à jour le{' '}
-              <span className="font-mono">{dateCourte(prospect.majLe)}</span>.
-            </p>
-            {preparation?.ok ? (
-              <details className="group max-w-[68ch]">
-                <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-2 text-md text-encre-2 hover:text-encre pointer-coarse:h-11 [&::-webkit-details-marker]:hidden">
-                  <Chevron className="stroke-encre-3 group-open:rotate-90" />
-                  <span className="decoration-souligne underline-offset-4 group-hover:underline">Ce que {nomAssistante} saura en appelant</span>
-                </summary>
-                <dl className="grid gap-3 rounded-md bg-surface px-3.5 py-3 text-sm">
-                  <div className="grid gap-0.5">
-                    <dt className="font-medium text-encre">Appels précédents</dt>
-                    <dd className="whitespace-pre-line text-encre-2">{preparation.variables.historique_appels}</dd>
-                  </div>
-                  <div className="grid gap-0.5">
-                    <dt className="font-medium text-encre">Rendez-vous à proposer</dt>
-                    <dd className="text-encre-2">{preparation.variables.rendez_vous}</dd>
-                  </div>
-                  <div className="grid gap-0.5">
-                    <dt className="font-medium text-encre">E-mail pour l’invitation</dt>
-                    <dd className="font-mono text-encre-2">{preparation.variables.prospect_email}</dd>
-                  </div>
-                </dl>
-              </details>
-            ) : null}
-          </section>
+        <div className="grid grid-cols-1 gap-12 sm:col-span-2 lg:grid-cols-[minmax(0,1fr)_22rem] lg:grid-rows-[auto_1fr] lg:gap-y-6">
+          <div className="grid min-w-0 grid-cols-1 content-start gap-10 max-lg:order-2 lg:row-span-2">
+            <section aria-labelledby="titre-sait" className="grid gap-4">
+              <TitreSection id="titre-sait">Ce que {nomAssistante} sait</TitreSection>
+              <p className="max-w-[68ch] text-base whitespace-pre-line">{prospect.contexte || 'Pas de contexte dans la fiche.'}</p>
+              <p className="text-sm text-encre-3">
+                Fiche <span className="font-mono">{prospect.id}.md</span>, mise à jour le{' '}
+                <span className="font-mono">{dateCourte(prospect.majLe)}</span>.
+              </p>
+              {preparation?.ok ? (
+                <details className="group max-w-[68ch]">
+                  <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-2 text-md text-encre-2 hover:text-encre pointer-coarse:h-11 [&::-webkit-details-marker]:hidden">
+                    <Chevron className="stroke-encre-3 group-open:rotate-90" />
+                    <span className="decoration-souligne underline-offset-4 group-hover:underline pointer-coarse:underline">Ce que {nomAssistante} saura en appelant</span>
+                  </summary>
+                  <dl className="grid gap-3 rounded-md bg-surface px-3.5 py-3 text-sm">
+                    <div className="grid gap-0.5">
+                      <dt className="font-medium text-encre">Appels précédents</dt>
+                      <dd className="whitespace-pre-line text-encre-2">{preparation.variables.historique_appels}</dd>
+                    </div>
+                    <div className="grid gap-0.5">
+                      <dt className="font-medium text-encre">Rendez-vous à proposer</dt>
+                      <dd className="text-encre-2">{preparation.variables.rendez_vous}</dd>
+                    </div>
+                    <div className="grid gap-0.5">
+                      <dt className="font-medium text-encre">E-mail pour l’invitation</dt>
+                      <dd className="font-mono break-all text-encre-2">{preparation.variables.prospect_email}</dd>
+                    </div>
+                  </dl>
+                </details>
+              ) : null}
+            </section>
 
-          <section aria-labelledby="titre-appels" className="grid min-w-0 grid-cols-1">
-            <TitreSection id="titre-appels" compte={historique.length}>
-              Appels
-            </TitreSection>
-            {historique.length === 0 ? (
-              <EtatVide titre="Aucun appel pour l’instant.">
-                Chaque appel s’affichera ici avec son issue et son bilan ; {nomAssistante} s’en souviendra au prochain appel.
-              </EtatVide>
-            ) : (
-              <ListeAppels
-                depuis={`${base}/${prospect.id}`}
-                vivantId={vivantId}
-                appels={historique.map((a) => {
-                  const cleIssue = a.issue ?? a.bilan?.issue ?? null;
-                  return {
-                    ...a,
-                    resume: bilanEntier(a.bilan)?.resume ?? null,
-                    nombreEtapes: nombreEtapes.get(a.versionScriptId) ?? null,
-                    rendezVous: avecRendezVous.has(a.id),
-                    libellePerso: cleIssue ? (libellePerso.get(cleIssue) ?? null) : null,
-                  };
-                })}
-              />
-            )}
-          </section>
-        </div>
-
-        <aside aria-label="Numéro et appel" className="order-first grid content-start gap-6 lg:order-none">
-          <div className="grid gap-2.5 border-t border-filet pt-4">
-            <NumeroMasquable lisible={lisible} />
-            {prospect.email ? <p className="font-mono text-sm break-all text-encre-2">{prospect.email}</p> : null}
-            <PastilleAutorisation autorisation={autorisation} />
-            {ajoutMcp ? (
-              <p className="text-sm text-encre-3">
-                <AjoutClaudeCode le={ajoutMcp} />
-              </p>
-            ) : null}
-            {revocation ? (
-              <p className="text-sm text-encre-3">
-                Révoqué le <span className="font-mono">{JOUR_MOIS.format(revocation)}</span>.
-              </p>
-            ) : null}
-            {partages > 1 ? (
-              <p className="text-sm text-encre-3">
-                Numéro partagé par <span className="font-mono">{partages}</span> prospects.
-              </p>
-            ) : null}
+            <section aria-labelledby="titre-appels" className="grid min-w-0 grid-cols-1">
+              <TitreSection id="titre-appels" compte={historique.length}>
+                Appels
+              </TitreSection>
+              {historique.length === 0 ? (
+                <EtatVide titre="Aucun appel pour l’instant.">
+                  Chaque appel s’affichera ici avec son issue et son bilan ; {nomAssistante} s’en souviendra au prochain appel.
+                </EtatVide>
+              ) : (
+                <ListeAppels
+                  depuis={`${base}/${prospect.id}`}
+                  vivantId={vivantId}
+                  appels={historique.map((a) => {
+                    const cleIssue = a.issue ?? a.bilan?.issue ?? null;
+                    return {
+                      ...a,
+                      resume: bilanEntier(a.bilan)?.resume ?? null,
+                      nombreEtapes: nombreEtapes.get(a.versionScriptId) ?? null,
+                      rendezVous: avecRendezVous.has(a.id),
+                      libellePerso: cleIssue ? (libellePerso.get(cleIssue) ?? null) : null,
+                    };
+                  })}
+                />
+              )}
+            </section>
           </div>
-          <PanneauAppel
-            entrepriseId={entreprise.id}
-            prospectId={prospect.id}
-            prospectNom={prospect.nom}
-            versions={versions.map((v) => ({ id: v.id, libelle: v.libelle }))}
-            autorise={autorise}
-            numero={lisible}
-            ajoutMcp={ajoutMcp}
-            blocage={blocage}
-            plafonds={lirePlafonds()}
-            telephoneBloque={lireBlocageTelephone(lectureLigne)}
-          />
-          <BoutonRevoquer numero={prospect.telephone} lisible={lisible} partages={partages} autorise={autorise} />
-          {inventaire ? (
-            <GestesProspect
+
+          <aside aria-label="Numéro et appel" className="grid content-start gap-6 max-lg:order-1 lg:col-start-2 lg:row-start-1">
+            <div className="grid gap-2.5 border-t border-filet pt-4 max-lg:order-last">
+              <NumeroMasquable lisible={lisible} />
+              {prospect.email ? <p className="font-mono text-sm break-all text-encre-2">{prospect.email}</p> : null}
+              <PastilleAutorisation autorisation={autorisation} />
+              {ajoutMcp ? (
+                <p className="text-sm text-encre-3">
+                  <AjoutClaudeCode le={ajoutMcp} />
+                </p>
+              ) : null}
+              {revocation ? (
+                <p className="text-sm text-encre-3">
+                  Révoqué le <span className="font-mono">{JOUR_MOIS.format(revocation)}</span>.
+                </p>
+              ) : null}
+              {partages > 1 ? (
+                <p className="text-sm text-encre-3">
+                  Numéro partagé par <span className="font-mono">{partages}</span> prospects.
+                </p>
+              ) : null}
+            </div>
+            <PanneauAppel
               entrepriseId={entreprise.id}
               prospectId={prospect.id}
-              nom={prospect.nom}
-              archive={Boolean(prospect.archiveLe)}
-              effacement={{ ...phrasesEffacement(inventaire, undefined, { numeroInsecable: true }), obstacle: inventaire.obstacle }}
+              prospectNom={prospect.nom}
+              versions={versions.map((v) => ({ id: v.id, libelle: v.libelle }))}
+              autorise={autorise}
+              numero={lisible}
+              ajoutMcp={ajoutMcp}
+              blocage={blocage}
+              plafonds={lirePlafonds()}
+              telephoneBloque={lireBlocageTelephone(lectureLigne)}
             />
-          ) : null}
-        </aside>
+          </aside>
+
+          {/* Les gestes qui retirent : en dernier sous 1024 px, sous l'encart dès 1024 px. */}
+          <div className="grid content-start gap-6 max-lg:order-3 lg:col-start-2 lg:row-start-2">
+            <BoutonRevoquer numero={prospect.telephone} lisible={lisible} partages={partages} autorise={autorise} />
+            {inventaire ? (
+              <GestesProspect
+                entrepriseId={entreprise.id}
+                prospectId={prospect.id}
+                nom={prospect.nom}
+                archive={Boolean(prospect.archiveLe)}
+                effacement={{ ...phrasesEffacement(inventaire, undefined, { numeroInsecable: true }), obstacle: inventaire.obstacle }}
+              />
+            ) : null}
+          </div>
+        </div>
       </div>
     </Page>
   );
