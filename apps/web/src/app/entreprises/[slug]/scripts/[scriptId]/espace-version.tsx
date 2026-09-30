@@ -9,7 +9,8 @@ import { EditeurVersion } from './editeur-version';
 /**
  * La version affichée en lecture (ou sa comparaison, rendue par le serveur en `children`) et le passage à
  * l'éditeur : « V Nouvelle version » sur la dernière, « V Repartir de la v2 » sur une ancienne. V ne fait
- * qu'ouvrir l'éditeur ; seul « Enregistrer comme v4 » écrit.
+ * qu'ouvrir l'éditeur ; seul « Enregistrer comme v4 » écrit. L'action vient juste sous le titre, avant la bande
+ * des versions (`bande`), qui reste affichée pendant l'édition.
  */
 export function EspaceVersion({
   entrepriseId,
@@ -20,6 +21,7 @@ export function EspaceVersion({
   numeroDerniere,
   lienComparer,
   lienFermerComparaison,
+  bande,
   children,
 }: {
   entrepriseId: string;
@@ -30,6 +32,8 @@ export function EspaceVersion({
   numeroDerniere: number;
   lienComparer: string | null;
   lienFermerComparaison: string | null;
+  /** La bande des versions (et ce que gardent les campagnes), sous l'action. */
+  bande: React.ReactNode;
   children: React.ReactNode;
 }) {
   const router = useRouter();
@@ -62,25 +66,28 @@ export function EspaceVersion({
   }, [prochain, derniere, router, base]);
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-6">
       {/* Hors des deux branches : la région de statut existe déjà quand l'annonce arrive. */}
-      <p role="status" className="text-sm text-encre-2 empty:-mb-4">
+      <p role="status" className="text-sm text-encre-2 empty:absolute">
         {annonce}
       </p>
       {edition ? (
-        <EditeurVersion
-          entrepriseId={entrepriseId}
-          scriptId={scriptId}
-          etapes={etapes}
-          origine={numeroAffiche}
-          prochainNumero={prochain}
-          onFermer={fermer}
-          onEnregistree={enregistree}
-          onRecharger={recharger}
-        />
+        <>
+          {bande}
+          <EditeurVersion
+            entrepriseId={entrepriseId}
+            scriptId={scriptId}
+            etapes={etapes}
+            origine={numeroAffiche}
+            prochainNumero={prochain}
+            onFermer={fermer}
+            onEnregistree={enregistree}
+            onRecharger={recharger}
+          />
+        </>
       ) : (
         <>
-          <div className="-mx-1.5 flex flex-wrap items-center gap-x-5 gap-y-1">
+          <div className="-mx-1.5 flex flex-wrap items-center gap-x-5 gap-y-1 pointer-coarse:mx-0 pointer-coarse:gap-y-2">
             <Action
               ref={bouton}
               ton="fort"
@@ -105,6 +112,7 @@ export function EspaceVersion({
               </LienAction>
             ) : null}
           </div>
+          {bande}
           {children}
         </>
       )}

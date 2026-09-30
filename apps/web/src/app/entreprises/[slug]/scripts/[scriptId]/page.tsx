@@ -3,7 +3,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { FUSEAU } from '@/components/format-appel';
-import { Page } from '@/components/ui';
+import { RangeeDefilante } from '@/components/rangee-defilante';
+import { LienTexte, Page } from '@/components/ui';
 import { db } from '@/db';
 import { campagnes, prospects, scripts, versionsScript, type Etape } from '@/db/schema';
 import { analyseEntreprise } from '@/lib/lecture';
@@ -156,67 +157,74 @@ export default async function PageScript({
     ).values(),
   ].sort((a, b) => (a.statut === b.statut ? b.numero - a.numero : a.statut === 'en-cours' ? -1 : 1));
 
+  // La bande des versions et ce que gardent les campagnes : rendues avec l'éditeur comme avec la lecture.
+  const bande = (
+    <>
+      <nav aria-label="Versions du script" className="border-b border-filet pb-2">
+        <RangeeDefilante role="list" className="gap-x-6 sm:flex-wrap sm:gap-y-2 sm:overflow-visible sm:fondu-aucun">
+          {versions.map((v) => {
+            const c = chiffres.get(v.id);
+            const actuelle = v.id === affichee.id;
+            return (
+              <div role="listitem" key={v.id} className="shrink-0">
+                <Link
+                  href={lienVersion(v.numero)}
+                  aria-current={actuelle ? 'page' : undefined}
+                  className={`group grid gap-0.5 rounded-[4px] py-1 ${actuelle ? '' : 'hover:text-encre-2'}`}
+                >
+                  <span
+                    className={`justify-self-start font-mono text-md ${
+                      actuelle
+                        ? 'font-semibold text-encre shadow-[inset_0_-1.5px_0_var(--encre)]'
+                        : 'text-encre-3 decoration-souligne underline-offset-4 group-hover:underline pointer-coarse:underline'
+                    }`}
+                  >
+                    v{v.numero}
+                  </span>
+                  <span className="grid text-xs text-encre-3 max-sm:text-sm">
+                    <span>
+                      <span className="font-mono">{c?.conversations ?? 0}</span> {(c?.conversations ?? 0) > 1 ? 'appels aboutis' : 'appel abouti'} ·{' '}
+                      <span className="font-mono">{c?.rendezVous ?? 0}</span> rendez-vous
+                    </span>
+                    <time dateTime={v.creeLe.toISOString()} className="font-mono">
+                      {JOUR_MOIS.format(v.creeLe)}
+                    </time>
+                  </span>
+                </Link>
+              </div>
+            );
+          })}
+        </RangeeDefilante>
+      </nav>
+
+      {gardes.length > 0 ? (
+        <div className="grid gap-0.5 text-sm text-encre-2">
+          {gardes.map((g) => (
+            <p key={`${g.statut}-${g.numero}`}>
+              <span className="text-encre">{g.statut === 'en-cours' ? 'La campagne en cours' : 'La campagne suspendue'}</span>{' '}
+              garde la <span className="font-mono">v{g.numero}</span> : une nouvelle version ne la change pas.
+            </p>
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
+
+  // « Nouvelle version » juste sous le titre, avant la bande ; Renommer et Archiver en bas de la page.
   return (
     <Page largeur="lecture">
       <div className="grid max-w-[56rem] grid-cols-[minmax(0,1fr)] gap-6">
         <div className="grid gap-1">
-          <Link
-            href={`/entreprises/${slug}/scripts`}
-            className="justify-self-start text-sm text-encre-3 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline"
-          >
+          <LienTexte isole href={`/entreprises/${slug}/scripts`} className="justify-self-start text-sm text-encre-3 hover:text-encre-2">
             Scripts
-          </Link>
+          </LienTexte>
           <h2 className="text-lg font-semibold text-balance">
             {script.nom} <span className="ml-1 font-mono text-md font-normal text-encre-3">v{affichee.numero}</span>
           </h2>
-          <ActionsScript entrepriseId={entreprise.id} scriptId={script.id} nom={script.nom} archive={script.archive} usage={usage} />
+          {script.archive ? (
+            <p className="text-sm text-encre-2">Script archivé : il n’est plus proposé pour lancer un appel ou une campagne. Ses versions et ses appels restent.</p>
+          ) : null}
         </div>
-
-        <nav aria-label="Versions du script" className="border-b border-filet pb-2">
-          <ol className="flex flex-wrap gap-x-6 gap-y-2">
-            {versions.map((v) => {
-              const c = chiffres.get(v.id);
-              const actuelle = v.id === affichee.id;
-              return (
-                <li key={v.id}>
-                  <Link
-                    href={lienVersion(v.numero)}
-                    aria-current={actuelle ? 'page' : undefined}
-                    className={`group grid gap-0.5 rounded-[4px] py-1 ${actuelle ? '' : 'hover:text-encre-2'}`}
-                  >
-                    <span
-                      className={`justify-self-start font-mono text-md ${
-                        actuelle ? 'font-semibold text-encre shadow-[inset_0_-1.5px_0_var(--encre)]' : 'text-encre-3 decoration-souligne underline-offset-4 group-hover:underline'
-                      }`}
-                    >
-                      v{v.numero}
-                    </span>
-                    <span className="grid text-xs text-encre-3">
-                      <span>
-                        <span className="font-mono">{c?.conversations ?? 0}</span> {(c?.conversations ?? 0) > 1 ? 'appels aboutis' : 'appel abouti'} ·{' '}
-                        <span className="font-mono">{c?.rendezVous ?? 0}</span> rendez-vous
-                      </span>
-                      <time dateTime={v.creeLe.toISOString()} className="font-mono">
-                        {JOUR_MOIS.format(v.creeLe)}
-                      </time>
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ol>
-        </nav>
-
-        {gardes.length > 0 ? (
-          <div className="grid gap-0.5 text-sm text-encre-2">
-            {gardes.map((g) => (
-              <p key={`${g.statut}-${g.numero}`}>
-                <span className="text-encre">{g.statut === 'en-cours' ? 'La campagne en cours' : 'La campagne suspendue'}</span>{' '}
-                garde la <span className="font-mono">v{g.numero}</span> : une nouvelle version ne la change pas.
-              </p>
-            ))}
-          </div>
-        ) : null}
 
         <EspaceVersion
           entrepriseId={entreprise.id}
@@ -227,6 +235,7 @@ export default async function PageScript({
           numeroDerniere={derniere.numero}
           lienComparer={affichee.id !== derniere.id && !cible ? `${base}?version=${affichee.numero}&comparer=${derniere.numero}` : null}
           lienFermerComparaison={cible ? lienVersion(affichee.numero) : null}
+          bande={bande}
         >
           {cible ? (
             <Comparaison
@@ -244,6 +253,10 @@ export default async function PageScript({
           versionFixe={affichee.id}
           numeroVersion={affichee.numero}
         />
+
+        <section aria-label="Le script" className="border-t border-filet pt-4">
+          <ActionsScript entrepriseId={entreprise.id} scriptId={script.id} nom={script.nom} archive={script.archive} usage={usage} />
+        </section>
       </div>
     </Page>
   );
