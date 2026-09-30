@@ -11,7 +11,8 @@ import { RangeeDefilante } from './rangee-defilante';
  */
 
 export { Touche } from './touche';
-export { Action, Bouton, classesAction, LienAction, LienBouton, type FormeAction, type TonAction } from './action';
+export { Action, Bouton, LienAction, LienBouton } from './action';
+export { classesAction, type FormeAction, type TonAction } from './classes-action';
 export { LIEN_TEXTE, LienTexte } from './lien-texte';
 export { Saisie, Selection, ZoneTexte } from './champs';
 export { Recherche } from './recherche';
