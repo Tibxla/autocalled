@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 import { heure, jourCourt } from '@/components/format-appel';
 import { EnTetePage, EtatVide, LIEN_TEXTE, LigneDefinition, Message, Page, TitreSection } from '@/components/ui';
-import { derniereVersionAssistante } from '@/lib/assistante';
 import { ceQueVoitLAssistante } from '@/lib/ce-que-voit-l-assistante';
+import { lireEditionAssistante } from '@/lib/edition-assistante';
 import { lireFichiersAssistante } from '@/lib/fichiers-assistante';
 import { assistantePourLaPage } from '@/lib/pages';
 import {
@@ -11,6 +11,7 @@ import {
   connaissancesDe,
   GROUPES_VARIABLES,
   LIBELLES_ETAT,
+  ORIGINE_VERSION,
   outilsDe,
   resoudre,
   resumeConfiguration,
@@ -18,17 +19,14 @@ import {
 } from '@/lib/vue-assistante';
 import { BlocRepliable, LienTelechargement, TexteAvecVariables, TexteResolu } from './blocs';
 import { ChoixApercu } from './choix-apercu';
+import { FormulaireIdentite } from './formulaire-identite';
+import { FormulaireReglages } from './formulaire-reglages';
+import { Historique } from './historique';
+import { Poussee } from './poussee';
 
 export const metadata: Metadata = { title: 'Assistante' };
 
 const SECTION = 'grid min-w-0 scroll-mt-[calc(var(--hauteur-barre)+16px)] gap-5';
-
-/** D'où vient la dernière configuration ElevenLabs consignée (versions_assistante), comme dans Réglages. */
-const ORIGINE_CONFIGURATION: Record<string, string> = {
-  mcp: 'poussée par Claude Code',
-  cli: 'poussée en ligne de commande',
-  distante: 'rapatriée du tableau de bord ElevenLabs',
-};
 
 /** Pourquoi le numéro du prospect choisi ne serait pas composé (lib/apercu.ts). */
 const REFUS: Record<string, string> = {
@@ -41,20 +39,24 @@ const REFUS: Record<string, string> = {
 
 const NOMBRE = new Intl.NumberFormat('fr-FR');
 
+/** L'ancre de chaque section où un élément se modifie (CE_QUI_EST_MODIFIABLE). */
+const SECTIONS: Record<string, string> = { Identité: 'identite', Réglages: 'reglages', Poussée: 'poussee', Historique: 'historique' };
+
 type Parametres = { entreprise?: string; version?: string; prospect?: string };
 
 /**
- * L'assistante telle qu'elle est configurée, en lecture seule : son identité (base), son prompt et sa configuration
- * ElevenLabs (fichiers de agent/), ses outils, ce qu'elle reçoit pour un appel choisi, et par où chaque élément se
- * modifie. Tout se télécharge par les routes de ./telecharger ; rien ne s'écrit ici (les réglages passent par
- * Claude Code et le serveur MCP) et rien ne joint ElevenLabs.
+ * L'assistante telle qu'elle est configurée, et où elle se règle : son identité (base), son prompt et sa configuration
+ * ElevenLabs (fichiers de agent/), ses outils, ce qu'elle reçoit pour un appel choisi. Décision de l'opérateur du
+ * 30/09/2026 : la page modifie tout ce que modifient les outils MCP de Claude Code, par les mêmes fonctions
+ * (lib/edition-assistante.ts, actions de ./actions.ts), sauf le prompt, qui reste en lecture et se modifie par Claude
+ * Code. L'affichage ne joint pas ElevenLabs : seules la préparation d'une poussée, la poussée et le rapatriement le font.
  */
 export default async function PageAssistante({ searchParams }: { searchParams: Promise<Parametres> }) {
   const choix = await searchParams;
-  const [assistante, fichiers, consignee, vue] = await Promise.all([
+  const [assistante, fichiers, edition, vue] = await Promise.all([
     assistantePourLaPage(),
     lireFichiersAssistante(),
-    derniereVersionAssistante(),
+    lireEditionAssistante(),
     ceQueVoitLAssistante({ entreprise: choix.entreprise, version: choix.version, prospect: choix.prospect }),
   ]);
   const { nom } = assistante;
@@ -63,6 +65,7 @@ export default async function PageAssistante({ searchParams }: { searchParams: P
   const connaissances = connaissancesDe(fichiers.configuration);
   const telechargeable = configurationATelecharger(fichiers.configurationBrute, fichiers.configuration);
   const { synchro } = fichiers;
+  const consignee = edition.historique[0] ?? null;
   const apercu = vue.apercu;
   const lienVue = new URLSearchParams({
     ...(vue.entreprise ? { entreprise: vue.entreprise.slug } : {}),
@@ -74,33 +77,39 @@ export default async function PageAssistante({ searchParams }: { searchParams: P
     <Page largeur="lecture">
       <EnTetePage
         titre="Assistante"
-        sousTitre={`Ce que ${nom} dit, reçoit et sait faire à chaque appel, à télécharger. Rien ne se modifie ici : les réglages passent par Claude Code.`}
+        sousTitre={`Ce que ${nom} dit, reçoit et sait faire à chaque appel, et où cela se règle. Tout se modifie ici, sauf le prompt, qui passe par Claude Code.`}
       />
       <div className="grid max-w-[56rem] min-w-0 gap-12">
         <nav aria-label="Sections de la page" className="-mt-2 flex flex-wrap gap-x-[22px] gap-y-1 text-md pointer-coarse:gap-y-0">
           <Ancre href="#identite">Identité</Ancre>
           <Ancre href="#prompt">Prompt</Ancre>
+          <Ancre href="#reglages">Réglages</Ancre>
+          <Ancre href="#poussee">Poussée</Ancre>
+          <Ancre href="#historique" compte={edition.historique.length}>
+            Historique
+          </Ancre>
           <Ancre href="#configuration">Configuration</Ancre>
           <Ancre href="#outils" compte={outils.length}>
             Outils
           </Ancre>
           <Ancre href="#vue">Ce qu’elle voit</Ancre>
           <Ancre href="#connaissances">Connaissances</Ancre>
-          <Ancre href="#modifier">Modifier</Ancre>
+          <Ancre href="#modifier">Par où</Ancre>
         </nav>
 
         <section id="identite" aria-labelledby="titre-identite" className={SECTION}>
           <TitreSection id="titre-identite">Identité</TitreSection>
           <p className="max-w-[62ch] text-sm text-encre-2">
-            Enregistrés en base, envoyés avec chaque appel : ils valent dès l’appel suivant, sans poussée vers ElevenLabs.
+            Enregistrés en base, envoyés avec chaque appel : ils valent dès l’appel suivant, sans poussée vers ElevenLabs. L’enregistrement
+            demande ta confirmation, comme dans Claude Code.
           </p>
+          <FormulaireIdentite nom={nom} premierMessage={assistante.premierMessage} connu={assistante.modifieLe?.toISOString() ?? null} />
           <dl className="border-t border-filet">
-            <LigneDefinition intitule="Nom">{nom}</LigneDefinition>
             <LigneDefinition intitule="Premier message">
               <span className="break-words">
                 « <TexteAvecVariables texte={assistante.premierMessage} /> »
               </span>
-              <span className="block text-sm text-encre-3">Dit quand le prospect se tait au décroché, variables remplacées.</span>
+              <span className="block text-sm text-encre-3">Tel qu’enregistré, variables en évidence ; le pont les remplace à chaque appel.</span>
             </LigneDefinition>
             <LigneDefinition intitule="Dernière modification">
               {assistante.modifieLe ? (
@@ -131,6 +140,10 @@ export default async function PageAssistante({ searchParams }: { searchParams: P
             <span className="font-mono">{variablesDuPrompt.length}</span> variables :{' '}
             <span className="font-mono break-words text-encre-2">{variablesDuPrompt.join(' · ')}</span>
           </p>
+          <Message ton="neutre">
+            Le prompt se modifie par Claude Code (<span className="font-mono">modifier_prompt_assistante</span>), puis se pousse ici ou par Claude
+            Code.
+          </Message>
           <div className="grid justify-items-start gap-2">
             <LienTelechargement href="/assistante/telecharger/prompt">Télécharger le prompt (.md)</LienTelechargement>
             <BlocRepliable resume={`Lire le prompt (${NOMBRE.format(fichiers.prompt.length)} caractères)`}>
@@ -139,10 +152,20 @@ export default async function PageAssistante({ searchParams }: { searchParams: P
           </div>
         </section>
 
-        <section id="configuration" aria-labelledby="titre-configuration" className={SECTION}>
-          <TitreSection id="titre-configuration">Configuration ElevenLabs</TitreSection>
+        <section id="reglages" aria-labelledby="titre-reglages" className={SECTION}>
+          <TitreSection id="titre-reglages">Réglages</TitreSection>
           <p className="max-w-[62ch] text-sm text-encre-2">
-            <span className="font-mono">agent/mina.config.json</span> : les champs que le dépôt gère. Le reste de l’agent reste chez ElevenLabs.
+            La liste fermée des réglages ElevenLabs, écrite dans <span className="font-mono">agent/mina.config.json</span> avec les mêmes bornes
+            que Claude Code. Rien ne change pour les appels avant la poussée ; les fichiers modifiés se relisent et se commitent.
+          </p>
+          <FormulaireReglages reglages={edition.reglages} empreinte={edition.empreinteLocale} />
+        </section>
+
+        <section id="poussee" aria-labelledby="titre-poussee" className={SECTION}>
+          <TitreSection id="titre-poussee">Poussée vers ElevenLabs</TitreSection>
+          <p className="max-w-[62ch] text-sm text-encre-2">
+            La poussée envoie le prompt et les réglages de agent/ : ils servent dès le prochain appel. Tu confirmes sur la différence rédigée par
+            le serveur ; rien ne part pendant un appel.
           </p>
           <dl className="border-t border-filet">
             <LigneDefinition intitule="Fichiers de agent/">
@@ -172,7 +195,7 @@ export default async function PageAssistante({ searchParams }: { searchParams: P
                 <>
                   <span className="font-mono text-sm break-all">{consignee.versionId}</span>
                   <span className="block text-sm text-encre-3">
-                    {ORIGINE_CONFIGURATION[consignee.origine] ?? consignee.origine}, le{' '}
+                    {ORIGINE_VERSION[consignee.origine] ?? consignee.origine}, le{' '}
                     <time dateTime={consignee.consigneLe.toISOString()} className="font-mono">
                       {jourCourt(consignee.consigneLe)} {heure(consignee.consigneLe)}
                     </time>
@@ -184,13 +207,45 @@ export default async function PageAssistante({ searchParams }: { searchParams: P
               )}
             </LigneDefinition>
             <LigneDefinition intitule="Version distante">
-              <span className="text-encre-2">non relue ici</span>
+              <span className="text-encre-2">lue au moment de pousser</span>
               <span className="block text-sm text-encre-3">
-                Cette page ne joint pas ElevenLabs : <span className="font-mono">pnpm agent status</span> compare la version distante au verrou.
+                L’affichage ne joint pas ElevenLabs : « Pousser vers ElevenLabs » la lit et montre la différence avant toute confirmation.
               </span>
             </LigneDefinition>
           </dl>
 
+          <Poussee />
+        </section>
+
+        <section id="historique" aria-labelledby="titre-historique" className={SECTION}>
+          <TitreSection id="titre-historique" compte={edition.historique.length}>
+            Historique
+          </TitreSection>
+          <p className="max-w-[62ch] text-sm text-encre-2">
+            Les configurations consignées à chaque poussée ou rapatriement, avec les appels réels passés avec chacune. Restaurer réécrit agent/
+            depuis l’une d’elles ; elle ne sert aux appels qu’après une poussée.
+          </p>
+          {edition.historique.length === 0 ? (
+            <EtatVide titre="Aucune version consignée">La première le sera à la première poussée ou au premier rapatriement.</EtatVide>
+          ) : (
+            <Historique
+              versions={edition.historique.map((v) => ({
+                versionId: v.versionId,
+                consigneLe: v.consigneLe.toISOString(),
+                origine: v.origine,
+                appels: v.appels,
+                estLeVerrou: v.estLeVerrou,
+              }))}
+            />
+          )}
+        </section>
+
+        <section id="configuration" aria-labelledby="titre-configuration" className={SECTION}>
+          <TitreSection id="titre-configuration">Configuration ElevenLabs</TitreSection>
+          <p className="max-w-[62ch] text-sm text-encre-2">
+            <span className="font-mono">agent/mina.config.json</span> en lecture : les champs que le dépôt gère, réglables ou non. Le reste de
+            l’agent reste chez ElevenLabs.
+          </p>
           {resumeConfiguration(fichiers.configuration).map((groupe) => (
             <div key={groupe.titre} className="grid min-w-0 gap-2">
               <h3 className="text-md font-semibold">{groupe.titre}</h3>
@@ -378,8 +433,8 @@ export default async function PageAssistante({ searchParams }: { searchParams: P
         <section id="modifier" aria-labelledby="titre-modifier" className={SECTION}>
           <TitreSection id="titre-modifier">Ce qui se modifie, et par où</TitreSection>
           <p className="max-w-[62ch] text-sm text-encre-2">
-            Rien ne se modifie dans cette page. Demande-le à Claude Code : il passe par les outils du serveur MCP, et demande ton accord avant que
-            les prospects entendent la différence.
+            Cette page fait ce que font les outils du serveur MCP de Claude Code, par les mêmes fonctions, sauf le prompt. Ici comme dans Claude
+            Code, ton accord est demandé avant que les prospects entendent la différence.
           </p>
           <dl className="border-t border-filet">
             {CE_QUI_EST_MODIFIABLE.map((e) => (
@@ -389,6 +444,14 @@ export default async function PageAssistante({ searchParams }: { searchParams: P
                   <span className="text-sm text-encre-3">{e.modifiable ? 'modifiable' : 'lecture seule'}</span>
                 </dt>
                 <dd className="grid min-w-0 gap-0.5">
+                  {e.ici ? (
+                    <p>
+                      <span className="text-encre-3">Ici : </span>
+                      <a href={`#${SECTIONS[e.ici] ?? ''}`} className={`${LIEN_TEXTE} rounded-[4px] pointer-coarse:py-[15px]`}>
+                        section {e.ici}
+                      </a>
+                    </p>
+                  ) : null}
                   {e.claudeCode.length ? (
                     <p className="break-words">
                       <span className="text-encre-3">Par Claude Code : </span>

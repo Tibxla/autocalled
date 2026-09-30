@@ -79,3 +79,20 @@ export function LienTelechargement({ href, children }: { href: string; children:
     </a>
   );
 }
+
+/**
+ * Une différence rédigée par le serveur (lignes du prompt retirées « − » puis ajoutées « + », puis les réglages) :
+ * chasse fixe, retours à la ligne gardés, jamais de défilement horizontal. Sans couleur de statut : les ajouts en
+ * encre, les retraits et le contexte en encre sourde.
+ */
+export function BlocDifference({ texte, libelle }: { texte: string; libelle: string }) {
+  return (
+    <div role="region" aria-label={libelle} className="max-w-[80ch] rounded-md bg-fond px-3 py-2.5 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
+      {texte.split('\n').map((ligne, i) => (
+        <span key={i} className={`block ${ligne.startsWith('+ ') ? 'text-encre' : ligne.startsWith('− ') ? 'text-encre-2' : 'text-encre-3'} [overflow-wrap:anywhere]`}>
+          {ligne || ' '}
+        </span>
+      ))}
+    </div>
+  );
+}

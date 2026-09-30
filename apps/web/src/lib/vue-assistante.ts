@@ -411,6 +411,8 @@ export const REGLAGES_DE_LA_LISTE: readonly { cle: string; libelle: string }[] =
 export interface ElementModifiable {
   element: string;
   modifiable: boolean;
+  /** La section de cette page où il se modifie (null : pas ici). */
+  ici: string | null;
   /** Les outils MCP de Claude Code qui le changent (vide : lecture seule). */
   claudeCode: string[];
   /** Ce que fait la modification et quand elle vaut pour les prospects, ou pourquoi c'est en lecture seule. */
@@ -418,72 +420,97 @@ export interface ElementModifiable {
 }
 
 /**
- * Ce qui se règle, et par où. Les modifications ne se font pas dans l'interface (décision de l'opérateur) : elles
- * passent par les outils MCP de Claude Code (mcp/assistante.ts), qui demandent son accord quand un prospect
- * entendrait la différence.
+ * Ce qui se règle, et par où (décision de l'opérateur du 30/09/2026) : la page Assistante fait ce que font les outils
+ * MCP de Claude Code (mcp/assistante.ts), par les mêmes fonctions, sauf le prompt, qui s'écrit par Claude Code. Ce qui
+ * change pour un prospect passe par une confirmation, ici comme dans Claude Code.
  */
 export const CE_QUI_EST_MODIFIABLE: readonly ElementModifiable[] = [
   {
     element: 'Nom et premier message',
     modifiable: true,
+    ici: 'Identité',
     claudeCode: ['modifier_assistante'],
-    effet: 'En base : valent dès l’appel suivant, sans poussée, après ta confirmation dans Claude Code.',
+    effet: 'En base : valent dès l’appel suivant, sans poussée, après ta confirmation.',
   },
   {
     element: 'Prompt système',
     modifiable: true,
+    ici: null,
     claudeCode: ['modifier_prompt_assistante', 'pousser_assistante'],
-    effet: 'Écrit agent/prompt.md, qui doit garder toutes les variables et la section « # Règles ». Rien ne change pour les appels avant la poussée, confirmée sur la différence rédigée par le serveur.',
+    effet: 'Le prompt se modifie par Claude Code (modifier_prompt_assistante), puis se pousse ici ou par Claude Code. Il doit garder toutes les variables et la section « # Règles » ; rien ne change pour les appels avant la poussée.',
   },
   {
     element: 'Réglages de la liste fermée',
     modifiable: true,
+    ici: 'Réglages',
     claudeCode: ['modifier_reglages_assistante', 'pousser_assistante'],
     effet: `Écrit agent/mina.config.json : ${REGLAGES_DE_LA_LISTE.map((r) => r.libelle).join(', ')}. Rien ne change avant la poussée.`,
   },
   {
+    element: 'Poussée vers ElevenLabs',
+    modifiable: true,
+    ici: 'Poussée',
+    claudeCode: ['pousser_assistante'],
+    effet: 'Envoie le prompt et les réglages de agent/ après ta confirmation sur la différence rédigée par le serveur ; ils servent dès le prochain appel. Refusée pendant un appel.',
+  },
+  {
     element: 'Rapatriement',
     modifiable: true,
+    ici: 'Poussée',
     claudeCode: ['rapatrier_assistante'],
     effet: 'Réécrit agent/ d’après ElevenLabs (après une modification dans le tableau de bord), sauf s’il reste des modifications non poussées.',
   },
   {
     element: 'Historique et retour arrière',
     modifiable: true,
+    ici: 'Historique',
     claudeCode: ['historique_assistante', 'restaurer_assistante'],
     effet: 'Liste les configurations consignées et réécrit agent/ depuis l’une d’elles ; elle ne sert aux appels qu’après une poussée.',
   },
   {
     element: 'Langue',
     modifiable: false,
+    ici: null,
     claudeCode: [],
     effet: 'Par le code, relu, puis pnpm agent push (ADR 0010) : le prompt, les textes de l’application et l’analyse des appels sont en français.',
   },
   {
     element: 'Définitions des outils',
     modifiable: false,
+    ici: null,
     claudeCode: [],
     effet: 'Contrat avec le code : le pont n’exécute que proposer_creneaux, reserver_creneau et etape_script, que l’application traite par leur nom et leurs paramètres. Un changement se fait dans le code, relu, puis pnpm agent push.',
   },
   {
     element: 'Surcharges permises',
     modifiable: false,
+    ici: null,
     claudeCode: [],
     effet: 'Le pont surcharge le premier message et les mots-clés de la reconnaissance vocale à chaque appel : sans ces permissions, l’ouverture casserait.',
   },
   {
     element: 'Authentification',
     modifiable: false,
+    ici: null,
     claudeCode: [],
     effet: 'Garde de sécurité : seul un appel signé par l’application ouvre une conversation avec l’assistante.',
   },
   {
     element: 'Valeurs d’exemple des variables',
     modifiable: false,
+    ici: null,
     claudeCode: [],
     effet: 'Servent aux essais dans le tableau de bord ElevenLabs ; chaque vrai appel envoie ses propres valeurs. Par pnpm agent push.',
   },
 ];
+
+/** D'où vient une configuration consignée (versions_assistante), pour la page Assistante et Réglages. */
+export const ORIGINE_VERSION: Record<string, string> = {
+  mcp: 'poussée par Claude Code',
+  interface: 'poussée depuis l’interface',
+  cli: 'poussée en ligne de commande',
+  distante: 'rapatriée du tableau de bord ElevenLabs',
+};
 
 /* ------------------------------------------------------------------ téléchargements */
 
