@@ -263,7 +263,8 @@ export function DetailTelephone({ telephone }: { telephone: EtatTelephone }) {
         </span>
         {telephone.adresse ? (
           <details className="mt-0.5 text-sm text-encre-3">
-            <summary className="w-fit cursor-pointer decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline">
+            {/* Au doigt, 44 px de haut et souligné : le marqueur du détail reste (pas de flex). */}
+            <summary className="w-fit cursor-pointer decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline pointer-coarse:py-3 pointer-coarse:underline">
               Afficher l’adresse complète
             </summary>
             <span className="font-mono text-xs text-encre-2">{telephone.adresse}</span>
@@ -353,7 +354,8 @@ export function useReconnexion(reconnecter: GestesTelephone['reconnecter'] = rec
 /**
  * « Reconnecter le téléphone », son aide et son éventuelle erreur, dans une rangée d'actions `flex-wrap` :
  * l'aide et l'erreur passent chacune sur leur ligne sous l'action. Forte quand la ligne est coupée (c'est le
- * geste de secours, 44 px de haut sur mobile), discrète quand le téléphone est dit connecté.
+ * geste de secours, en relief au doigt), normale ou discrète quand le téléphone est dit connecté. En relief,
+ * l'aide et l'erreur s'alignent sur le bord du relief, non plus sur le texte (l'appelant lâche son retrait).
  */
 export function ActionReconnecter({
   reconnecter,
@@ -381,18 +383,17 @@ export function ActionReconnecter({
         disabled={enCours}
         onClick={lancer}
         aria-describedby={aide ? idAide : undefined}
-        className={ton === 'fort' ? 'max-sm:h-11' : ''}
       >
         Reconnecter le téléphone
       </Action>
       {suite}
       {aide ? (
-        <p id={idAide} className="basis-full px-1.5 text-sm text-encre-3">
+        <p id={idAide} className={`basis-full px-1.5 text-sm text-encre-3 ${ton === 'fort' ? 'pointer-coarse:px-0' : ''}`}>
           {aide}
         </p>
       ) : null}
       {erreur ? (
-        <Message ton="alerte" className="mx-1.5 basis-full">
+        <Message ton="alerte" className={`mx-1.5 basis-full ${ton === 'fort' ? 'pointer-coarse:mx-0' : ''}`}>
           {erreur}
         </Message>
       ) : null}
@@ -421,7 +422,8 @@ function ActionsTelephone({
   const [enCours, lancer] = useTransition();
   return (
     <div className="grid gap-3">
-      <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+      {/* 24 px entre les deux : Oublier, sous confirmation, ne se touche pas en visant Changer. */}
+      <div className="-mx-1.5 flex flex-wrap items-center gap-x-6 gap-y-1">
         <Action ton="normal" onClick={onChanger} disabled={confirmation.ouverte}>
           Changer de téléphone
         </Action>
@@ -520,6 +522,7 @@ function FormulaireAdresse({
             className="max-w-[14rem] font-mono"
             autoComplete="off"
             autoCapitalize="characters"
+            enterKeyHint="go"
             spellCheck={false}
             maxLength={17}
             required
@@ -531,7 +534,7 @@ function FormulaireAdresse({
         téléphone avant d’accepter.
       </p>
       {erreur ? <Message ton="alerte">{erreur}</Message> : null}
-      <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+      <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 pointer-coarse:mx-0">
         <Action type="submit" ton="fort" enCours={enCours} libelleEnCours="Ouverture…" disabled={enCours}>
           {rouvrir ? 'Rouvrir l’appairage (3 min)' : 'Ouvrir l’appairage (3 min)'}
         </Action>

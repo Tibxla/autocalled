@@ -130,7 +130,7 @@ export default async function PageTelephone() {
           <p role="status" className={`text-lg font-semibold text-balance ${TONS[verdict.ton]}`}>
             {verdict.ton === 'alerte' ? <PointCreux className="mr-2.5" /> : null}
             {verdict.lien ? (
-              <Link href={verdict.lien} className="decoration-antenne/50 decoration-1 underline-offset-4 hover:underline">
+              <Link href={verdict.lien} className="decoration-antenne/50 decoration-1 underline-offset-4 hover:underline pointer-coarse:underline">
                 {verdict.texte}
               </Link>
             ) : (
@@ -139,17 +139,18 @@ export default async function PageTelephone() {
           </p>
           {verdict.detail ? <p className="max-w-[62ch] text-sm text-encre-2">{verdict.detail}</p> : null}
           {verdict.lien ? (
-            <div className="-mx-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <div className="-mx-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 pointer-coarse:mx-0">
               <LienAction ton="fort" href={verdict.lien}>
                 Rejoindre l’appel
               </LienAction>
               <span className="text-sm text-encre-3">suivi, écoute, prise de main</span>
             </div>
           ) : null}
-          {/* Téléphone appairé, aucun appel : la reconnexion reste en tête, même dit connecté (liaison figée par la veille). */}
+          {/* Téléphone appairé, aucun appel : la reconnexion reste en tête, même dit connecté (liaison figée par la veille).
+              Coupé, c'est le geste de secours, en relief au doigt ; dit connecté, une action normale, soulignée au doigt. */}
           {reconnexionTelephone(telephone) ? (
-            <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-              <ActionReconnecter ton={telephone?.connecte ? 'discret' : 'fort'} aide={AIDE_RECONNEXION} />
+            <div className={`-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 ${telephone?.connecte ? '' : 'pointer-coarse:mx-0'}`}>
+              <ActionReconnecter ton={telephone?.connecte ? 'normal' : 'fort'} aide={AIDE_RECONNEXION} />
             </div>
           ) : null}
           <ReleveEtat luA={luA} />

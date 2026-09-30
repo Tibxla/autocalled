@@ -214,7 +214,7 @@ export function FormulaireReglages({ reglages, envoyer = enregistrerReglages }: 
       ) : null}
 
       <div className="grid gap-3">
-        <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+        <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 pointer-coarse:mx-0">
           <Action
             ref={bouton}
             type="submit"
