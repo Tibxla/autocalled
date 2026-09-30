@@ -121,7 +121,7 @@ export default async function LayoutEntreprise({ params, children }: { params: P
         <LienTexte isole href="/entreprises" className="text-sm text-encre-3 hover:text-encre-2">
           Entreprises
         </LienTexte>
-        <div className="mt-1 flex items-center gap-1.5">
+        <div className="relative mt-1 flex items-center gap-1.5">
           <h1 className="min-w-0 text-xl font-semibold tracking-[-0.01em] text-balance break-words">{entreprise.nom}</h1>
           {autres.length > 0 ? <ChoixEntreprise slug={slug} autres={autres} /> : null}
         </div>
