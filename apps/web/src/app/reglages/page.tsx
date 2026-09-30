@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { heure, jourCourt } from '@/components/format-appel';
-import { classesAction, EnTetePage, LIEN_TEXTE, LigneDefinition, Message, Page, TitreSection } from '@/components/ui';
+import { EnTetePage, LIEN_TEXTE, LigneDefinition, Message, Page, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { appels, entreprises, prospects, rendezVous } from '@/db/schema';
 import { calendrierConfigure, etatAgenda } from '@/lib/agenda';
@@ -10,7 +10,7 @@ import { clientGoogle, connexion } from '@/lib/google';
 import { journalMcpRecent, rendezVousRecents } from '@/lib/lecture';
 import { assistantePourLaPage } from '@/lib/pages';
 import { BoutonDeconnecter } from './bouton-deconnecter';
-import { BoutonRelire } from './boutons-agenda';
+import { BoutonRelire, LienConnecterGoogle } from './boutons-agenda';
 import { JournalClaudeCode, type LigneJournal } from './journal-claude-code';
 import { MessageGoogle } from './message-google';
 import { RendezVousMina } from './rendez-vous-mina';
@@ -256,7 +256,8 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
               {/[.!?…]$/.test(etat.erreur.trim()) ? '' : '.'} La copie affichée date de la lecture précédente.
             </Message>
           ) : null}
-          <BoutonRelire />
+          {/* Une seule action forte dans l'agenda : la connexion de l'API quand elle est proposée, sinon la relecture. */}
+          <BoutonRelire ton={client && !api ? 'normal' : 'fort'} />
 
           <div className="grid gap-3 pt-2">
             <h3 className="text-md font-semibold">API Google Agenda</h3>
@@ -279,11 +280,7 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
                 <BoutonDeconnecter />
               </div>
             ) : (
-              // Lien simple, jamais un <Link> : un préchargement ouvrirait la connexion OAuth. L'action principale de
-              // sa zone : ton fort, en relief au doigt.
-              <a href="/google/connexion" className={`-mx-1.5 justify-self-start ${classesAction('fort')}`}>
-                Connecter l’API Google Agenda
-              </a>
+              <LienConnecterGoogle />
             )}
           </div>
         </section>
