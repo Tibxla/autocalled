@@ -1,0 +1,1 @@
+ALTER TABLE "journal_mcp" ADD COLUMN "origine" text DEFAULT 'mcp' NOT NULL;
