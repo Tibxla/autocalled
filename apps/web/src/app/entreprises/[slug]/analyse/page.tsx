@@ -1,7 +1,6 @@
 import { SEUIL_ECHANTILLON } from '@autocalled/domain';
 import { asc, eq } from 'drizzle-orm';
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { NavigationListe } from '@/components/clavier';
 import {
   Cellule,
@@ -10,8 +9,8 @@ import {
   EtatVide,
   Filtre,
   Filtres,
-  LienAction,
   LienLigne,
+  LienTexte,
   LigneTable,
   Message,
   Page,
@@ -92,9 +91,12 @@ export default async function PageAnalyse({
     <Page largeur="lecture">
       <div className="grid max-w-[72rem] grid-cols-[minmax(0,1fr)] gap-10">
         <div className="grid gap-4">
+          {/* Sous 640 px, la première phrase seule. */}
           <p className="max-w-[68ch] text-sm text-encre-3">
-            Chaque ligne compare une version de script. Les appels non aboutis sont comptés mais exclus des taux&nbsp;; sous{' '}
-            {SEUIL_ECHANTILLON} appels aboutis, aucun taux n’est affiché.
+            Chaque ligne compare une version de script.{' '}
+            <span className="max-sm:hidden">
+              Les appels non aboutis sont comptés mais exclus des taux&nbsp;; sous {SEUIL_ECHANTILLON} appels aboutis, aucun taux n’est affiché.
+            </span>
           </p>
           <Filtres libelle="Appels comptés">
             <Filtre actif={!avecSimules} compte={reels} href={`${base}/analyse`} replace>
@@ -126,9 +128,7 @@ export default async function PageAnalyse({
                       {g.scriptId === 'supprimee' ? (
                         g.nom
                       ) : (
-                        <Link href={`${base}/scripts/${g.scriptId}`} className="decoration-souligne underline-offset-4 hover:underline">
-                          {g.nom}
-                        </Link>
+                        <LienTexte href={`${base}/scripts/${g.scriptId}`}>{g.nom}</LienTexte>
                       )}
                     </h3>
                     <TableDense libelle={`Versions de ${g.nom}`} colonnes={COLONNES_VERSIONS}>
@@ -153,6 +153,7 @@ export default async function PageAnalyse({
                               </Cellule>
                               <Cellule>
                                 <span className="font-mono">{v.conversations}</span>
+                                <span className="text-encre-3 sm:hidden"> aboutis</span>
                                 <span className="text-encre-3"> sur </span>
                                 <span className="font-mono">{v.appels}</span>
                                 <span className="text-encre-3"> {v.appels > 1 ? 'appels' : 'appel'}</span>
@@ -168,12 +169,15 @@ export default async function PageAnalyse({
                               >
                                 {!v.echantillonSuffisant || v.tauxRendezVous === null ? (
                                   <span className="text-encre-3">
-                                    <span className="font-mono">{v.rendezVous}</span> sur <span className="font-mono">{v.conversations}</span> · trop peu pour un taux
+                                    <span className="font-mono">{v.rendezVous}</span>
+                                    <span className="sm:hidden"> rendez-vous</span> sur <span className="font-mono">{v.conversations}</span> · trop peu pour un taux
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-2.5">
                                     <span className="font-mono">
-                                      {Math.round(v.tauxRendezVous * 100)}{'\u202f'}% <span className="text-encre-3">({v.rendezVous} sur {v.conversations})</span>
+                                      {Math.round(v.tauxRendezVous * 100)}
+                                      {'\u202f'}%<span className="font-sans text-encre-3 sm:hidden"> de rendez-vous</span>{' '}
+                                      <span className="text-encre-3">({v.rendezVous} sur {v.conversations})</span>
                                     </span>
                                     <Barre valeur={v.tauxRendezVous} />
                                   </span>
@@ -226,12 +230,9 @@ export default async function PageAnalyse({
                             <span>{libelle}</span>
                             <span className="text-sm text-encre-3">
                               Leur libellé n’est pas regroupé :{' '}
-                              <Link
-                                href={`/appels?entreprise=${encodeURIComponent(slug)}`}
-                                className="relative z-10 text-encre-2 underline decoration-souligne underline-offset-4 hover:text-encre"
-                              >
+                              <LienTexte href={`/appels?entreprise=${encodeURIComponent(slug)}`} className="relative z-10 text-encre-2 underline hover:text-encre">
                                 lis-les dans les appels
-                              </Link>
+                              </LienTexte>
                               .
                             </span>
                           </span>
@@ -241,6 +242,8 @@ export default async function PageAnalyse({
                         <span className="inline-flex items-center gap-2.5">
                           <span className="font-mono">
                             {o.levees} <span className="text-encre-3">sur</span> {o.apparitions}
+                            {/* Sous 640 px, les en-têtes ne se lisent plus : l'unité suit le chiffre. */}
+                            <span className="font-sans text-encre-3 sm:hidden">{'\u00a0'}levées</span>
                           </span>
                           {o.apparitions >= SEUIL_ECHANTILLON ? <Barre valeur={o.levees / o.apparitions} /> : null}
                         </span>
@@ -256,9 +259,9 @@ export default async function PageAnalyse({
           )}
         </section>
 
-        <div className="-mx-1.5">
-          <LienAction href={`/appels?entreprise=${encodeURIComponent(slug)}`}>Voir les appels de l’entreprise</LienAction>
-        </div>
+        <LienTexte isole href={`/appels?entreprise=${encodeURIComponent(slug)}`} className="justify-self-start text-md font-medium text-encre-2 hover:text-encre">
+          Voir les appels de l’entreprise
+        </LienTexte>
       </div>
     </Page>
   );
