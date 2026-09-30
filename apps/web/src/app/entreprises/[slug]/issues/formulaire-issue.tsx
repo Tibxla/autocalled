@@ -116,7 +116,7 @@ function FormulairePrecision({
           aria-describedby={erreur ? `${id}-erreur` : undefined}
           className="max-w-[22rem] min-w-[12rem] flex-1"
         />
-        <div className="-mx-1.5 flex items-center gap-3">
+        <div className="-mx-1.5 flex items-center gap-3 pointer-coarse:mx-0">
           <Action type="submit" ton="fort" touche="Entrée" enCours={enCours} libelleEnCours="Ajout…" disabled={enCours}>
             Ajouter
           </Action>

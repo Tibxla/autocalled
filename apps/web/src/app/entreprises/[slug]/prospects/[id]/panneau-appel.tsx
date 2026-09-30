@@ -70,7 +70,7 @@ function GesteTelephone({
           <PointCreux className="mr-2" />
           {bloque.texte} Aucun appel ne peut partir par le téléphone.
         </p>
-        <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+        <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 pointer-coarse:mx-0">
           {reconnecter ? <ActionReconnecter ton="fort" aide={AIDE_RECONNEXION} suite={ouvrirTelephone} /> : ouvrirTelephone}
         </div>
       </div>
@@ -142,7 +142,7 @@ export function PanneauAppel({
       <section aria-label="Appeler" className="grid gap-2 border-t border-filet pt-4">
         <p className="text-md text-encre-2">{texte}</p>
         {blocage?.lien ? (
-          <div className="-mx-1.5 justify-self-start">
+          <div className="-mx-1.5 justify-self-start pointer-coarse:mx-0">
             <LienAction ton="fort" href={blocage.lien.href}>
               {blocage.lien.libelle}
             </LienAction>
@@ -222,7 +222,7 @@ export function PanneauAppel({
         {ligne === 'navigateur' ? (
           <AppelEnDirect key={versionId} entrepriseId={entrepriseId} prospectId={prospectId} prospectNom={prospectNom} versionScriptId={versionId} />
         ) : ligne === 'simulation' ? (
-          <div className="-mx-1.5">
+          <div className="-mx-1.5 pointer-coarse:mx-0">
             <Action
               ton="fort"
               enCours={enCours}
@@ -237,7 +237,7 @@ export function PanneauAppel({
           <div className="grid gap-3">
             <Suspense
               fallback={
-                <div className="-mx-1.5">
+                <div className="-mx-1.5 pointer-coarse:mx-0">
                   <Action ton="fort" disabled enCours libelleEnCours="Lecture de la ligne…">
                     Appeler le {numeroMasque(numero)}
                   </Action>
@@ -246,7 +246,7 @@ export function PanneauAppel({
             >
               <GesteTelephone promesse={telephoneBloque} echec={echecDuTelephone(erreur)}>
                 {(bloque) => (
-                  <div className="-mx-1.5">
+                  <div className="-mx-1.5 pointer-coarse:mx-0">
                     {/* Bloqué, l'appel reste du texte : le relief va au geste de secours, la reconnexion. */}
                     <Action
                       ton="fort"
@@ -290,7 +290,7 @@ export function PanneauAppel({
       {erreur ? <Message ton="alerte" className="max-lg:order-first">{erreur}</Message> : null}
       {/* Appel refusé faute de téléphone (liaison figée, hors de portée) : la reconnexion, à côté de l'échec. Page relue, l'échec périmé s'efface. */}
       {erreur && ligne === 'telephone' && reconnexionFiche(null, erreur) ? (
-        <div className="-mx-1.5 -mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 max-lg:order-first pointer-coarse:mt-0">
+        <div className="-mx-1.5 -mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 max-lg:order-first pointer-coarse:mx-0 pointer-coarse:mt-0">
           <ActionReconnecter ton="fort" aide={AIDE_RECONNEXION} apres={() => setErreur(null)} />
         </div>
       ) : null}

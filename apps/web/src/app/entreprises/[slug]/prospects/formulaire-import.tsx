@@ -204,7 +204,7 @@ export function FormulaireImport({
           </span>
         </label>
 
-        <div className="-mx-1.5 flex flex-wrap items-center gap-x-4">
+        <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 pointer-coarse:mx-0">
           <Action ton="fort" type="submit" disabled={noms.length === 0 || invalide || enCours} enCours={enCours} libelleEnCours="Import…">
             {noms.length === 0 ? 'Importer des fiches' : `Importer ${pluriel(noms.length, 'fiche')}`}
           </Action>
