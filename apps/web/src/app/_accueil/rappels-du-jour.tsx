@@ -1,6 +1,5 @@
-import Link from 'next/link';
 import { cleJour, heure, quandRappeler, rappelEnRetard } from '@/components/format-appel';
-import { Cellule, CelluleEnTete, EnTeteTable, LienAction, LienLigne, LigneTable, TableDense, TitreSection } from '@/components/ui';
+import { Cellule, CelluleEnTete, EnTeteTable, LienAction, LienLigne, LienTexte, LigneTable, TableDense, TitreSection } from '@/components/ui';
 import type { RappelAFaire } from '@/lib/rappels';
 
 /**
@@ -44,9 +43,9 @@ export function RappelsDuJour({ rappels, sansDate, maintenant }: { rappels: Rapp
   const enRetard = rappels.filter((r) => estEnRetard(r, quand)).length;
   const lienSansDate =
     sansDate > 0 ? (
-      <Link href="/appels?rappels=1" className="decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline">
+      <LienTexte href="/appels?rappels=1" className="hover:text-encre-2">
         <span className="font-mono">{sansDate}</span> rappel{sansDate > 1 ? 's' : ''} convenu{sansDate > 1 ? 's' : ''} sans date
-      </Link>
+      </LienTexte>
     ) : null;
 
   if (rappels.length === 0) {
@@ -59,7 +58,7 @@ export function RappelsDuJour({ rappels, sansDate, maintenant }: { rappels: Rapp
         id="titre-rappels"
         action={
           <LienAction ton="discret" href="/appels?rappels=1" aria-label="Tous les rappels à faire" className="-mr-1.5 shrink-0">
-            <span className="sm:hidden">Tous</span>
+            <span className="sm:hidden">Tous les rappels</span>
             <span className="max-sm:hidden">Tous les rappels à faire</span>
           </LienAction>
         }
