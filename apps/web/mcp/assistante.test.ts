@@ -175,7 +175,7 @@ describe('pousser_assistante', () => {
       throw new Error('ElevenLabs répond 500 (détail interne)');
     };
 
-    expect(await c.appeler('pousser_assistante')).toMatchObject({ erreur: true, texte: 'Erreur interne : l’outil a échoué (le détail est au journal MCP).' });
+    expect(await c.appeler('pousser_assistante')).toMatchObject({ erreur: true, texte: 'Erreur interne : l’outil a échoué (le détail est au journal des gestes).' });
     const [ligne] = await db.select().from(journalMcp).where(eq(journalMcp.outil, 'pousser_assistante')).orderBy(desc(journalMcp.le)).limit(1);
     expect(ligne).toMatchObject({ resultat: 'erreur', confirmation: 'acceptee', message: expect.stringContaining('détail interne') });
   });
