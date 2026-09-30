@@ -64,9 +64,9 @@ function sansAccents(texte: string): string {
 }
 
 const LIGNES = [
+  { valeur: 'bluetooth', libelle: 'Téléphone passerelle', aide: (assistante: string) => `${assistante} appelle les vrais numéros` },
   { valeur: 'navigateur', libelle: 'Ligne navigateur', aide: () => 'tu joues chaque prospect' },
   { valeur: 'simulation', libelle: 'Simulation', aide: () => 'un modèle joue les prospects' },
-  { valeur: 'bluetooth', libelle: 'Téléphone passerelle', aide: (assistante: string) => `${assistante} appelle les vrais numéros` },
 ] as const;
 
 export function FormulaireCampagne({

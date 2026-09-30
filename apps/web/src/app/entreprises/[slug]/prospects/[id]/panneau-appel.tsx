@@ -23,11 +23,11 @@ import { Action, LienAction, Message, PointCreux, Selection } from '@/components
 
 type Ligne = 'navigateur' | 'simulation' | 'telephone';
 
-/** Même ordre et même défaut que la création d'une campagne. */
+/** Même ordre et même défaut que la création d'une campagne : le téléphone d'abord, les lignes de test ensuite. */
 const LIGNES: { valeur: Ligne; libelle: string; aide: (assistante: string) => string }[] = [
+  { valeur: 'telephone', libelle: 'Téléphone', aide: (assistante) => `${assistante} appelle le vrai numéro depuis le téléphone passerelle.` },
   { valeur: 'navigateur', libelle: 'Navigateur', aide: () => 'Test : tu joues le prospect au micro, rien n’est composé.' },
   { valeur: 'simulation', libelle: 'Simulation', aide: () => 'Un modèle joue le prospect, sans audio. Signalé comme simulé partout.' },
-  { valeur: 'telephone', libelle: 'Téléphone', aide: (assistante) => `${assistante} appelle le vrai numéro depuis le téléphone passerelle.` },
 ];
 
 export type PlafondsLigne = { reglages: ReglagesLigne | null; passes24h: number | null };
@@ -130,7 +130,7 @@ export function PanneauAppel({
   const router = useRouter();
   const idAide = useId();
   const [versionId, setVersionId] = useState(versions[0]?.id ?? '');
-  const [ligne, setLigne] = useState<Ligne>('navigateur');
+  const [ligne, setLigne] = useState<Ligne>('telephone');
   const [enCours, demarrer] = useTransition();
   const [erreur, setErreur] = useState<string | null>(null);
   const confirmation = useConfirmation();
