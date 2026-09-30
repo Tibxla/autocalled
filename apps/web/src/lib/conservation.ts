@@ -14,8 +14,9 @@ import { supprimerFichier } from './effacement';
  * de son bilan (résumé, citations, libellés d'objections nouvelles, points forts et faibles, rappel dit), le texte de
  * son erreur et l'adresse d'invitation de son rendez-vous. Restent l'issue, l'étape atteinte, les objections par
  * identifiant avec leur levée et leur temps CRAC, la durée, les dates, la ligne et les versions (script, agent,
- * analyseur) : l'analyse des versions et les comptes ne bougent pas. Les lignes du journal MCP plus vieilles que la
- * durée sont supprimées. La liste d'opposition n'est jamais touchée.
+ * analyseur) : l'analyse des versions et les comptes ne bougent pas. Les lignes du journal des gestes plus vieilles
+ * que la durée sont supprimées, quelle que soit leur origine (MCP ou interface). La liste d'opposition n'est jamais
+ * touchée.
  *
  * Lancée chaque jour par `autocalled-purge.timer` (scripts/purger.ts). Idempotente : un appel purgé ne l'est pas deux
  * fois. `inventairePurge` ne fait que lire (base et disque) ; seule `purger` écrit.
@@ -98,7 +99,7 @@ export interface InventairePurge {
   fichiers: number;
   /** Appels passés la durée mais en cours d'analyse : purgés au passage suivant. */
   reportes: number;
-  /** Lignes du journal MCP plus vieilles que la durée. */
+  /** Lignes du journal des gestes plus vieilles que la durée, toutes origines. */
   journal: number;
 }
 
@@ -160,7 +161,7 @@ export interface ResultatPurge {
 }
 
 /**
- * Purge les appels passés la durée de conservation et le journal MCP (voir l'en-tête du module). Appel par appel :
+ * Purge les appels passés la durée de conservation et le journal des gestes (voir l'en-tête du module). Appel par appel :
  * les fichiers d'abord, puis la base d'un bloc ; un appel dont un fichier résiste reste entier en base et sera repris
  * au passage suivant (un appel marqué purgé n'a plus aucun fichier). Un appel en cours d'analyse est reporté.
  */
@@ -257,7 +258,7 @@ export function compteRendu(r: InventairePurge | ResultatPurge, essai: boolean):
     ['textes d’erreur effacés', 'textes d’erreur à effacer', r.erreurs],
     ['adresses d’invitation effacées', 'adresses d’invitation à effacer', r.invitations],
     ['fichiers supprimés', 'fichiers présents sur le disque', r.fichiers],
-    ['lignes du journal MCP supprimées', 'lignes du journal MCP à supprimer', r.journal],
+    ['lignes du journal des gestes supprimées', 'lignes du journal des gestes à supprimer', r.journal],
     ['appels en cours d’analyse reportés', 'appels en cours d’analyse reportés', r.reportes],
   ];
   const echecs = 'fichiersEnEchec' in r ? r.fichiersEnEchec : [];

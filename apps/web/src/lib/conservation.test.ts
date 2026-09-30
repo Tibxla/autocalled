@@ -49,7 +49,7 @@ function bilanComplet(objectionId: string): Bilan {
 
 /**
  * Un appel ancien (treize mois, bilan complet, rendez-vous et fichiers), un ancien en échec dont l'erreur cite le
- * prospect, un ancien encore en analyse, un récent, deux lignes de journal et une opposition ancienne.
+ * prospect, un ancien encore en analyse, un récent, quatre lignes de journal (deux par origine) et une opposition ancienne.
  */
 async function monde(maintenant = new Date()) {
   const e = await entrepriseDeTest();
@@ -133,6 +133,9 @@ async function monde(maintenant = new Date()) {
   await db.insert(journalMcp).values([
     { le: ancien, outil: 'lire_appel', arguments: { appelId: vieux!.id }, resultat: 'ok' },
     { le: recent, outil: 'lire_appel', arguments: { appelId: jeune!.id }, resultat: 'ok' },
+    // Les gestes de la page Assistante suivent la même durée que ceux de Claude Code.
+    { le: ancien, origine: 'interface', outil: 'restaurer_assistante', arguments: { versionId: 'agtvrsn_fictive1' }, resultat: 'ok' },
+    { le: recent, origine: 'interface', outil: 'pousser_assistante', arguments: { versionDistante: 'agtvrsn_fictive1' }, resultat: 'ok' },
   ]);
   await db.insert(oppositions).values({ empreinte: 'empreinte-fictive', le: new Date(maintenant.getTime() - 30 * MOIS), par: 'interface', bilan: { appels: 1 } });
   return { e, objection: objection!, vieux: vieux!, echec: echec!, enAnalyse: enAnalyse!, jeune: jeune!, fichiers, maintenant };
@@ -209,7 +212,7 @@ describe('purger', () => {
     expect(echec.statut).toBe('echec');
     for (const f of m.fichiers.echec) expect(present(f)).toBe(false);
 
-    expect(r).toMatchObject({ dureeMois: 12, appels: 2, transcriptions: 2, bilans: 1, erreurs: 1, invitations: 1, fichiers: 5, reportes: 1, journal: 1, fichiersEnEchec: [] });
+    expect(r).toMatchObject({ dureeMois: 12, appels: 2, transcriptions: 2, bilans: 1, erreurs: 1, invitations: 1, fichiers: 5, reportes: 1, journal: 2, fichiersEnEchec: [] });
   });
 
   it('laisse intact un appel récent et reporte un appel ancien encore en analyse', async () => {
@@ -234,15 +237,17 @@ describe('purger', () => {
     expect(r).toMatchObject({ appels: 0, transcriptions: 0, bilans: 0, fichiers: 0, journal: 0, fichiersEnEchec: [] });
   });
 
-  it('supprime les lignes du journal MCP plus vieilles que la durée, et jamais la liste d’opposition', async () => {
+  it('supprime les lignes du journal des gestes plus vieilles que la durée, toutes origines, et jamais la liste d’opposition', async () => {
     const m = await monde();
     const oppositionsAvant = await db.select().from(oppositions);
 
-    await purger(m.maintenant);
+    expect(await purger(m.maintenant)).toMatchObject({ journal: 2 });
 
-    const journal = await db.select().from(journalMcp);
-    expect(journal).toHaveLength(1);
-    expect(journal[0]!.arguments).toEqual({ appelId: m.jeune.id });
+    const journal = await db.select().from(journalMcp).orderBy(asc(journalMcp.origine));
+    expect(journal.map((l) => [l.origine, l.arguments])).toEqual([
+      ['interface', { versionDistante: 'agtvrsn_fictive1' }],
+      ['mcp', { appelId: m.jeune.id }],
+    ]);
     expect(await db.select().from(oppositions)).toEqual(oppositionsAvant);
   });
 
@@ -300,7 +305,7 @@ describe('essai de purge', () => {
       return inventairePurge(m.maintenant, { lecteur: tx });
     });
 
-    expect(inventaire).toMatchObject({ dureeMois: 12, appels: 2, transcriptions: 2, bilans: 1, erreurs: 1, invitations: 1, fichiers: 5, reportes: 1, journal: 1 });
+    expect(inventaire).toMatchObject({ dureeMois: 12, appels: 2, transcriptions: 2, bilans: 1, erreurs: 1, invitations: 1, fichiers: 5, reportes: 1, journal: 2 });
     expect(await toutesLesLignes()).toEqual(avant);
     for (const f of Object.values(m.fichiers).flat()) expect(present(f)).toBe(true);
     // Ce que la purge fait ensuite est exactement ce que l'essai annonçait.
