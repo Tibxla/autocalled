@@ -166,7 +166,7 @@ function LigneDuJournal({ ligne: l }: { ligne: LigneJournal }) {
   return (
     <li className="border-b border-filet">
       <details className="group">
-        <summary className="grid cursor-pointer list-none gap-x-4 gap-y-0.5 py-2 transition-colors duration-100 hover:bg-survol focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus sm:min-h-[38px] sm:grid-cols-[6.5rem_minmax(0,1fr)_auto_0.625rem] sm:items-baseline [&::-webkit-details-marker]:hidden">
+        <summary className="relative grid cursor-pointer list-none gap-x-4 gap-y-0.5 py-2 transition-colors duration-100 hover:bg-survol pointer-coarse:active:bg-survol max-sm:pr-6 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus sm:min-h-[38px] sm:grid-cols-[6.5rem_minmax(0,1fr)_auto_0.625rem] sm:items-baseline [&::-webkit-details-marker]:hidden">
           <time dateTime={l.le.toISOString()} className="font-mono text-xs text-encre-3">
             {dateCourte(l.le)}
           </time>
@@ -176,7 +176,8 @@ function LigneDuJournal({ ligne: l }: { ligne: LigneJournal }) {
             {resume ? <span className="min-w-0 truncate text-sm text-encre-3">{resume}</span> : null}
           </span>
           <span className={`text-sm ${r.ton}`}>{r.texte}</span>
-          <span className="max-sm:hidden">
+          {/* Sous 640 px, en bout de ligne : il dit que la ligne s'ouvre. */}
+          <span className="max-sm:absolute max-sm:top-3 max-sm:right-0">
             <Chevron direction="bas" className="stroke-encre-3 group-open:rotate-180" />
           </span>
         </summary>
@@ -184,7 +185,7 @@ function LigneDuJournal({ ligne: l }: { ligne: LigneJournal }) {
           <p className="text-xs text-encre-3">
             Arguments de <span className="font-mono">{l.outil}</span>
           </p>
-          <pre className="max-h-64 overflow-auto rounded-md bg-surface px-3 py-2 font-mono text-xs leading-5 break-all whitespace-pre-wrap text-encre-2">
+          <pre className="rounded-md sm:max-h-64 sm:overflow-auto bg-surface px-3 py-2 font-mono text-xs leading-5 break-all whitespace-pre-wrap text-encre-2">
             {brut}
           </pre>
         </div>

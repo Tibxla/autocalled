@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { heure, jourCourt } from '@/components/format-appel';
-import { EnTetePage, LigneDefinition, Message, Page, TitreSection } from '@/components/ui';
+import { classesAction, EnTetePage, LIEN_TEXTE, LigneDefinition, Message, Page, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { appels, entreprises, prospects, rendezVous } from '@/db/schema';
 import { calendrierConfigure, etatAgenda } from '@/lib/agenda';
@@ -44,6 +44,22 @@ const ORIGINE_CONFIGURATION = {
 } as const;
 
 const SECTION = 'grid scroll-mt-[calc(var(--hauteur-barre)+16px)] gap-5';
+
+/**
+ * Lien vers une section de la page : un lien texte, pas un filtre ; 44 px de haut et souligné au doigt, deux
+ * rangées au plus sous 640 px.
+ */
+function Ancre({ href, compte, children }: { href: string; compte?: number; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      className={`inline-flex items-baseline gap-1.5 rounded-[4px] py-1 whitespace-nowrap text-encre-3 hover:text-encre-2 pointer-coarse:min-h-11 pointer-coarse:items-center pointer-coarse:py-0 ${LIEN_TEXTE}`}
+    >
+      {children}
+      {compte !== undefined ? <span className="font-mono text-encre-3">{compte}</span> : null}
+    </a>
+  );
+}
 
 /**
  * Appels réels dont l'issue dit Rendez-vous pris sans aucune réservation liée dans l'agenda : Appels les compte
@@ -113,7 +129,7 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
     <Page largeur="lecture">
       <EnTetePage titre="Réglages" sousTitre={`${nom}, l’agenda qu’elle lit, les rendez-vous qu’elle a pris, et ce que Claude Code a fait.`} />
       <div className="grid max-w-[48rem] gap-12">
-        <nav aria-label="Sections de la page" className="-mt-2 flex flex-wrap gap-x-[22px] gap-y-1 text-md">
+        <nav aria-label="Sections de la page" className="-mt-2 flex flex-wrap gap-x-[22px] gap-y-1 text-md pointer-coarse:gap-y-0">
           <Ancre href="#assistante">Assistante</Ancre>
           <Ancre href="#agenda">Agenda</Ancre>
           <Ancre href="#rendez-vous" compte={rdvs.length}>
@@ -235,7 +251,9 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
           </dl>
           {etat?.erreur ? (
             <Message ton="alerte" titre="La dernière lecture a échoué.">
-              {etat.erreur} La copie affichée date de la lecture précédente.
+              {/* L'erreur brute, close par un point, puis l'explication. */}
+              {etat.erreur.trim()}
+              {/[.!?…]$/.test(etat.erreur.trim()) ? '' : '.'} La copie affichée date de la lecture précédente.
             </Message>
           ) : null}
           <BoutonRelire />
@@ -261,14 +279,10 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
                 <BoutonDeconnecter />
               </div>
             ) : (
-              // Lien simple, jamais un <Link> : un préchargement ouvrirait la connexion OAuth.
-              <a
-                href="/google/connexion"
-                className="group -mx-1.5 inline-flex h-9 items-center justify-self-start rounded-[4px] px-1.5 text-md font-medium text-encre-2 transition-colors duration-150 hover:text-encre pointer-coarse:h-11"
-              >
-                <span className="decoration-souligne decoration-1 underline-offset-4 group-hover:underline">
-                  Connecter l’API Google Agenda
-                </span>
+              // Lien simple, jamais un <Link> : un préchargement ouvrirait la connexion OAuth. L'action principale de
+              // sa zone : ton fort, en relief au doigt.
+              <a href="/google/connexion" className={`-mx-1.5 justify-self-start ${classesAction('fort')}`}>
+                Connecter l’API Google Agenda
               </a>
             )}
           </div>
@@ -290,17 +304,5 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
         </section>
       </div>
     </Page>
-  );
-}
-
-function Ancre({ href, compte, children }: { href: string; compte?: number; children: React.ReactNode }) {
-  return (
-    <a
-      href={href}
-      className="inline-flex items-baseline gap-1.5 rounded-[4px] py-1 whitespace-nowrap text-encre-3 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline pointer-coarse:py-2.5"
-    >
-      {children}
-      {compte !== undefined ? <span className="font-mono text-encre-3">{compte}</span> : null}
-    </a>
   );
 }

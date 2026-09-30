@@ -22,9 +22,10 @@ export function BoutonRelire({ relire = relireAgenda }: { relire?: () => Promise
 
   return (
     <div className="grid gap-1">
-      <div className="-mx-1.5 flex flex-wrap items-center gap-x-3">
+      {/* L'action principale de la zone Agenda : ton fort, en relief au doigt. */}
+      <div className="-mx-1.5 flex flex-wrap items-center gap-x-3 pointer-coarse:mx-0">
         <Action
-          ton="normal"
+          ton="fort"
           disabled={enCours}
           enCours={enCours}
           libelleEnCours="Lecture de l’agenda…"
