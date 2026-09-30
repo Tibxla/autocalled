@@ -287,12 +287,16 @@ export const disponibilites = pgTable('disponibilites', {
 });
 
 /**
- * Chaque appel d'outil du serveur MCP (ADR 0009), lectures comprises : on sait ce que Claude a lu (une
- * transcription, par exemple) avant d'agir. L'acteur est toujours Claude Code, en session locale.
+ * Le journal des gestes (ADR 0016) : chaque appel d'outil du serveur MCP (ADR 0009), lectures comprises, on sait ce
+ * que Claude a lu (une transcription, par exemple) avant d'agir ; et chaque geste d'écriture de la page Assistante.
+ * La table garde son nom d'origine, `journal_mcp` : `origine` dit qui a agi.
  */
 export const journalMcp = pgTable('journal_mcp', {
   id: uuid().primaryKey().defaultRandom(),
   le: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  /** `mcp` : Claude Code, en session locale ; `interface` : l'opérateur, sur la page Assistante. */
+  origine: text().$type<Origine>().notNull().default('mcp'),
+  /** L'outil du MCP, ou le geste de la page sous le nom de l'outil qui fait la même chose (`pousser_assistante`…). */
   outil: text().notNull(),
   /** Les arguments reçus, les champs volumineux résumés (une fiche importée n'y est pas recopiée). */
   arguments: jsonb().$type<Record<string, unknown>>().notNull(),

@@ -6,14 +6,18 @@ import { Action, Chevron, EtatVide, Filtre, Filtres } from '@/components/ui';
 import { estLectureMcp, libelleOutilMcp } from '@/lib/outils-mcp';
 
 /**
- * Le journal des outils du serveur MCP d'Autocalled appelés par Claude Code (ADR 0009). Les lectures y sont
- * aussi : on sait ce que Claude a lu avant d'agir. Filtres locaux sur les lignes chargées, « Gestes » par
- * défaut pour que les lectures ne noient pas ce qui a changé quelque chose.
+ * Le journal des gestes (ADR 0016) : les outils du serveur MCP d'Autocalled appelés par Claude Code (ADR 0009),
+ * lectures comprises, on sait ce que Claude a lu avant d'agir ; et les gestes de l'opérateur sur la page Assistante,
+ * nommés comme l'outil qui fait la même chose. Chaque ligne dit son origine. Filtres locaux sur les lignes chargées :
+ * « Gestes » par défaut pour que les lectures ne noient pas ce qui a changé quelque chose, et l'origine.
  */
+
+export type OrigineJournal = 'mcp' | 'interface';
 
 export type LigneJournal = {
   id: string;
   le: Date;
+  origine: OrigineJournal;
   outil: string;
   arguments: Record<string, unknown>;
   resultat: 'ok' | 'refus' | 'erreur' | 'confirmation-demandee';
@@ -24,6 +28,9 @@ export type LigneJournal = {
 };
 
 type Vue = 'gestes' | 'problemes' | 'tout';
+type Origine = 'toutes' | OrigineJournal;
+
+export const ORIGINES: Record<OrigineJournal, string> = { mcp: 'Claude Code', interface: 'Interface' };
 
 /** Une lecture ne change rien : la nature vient de l'annotation readOnlyHint de l'outil (lib/outils-mcp.ts). */
 const estLecture = estLectureMcp;
@@ -52,8 +59,10 @@ function resumer(outil: string, a: Record<string, unknown>, noms: LigneJournal['
   }
   for (const cle of ['prospect', 'entreprise', 'nom'] as const) {
     const v = cle === 'nom' ? texte(a[cle]) : (noms[cle] ?? texte(a[cle]));
-    if (v) parties.push(v);
+    // Le nom de l'assistante, changé depuis la page : l'ancien, puis le nouveau.
+    if (v) parties.push(cle === 'nom' && texte(a.nomAvant) ? `${texte(a.nomAvant)} → ${v}` : v);
   }
+  if (texte(a.premierMessage) && texte(a.premierMessageAvant)) parties.push('premier message');
   if (Array.isArray(a.prospects)) parties.push(`${a.prospects.length} prospect${a.prospects.length > 1 ? 's' : ''}`);
   if (Array.isArray(a.fiches)) parties.push(`${a.fiches.length} fiche${a.fiches.length > 1 ? 's' : ''}`);
   const ligne = texte(a.ligne);
@@ -63,6 +72,10 @@ function resumer(outil: string, a: Record<string, unknown>, noms: LigneJournal['
   if (recherche) parties.push(`« ${recherche} »`);
   const issue = texte(a.issue);
   if (issue) parties.push(issue);
+  // Gestes sur l'assistante : les réglages changés, la version restaurée.
+  if (a.changements && typeof a.changements === 'object') parties.push(Object.keys(a.changements).join(', '));
+  const version = texte(a.versionId);
+  if (version) parties.push(`version ${version}`);
   if (parties.length === 0) {
     const id =
       (court(a.appelId) && `appel ${court(a.appelId)}`) ||
@@ -102,74 +115,110 @@ function resultat(l: LigneJournal): { texte: string; ton: string } {
   return { texte, ton };
 }
 
-export function JournalClaudeCode({ lignes }: { lignes: LigneJournal[] }) {
+export function JournalDesGestes({ lignes }: { lignes: LigneJournal[] }) {
   const [vue, setVue] = useState<Vue>('gestes');
+  const [origine, setOrigine] = useState<Origine>('toutes');
 
   if (lignes.length === 0) {
     return (
-      <EtatVide titre="Claude Code n’a encore appelé aucun outil.">
-        Ses lectures et ses gestes apparaîtront ici, du plus récent au plus ancien.
+      <EtatVide titre="Le journal est vide.">
+        Les lectures et les gestes de Claude Code, et les gestes faits sur la page Assistante, apparaîtront ici, du plus récent au plus ancien.
       </EtatVide>
     );
   }
 
-  const gestes = lignes.filter((l) => !estLecture(l.outil));
-  const problemes = lignes.filter(estProbleme);
-  const visibles = vue === 'gestes' ? gestes : vue === 'problemes' ? problemes : lignes;
+  const deLOrigine = origine === 'toutes' ? lignes : lignes.filter((l) => l.origine === origine);
+  const gestes = deLOrigine.filter((l) => !estLecture(l.outil));
+  const problemes = deLOrigine.filter(estProbleme);
+  const visibles = vue === 'gestes' ? gestes : vue === 'problemes' ? problemes : deLOrigine;
+  const parOrigine = (o: OrigineJournal) => lignes.filter((l) => l.origine === o).length;
 
   return (
     <div className="grid gap-3">
-      <Filtres libelle="Filtrer le journal">
-        <Filtre actif={vue === 'gestes'} compte={gestes.length} onClick={() => setVue('gestes')}>
-          Gestes
-        </Filtre>
-        <Filtre actif={vue === 'problemes'} compte={problemes.length} onClick={() => setVue('problemes')}>
-          Refus et erreurs
-        </Filtre>
-        <Filtre actif={vue === 'tout'} compte={lignes.length} onClick={() => setVue('tout')}>
-          Tout
-        </Filtre>
-      </Filtres>
+      <div className="grid gap-1">
+        <Filtres libelle="Filtrer le journal">
+          <Filtre actif={vue === 'gestes'} compte={gestes.length} onClick={() => setVue('gestes')}>
+            Gestes
+          </Filtre>
+          <Filtre actif={vue === 'problemes'} compte={problemes.length} onClick={() => setVue('problemes')}>
+            Refus et erreurs
+          </Filtre>
+          <Filtre actif={vue === 'tout'} compte={deLOrigine.length} onClick={() => setVue('tout')}>
+            Tout
+          </Filtre>
+        </Filtres>
+        <Filtres libelle="Origine" className="text-sm!">
+          <Filtre actif={origine === 'toutes'} compte={lignes.length} onClick={() => setOrigine('toutes')}>
+            Toutes origines
+          </Filtre>
+          <Filtre actif={origine === 'mcp'} compte={parOrigine('mcp')} onClick={() => setOrigine('mcp')}>
+            {ORIGINES.mcp}
+          </Filtre>
+          <Filtre actif={origine === 'interface'} compte={parOrigine('interface')} onClick={() => setOrigine('interface')}>
+            {ORIGINES.interface}
+          </Filtre>
+        </Filtres>
+      </div>
       {visibles.length === 0 ? (
         <EtatVide
           forme="filtre"
           titre={
-            vue === 'gestes'
-              ? `Aucun geste parmi ${lignes.length > 1 ? `les ${lignes.length} dernières lignes` : 'la dernière ligne'} : seulement des lectures.`
-              : 'Aucun refus ni aucune erreur.'
+            deLOrigine.length === 0
+              ? 'Aucune ligne de cette origine parmi les dernières.'
+              : vue === 'gestes'
+                ? `Aucun geste parmi ${deLOrigine.length > 1 ? `les ${deLOrigine.length} dernières lignes` : 'la dernière ligne'} : seulement des lectures.`
+                : 'Aucun refus ni aucune erreur.'
           }
           action={
-            <Action ton="normal" onClick={() => setVue('tout')}>
+            <Action
+              ton="normal"
+              onClick={() => {
+                setVue('tout');
+                setOrigine('toutes');
+              }}
+            >
               Tout afficher
             </Action>
           }
         />
       ) : (
-        <ol className="border-t border-filet">
-          {visibles.map((l) => (
-            <LigneDuJournal key={l.id} ligne={l} />
-          ))}
-        </ol>
+        <ListeDuJournal lignes={visibles} />
       )}
       <p className="text-sm text-encre-3">
-        {lignes.length > 1 ? `Les ${lignes.length} derniers appels d’outils.` : 'Le dernier appel d’outil.'} Ouvre une ligne pour voir ses arguments.
+        {lignes.length > 1 ? `Les ${lignes.length} dernières lignes du journal.` : 'La dernière ligne du journal.'} Ouvre une ligne pour voir ses arguments.
       </p>
     </div>
   );
 }
 
+/** Les lignes, sans filtre : le journal de Réglages, et les derniers gestes de la page Assistante. */
+export function ListeDuJournal({ lignes }: { lignes: LigneJournal[] }) {
+  return (
+    <ol className="border-t border-filet">
+      {lignes.map((l) => (
+        <LigneDuJournal key={l.id} ligne={l} />
+      ))}
+    </ol>
+  );
+}
+
 function LigneDuJournal({ ligne: l }: { ligne: LigneJournal }) {
   const libelle = libelleOutilMcp(l.outil);
-  const resume = resumer(l.outil, l.arguments, l.noms);
+  // Le résumé d'un succès (versions avant et après d'une poussée…) suit celui des arguments.
+  const resume = [resumer(l.outil, l.arguments, l.noms), l.resultat === 'ok' && l.message ? masquer(l.message) : null].filter(Boolean).join(' · ');
   const r = resultat(l);
   const brut = masquer(JSON.stringify(l.arguments, null, 2));
+  const question = l.resultat === 'confirmation-demandee' && l.message ? masquer(l.message) : null;
   return (
     <li className="border-b border-filet">
       <details className="group">
-        <summary className="relative grid cursor-pointer list-none gap-x-4 gap-y-0.5 py-2 transition-colors duration-100 hover:bg-survol pointer-coarse:active:bg-survol max-sm:pr-6 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus sm:min-h-[38px] sm:grid-cols-[6.5rem_minmax(0,1fr)_auto_0.625rem] sm:items-baseline [&::-webkit-details-marker]:hidden">
-          <time dateTime={l.le.toISOString()} className="font-mono text-xs text-encre-3">
-            {dateCourte(l.le)}
-          </time>
+        <summary className="relative grid cursor-pointer list-none gap-x-4 gap-y-0.5 py-2 transition-colors duration-100 hover:bg-survol pointer-coarse:active:bg-survol max-sm:pr-6 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus pointer-coarse:min-h-11 sm:min-h-[38px] sm:grid-cols-[6.5rem_minmax(0,1fr)_auto_0.625rem] sm:items-baseline [&::-webkit-details-marker]:hidden">
+          <span className="flex items-baseline gap-x-2 sm:flex-col sm:gap-y-0.5">
+            <time dateTime={l.le.toISOString()} className="font-mono text-xs text-encre-3">
+              {dateCourte(l.le)}
+            </time>
+            <span className={`text-xs ${l.origine === 'interface' ? 'text-encre-2' : 'text-encre-3'}`}>{ORIGINES[l.origine] ?? l.origine}</span>
+          </span>
           <span className="flex min-w-0 items-baseline gap-2">
             <span className={`shrink-0 ${estLecture(l.outil) ? 'text-encre-2' : 'font-medium text-encre'}`}>{libelle ?? l.outil}</span>
             {libelle ? <span className="shrink-0 font-mono text-xs text-encre-3 max-sm:hidden">{l.outil}</span> : null}
@@ -188,10 +237,20 @@ function LigneDuJournal({ ligne: l }: { ligne: LigneJournal }) {
           <pre className="rounded-md sm:max-h-64 sm:overflow-auto bg-surface px-3 py-2 font-mono text-xs leading-5 break-all whitespace-pre-wrap text-encre-2">
             {brut}
           </pre>
+          {question ? (
+            <>
+              <p className="pt-1 text-xs text-encre-3">Question posée à l’opérateur</p>
+              <pre className="rounded-md sm:max-h-64 sm:overflow-auto bg-surface px-3 py-2 font-mono text-xs leading-5 break-words whitespace-pre-wrap text-encre-2">
+                {question}
+              </pre>
+            </>
+          ) : null}
         </div>
       </details>
-      {/* Un refus de l'opérateur est déjà dit par le résultat : son message le répéterait. */}
-      {l.message && l.resultat !== 'ok' && l.confirmation !== 'refusee' ? (
+      {/* Un refus de l'opérateur est déjà dit par le résultat : son message le répéterait. Une question : sa première ligne. */}
+      {question ? (
+        <p className="line-clamp-2 pb-2 text-sm break-words text-encre-3 sm:pl-[calc(6.5rem+1rem)]">{question.split('\n')[0]}</p>
+      ) : l.message && l.resultat !== 'ok' && l.confirmation !== 'refusee' ? (
         <p className="pb-2 text-sm text-encre-3 sm:pl-[calc(6.5rem+1rem)]">{masquer(l.message)}</p>
       ) : null}
     </li>

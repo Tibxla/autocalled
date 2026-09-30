@@ -120,6 +120,13 @@
       "when": 1790726293935,
       "tag": "0016_informations-complementaires",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790751826484,
+      "tag": "0017_journal-origine",
+      "breakpoints": true
     }
   ]
 }

@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 import { heure, jourCourt } from '@/components/format-appel';
-import { EnTetePage, EtatVide, LIEN_TEXTE, LigneDefinition, Message, Page, TitreSection } from '@/components/ui';
+import { EnTetePage, EtatVide, LIEN_TEXTE, LienAction, LigneDefinition, Message, Page, TitreSection } from '@/components/ui';
 import { ceQueVoitLAssistante } from '@/lib/ce-que-voit-l-assistante';
-import { lireEditionAssistante } from '@/lib/edition-assistante';
+import { derniersGestesAssistante, lireEditionAssistante } from '@/lib/edition-assistante';
 import { lireFichiersAssistante } from '@/lib/fichiers-assistante';
 import { assistantePourLaPage } from '@/lib/pages';
 import {
@@ -22,6 +22,7 @@ import { ChoixApercu } from './choix-apercu';
 import { FormulaireIdentite } from './formulaire-identite';
 import { FormulaireReglages } from './formulaire-reglages';
 import { Historique } from './historique';
+import { ListeDuJournal } from '../reglages/journal-des-gestes';
 import { Poussee } from './poussee';
 
 export const metadata: Metadata = { title: 'Assistante' };
@@ -53,10 +54,11 @@ type Parametres = { entreprise?: string; version?: string; prospect?: string };
  */
 export default async function PageAssistante({ searchParams }: { searchParams: Promise<Parametres> }) {
   const choix = await searchParams;
-  const [assistante, fichiers, edition, vue] = await Promise.all([
+  const [assistante, fichiers, edition, gestes, vue] = await Promise.all([
     assistantePourLaPage(),
     lireFichiersAssistante(),
     lireEditionAssistante(),
+    derniersGestesAssistante(),
     ceQueVoitLAssistante({ entreprise: choix.entreprise, version: choix.version, prospect: choix.prospect }),
   ]);
   const { nom } = assistante;
@@ -88,6 +90,7 @@ export default async function PageAssistante({ searchParams }: { searchParams: P
           <Ancre href="#historique" compte={edition.historique.length}>
             Historique
           </Ancre>
+          <Ancre href="#gestes">Derniers gestes</Ancre>
           <Ancre href="#configuration">Configuration</Ancre>
           <Ancre href="#outils" compte={outils.length}>
             Outils
@@ -238,6 +241,22 @@ export default async function PageAssistante({ searchParams }: { searchParams: P
               }))}
             />
           )}
+        </section>
+
+        <section id="gestes" aria-labelledby="titre-gestes" className={SECTION}>
+          <TitreSection id="titre-gestes">Derniers gestes</TitreSection>
+          <p className="max-w-[62ch] text-sm text-encre-2">
+            Les cinq derniers changements de l’assistante, faits ici ou par Claude Code, et leur résultat. La question lue avant chaque
+            geste confirmé, les lectures et tous les autres gestes sont au journal complet, dans Réglages.
+          </p>
+          {gestes.length === 0 ? (
+            <EtatVide titre="Aucun geste sur l’assistante pour l’instant">Chaque enregistrement, poussée, rapatriement ou restauration laissera ici sa ligne.</EtatVide>
+          ) : (
+            <ListeDuJournal lignes={gestes} />
+          )}
+          <LienAction href="/reglages#journal" ton="normal" className="-mx-1.5 justify-self-start pointer-coarse:mx-0">
+            Journal complet
+          </LienAction>
         </section>
 
         <section id="configuration" aria-labelledby="titre-configuration" className={SECTION}>

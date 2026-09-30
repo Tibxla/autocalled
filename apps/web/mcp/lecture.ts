@@ -32,7 +32,7 @@ import { usageDuScript, versionsDeLEntreprise } from '@/lib/versions';
 import { bloc, champEntreprise, champProspect, champVersion, complementNonFiable, entrepriseInconnue, libellesIssues, type Prospect, prospectInconnu, vueAppel } from './communs';
 import { type Declarer, refus, reussite, sansOk } from './outil';
 
-const ERREUR_AU_JOURNAL = 'Erreur interne : le détail se lit dans Réglages (journal MCP), pas ici.';
+const ERREUR_AU_JOURNAL = 'Erreur interne : le détail se lit dans Réglages (journal des gestes), pas ici.';
 
 const LECTURE = { readOnlyHint: true, openWorldHint: false } as const;
 const LECTURE_OUVERTE = { readOnlyHint: true, openWorldHint: true } as const;
@@ -788,17 +788,18 @@ export function outilsDeLecture(declarer: Declarer): void {
     'lire_journal_mcp',
     {
       description:
-        'Les derniers appels d’outils du serveur MCP, du plus récent au plus ancien (outil, arguments ou leur résumé, résultat, message, confirmation de l’opérateur). Filtres : outil, résultat (ok, refus, erreur, confirmation-demandee), depuis (date ISO). Le détail d’une erreur interne ne se lit que dans Réglages. Montre par exemple qu’une transcription a été lue juste avant une modification du prompt.',
+        'Le journal des gestes, du plus récent au plus ancien : les appels d’outils du serveur MCP (origine `mcp`, lectures comprises) et les gestes de l’opérateur sur la page Assistante (origine `interface`, nommés comme l’outil qui fait la même chose : modifier_assistante, modifier_reglages_assistante, pousser_assistante, rapatrier_assistante, restaurer_assistante). Chaque ligne : origine, outil, arguments ou leur résumé, résultat, message (raison d’un refus, question d’une confirmation demandée), confirmation de l’opérateur. Filtres : origine, outil, résultat (ok, refus, erreur, confirmation-demandee), depuis (date ISO). Le détail d’une erreur interne ne se lit que dans Réglages. Montre par exemple qu’une transcription a été lue juste avant une modification du prompt, ou que l’opérateur a restauré une version depuis la page.',
       entree: z.strictObject({
         limite: z.int().min(1).max(100).default(30),
+        origine: z.enum(['mcp', 'interface']).optional(),
         outil: z.string().max(60).optional(),
         resultat: z.enum(['ok', 'refus', 'erreur', 'confirmation-demandee']).optional(),
         depuis: z.iso.datetime({ offset: true }).optional(),
       }),
       annotations: LECTURE,
     },
-    async ({ limite, outil, resultat, depuis }) => {
-      const lignes = await journalMcpRecent(limite, { outil, resultat, depuis: depuis ? new Date(depuis) : undefined });
+    async ({ limite, origine, outil, resultat, depuis }) => {
+      const lignes = await journalMcpRecent(limite, { origine, outil, resultat, depuis: depuis ? new Date(depuis) : undefined });
       // Le message d'une exception (texte Postgres, chemins, valeurs) reste pour l'opérateur, comme dans outil.ts.
       return reussite(lignes.map((l) => (l.resultat === 'erreur' ? { ...l, message: ERREUR_AU_JOURNAL } : l)));
     },

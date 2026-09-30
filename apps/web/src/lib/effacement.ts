@@ -17,7 +17,7 @@ import { OPPOSITION_ILLISIBLE, SEL_ABSENT, inscrireOpposition, numerosOpposes, s
  * Effacement d'une personne (droit à l'effacement, ADR 0013) : sa fiche, ses appels avec transcriptions et bilans,
  * les enregistrements sur disque (application et pont), ses rendez-vous et, quand l'API Google le permet, leurs
  * événements, ses entrées de campagne, ses rappels, le consentement de son numéro et ses mentions dans le journal
- * MCP. Seule reste l'empreinte irréversible de son numéro dans la liste d'opposition : il ne sera plus jamais
+ * des gestes, quelle que soit leur origine. Seule reste l'empreinte irréversible de son numéro dans la liste d'opposition : il ne sera plus jamais
  * composé ni importé. Irréversible.
  *
  * Les autres prospects qui portent le même numéro (même personne dans une autre entreprise, standard partagé) ne
@@ -26,7 +26,7 @@ import { OPPOSITION_ILLISIBLE, SEL_ABSENT, inscrireOpposition, numerosOpposes, s
  * si c'est la même personne.
  */
 
-/** Ce qui remplace la personne dans le journal MCP. */
+/** Ce qui remplace la personne dans le journal des gestes. */
 export const MENTION_NEUTRE = '[personne effacée]';
 
 /** Un rendez-vous plus jeune que ça, encore « à créer », peut être en train de s'inscrire dans Google Agenda. */
@@ -195,7 +195,7 @@ function obstacle(c: Collecte, maintenant: Date): string | null {
   return null;
 }
 
-/* ------------------------------------------------------------------ journal MCP */
+/* ------------------------------------------------------------------ journal des gestes (toutes origines) */
 
 function echapperRegex(texte: string): string {
   return texte.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -238,7 +238,7 @@ function neutraliserValeur(valeur: unknown, expressions: readonly RegExp[]): unk
   return valeur;
 }
 
-/** Les lignes du journal MCP qui mentionnent la personne, avec leur version neutralisée. */
+/** Les lignes du journal des gestes (MCP et interface) qui mentionnent la personne, avec leur version neutralisée. */
 async function mentionsDuJournal(lecteur: Lecteur | Transaction, marques: ReturnType<typeof marquesDeLaPersonne>) {
   if (marques.textes.length === 0) return [];
   const candidates = await lecteur
@@ -468,7 +468,7 @@ export function phrasesEffacement(
       ? [`sa place dans ${pluriel(inv.entreesCampagne, 'file de campagne', 'files de campagne')} (une campagne qui ne contenait qu’elle est supprimée ; les comptes des autres changent)`]
       : []),
     ...(inv.consentements ? [`le consentement de son numéro (${pluriel(inv.consentements, 'accord enregistré', 'accords enregistrés')})`] : []),
-    ...(inv.mentionsJournal ? [`${pluriel(inv.mentionsJournal, 'mention', 'mentions')} dans le journal de Claude Code, remplacées par « ${MENTION_NEUTRE} »`] : []),
+    ...(inv.mentionsJournal ? [`${pluriel(inv.mentionsJournal, 'mention', 'mentions')} dans le journal des gestes, remplacées par « ${MENTION_NEUTRE} »`] : []),
   ];
   const aLaMain = inv.evenements.filter((e) => !e.supprimable).length;
   const reste = [

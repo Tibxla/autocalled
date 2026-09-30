@@ -340,13 +340,21 @@ describe('lectures ajoutées', () => {
     );
   });
 
-  it('lit le journal MCP, filtré par outil, les rappels du jour et la journée', async () => {
+  it('lit le journal des gestes, filtré par outil et par origine, les rappels du jour et la journée', async () => {
     const { appeler } = await client();
     await appeler('lister_entreprises');
     await appeler('lire_texte_consentement');
 
-    const journal = (await appeler('lire_journal_mcp', { outil: 'lister_entreprises' })).json as { outil: string }[];
-    expect(journal.map((j) => j.outil)).toEqual(['lister_entreprises']);
+    const journal = (await appeler('lire_journal_mcp', { outil: 'lister_entreprises' })).json as { outil: string; origine: string }[];
+    expect(journal.map((j) => [j.origine, j.outil])).toEqual([['mcp', 'lister_entreprises']]);
+    // Les gestes de la page Assistante, d'origine interface, se lisent aussi, et se filtrent par origine.
+    await db.insert(journalMcp).values({ origine: 'interface', outil: 'restaurer_assistante', arguments: { versionId: 'agtvrsn_fictive1' }, resultat: 'ok', confirmation: 'acceptee' });
+    expect((await appeler('lire_journal_mcp', { origine: 'interface' })).json).toEqual([
+      expect.objectContaining({ origine: 'interface', outil: 'restaurer_assistante', arguments: { versionId: 'agtvrsn_fictive1' }, confirmation: 'acceptee' }),
+    ]);
+    const mcp = (await appeler('lire_journal_mcp', { origine: 'mcp' })).json as { origine: string }[];
+    expect(mcp.length).toBeGreaterThan(0);
+    expect(mcp.every((j) => j.origine === 'mcp')).toBe(true);
     expect((await appeler('rappels_du_jour')).json).toEqual({ rappels: [], sansDate: 0 });
     expect((await appeler('lire_journee')).json).toMatchObject({ appels: [], campagnes: [], appelsTelephone: { derniereHeure: 0, dernieres24h: 0 } });
   });

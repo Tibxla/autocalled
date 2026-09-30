@@ -1,8 +1,8 @@
 import 'server-only';
 import { ISSUES_SYSTEME, type IssueSysteme, type RappelDate, type TourDeParole, statistiquesObjections, statistiquesParVersion } from '@autocalled/domain';
-import { type SQL, and, asc, desc, eq, gte, ilike, isNotNull, ne, or, sql } from 'drizzle-orm';
+import { type SQL, and, asc, desc, eq, gte, ilike, inArray, isNotNull, ne, or, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { appels, entreprises, issuesPersonnalisees, journalMcp, objections, prospects, rendezVous, versionsScript } from '@/db/schema';
+import { appels, entreprises, issuesPersonnalisees, journalMcp, objections, type Origine, prospects, rendezVous, versionsScript } from '@/db/schema';
 import { RAPPEL_A_FAIRE } from './rappels';
 import { versionsDeLEntreprise } from './versions';
 
@@ -337,18 +337,31 @@ export async function rendezVousRecents(limite = 20) {
     .limit(limite);
 }
 
-/** Les derniers appels d'outils du serveur MCP (ADR 0009), du plus récent au plus ancien : d'un outil, d'un résultat, depuis une date. */
+/**
+ * Les dernières lignes du journal des gestes (ADR 0016), du plus récent au plus ancien : appels d'outils du serveur
+ * MCP et gestes de la page Assistante. D'une origine, d'un ou plusieurs outils, d'un résultat, depuis une date.
+ */
 export async function journalMcpRecent(
   limite = 30,
-  filtres: { outil?: string; resultat?: 'ok' | 'refus' | 'erreur' | 'confirmation-demandee'; depuis?: Date } = {},
+  filtres: {
+    origine?: Origine;
+    outil?: string | readonly string[];
+    resultat?: 'ok' | 'refus' | 'erreur' | 'confirmation-demandee';
+    sansDemandes?: boolean;
+    depuis?: Date;
+  } = {},
 ) {
   return db
     .select()
     .from(journalMcp)
     .where(
       and(
-        filtres.outil ? eq(journalMcp.outil, filtres.outil) : undefined,
+        filtres.origine ? eq(journalMcp.origine, filtres.origine) : undefined,
+        typeof filtres.outil === 'string' ? eq(journalMcp.outil, filtres.outil) : undefined,
+        Array.isArray(filtres.outil) ? inArray(journalMcp.outil, [...filtres.outil]) : undefined,
         filtres.resultat ? eq(journalMcp.resultat, filtres.resultat) : undefined,
+        // Une question posée n'est pas un geste fait : la ligne du résultat la suit.
+        filtres.sansDemandes ? ne(journalMcp.resultat, 'confirmation-demandee') : undefined,
         filtres.depuis ? gte(journalMcp.le, filtres.depuis) : undefined,
       ),
     )

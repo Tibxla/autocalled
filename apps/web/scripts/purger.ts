@@ -1,7 +1,7 @@
 /**
  * Purge les données personnelles des appels passés la durée de conservation (ADR 0014) : enregistrements,
- * transcriptions, texte libre des bilans et des erreurs, adresses d'invitation ; puis les lignes du journal MCP plus
- * vieilles que la durée. Garde l'issue, l'étape atteinte, les objections, la durée, les dates, la ligne et les versions.
+ * transcriptions, texte libre des bilans et des erreurs, adresses d'invitation ; puis les lignes du journal des
+ * gestes plus vieilles que la durée. Garde l'issue, l'étape atteinte, les objections, la durée, les dates, la ligne et les versions.
  * La liste d'opposition n'est jamais touchée. Idempotent : lancé chaque jour par autocalled-purge.timer.
  *
  *   pnpm purger            purge, puis écrit le compte rendu

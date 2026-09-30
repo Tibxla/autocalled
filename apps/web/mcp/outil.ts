@@ -1,14 +1,14 @@
 import type { CallToolResult, InputRequiredResult, McpServer, ServerContext, ToolAnnotations } from '@modelcontextprotocol/server';
 import type { z } from 'zod';
-import { db } from '@/db';
-import { journalMcp } from '@/db/schema';
+import { type ConfirmationJournal, noterAuJournal, type ResultatJournal } from '@/lib/journal';
 
 /**
  * Déclaration des outils du serveur MCP (ADR 0009). Toute déclaration passe par ici, pour qu'aucun outil
- * n'échappe au journal : chaque appel laisse une ligne dans `journal_mcp`, lectures comprises.
+ * n'échappe au journal des gestes (ADR 0016) : chaque appel laisse une ligne d'origine `mcp` dans `journal_mcp`,
+ * lectures comprises.
  */
 
-export type Confirmation = 'acceptee' | 'refusee' | 'indisponible';
+export type Confirmation = ConfirmationJournal;
 
 /**
  * Ce que rend un outil : un résultat, un refus (même phrase que l'interface), ou une demande de confirmation.
@@ -55,32 +55,16 @@ export type Declarer = <S extends z.ZodObject>(
   traiter: (args: z.output<S>, ctx: ServerContext) => Promise<Issue>,
 ) => void;
 
-async function noter(
-  outil: string,
-  args: Record<string, unknown>,
-  resultat: 'ok' | 'refus' | 'erreur' | 'confirmation-demandee',
-  message: string | null,
-  confirmation: Confirmation | null,
-): Promise<boolean> {
-  try {
-    await db.insert(journalMcp).values({ outil, arguments: args, resultat, message, confirmation });
-    return true;
-  } catch (erreur) {
-    // Une lecture ne doit pas échouer pour le journal ; stdout est au protocole, l'erreur part sur stderr.
-    console.error('journal MCP indisponible :', erreur);
-    return false;
-  }
+function noter(outil: string, args: Record<string, unknown>, resultat: ResultatJournal, message: string | null, confirmation: Confirmation | null) {
+  return noterAuJournal({ origine: 'mcp', outil, arguments: args, resultat, message, confirmation });
 }
 
-/** Le texte d'une question gardé au journal : ce que l'opérateur a lu avant d'accepter ou de refuser. */
-export const QUESTION_MAX = 2000;
-
-export const JOURNAL_INDISPONIBLE = 'Le journal MCP est indisponible : un geste sous confirmation ne se fait pas sans trace. Rien n’a été fait.';
+export const JOURNAL_INDISPONIBLE = 'Le journal des gestes est indisponible : un geste sous confirmation ne se fait pas sans trace. Rien n’a été fait.';
 
 const texte = (t: string) => ({ type: 'text' as const, text: t });
 
 /** Ce que voit le modèle d'une exception : ni texte Postgres, ni chemin de fichier, ni trace. Le détail va au journal. */
-export const ERREUR_INTERNE = 'Erreur interne : l’outil a échoué (le détail est au journal MCP).';
+export const ERREUR_INTERNE = 'Erreur interne : l’outil a échoué (le détail est au journal des gestes).';
 
 export function declarateur(serveur: McpServer): Declarer {
   return (nom, config, traiter) => {
@@ -96,7 +80,7 @@ export function declarateur(serveur: McpServer): Declarer {
       }
       if ('demande' in issue) {
         // Un geste sous confirmation ne part jamais sans trace : pas de ligne au journal, pas de question, pas d'accord.
-        if (!(await noter(nom, journal, 'confirmation-demandee', issue.question?.slice(0, QUESTION_MAX) ?? null, null))) {
+        if (!(await noter(nom, journal, 'confirmation-demandee', issue.question ?? null, null))) {
           return { isError: true, content: [texte(JOURNAL_INDISPONIBLE)] };
         }
         return issue.demande;

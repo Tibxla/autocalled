@@ -43,5 +43,5 @@ Le serveur MCP `autocalled` (déclaré dans `.mcp.json`, lancé en stdio) lit et
 - `pousser_assistante` refuse une différence de plus de 4 000 caractères ou un champ hors de sa liste : l'opérateur pousse alors au terminal (`pnpm agent push`, qui montre la même différence).
 - `pousser_assistante` et `rapatrier_assistante` refusent quand `agent/` et ElevenLabs ont bougé chacun de leur côté : le MCP ne tranche pas (terminal : `git diff agent/`, `git stash`, `pnpm agent pull`, puis réappliquer).
 - La validation du prompt suit les variables du code de la copie où tourne le MCP, pas celles de la production.
-- `lire_journal_mcp` montre ce qui a été lu avant une écriture : utile quand une modification surprend. Le détail d'une erreur interne ne s'y lit pas : il est dans Réglages.
+- `lire_journal_mcp` montre ce qui a été lu avant une écriture : utile quand une modification surprend. Il montre aussi les gestes de l'opérateur sur la page Assistante (`origine: interface`) : une restauration ou une poussée faite dans l'interface se lit là avant de conclure que `agent/` a bougé tout seul. Le détail d'une erreur interne ne s'y lit pas : il est dans Réglages.
 - Consignes de l'analyseur et personnage du prospect simulé : hors du MCP, par le code (voir la fin de REFERENCE.md).

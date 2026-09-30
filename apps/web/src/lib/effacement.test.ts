@@ -37,7 +37,7 @@ afterEach(async () => {
   await rm(dossier, { recursive: true, force: true });
 });
 
-/** Julie (deux appels, dont un enregistré avec rendez-vous), Marc (un appel), et un journal MCP qui les cite. */
+/** Julie (deux appels, dont un enregistré avec rendez-vous), Marc (un appel), et un journal des gestes qui les cite. */
 async function monde() {
   const e = await entrepriseDeTest();
   await agendaFrais();
@@ -86,6 +86,14 @@ async function monde() {
     },
     { outil: 'importer_fiches', arguments: { entreprise: 'gite-fictif', fiches: [{ nomFichier: 'julie.md', octets: 120 }, { nomFichier: 'julie-martin.md', octets: 90 }] }, resultat: 'ok' },
     { outil: 'lire_prospect', arguments: { entreprise: 'gite-fictif', prospect: 'marc' }, resultat: 'ok' },
+    // Un geste de la page Assistante qui la nomme (un premier message tapé à la main) : effacé comme les lignes du MCP.
+    {
+      origine: 'interface',
+      outil: 'modifier_assistante',
+      arguments: { premierMessageAvant: 'Allô ?', premierMessage: 'Bonjour Julie Fictive ?' },
+      resultat: 'ok',
+      confirmation: 'acceptee',
+    },
   ]);
   return { e, versionScriptId, a1: a1!, a2: a2!, m: m!, seule, partagee, debut };
 }
@@ -106,7 +114,7 @@ describe('inventaireEffacement', () => {
       evenements: [{ debut: debut.toISOString(), aVenir: true, supprimable: false }],
       entreesCampagne: 2,
       consentements: 1,
-      mentionsJournal: 3,
+      mentionsJournal: 4,
       conversations: 1,
       autresPorteurs: [],
       obstacle: null,
@@ -137,7 +145,7 @@ describe('effacerPersonne', () => {
         campagnesSupprimees: 1,
         campagnesTerminees: 0,
         consentements: 1,
-        mentionsJournal: 3,
+        mentionsJournal: 4,
         fichiers: 3,
         evenements: 0,
       },
@@ -166,6 +174,7 @@ describe('effacerPersonne', () => {
     expect(texte).toContain('julie-martin.md');
     expect(journal.find((l) => l.outil === 'lancer_appel')?.message).toBe(`Appeler le ${MENTION_NEUTRE} (${MENTION_NEUTRE}), Société fictive.`);
     expect(journal.map((l) => l.arguments)).toContainEqual({ entreprise: 'gite-fictif', prospect: 'marc' });
+    expect(journal.find((l) => l.origine === 'interface')?.arguments).toEqual({ premierMessageAvant: 'Allô ?', premierMessage: `Bonjour ${MENTION_NEUTRE} ?` });
     // Opposition : une empreinte et le témoin, sans le numéro en clair.
     const liste = await db.select().from(oppositions);
     expect(liste).toHaveLength(2);
