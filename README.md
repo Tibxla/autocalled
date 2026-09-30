@@ -210,8 +210,9 @@ Sur téléphone, la navigation passe dans une barre du bas, les filtres tiennent
 
 ### Page Assistante
 
-- Identité (nom, premier message), prompt système, configuration ElevenLabs, outils, connaissances, en lecture et à télécharger.
+- Identité (nom, premier message), prompt système, configuration ElevenLabs, outils, connaissances, à lire et à télécharger.
 - « Ce qu'elle voit pour parler » : le prompt résolu et les variables pour une entreprise, une version et un prospect choisis.
+- Tout ce que le serveur MCP règle sur l'assistante se règle aussi ici, par les mêmes fonctions : nom et premier message, réglages de la voix et du tour de parole, poussée vers ElevenLabs après lecture de la différence, rapatriement, historique et restauration. Seul le prompt reste à Claude Code, qui le modifie par remplacements exacts ; la page le montre et le pousse.
 - Le nom et le premier message valent dès l'appel suivant ; le prompt et les réglages partent chez ElevenLabs par une poussée confirmée ([ADR 0010](docs/adr/0010-configuration-de-l-assistante-par-le-mcp.md)).
 
 ### Serveur MCP et skill Claude Code
