@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { heure, jourCourt } from '@/components/format-appel';
-import { EnTetePage, LIEN_TEXTE, LigneDefinition, Message, Page, TitreSection } from '@/components/ui';
+import { EnTetePage, LIEN_TEXTE, LienAction, LigneDefinition, Message, Page, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { appels, entreprises, prospects, rendezVous } from '@/db/schema';
 import { calendrierConfigure, etatAgenda } from '@/lib/agenda';
@@ -187,6 +187,13 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
               )}
             </LigneDefinition>
           </dl>
+          {/* L'action de la section : la page Assistante (prompt, configuration, outils, ce qu'elle voit), en lecture seule. */}
+          <div className="-mx-1.5 grid justify-items-start gap-1 pointer-coarse:mx-0">
+            <LienAction href="/assistante" ton="fort" className="max-sm:h-auto max-sm:min-h-11 max-sm:py-2 max-sm:whitespace-normal">
+              Voir et télécharger la configuration de l’assistante
+            </LienAction>
+            <p className="px-1.5 text-sm text-encre-3 pointer-coarse:px-0">Prompt, voix, outils et ce que {nom} reçoit pour un appel choisi.</p>
+          </div>
         </section>
 
         <section id="agenda" aria-labelledby="titre-agenda" className={SECTION}>
