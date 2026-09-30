@@ -120,7 +120,7 @@ Une campagne enchaîne les prospects d'une même entreprise. Sa régie garde la 
   </tr>
   <tr>
     <td>Le téléphone passerelle, son appairage et les garde-fous : appels par heure, par jour, pause entre deux appels.</td>
-    <td>Les rendez-vous pris et le journal de Claude Code : chaque geste, avec l'accord ou le refus de l'opérateur.</td>
+    <td>Les rendez-vous pris et le journal des gestes, de Claude Code et de l'interface : chaque geste, avec son origine et l'accord ou le refus de l'opérateur.</td>
   </tr>
 </table>
 
@@ -436,7 +436,7 @@ Ouvert dans ce dépôt, sur le serveur, Claude Code trouve le serveur MCP d'Auto
 | Prospects | importer, lister, lire, corriger, archiver, réactiver, révoquer un numéro, effacer une personne, lire les consentements |
 | Campagnes | créer, lancer, suspendre, terminer, supprimer ; sauter, retirer, ajouter dans la file |
 | Appels | lancer, raccrocher, lister, lire, relancer une analyse, analyser les versions, rappels du jour, journée |
-| Agenda, ligne, journal | état de l'agenda, relecture, rendez-vous, recréer un événement ; état de la ligne, garde-fous, reconnexion du téléphone ; journal des outils |
+| Agenda, ligne, journal | état de l'agenda, relecture, rendez-vous, recréer un événement ; état de la ligne, garde-fous, reconnexion du téléphone ; journal des gestes (outils et page Assistante) |
 
 La skill de projet [`.claude/skills/autocalled`](.claude/skills/autocalled/SKILL.md) décrit les parcours (préparer une entreprise, versionner un script, importer des prospects, piloter une campagne, relire les bilans et ajuster, régler l'assistante) et les règles ; sa [référence](.claude/skills/autocalled/REFERENCE.md) liste chaque outil avec ses entrées.
 
@@ -455,7 +455,7 @@ Les 21 outils de lecture peuvent aller dans la liste `allow` des réglages de Cl
 | Consentement | Aucun numéro n'est composé sans consentement actif, vérifié côté serveur avant chaque appel et à chaque tour de campagne. Un numéro révoqué ne se réautorise pas. |
 | Liste d'opposition | L'empreinte HMAC du numéro d'une personne effacée, jamais le numéro en clair, empêche tout nouvel import ou appel. |
 | Effacement | Effacer une personne supprime tout ce qu'Autocalled garde d'elle, en base et sur disque, après confirmation. |
-| Conservation | Après douze mois, un appel perd chaque nuit enregistrements, transcription et texte du bilan ; ses chiffres restent. Le journal de Claude Code perd ses lignes du même âge. |
+| Conservation | Après douze mois, un appel perd chaque nuit enregistrements, transcription et texte du bilan ; ses chiffres restent. Le journal des gestes perd ses lignes du même âge. |
 | Pont | Il n'écoute que sur 127.0.0.1, partage un secret avec l'application dans les deux sens, ne compose qu'un numéro au format international, passe chaque composition par les plafonds et tient un journal sans la parole ni l'adresse du prospect. Les routes qu'il appelle (`/api/pont/…`) répondent 404 à toute requête relayée par `tailscale serve`. |
 | Prise de main | Le WebSocket du pont vérifie l'identité Tailscale et l'origine de la page. |
 | Analyseur | `claude -p` tourne sans outils, sans serveur MCP, sans réglages ni mémoire, dans un dossier vide propre à l'appel : une transcription est la parole d'un tiers. |

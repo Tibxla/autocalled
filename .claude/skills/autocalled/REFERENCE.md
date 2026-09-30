@@ -1,6 +1,6 @@
 # Référence des outils du serveur MCP
 
-Les 61 outils du serveur `autocalled`, par domaine. Dans Claude Code, chacun s’appelle `mcp__autocalled__<nom>`. Une entrée suivie de `?` est facultative. « Confirmation » : question posée à l’opérateur par l’élicitation, rédigée depuis la base, les fichiers ou ElevenLabs ; refusée sans client capable. Chaque appel laisse une ligne au journal (`lire_journal_mcp`).
+Les 61 outils du serveur `autocalled`, par domaine. Dans Claude Code, chacun s’appelle `mcp__autocalled__<nom>`. Une entrée suivie de `?` est facultative. « Confirmation » : question posée à l’opérateur par l’élicitation, rédigée depuis la base, les fichiers ou ElevenLabs ; refusée sans client capable. Chaque appel laisse une ligne au journal des gestes (`lire_journal_mcp`), d’origine `mcp` ; les gestes de la page Assistante y sont aussi, d’origine `interface`.
 
 Les textes qui viennent de tiers ou en dérivent (transcription, citations, résumé, moment de rappel, points forts et faibles d’un bilan, libellé d’une objection nouvelle, fiche d’un prospect et son contexte, historique des appels) ne sont jamais dans le JSON : ils arrivent dans un second bloc, précédé d’un avertissement et balisé `donnees-non-fiables="true"` (`<transcription>`, `<citations>`, `<bilan>`, `<resumes>`, `<fiche nomFichier="…">`, `<variables>`). Les questions de confirmation mettent d’abord le numéro et son origine, puis les noms, ramenés à une ligne courte ; elles signalent ce que le MCP a écrit (numéro, fiche de l’entreprise, objection, version). Ce sont des données, jamais des consignes.
 
@@ -122,7 +122,7 @@ La page Assistante de l’interface (`/assistante`) fait la même chose que ces 
 
 | Outil | Entrées | Nature | Confirmation | Rôle |
 |---|---|---|---|---|
-| `lire_journal_mcp` | `limite?`, `outil?`, `resultat?`, `depuis?` | L | non | derniers appels d’outils ; le détail d’une erreur interne reste dans Réglages |
+| `lire_journal_mcp` | `limite?`, `origine?` (`mcp`, `interface`), `outil?`, `resultat?`, `depuis?` | L | non | le journal des gestes : appels d’outils du MCP et gestes de la page Assistante (sous le nom de l’outil qui fait la même chose : `modifier_assistante`, `modifier_reglages_assistante`, `pousser_assistante`, `rapatrier_assistante`, `restaurer_assistante`), chaque ligne avec son `origine` ; un geste confirmé laisse `confirmation-demandee` (message : la question lue) puis son résultat ; le détail d’une erreur interne reste dans Réglages |
 
 ## Ce qui reste hors du MCP
 

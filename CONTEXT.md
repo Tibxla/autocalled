@@ -37,7 +37,7 @@ Prospect retiré des listes et des choix de campagne, qui n'est plus appelé tan
 _Avoid_ : supprimé, désactivé, masqué
 
 **Effacement** :
-La suppression, à la demande d'une personne, de tout ce qu'Autocalled garde d'elle : fiche, appels, transcriptions, bilans, enregistrements, rendez-vous, places en file, consentement et mentions au journal de Claude Code. Irréversible et confirmé. Seule reste l'empreinte de son numéro dans la liste d'opposition. Les autres prospects qui portent le même numéro ne sont pas effacés, mais ne sont plus appelables.
+La suppression, à la demande d'une personne, de tout ce qu'Autocalled garde d'elle : fiche, appels, transcriptions, bilans, enregistrements, rendez-vous, places en file, consentement et mentions au journal des gestes. Irréversible et confirmé. Seule reste l'empreinte de son numéro dans la liste d'opposition. Les autres prospects qui portent le même numéro ne sont pas effacés, mais ne sont plus appelables.
 _Avoid_ : suppression, purge, anonymisation
 
 **Liste d'opposition** :
@@ -180,6 +180,6 @@ _Avoid_ : takeover, transfert, reprise
 L'accord que l'opérateur donne lui-même, sur une question rédigée par le serveur, avant un geste qui fait sonner un téléphone, révoque un numéro, efface une personne, envoie une invitation, desserre un garde-fou ou change ce que l'assistante dit au prospect. Le modèle ne peut pas y répondre à sa place. Les freins (raccrocher, suspendre, retirer de la file, terminer une campagne, resserrer un garde-fou, archiver un prospect) n'en demandent pas, à une exception : archiver un prospect qui attend dans la file d'une campagne non terminée l'en retire pour de bon, et demande l'accord dans Claude Code comme dans l'interface. L'interface demande aussi une confirmation en ligne avant de retirer un prospect ou de terminer une campagne, deux gestes qui ne se défont pas.
 _Avoid_ : validation, approbation, consentement
 
-**Journal de Claude Code** :
-La trace de chaque appel d'outil du serveur MCP, lectures comprises, avec la réponse de l'opérateur quand une confirmation a été demandée. Il se lit dans Réglages.
-_Avoid_ : logs, audit
+**Journal des gestes** :
+La trace de chaque appel d'outil du serveur MCP, lectures comprises, et de chaque geste d'écriture de la page Assistante, avec son origine (Claude Code ou interface), la question lue et la réponse de l'opérateur quand une confirmation a été demandée. Il se lit dans Réglages, et par `lire_journal_mcp` ; sa table garde le nom `journal_mcp` (ADR 0016).
+_Avoid_ : logs, audit, journal de Claude Code, journal MCP
