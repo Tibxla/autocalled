@@ -243,19 +243,19 @@ const valeurDe = (objet: unknown, cle: string): unknown =>
  * Pour le journal : chaque réglage saisi, avec sa valeur dans `agent/` avant l'écriture. Des réglages de voix et de
  * tour de parole : rien de personnel. Si `agent/` ne se lit pas, l'écriture le dira : la saisie seule est gardée.
  */
-async function changementsDeReglages(patch: PatchReglages, o: OptionsAgent): Promise<Record<string, { avant: unknown; apres: unknown }> | PatchReglages> {
+async function argumentsDeReglages(patch: PatchReglages, o: OptionsAgent): Promise<Record<string, unknown>> {
   let avant: PatchReglages;
   try {
     avant = (await lireConfigurationAssistante({ ...o, distante: false })).reglages;
   } catch {
-    return patch;
+    return { reglages: patch };
   }
   const changements: Record<string, { avant: unknown; apres: unknown }> = {};
   for (const { cle } of REGLAGES_MODIFIABLES) {
     const apres = valeurDe(patch, cle);
     if (apres !== undefined) changements[cle] = { avant: valeurDe(avant, cle) ?? null, apres };
   }
-  return changements;
+  return { changements };
 }
 
 /** Écrit `agent/mina.config.json` comme modifier_reglages_assistante : mêmes bornes, même garde (`empreinteConnue`). */
@@ -265,7 +265,7 @@ export async function enregistrerReglagesAssistante(
   o: OptionsAgent = {},
 ): Promise<Resultat<{ empreinteLocale: string; champs: string[]; rappel: string; avertissement?: string }>> {
   return journaliser('modifier_reglages_assistante', { reglages: patch }, async (carnet) => {
-    carnet.arguments = { changements: await changementsDeReglages(patch, o) };
+    carnet.arguments = await argumentsDeReglages(patch, o);
     const r = await modifierReglagesAssistante(patch, empreinteConnue, o);
     if (!r.ok) return refus(r.raison);
     return {
