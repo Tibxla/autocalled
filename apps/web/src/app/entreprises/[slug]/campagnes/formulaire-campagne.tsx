@@ -119,7 +119,7 @@ export function FormulaireCampagne({
     });
 
   return (
-    <form {...proprietes} aria-label="Nouvelle campagne" className="grid gap-6">
+    <form {...proprietes} aria-label="Nouvelle campagne" className="grid grid-cols-1 gap-6">
       <div className="grid grid-cols-1 items-start gap-6 sm:grid-cols-[minmax(0,18rem)_minmax(0,1fr)] sm:gap-10">
         <Champ libelle="Version de script" htmlFor="versionScriptId">
           <Selection ref={version} id="versionScriptId" name="versionScriptId" className="font-mono">
@@ -130,7 +130,7 @@ export function FormulaireCampagne({
             ))}
           </Selection>
         </Champ>
-        <fieldset className="grid gap-1">
+        <fieldset className="grid min-w-0 gap-1">
           <legend className="mb-1.5 text-sm font-medium">Ligne</legend>
           {LIGNES.map((l, i) => (
             <label key={l.valeur} className="flex min-h-7 cursor-pointer items-center gap-2.5 text-md pointer-coarse:min-h-11">
@@ -144,7 +144,8 @@ export function FormulaireCampagne({
         </fieldset>
       </div>
 
-      <fieldset className="grid gap-3">
+      {/* min-w-0 : un fieldset prend la largeur de son contenu le plus large, la rangée de filtres qui défile. */}
+      <fieldset className="grid min-w-0 grid-cols-1 gap-3">
         <legend className="mb-1 text-sm font-medium">Prospects, appelés dans l’ordre alphabétique</legend>
         {/* Sous 640 px, la recherche en tête, pleine largeur, puis la rangée de filtres qui défile. */}
         <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3 max-sm:grid max-sm:grid-cols-1">
@@ -226,9 +227,10 @@ export function FormulaireCampagne({
         </ul>
       </fieldset>
 
-      {/* Dans un volet que la liste des campagnes suit : pas de marge négative de fin de page. */}
+      {/* Dans un volet que la liste des campagnes suit : pas de marge négative de fin de page ;
+          une colonne bornée, sinon le statut non coupé élargit la barre au-delà de l'écran. */}
       <BarreActions
-        className="mb-0!"
+        className="mb-0! grid-cols-1"
         messages={etat?.message ? <Message ton="alerte">{etat.message}</Message> : null}
         statut={
           cochesMasques > 0 ? (
@@ -236,7 +238,10 @@ export function FormulaireCampagne({
               dont <span className="font-mono">{cochesMasques}</span> hors du filtre
             </span>
           ) : (
-            <span className="text-encre-3">Rien ne sonne avant que tu la lances.</span>
+            <span className="text-encre-3">
+              <span className="max-sm:hidden">Rien ne sonne avant que tu la lances.</span>
+              <span className="sm:hidden">Rien ne sonne ici.</span>
+            </span>
           )
         }
       >

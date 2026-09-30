@@ -264,9 +264,10 @@ function FormulaireAjout({
         ))}
       </ul>
 
-      {/* Dans un volet que la file suit : pas de marge négative de fin de page. */}
+      {/* Dans un volet que la file suit : pas de marge négative de fin de page ;
+          une colonne bornée, sinon le statut non coupé élargit la barre au-delà de l'écran. */}
       <BarreActions
-        className="mb-0!"
+        className="mb-0! grid-cols-1"
         messages={erreur ? <Message ton="alerte">{erreur}</Message> : null}
         statut={
           cochesMasques > 0 ? (
