@@ -10,6 +10,8 @@ import { Confirmation, useConfirmation } from '@/components/confirmation';
 import type { ReglagesLigne } from '@/components/garde-fous';
 import { Action, LienAction, Message } from '@/components/ui';
 import { cloreAppelDeCampagne, lancerCampagne, ouvrirAppelSuivant, suspendreCampagne, terminerAvantLaFin } from '../actions';
+import { useReconnexion } from '@/app/telephone/panneau-telephone';
+import { AIDE_RECONNEXION, reconnexionRegie } from '@/app/telephone/reconnexion';
 import { phraseEstimation, phrasePlafonds, Recapitulatif, type ProspectRecapitulatif } from './recapitulatif';
 
 /**
@@ -19,7 +21,7 @@ import { phraseEstimation, phrasePlafonds, Recapitulatif, type ProspectRecapitul
  * - Ligne navigateur : l'appel vit dans cette page. Rien ne part au chargement ni au retour sur la page : le
  *   premier appel attend un geste de l'opérateur, les suivants s'enchaînent ensuite après un décompte de 5 s.
  * - Simulation : le serveur enchaîne seul, la page se relit.
- * Suspendre est un frein réversible : immédiat, sans confirmation ni touche.
+ * Suspendre est un frein réversible : immédiat, sans confirmation, touche P (S est déjà Sauter dans la file).
  * Terminer ferme la file pour de bon : confirmation en ligne. Il ne coupe aucun appel : l'appel en cours va à
  * son terme et la campagne se termine avec lui.
  */
@@ -47,6 +49,8 @@ interface ProprietesRegie {
   entreprise: { nom: string; slug: string };
   versionScriptId: string;
   version: string;
+  /** Intentions des étapes de la version de la campagne : libellé de l'étape signalée en direct. */
+  etapes: readonly string[];
   prochain: Prochain | null;
   restants: number;
   enAppel: boolean;
@@ -99,21 +103,40 @@ function blocageLigne(pont: EtatPont | null): { texte: string; lienTelephone: bo
   return null;
 }
 
-function Blocage({ blocage }: { blocage: { texte: string; lienTelephone: boolean } }) {
+/**
+ * Message d'alerte sur la ligne. Avec `reconnecter` (téléphone déconnecté, ou suspendue après un échec du
+ * téléphone ; reconnexion.ts), « Reconnecter le téléphone » en geste de secours à côté de la cause, son aide
+ * et son éventuelle erreur dans le même bloc (pas de message dans le message).
+ */
+function MessageLigne({ texte, lienTelephone, reconnecter }: { texte: string; lienTelephone: boolean; reconnecter: boolean }) {
+  const reconnexion = useReconnexion();
+  const ouvrir = lienTelephone ? <LienAction href="/telephone">Ouvrir Téléphone</LienAction> : null;
+  const action = reconnecter ? (
+    <div className="flex flex-wrap items-center gap-x-4">
+      <Action ton="fort" enCours={reconnexion.enCours} libelleEnCours="Reconnexion…" disabled={reconnexion.enCours} onClick={reconnexion.lancer}>
+        Reconnecter le téléphone
+      </Action>
+      {ouvrir}
+    </div>
+  ) : (
+    ouvrir
+  );
   return (
-    <Message ton="alerte" action={blocage.lienTelephone ? <LienAction href="/telephone">Ouvrir Téléphone</LienAction> : undefined}>
-      {blocage.texte}
+    <Message ton="alerte" action={action ?? undefined}>
+      {texte}
+      {reconnecter ? <span className="mt-1 block text-encre-2">{AIDE_RECONNEXION}</span> : null}
+      {reconnexion.erreur ? <span className="mt-1 block font-medium">{reconnexion.erreur}</span> : null}
     </Message>
   );
 }
 
-function Raison({ raison }: { raison: RaisonSuspension }) {
+function Blocage({ blocage, reconnecter = false }: { blocage: { texte: string; lienTelephone: boolean }; reconnecter?: boolean }) {
+  return <MessageLigne texte={blocage.texte} lienTelephone={blocage.lienTelephone} reconnecter={reconnecter} />;
+}
+
+function Raison({ raison, reconnecter = false }: { raison: RaisonSuspension; reconnecter?: boolean }) {
   if (raison.ton === 'neutre') return <p className="text-base text-encre-2">{raison.texte}</p>;
-  return (
-    <Message ton="alerte" action={raison.lienTelephone ? <LienAction href="/telephone">Ouvrir Téléphone</LienAction> : undefined}>
-      {raison.texte}
-    </Message>
-  );
+  return <MessageLigne texte={raison.texte} lienTelephone={raison.lienTelephone === true} reconnecter={reconnecter} />;
 }
 
 /** « Marc Dupont, Boulangerie Dupont ». */
@@ -121,17 +144,46 @@ function nomComplet(p: Prochain): string {
   return p.societe ? `${p.nom}, ${p.societe}` : p.nom;
 }
 
-function Actions({ children }: { children: React.ReactNode }) {
-  return <div className="-mx-1.5 flex flex-wrap items-center gap-x-5 gap-y-1 max-sm:grid max-sm:justify-items-start">{children}</div>;
+/**
+ * Rangée d'actions de la régie. Sous 640 px, une colonne ; `pave` : les commandes de ce qui vit (Appeler
+ * maintenant, Suspendre) forment un pavé de touches sur deux colonnes, toutes en relief au doigt, l'aide sur
+ * toute la largeur dessous. Au doigt, le relief lâche le retrait qui aligne le texte sur la colonne ; `texte` :
+ * la rangée ne porte que des actions en texte, qui gardent ce retrait.
+ */
+function Actions({ children, pave = false, texte = false }: { children: React.ReactNode; pave?: boolean; texte?: boolean }) {
+  return (
+    <div
+      className={`-mx-1.5 flex flex-wrap items-center gap-x-5 gap-y-1 max-sm:grid pointer-coarse:gap-y-2 ${texte ? '' : 'pointer-coarse:mx-0'} ${
+        pave ? 'max-sm:grid-cols-2 max-sm:gap-x-2 max-sm:[&>button]:w-full' : 'max-sm:justify-items-start'
+      }`}
+    >
+      {children}
+    </div>
+  );
 }
+
+/** Aide à côté d'une action : alignée sur le texte au clavier, sur le bord du relief au doigt ; toute la largeur du pavé. */
+const AIDE = 'px-1.5 text-sm text-encre-3 max-sm:col-span-full pointer-coarse:px-0';
+/** Aide dans une rangée d'actions en texte (`texte`) : alignée sur le texte, au doigt aussi. */
+const AIDE_TEXTE = 'px-1.5 text-sm text-encre-3';
 
 function Suspendre({ onClick, enCours }: { onClick: () => void; enCours: boolean }) {
   return (
     <>
-      <Action onClick={onClick} disabled={enCours} enCours={enCours} libelleEnCours="Suspension…">
+      {/* Commande de ce qui vit : en relief au doigt, même en ton normal (pavé de touches, DESIGN.md). */}
+      <Action
+        touche="P"
+        raccourci="p"
+        libelleRaccourci="Suspendre la campagne"
+        forme="relief"
+        onClick={onClick}
+        disabled={enCours}
+        enCours={enCours}
+        libelleEnCours="Suspension…"
+      >
         Suspendre
       </Action>
-      <span className="px-1.5 text-sm text-encre-3">L’appel en cours va à son terme, aucun autre ne part.</span>
+      <span className={AIDE}>L’appel en cours va à son terme, aucun autre ne part.</span>
     </>
   );
 }
@@ -191,12 +243,12 @@ function Terminer({ campagneId, restants, enAppel }: { campagneId: string; resta
     confirmation.fermer();
   };
   return (
-    <div className="grid justify-items-start gap-2">
-      <Actions>
+    <div className="grid justify-items-start gap-2 pointer-coarse:pt-1">
+      <Actions texte>
         <Action ton="discret" aria-expanded={confirmation.ouverte} onClick={(e) => confirmation.ouvrir(e.currentTarget)}>
           Terminer la campagne
         </Action>
-        <span className="px-1.5 text-sm text-encre-3">Les prospects restants ne seront pas appelés ; aucun appel n’est coupé.</span>
+        <span className={AIDE_TEXTE}>Les prospects restants ne seront pas appelés ; aucun appel n’est coupé.</span>
       </Actions>
       <Confirmation
         className="justify-self-stretch"
@@ -246,7 +298,7 @@ function Lancement({ campagneId, ligne, entreprise, version, recapitulatif, pont
     const estime = phraseEstimation(autorises, pont?.reglages ?? null, passes24h);
     action = (
       <div className="grid justify-items-start gap-3">
-        {blocage ? <Blocage blocage={blocage} /> : null}
+        {blocage ? <Blocage blocage={blocage} reconnecter={reconnexionRegie(pont, null)} /> : null}
         <Actions>
           <Action
             ton="fort"
@@ -290,7 +342,7 @@ function Lancement({ campagneId, ligne, entreprise, version, recapitulatif, pont
     <>
       <Recapitulatif ligne={ligne} prospects={prospects} autorises={autorises} reglages={pont?.reglages ?? null} passes24h={passes24h} action={action} />
       {vide && prospects.length > 0 ? (
-        <Message ton="alerte">Aucun numéro de cette campagne n’est autorisé : tous seraient sautés, rien ne partirait.</Message>
+        <Message ton="alerte">Aucun numéro de cette campagne n’est autorisé : aucun ne serait appelé, rien ne partirait.</Message>
       ) : null}
       {erreur ? <Message ton="alerte">{erreur}</Message> : null}
     </>
@@ -304,6 +356,7 @@ function RegieTelephone({
   statut,
   entreprise,
   version,
+  etapes,
   prochain,
   restants,
   appelTelephone,
@@ -315,10 +368,16 @@ function RegieTelephone({
   const confirmation = useConfirmation();
   const blocage = blocageLigne(pont);
   const pause = pont?.reglages?.pauseEntreAppelsS;
+  // Une seule reconnexion par écran, jamais pendant un appel : sur le blocage de la ligne s'il s'affiche et le
+  // permet (téléphone déconnecté), sinon sur la raison de la suspension (échec du téléphone).
+  const blocageAffiche = statut === 'en-pause' ? Boolean(blocage) && raison?.lienTelephone !== true : !appelTelephone && Boolean(blocage);
+  const reconnecterBlocage = !appelTelephone && blocageAffiche && reconnexionRegie(pont, null);
+  const reconnecterRaison =
+    !appelTelephone && !reconnecterBlocage && statut === 'en-pause' && raison?.ton === 'alerte' && reconnexionRegie(pont, raison.texte);
 
   return (
     <>
-      {statut === 'en-pause' && raison ? <Raison raison={raison} /> : null}
+      {statut === 'en-pause' && raison ? <Raison raison={raison} reconnecter={reconnecterRaison} /> : null}
 
       {appelTelephone ? (
         <BandeAppel
@@ -330,6 +389,7 @@ function RegieTelephone({
           statut={appelTelephone.statut}
           finLe={appelTelephone.finLe}
           conversation={appelTelephone.conversation}
+          etapes={etapes}
         />
       ) : statut === 'en-cours' ? (
         <div className="grid gap-2">
@@ -344,7 +404,7 @@ function RegieTelephone({
           ) : (
             <p className="text-lg text-encre-2">Plus aucun prospect à appeler : la campagne se termine.</p>
           )}
-          {blocage ? <Blocage blocage={blocage} /> : null}
+          {blocage ? <Blocage blocage={blocage} reconnecter={reconnecterBlocage} /> : null}
         </div>
       ) : null}
 
@@ -354,7 +414,7 @@ function RegieTelephone({
         </Actions>
       ) : (
         <div className="grid justify-items-start gap-3">
-          {blocage && raison?.lienTelephone !== true ? <Blocage blocage={blocage} /> : null}
+          {blocage && raison?.lienTelephone !== true ? <Blocage blocage={blocage} reconnecter={reconnecterBlocage} /> : null}
           <Actions>
             <Action
               ton="fort"
@@ -364,7 +424,7 @@ function RegieTelephone({
             >
               Reprendre
             </Action>
-            {blocage ? <span className="px-1.5 text-sm text-encre-3">Reprise impossible tant que la ligne ne peut pas appeler.</span> : null}
+            {blocage ? <span className={AIDE}>Reprise impossible tant que la ligne ne peut pas appeler.</span> : null}
           </Actions>
           <Confirmation
             ouverte={confirmation.ouverte}
@@ -447,7 +507,7 @@ function RegieTwilio({ campagneId, statut, raison }: ProprietesRegie) {
 /* ------------------------------------------------------------------ ligne navigateur */
 
 function RegieNavigateur(props: ProprietesRegie) {
-  const { campagneId, statut, entrepriseId, versionScriptId, prochain, restants, appelOuvertNavigateur, raison, recapitulatif } = props;
+  const { campagneId, statut, entrepriseId, versionScriptId, etapes, prochain, restants, appelOuvertNavigateur, raison, recapitulatif } = props;
   const router = useRouter();
   const { erreur, enCours, agir } = useGeste();
   // Premier geste de l'opérateur dans cette page : sans lui, aucun appel ne part (ni au chargement, ni au
@@ -477,6 +537,7 @@ function RegieNavigateur(props: ProprietesRegie) {
           prospectNom={direct.nom}
           versionScriptId={versionScriptId}
           campagneId={campagneId}
+          etapes={etapes}
           demarrageAuto
           ouvrir={async () => {
             // Le prospect affiché : si la file a changé entre-temps (Sauter, Retirer), rien ne part.
@@ -518,7 +579,7 @@ function RegieNavigateur(props: ProprietesRegie) {
             >
               Lancer la campagne
             </Action>
-            <span className="px-1.5 text-sm text-encre-3">Le premier appel part 5 s après, au micro de cet ordinateur.</span>
+            <span className={AIDE}>Le premier appel part 5 s après, au micro de cet appareil.</span>
           </Actions>
         }
       />
@@ -527,7 +588,7 @@ function RegieNavigateur(props: ProprietesRegie) {
     corps = (
       <>
         <p className="text-base text-encre-2">Un appel de cette campagne est resté ouvert : la page a sans doute été fermée pendant l’appel.</p>
-        <Actions>
+        <Actions texte>
           <Action
             enCours={enCours}
             libelleEnCours="Clôture…"
@@ -553,7 +614,7 @@ function RegieNavigateur(props: ProprietesRegie) {
           >
             Reprendre
           </Action>
-          {prochain ? <span className="px-1.5 text-sm text-encre-3">Le prochain appel, {prochain.nom}, part 5 s après.</span> : null}
+          {prochain ? <span className={AIDE}>Le prochain appel, {prochain.nom}, part 5 s après.</span> : null}
         </Actions>
       </>
     );
@@ -574,8 +635,8 @@ function RegieNavigateur(props: ProprietesRegie) {
           </p>
           <p className="text-sm text-encre-3">Rien ne part tant que tu n’appelles pas ; ensuite, les appels s’enchaînent après un décompte de 5 s.</p>
         </div>
-        <Actions>
-          <Action ton="fort" onClick={() => appeler(prochain)}>
+        <Actions pave>
+          <Action ton="fort" touche="Entrée" raccourci="Enter" libelleRaccourci="Appeler maintenant" onClick={() => appeler(prochain)}>
             Appeler maintenant
           </Action>
           <Suspendre enCours={enCours} onClick={() => agir(() => suspendreCampagne(campagneId))} />
@@ -645,7 +706,7 @@ function Decompte({ nom, onFini, onArreter }: { nom: string; onFini: () => void;
         <span className="text-encre-3"> s</span>
       </p>
       <Actions>
-        <Action ton="fort" onClick={onFini}>
+        <Action ton="fort" touche="Entrée" raccourci="Enter" libelleRaccourci="Appeler maintenant" onClick={onFini}>
           Appeler maintenant
         </Action>
         <Action ton="discret" touche="Échap" raccourci="Escape" libelleRaccourci="Arrêter le décompte" onClick={onArreter}>

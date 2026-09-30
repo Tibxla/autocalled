@@ -1,6 +1,6 @@
-import { ISSUES_SYSTEME, LIBELLES_ISSUES, type IssueSysteme } from '@autocalled/domain';
+import { ISSUES_SYSTEME, LIBELLES_ISSUES, type IssueSysteme, type RappelDate } from '@autocalled/domain';
 import { NavigationListe } from './clavier';
-import { cleJour, estNonCompose, etatAppel, LIBELLE_NON_COMPOSE, libelleJour, LIGNES_COURTES, type TonEtat } from './format-appel';
+import { cleJour, estNonCompose, etatAppel, jourCourt, LIBELLE_NON_COMPOSE, libelleJour, LIGNES_COURTES, quandRappeler, rappelEnRetard, type TonEtat } from './format-appel';
 import { Cellule, CelluleEnTete, Duree, EnTeteTable, GlypheEtape, Heure, LienLigne, LigneTable, TableDense } from './ui';
 
 /**
@@ -38,6 +38,10 @@ export interface LigneAppel {
   rendezVous?: boolean;
   libellePerso?: string | null;
   extrait?: ExtraitAppel | null;
+  /** Vue « Rappels à faire » : quand rappeler et ce que le prospect a dit. */
+  rappel?: { le: Date | null; quand: RappelDate | null; texte: string | null };
+  /** Vue « Rappels à faire » : la fiche du prospect, d'où le rappel se lance (comme sur l'accueil). */
+  ficheProspect?: string;
   /** Remplace /appels/{id}. */
   lien?: string;
 }
@@ -83,6 +87,7 @@ const TONS: Record<TonEtat, string> = {
 
 const COLONNES_COMPLETES = '52px 230px 130px 200px minmax(0,1fr) 44px';
 const COLONNES_PROSPECT = '52px 210px minmax(0,1fr) 84px 44px';
+const COLONNES_RAPPELS = '13rem 230px 130px minmax(0,1fr) 84px';
 
 function lienDe(a: LigneAppel, depuis: string | undefined, recherche: string | undefined): string {
   const base = a.lien ?? `/appels/${a.id}`;
@@ -102,11 +107,12 @@ function Glyphe({ a, vivant }: { a: LigneAppel; vivant: boolean }) {
   return <GlypheEtape etape={a.bilan.etapeAtteinte} nombre={a.nombreEtapes ?? null} rendezVous={rendezVous} />;
 }
 
+function etatDe(a: LigneAppel, vivant: boolean, maintenant: Date) {
+  return etatAppel({ ...a, erreur: a.erreur ?? null, conversationId: a.conversationId ?? null }, { vivant, libellePerso: a.libellePerso ?? null, maintenant });
+}
+
 function Issue({ a, vivant, maintenant, lien }: { a: LigneAppel; vivant: boolean; maintenant: Date; lien?: string }) {
-  const etat = etatAppel(
-    { ...a, erreur: a.erreur ?? null, conversationId: a.conversationId ?? null },
-    { vivant, libellePerso: a.libellePerso ?? null, maintenant },
-  );
+  const etat = etatDe(a, vivant, maintenant);
   const systeme = etat.cle === 'issue' && a.libellePerso ? a.issueSysteme : null;
   const libelle = vivant ? 'En cours · rejoindre' : etat.libelle;
   const contenu = (
@@ -116,7 +122,7 @@ function Issue({ a, vivant, maintenant, lien }: { a: LigneAppel; vivant: boolean
     </>
   );
   return (
-    <span className="flex min-w-0 items-center gap-2.5" title={etat.detail}>
+    <span className="flex min-w-0 items-center gap-2.5">
       <Glyphe a={a} vivant={vivant} />
       {lien ? (
         <LienLigne href={lien} prefetch={false} className="min-w-0 truncate decoration-souligne underline-offset-4 hover:underline">
@@ -129,7 +135,11 @@ function Issue({ a, vivant, maintenant, lien }: { a: LigneAppel; vivant: boolean
   );
 }
 
-function Resume({ a, avecLigne }: { a: LigneAppel; avecLigne: boolean }) {
+/**
+ * Le résumé, le passage trouvé, ou, sans l'un ni l'autre, le détail de l'état (l'erreur d'un appel non composé ou
+ * d'une analyse en échec) : rien d'utile ne se cache dans une info-bulle, qui ne s'affiche jamais au doigt.
+ */
+function Resume({ a, avecLigne, detail }: { a: LigneAppel; avecLigne: boolean; detail?: string | undefined }) {
   // Sans colonne Ligne (liste complète), un appel simulé le dit devant son résumé.
   const simule = !avecLigne && a.ligne === 'simulation' ? <span className="text-encre-3">simulé · </span> : null;
   if (a.extrait) {
@@ -146,14 +156,14 @@ function Resume({ a, avecLigne }: { a: LigneAppel; avecLigne: boolean }) {
   return (
     <span className="text-encre-3">
       {simule}
-      {a.resume ?? ''}
+      {a.resume ?? detail ?? ''}
     </span>
   );
 }
 
-function texteExtrait(a: LigneAppel): string | undefined {
+function texteExtrait(a: LigneAppel, detail?: string): string | undefined {
   if (a.extrait) return `${a.extrait.qui} : ${a.extrait.avant}${a.extrait.terme}${a.extrait.apres}`;
-  return a.resume ?? undefined;
+  return a.resume ?? detail;
 }
 
 /** Saut de rangée sous 640 px : heure, nom et durée d'abord, puis l'issue et le résumé. */
@@ -177,6 +187,7 @@ function Ligne({
   recherche: string | undefined;
 }) {
   const lien = lienDe(a, depuis, recherche);
+  const detail = etatDe(a, vivant, maintenant).detail;
   if (complete) {
     return (
       <LigneTable etat={vivant ? 'vivante' : 'normale'}>
@@ -195,8 +206,8 @@ function Ligne({
         <Cellule etat className="max-sm:order-5">
           <Issue a={a} vivant={vivant} maintenant={maintenant} />
         </Cellule>
-        <Cellule tronquee titre={texteExtrait(a)} className="max-sm:order-6 max-sm:flex-1">
-          <Resume a={a} avecLigne={false} />
+        <Cellule tronquee titre={texteExtrait(a, detail)} className="max-sm:order-6 max-sm:flex-1">
+          <Resume a={a} avecLigne={false} detail={detail} />
         </Cellule>
         <Cellule mono align="droite" className="max-sm:order-3">
           <Duree secondes={a.dureeSecondes} />
@@ -213,8 +224,8 @@ function Ligne({
       <Cellule etat className="max-sm:order-2 max-sm:flex-1">
         <Issue a={a} vivant={vivant} maintenant={maintenant} lien={lien} />
       </Cellule>
-      <Cellule tronquee titre={texteExtrait(a)} className="max-sm:order-5 max-sm:flex-1">
-        <Resume a={a} avecLigne />
+      <Cellule tronquee titre={texteExtrait(a, detail)} className="max-sm:order-5 max-sm:flex-1">
+        <Resume a={a} avecLigne detail={detail} />
       </Cellule>
       <Cellule attenuee masqueeMobile>
         {LIGNES_COURTES[a.ligne] ?? a.ligne}
@@ -223,6 +234,46 @@ function Ligne({
         <Duree secondes={a.dureeSecondes} />
       </Cellule>
       <Retour />
+    </LigneTable>
+  );
+}
+
+/**
+ * Vue « Rappels à faire » : quand rappeler (en brique s'il est en retard), qui, ce qui a été convenu, le jour de l'appel
+ * d'origine. La ligne mène à la fiche du prospect, d'où le rappel se lance, comme sur l'accueil. Sous 640 px : le nom
+ * seul sur la première rangée, puis le « quand » en tête de la seconde, suivi de ce qui a été convenu.
+ */
+function LigneRappel({ a, maintenant, depuis }: { a: LigneAppel; maintenant: Date; depuis: string | undefined }) {
+  const r = a.rappel;
+  const retard = r?.le ? rappelEnRetard(r.le, r.quand, maintenant) : false;
+  const lien = a.ficheProspect ?? lienDe(a, depuis, undefined);
+  return (
+    <LigneTable>
+      <Cellule tronquee className="max-sm:order-2 max-sm:shrink-0">
+        {r?.le ? (
+          <span className={retard ? 'text-encre' : 'text-encre-2'}>
+            {retard ? <span className="text-alerte">En retard · </span> : null}
+            {quandRappeler(r.le, r.quand, maintenant)}
+          </span>
+        ) : (
+          <span className="text-encre-3">sans date</span>
+        )}
+      </Cellule>
+      <Cellule tronquee titre={[a.prospect, a.societe].filter(Boolean).join(' · ')} className="max-sm:order-1 max-sm:basis-full">
+        <LienLigne href={lien} prefetch={false} className="font-medium decoration-souligne underline-offset-4 hover:underline">
+          {a.prospect}
+        </LienLigne>
+        {a.societe ? <span className="text-encre-3"> · {a.societe}</span> : null}
+      </Cellule>
+      <Cellule tronquee attenuee masqueeMobile titre={a.entreprise ?? undefined}>
+        {a.entreprise}
+      </Cellule>
+      <Cellule tronquee titre={r?.texte ?? undefined} className="text-encre-3 max-sm:order-3 max-sm:flex-1">
+        {r?.texte ? `« ${r.texte} »` : ''}
+      </Cellule>
+      <Cellule mono align="droite" masqueeMobile className="text-encre-3">
+        <span title={`Appel du ${jourCourt(a.debutLe)}`}>{jourCourt(a.debutLe).split(' ')[1]}</span>
+      </Cellule>
     </LigneTable>
   );
 }
@@ -255,6 +306,7 @@ export function ListeAppels({
   recherche,
   libelle = 'Appels',
   comptesJours,
+  rappels = false,
 }: {
   appels: LigneAppel[];
   /** URL de la liste d'origine, ajoutée aux liens (?depuis=) : retour, appel suivant et précédent sur la fiche. */
@@ -268,8 +320,31 @@ export function ListeAppels({
   libelle?: string;
   /** Appels de chaque jour (`AAAA-MM-JJ`, jour de Paris) comptés en base : un jour coupé par la pagination garde son vrai total. */
   comptesJours?: Readonly<Record<string, number>>;
+  /** Vue « Rappels à faire » : une ligne par rappel, dans l'ordre reçu (du plus ancien au plus tardif), sans jours. */
+  rappels?: boolean;
 }) {
   const maintenant = new Date();
+  if (rappels) {
+    const table = (
+      <TableDense libelle={libelle} colonnes={COLONNES_RAPPELS}>
+        <EnTeteTable>
+          <CelluleEnTete>Quand</CelluleEnTete>
+          <CelluleEnTete>Prospect</CelluleEnTete>
+          <CelluleEnTete masqueeMobile>Entreprise</CelluleEnTete>
+          <CelluleEnTete>Convenu</CelluleEnTete>
+          <CelluleEnTete align="droite" masqueeMobile>
+            Appel
+          </CelluleEnTete>
+        </EnTeteTable>
+        <div role="rowgroup">
+          {appels.map((a) => (
+            <LigneRappel key={a.id} a={a} maintenant={maintenant} depuis={depuis} />
+          ))}
+        </div>
+      </TableDense>
+    );
+    return navigationClavier ? <NavigationListe memoriser="appels">{table}</NavigationListe> : table;
+  }
   const complete = appels.some((a) => a.prospect !== undefined);
   const vivant = vivantId ? appels.find((a) => a.id === vivantId && a.statut === 'en-cours') : undefined;
   const autres = vivant ? appels.filter((a) => a !== vivant) : appels;

@@ -1,6 +1,7 @@
 import 'server-only';
 import {
   type Autorisation,
+  bilanEntier,
   ISSUES_SYSTEME,
   LIBELLES_ISSUES,
   VARIABLES_DE_L_APPEL,
@@ -10,13 +11,15 @@ import {
 import { and, asc, desc, eq, isNotNull } from 'drizzle-orm';
 import { db } from '@/db';
 import { appels, entreprises, objections, prospects, scripts, versionsScript, type Etape } from '@/db/schema';
+import { composerPremierMessage, lireAssistante } from './assistante';
 import { autorisationsDe } from './autorisations';
 import { versionsLancables } from './versions';
 
 /**
- * Les variables que Mina reçoit au début d'un appel, calculées d'un seul endroit : `preparerAppel` (qui appelle
+ * Les variables que l'assistante reçoit au début d'un appel, calculées d'un seul endroit : `preparerAppel` (qui appelle
  * vraiment) et l'aperçu des pages d'entreprise passent par `variablesPour`. L'aperçu n'écrit rien et ne compose
- * rien ; il dit aussi quelles valeurs tombent sur leur texte par défaut, ce qui sert à régler la fiche et le prompt.
+ * rien ; il dit aussi quelles valeurs tombent sur leur texte par défaut, et quels champs vides de la fiche de
+ * l'entreprise ne sont pas transmis (variable vide, ADR 0015), ce qui sert à régler la fiche et le prompt.
  */
 
 const libelleIssue = new Map<string, string>(ISSUES_SYSTEME.map((i) => [i, LIBELLES_ISSUES[i]]));
@@ -24,6 +27,16 @@ const libelleIssue = new Map<string, string>(ISSUES_SYSTEME.map((i) => [i, LIBEL
 type EntrepriseAppel = typeof entreprises.$inferSelect;
 type ProspectAppel = Pick<typeof prospects.$inferSelect, 'id' | 'nom' | 'role' | 'societe' | 'contexte' | 'email'>;
 export type CleVariable = (typeof VARIABLES_DE_L_APPEL)[number];
+
+/** Les variables qui viennent des champs de la fiche de l'entreprise : vides, elles ne sont pas transmises. */
+export const VARIABLES_DE_LA_FICHE = [
+  'entreprise_offre',
+  'entreprise_cible',
+  'entreprise_arguments',
+  'entreprise_prix_consigne',
+  'entreprise_interdits',
+  'entreprise_complements',
+] as const satisfies readonly CleVariable[];
 
 /** Les variables qui viennent de la fiche du prospect ou de ses appels passés. */
 export const VARIABLES_DU_PROSPECT: readonly CleVariable[] = [
@@ -53,8 +66,9 @@ export async function variablesPour(
   prospect: ProspectAppel | null,
   etapes: Etape[],
   maintenant: Date,
-): Promise<{ variables: VariablesDeLAppel; motsCles: string[]; parDefaut: CleVariable[] }> {
-  const [listeObjections, precedents] = await Promise.all([
+): Promise<{ variables: VariablesDeLAppel; motsCles: string[]; parDefaut: CleVariable[]; nonTransmis: CleVariable[]; premierMessage: string }> {
+  const [assistante, listeObjections, precedents] = await Promise.all([
+    lireAssistante(),
     objectionsActives(entreprise.id),
     prospect
       ? db
@@ -68,6 +82,7 @@ export async function variablesPour(
   const fiche = prospect ?? { nom: '', role: null, societe: null, contexte: '', email: null };
 
   const variables = variablesDeLAppel({
+    assistante: { nom: assistante.nom },
     entreprise,
     prospect: fiche,
     rendezVous: { interlocuteur: entreprise.interlocuteur, dureeMinutes: entreprise.dureeRendezVousMinutes },
@@ -76,7 +91,8 @@ export async function variablesPour(
     historique: precedents.map((p) => ({
       le: p.le,
       issue: libelleIssue.get(p.issue ?? '') ?? p.issue ?? 'issue inconnue',
-      resume: p.bilan?.resume ?? '',
+      // Un bilan purgé (durée de conservation, ADR 0014) n'a plus de résumé : l'issue seule reste.
+      resume: bilanEntier(p.bilan)?.resume ?? '',
     })),
     maintenant,
     fuseau: entreprise.fuseau,
@@ -94,11 +110,6 @@ export async function variablesPour(
   // Mêmes tests que variablesDeLAppel : champ vide après trim, ou absent pour les champs facultatifs de la fiche.
   const vide = (t: string) => !t.trim();
   const sources: [CleVariable, boolean][] = [
-    ['entreprise_offre', vide(entreprise.offre)],
-    ['entreprise_cible', vide(entreprise.cible)],
-    ['entreprise_arguments', vide(entreprise.arguments)],
-    ['entreprise_prix_consigne', vide(entreprise.prixConsigne)],
-    ['entreprise_interdits', vide(entreprise.interdits)],
     ['rendez_vous', vide(entreprise.interlocuteur)],
     ['script_etapes', etapes.length === 0],
     ['objections', listeObjections.length === 0],
@@ -111,7 +122,14 @@ export async function variablesPour(
         ] as [CleVariable, boolean][])
       : []),
   ];
-  return { variables, motsCles, parDefaut: sources.filter(([, d]) => d).map(([cle]) => cle) };
+  return {
+    variables,
+    motsCles,
+    parDefaut: sources.filter(([, d]) => d).map(([cle]) => cle),
+    // La variable elle-même dit si le champ est transmis : vide après trim, rien ne part.
+    nonTransmis: VARIABLES_DE_LA_FICHE.filter((cle) => !variables[cle]),
+    premierMessage: composerPremierMessage(assistante.premierMessage, variables),
+  };
 }
 
 function refusDe(a: Autorisation | undefined): RaisonRefus | null {
@@ -122,8 +140,12 @@ function refusDe(a: Autorisation | undefined): RaisonRefus | null {
 export interface ApercuVariables {
   variables: VariablesDeLAppel;
   motsCles: string[];
-  /** Clés dont la valeur est le texte par défaut, faute de contenu dans la fiche ou le script. */
+  /** La phrase que l'assistante dira si le prospect se tait au décroché, variables remplacées. */
+  premierMessage: string;
+  /** Clés dont la valeur est le texte par défaut, faute de contenu (interlocuteur, script, objections, prospect). */
   parDefaut: CleVariable[];
+  /** Champs vides de la fiche de l'entreprise : leur variable part vide, l'assistante n'en parle pas. */
+  nonTransmis: CleVariable[];
   /** Clés qui dépendent du prospect : vides de sens quand aucun prospect n'est choisi. */
   dependDuProspect: CleVariable[];
   version: { id: string; numero: number; script: string } | null;
@@ -134,7 +156,7 @@ export interface ApercuVariables {
 type RaisonRefus = Extract<Autorisation, { autorise: false }>['raison'];
 
 /**
- * Ce que Mina recevrait pour appeler un prospect de cette entreprise (ou n'importe lequel, sans prospect) avec
+ * Ce que l'assistante recevrait pour appeler un prospect de cette entreprise (ou n'importe lequel, sans prospect) avec
  * une version de script (par défaut la dernière du premier script lançable). Lecture seule : ni appel, ni
  * journal ; un numéro non autorisé est signalé, pas refusé.
  */

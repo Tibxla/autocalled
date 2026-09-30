@@ -1,12 +1,14 @@
 import type { RappelDate } from '@autocalled/domain';
 import { and, asc, desc, eq, ne, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
-import { dateCourte, etatAppel, quandRappeler } from '@/components/format-appel';
+import { dateCourte, etatAppel, quandRappeler, rappelEnRetard } from '@/components/format-appel';
 import { Page } from '@/components/ui';
 import { db } from '@/db';
 import { appels, issuesPersonnalisees, prospects, textesConsentement } from '@/db/schema';
 import { autorisationsDe } from '@/lib/autorisations';
+import { decoderRapport } from '@/lib/effacement';
 import { numeroLisible } from '@/lib/format';
+import { appelTelephoneVivant } from '@/lib/ligne-vivante';
 import { entrepriseParSlug } from '@/lib/pages';
 import { ListeProspects, type LigneProspect } from './liste-prospects';
 
@@ -22,7 +24,7 @@ export default async function PageProspects({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ filtre?: string | string[]; import?: string | string[] }>;
+  searchParams: Promise<{ filtre?: string | string[]; import?: string | string[]; efface?: string | string[] }>;
 }) {
   const [{ slug }, recherche] = await Promise.all([params, searchParams]);
   const entreprise = await entrepriseParSlug(slug);
@@ -33,6 +35,7 @@ export default async function PageProspects({
     db
       .selectDistinctOn([appels.prospectId], {
         prospectId: appels.prospectId,
+        id: appels.id,
         debutLe: appels.debutLe,
         statut: appels.statut,
         ligne: appels.ligne,
@@ -61,15 +64,19 @@ export default async function PageProspects({
       .from(issuesPersonnalisees)
       .where(eq(issuesPersonnalisees.entrepriseId, entreprise.id)),
   ]);
-  const autorisations = await autorisationsDe(liste.map((p) => p.telephone));
+  // La ligne n'est interrogée que si un dernier appel téléphone est encore « en cours » en base.
+  const [autorisations, vivantId] = await Promise.all([
+    autorisationsDe(liste.map((p) => p.telephone)),
+    derniers.some((d) => d.statut === 'en-cours' && d.ligne === 'bluetooth') ? appelTelephoneVivant() : Promise.resolve(null),
+  ]);
   const dernierDe = new Map(derniers.map((d) => [d.prospectId, d]));
   const dernierReelDe = new Map(derniersReels.map((d) => [d.prospectId, d]));
   const maintenant = lireMaintenant();
-  const phraseRappel = (prospectId: string): string | null => {
+  const rappelDe = (prospectId: string): LigneProspect['rappel'] => {
     const r = dernierReelDe.get(prospectId);
     if (r?.issueSysteme !== 'rappel-convenu') return null;
-    if (!r.rappelLe) return r.texte ?? 'moment non précisé';
-    return `${quandRappeler(r.rappelLe, r.quand, maintenant)}${r.texte ? ` (« ${r.texte} »)` : ''}`;
+    if (!r.rappelLe) return { quand: null, texte: r.texte, enRetard: false };
+    return { quand: quandRappeler(r.rappelLe, r.quand, maintenant), texte: r.texte, enRetard: rappelEnRetard(r.rappelLe, r.quand, maintenant) };
   };
   const libellePerso = new Map(issuesPerso.map((i) => [`perso:${i.id}`, i.libelle]));
 
@@ -84,13 +91,20 @@ export default async function PageProspects({
       chiffres: `${lisible.replace(/\D/g, '')} ${p.telephone.replace(/\D/g, '')}`,
       autorisation: autorisations.get(p.telephone),
       dernier: d
-        ? { date: dateCourte(d.debutLe).split(' ')[0] ?? '', libelle: etatAppel(d, { libellePerso: d.issue ? libellePerso.get(d.issue) : null }).libelle }
+        ? {
+            date: dateCourte(d.debutLe).split(' ')[0] ?? '',
+            libelle: etatAppel(d, { vivant: d.id === vivantId, libellePerso: d.issue ? libellePerso.get(d.issue) : null, maintenant }).libelle,
+            vivant: d.id === vivantId,
+          }
         : null,
-      rappel: phraseRappel(p.id),
+      rappel: rappelDe(p.id),
+      archive: p.archiveLe !== null,
     };
   });
 
   const filtre = typeof recherche.filtre === 'string' ? recherche.filtre : undefined;
+  // Compte rendu d'un effacement fait depuis la fiche (des comptes, sans nom) ; illisible, il est ignoré.
+  const rapport = typeof recherche.efface === 'string' ? decoderRapport(recherche.efface) : null;
 
   return (
     <Page largeur="pleine">
@@ -101,6 +115,7 @@ export default async function PageProspects({
         prospects={lignes}
         filtreInitial={filtre}
         importOuvert={recherche.import === '1'}
+        rapportInitial={rapport}
       />
     </Page>
   );

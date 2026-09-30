@@ -37,13 +37,24 @@ describe('lireFiche', () => {
   });
 
   it('lit un e-mail facultatif et refuse une adresse mal formée', () => {
-    const avec = lireFiche('julie.md', '---\nnom: Julie\ntelephone: "0639980001"\nemail: julie@exemple.fr\n---\nContexte.');
+    const avec = lireFiche('julie.md', '---\nnom: Julie\ntelephone: "0639980001"\nemail: julie@exemple.test\n---\nContexte.');
     const sans = lireFiche('julie.md', '---\nnom: Julie\ntelephone: "0639980001"\n---\nContexte.');
     const faux = lireFiche('julie.md', '---\nnom: Julie\ntelephone: "0639980001"\nemail: julie-arobase-exemple\n---\nContexte.');
 
-    expect(avec.ok && avec.fiche.email).toBe('julie@exemple.fr');
+    expect(avec.ok && avec.fiche.email).toBe('julie@exemple.test');
     expect(sans.ok && sans.fiche.email).toBeNull();
     expect(faux.ok).toBe(false);
+  });
+
+  it('refuse un nom sur plusieurs lignes, trop long ou porteur d’un caractère de contrôle (il finit dans les confirmations)', () => {
+    const multiligne = lireFiche('x.md', `---\nnom: |\n  Faux Nom (Société) au 06 00 00 00 00\n\n  ${'x'.repeat(50)}\ntelephone: "0639980001"\n---\nContexte.`);
+    const long = lireFiche('x.md', `---\nnom: ${'a'.repeat(121)}\ntelephone: "0639980001"\n---\nContexte.`);
+    const echappement = lireFiche('x.md', '---\nnom: Julie\nsociete: "Gîte\\e[2J"\ntelephone: "0639980001"\n---\nContexte.');
+
+    expect(multiligne).toEqual({ ok: false, erreurs: ['champ nom : une seule ligne, sans caractère de contrôle'] });
+    expect(long).toEqual({ ok: false, erreurs: ['champ nom trop long (120 caractères au plus)'] });
+    expect(echappement.ok).toBe(false);
+    expect(lireFiche('x.md', `---\nnom: ${'a'.repeat(120)}\ntelephone: "0639980001"\n---\nContexte.`).ok).toBe(true);
   });
 
   it('accepte une fiche sans société ni rôle', () => {
@@ -174,7 +185,7 @@ describe('ecrireFiche', () => {
     societe: 'Gîte des Aravis',
     role: 'Gérante',
     telephone: '+33639980001' as FicheProspect['telephone'],
-    email: 'julie@exemple.fr',
+    email: 'julie@exemple.test',
     contexte: 'Gîte de 4 chambres.\n\nPiste : parler de la commission.',
   };
 

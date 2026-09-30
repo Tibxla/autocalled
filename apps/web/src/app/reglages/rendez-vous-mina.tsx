@@ -1,6 +1,5 @@
-import Link from 'next/link';
 import { heure, jourCourt } from '@/components/format-appel';
-import { EtatVide, LienAction } from '@/components/ui';
+import { EtatVide, LIEN_TEXTE, LienAction, LienTexte } from '@/components/ui';
 import { BoutonRecreer } from './boutons-agenda';
 
 /**
@@ -110,18 +109,20 @@ function Ligne({ ligne: { rdv, prospect, appelId }, maintenant }: { ligne: Ligne
         {jourCourt(rdv.debut)} {heure(rdv.debut)}
       </time>
       <span className="flex min-w-0 flex-wrap items-baseline gap-x-3">
-        <Link href={`/appels/${appelId}`} className="min-w-0 truncate decoration-souligne underline-offset-4 hover:underline">
+        {/* Une liste n'a pas de relief par ligne : des liens texte, soulignés et agrandis au doigt. */}
+        <LienTexte href={`/appels/${appelId}`} className="min-w-0 truncate">
           {prospect ?? 'Prospect sans nom'}
-        </Link>
+        </LienTexte>
         {rdv.email ? <span className="min-w-0 truncate font-mono text-xs text-encre-3">{rdv.email}</span> : null}
       </span>
       <span className="flex flex-wrap items-baseline gap-x-4 text-sm sm:justify-end">
-        {rdv.lienVisio ? (
+        {/* Une visio passée (commencée depuis plus d’une heure) ne se rejoint plus. */}
+        {rdv.lienVisio && rdv.debut.getTime() > maintenant.getTime() - 60 * 60_000 ? (
           <a
             href={rdv.lienVisio}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-encre-2 decoration-souligne underline-offset-4 hover:text-encre hover:underline"
+            className={`text-encre-2 hover:text-encre pointer-coarse:py-3.5 ${LIEN_TEXTE}`}
           >
             Ouvrir la visio
           </a>

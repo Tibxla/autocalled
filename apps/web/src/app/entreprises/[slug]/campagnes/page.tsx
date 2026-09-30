@@ -1,5 +1,5 @@
 import { finDemandee } from '@autocalled/domain';
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { comptesCampagne, dateCourte, etatAppel, STATUTS_CAMPAGNE } from '@/components/format-appel';
 import { Cellule, CelluleEnTete, EnTeteTable, LienLigne, LigneTable, Page, TableDense } from '@/components/ui';
@@ -31,7 +31,8 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
     db
       .select({ id: prospects.id, nom: prospects.nom, societe: prospects.societe, telephone: prospects.telephone })
       .from(prospects)
-      .where(eq(prospects.entrepriseId, entreprise.id))
+      // Un prospect archivé n'est jamais proposé pour une campagne.
+      .where(and(eq(prospects.entrepriseId, entreprise.id), isNull(prospects.archiveLe)))
       .orderBy(asc(prospects.nom), asc(prospects.id)),
     // Le dernier appel de chaque prospect, pour les filtres et les cases cochées d'office.
     db
@@ -139,9 +140,10 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
                 const version = libelleVersion.get(c.versionScriptId) ?? 'Version supprimée';
                 const rendezVous = rendezVousParCampagne.get(c.id) ?? 0;
                 return (
-                  <LigneTable key={c.id} etat={c.statut === 'en-cours' ? 'vivante' : 'normale'}>
+                  // Sous 640 px, date, statut, compte et rendez-vous tiennent sur la première rangée jusqu'à 360 px.
+                  <LigneTable key={c.id} etat={c.statut === 'en-cours' && comptes.enAppel > 0 ? 'vivante' : 'normale'} className="max-sm:gap-x-2.5">
                     <Cellule className="max-sm:order-1 max-sm:flex-1">
-                      <LienLigne href={`/campagnes/${c.id}`} className="font-mono text-xs text-encre-2">
+                      <LienLigne href={`/campagnes/${c.id}`} className="font-mono text-xs whitespace-nowrap text-encre-2">
                         {dateCourte(c.creeLe)}
                       </LienLigne>
                     </Cellule>
@@ -163,8 +165,13 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
                         {comptes.traites} traités sur {comptes.total}
                       </span>
                     </Cellule>
-                    <Cellule align="droite" masqueeMobile className={`font-mono text-xs ${rendezVous > 0 ? 'text-encre' : 'text-encre-3'}`}>
-                      {rendezVous}
+                    {/* Sous 640 px, à côté du statut et du compte, avec son unité ; rien quand aucun rendez-vous n'est pris. */}
+                    <Cellule
+                      align="droite"
+                      unite="rendez-vous"
+                      className={`text-sm text-encre-3 max-sm:order-3 ${rendezVous > 0 ? '' : 'max-sm:hidden'}`}
+                    >
+                      <span className={`font-mono text-xs ${rendezVous > 0 ? 'text-encre' : ''}`}>{rendezVous}</span>
                     </Cellule>
                   </LigneTable>
                 );

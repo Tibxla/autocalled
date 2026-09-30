@@ -1,9 +1,10 @@
 'use server';
 
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { after } from 'next/server';
+import { z } from 'zod';
 import { db } from '@/db';
 import { appels } from '@/db/schema';
 import { rafraichirSiAncien } from '@/lib/agenda';
@@ -16,6 +17,7 @@ import {
   demarrerCampagne,
   derouleSimulation,
   enregistrerCampagne,
+  obstacleNouvelleCampagne,
   retirerProspect,
   sauterProspect,
   suspendreSiEnCours,
@@ -26,6 +28,8 @@ import { exigerOperateur } from '@/lib/garde';
 import { campagneSchema } from '@/lib/schemas';
 import type { DemarrageAppel } from '../appels/actions';
 
+const uuid = z.uuid();
+
 export async function nouvelleCampagne(entrepriseId: string, _: EtatFormulaire, donnees: FormData): Promise<EtatFormulaire> {
   await exigerOperateur();
   const saisie = campagneSchema.safeParse({
@@ -34,6 +38,9 @@ export async function nouvelleCampagne(entrepriseId: string, _: EtatFormulaire, 
     prospects: donnees.getAll('prospects').map(String),
   });
   if (!saisie.success) return { message: saisie.error.issues[0]?.message ?? 'Saisie invalide.' };
+  // Mêmes contrôles que le MCP : un onglet resté ouvert peut proposer un script archivé depuis.
+  const obstacle = await obstacleNouvelleCampagne(entrepriseId, saisie.data);
+  if (obstacle) return { message: obstacle };
 
   const campagneId = await enregistrerCampagne(entrepriseId, saisie.data);
   redirect(`/campagnes/${campagneId}`);
@@ -64,9 +71,15 @@ export async function ouvrirAppelSuivant(campagneId: string, attendu?: string): 
 
 export async function cloreAppelDeCampagne(campagneId: string, appelId: string): Promise<void> {
   await exigerOperateur();
-  await db.update(appels).set({ finLe: new Date() }).where(eq(appels.id, appelId));
+  if (!uuid.safeParse(campagneId).success || !uuid.safeParse(appelId).success) throw new Error('identifiant invalide');
+  // Seul un appel de cette campagne, pas encore clos, reçoit son heure de fin et part à l'analyse.
+  const clos = await db
+    .update(appels)
+    .set({ finLe: new Date() })
+    .where(and(eq(appels.id, appelId), eq(appels.campagneId, campagneId), isNull(appels.finLe)))
+    .returning({ id: appels.id });
   await clore(campagneId, appelId);
-  after(() => traiterAppel(appelId));
+  if (clos.length) after(() => traiterAppel(appelId));
   revalidatePath(`/campagnes/${campagneId}`);
 }
 

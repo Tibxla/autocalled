@@ -30,6 +30,39 @@ import type { SaisieCampagne } from './schemas';
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+/** Nombre de prospects au plus dans une campagne, par l'interface comme par le MCP. */
+export const PROSPECTS_MAX_CAMPAGNE = 200;
+
+/** Début du refus d'une campagne qui contient des prospects archivés (ADR 0013). */
+export const PROSPECTS_ARCHIVES = 'Prospect archivé, jamais appelé en campagne';
+
+/** Refus d'une campagne sur un script archivé : l'interface ne le propose plus, un onglet resté ouvert ne passe pas. */
+export const SCRIPT_ARCHIVE_CAMPAGNE = 'Ce script est archivé : il ne se lance plus. Choisis la version d’un autre script, ou réactive-le.';
+
+/**
+ * Pourquoi cette campagne ne peut pas être enregistrée (version d'une autre entreprise ou d'un script archivé,
+ * prospect inconnu, file trop longue), ou null. Les mêmes contrôles que l'outil MCP, pour l'interface.
+ */
+export async function obstacleNouvelleCampagne(entrepriseId: string, saisie: SaisieCampagne): Promise<string | null> {
+  if (saisie.prospects.length > PROSPECTS_MAX_CAMPAGNE) return `${PROSPECTS_MAX_CAMPAGNE} prospects au plus par campagne.`;
+  const [version] = await db
+    .select({ archive: scripts.archive })
+    .from(versionsScript)
+    .innerJoin(scripts, eq(scripts.id, versionsScript.scriptId))
+    .where(and(eq(versionsScript.id, saisie.versionScriptId), eq(scripts.entrepriseId, entrepriseId)));
+  if (!version) return 'Cette version de script n’appartient pas à cette entreprise.';
+  if (version.archive) return SCRIPT_ARCHIVE_CAMPAGNE;
+  const ids = [...new Set(saisie.prospects)];
+  const connus = await db
+    .select({ id: prospects.id, nom: prospects.nom, archiveLe: prospects.archiveLe })
+    .from(prospects)
+    .where(and(eq(prospects.entrepriseId, entrepriseId), inArray(prospects.id, ids)));
+  const inconnus = ids.filter((id) => !connus.some((p) => p.id === id));
+  if (inconnus.length) return `Prospect introuvable dans cette entreprise : ${inconnus.join(', ')}.`;
+  const archives = connus.filter((p) => p.archiveLe);
+  return archives.length ? `${PROSPECTS_ARCHIVES} : ${archives.map((p) => p.nom).join(', ')}. Réactive-les d’abord.` : null;
+}
+
 /** Enregistre une campagne prête : rien ne sonne avant qu'on la lance. */
 export async function enregistrerCampagne(entrepriseId: string, saisie: SaisieCampagne): Promise<string> {
   const campagne = creerCampagne({ id: crypto.randomUUID(), entrepriseId, versionScriptId: saisie.versionScriptId, prospectIds: saisie.prospects });
@@ -89,6 +122,7 @@ export async function appelerSuivantNavigateur(campagneId: string, attendu?: str
           campagneId,
           ligne: 'navigateur',
           numero: preparation.numero,
+          assistanteNom: preparation.assistanteNom,
           conversationId,
         })
         .returning({ id: appels.id });
@@ -106,7 +140,18 @@ export async function appelerSuivantNavigateur(campagneId: string, attendu?: str
  * `derouleSimulation` ou `appelerSuivantTelephone`. Lève `TransitionInvalide` si elle n'est ni prête ni en pause.
  */
 export async function demarrerCampagne(campagneId: string): Promise<'navigateur' | 'simulation' | 'bluetooth' | 'twilio' | null> {
-  await avecCampagne(campagneId, async (c) => ({ campagne: demarrer(c), resultat: null }));
+  await avecCampagne(campagneId, async (c, tx) => {
+    // Une campagne prête ne part pas sur un script archivé entre-temps ; une campagne en pause garde sa version.
+    if (c.statut === 'prete') {
+      const [version] = await tx
+        .select({ archive: scripts.archive })
+        .from(versionsScript)
+        .innerJoin(scripts, eq(scripts.id, versionsScript.scriptId))
+        .where(eq(versionsScript.id, c.versionScriptId));
+      if (version?.archive) throw new TransitionInvalide(SCRIPT_ARCHIVE_CAMPAGNE);
+    }
+    return { campagne: demarrer(c), resultat: null };
+  });
   await rafraichirSiAncien();
   const [ligne] = await db.select({ ligne: campagnes.ligne }).from(campagnes).where(eq(campagnes.id, campagneId));
   return ligne?.ligne ?? null;
@@ -137,6 +182,7 @@ export async function derouleSimulation(campagneId: string): Promise<void> {
             campagneId,
             ligne: 'simulation',
             numero: preparation.numero,
+            assistanteNom: preparation.assistanteNom,
           })
           .returning({ id: appels.id });
         if (!appel) throw new Error('appel non enregistré');
@@ -167,7 +213,13 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
     await suspendreSiEnCours(campagneId);
     return;
   }
-  const suivant = await avecCampagne<{ appelId: string; numero: string; variables: VariablesDeLAppel; motsCles: string[] } | null>(
+  const suivant = await avecCampagne<{
+    appelId: string;
+    numero: string;
+    variables: VariablesDeLAppel;
+    motsCles: string[];
+    premierMessage: string;
+  } | null>(
     campagneId,
     async (campagne, tx) => {
       for (;;) {
@@ -187,12 +239,19 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
             campagneId,
             ligne: 'bluetooth',
             numero: preparation.numero,
+            assistanteNom: preparation.assistanteNom,
           })
           .returning({ id: appels.id });
         if (!appel) throw new Error('appel non enregistré');
         return {
           campagne: debuterAppel(campagne, action.prospectId, appel.id),
-          resultat: { appelId: appel.id, numero: preparation.numero, variables: preparation.variables, motsCles: preparation.motsCles },
+          resultat: {
+            appelId: appel.id,
+            numero: preparation.numero,
+            variables: preparation.variables,
+            motsCles: preparation.motsCles,
+            premierMessage: preparation.premierMessage,
+          },
         };
       }
     },
@@ -204,6 +263,7 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
     numero: suivant.numero,
     variables: suivant.variables,
     motsCles: suivant.motsCles,
+    premierMessage: suivant.premierMessage,
   });
   if (reponse.ok) return;
   // Pont injoignable ou téléphone absent : l'appel échoue et la campagne se met en pause, plutôt que de
@@ -220,6 +280,22 @@ export async function suspendreSiEnCours(campagneId: string): Promise<void> {
   } catch (erreur) {
     if (!(erreur instanceof TransitionInvalide)) throw erreur;
   }
+}
+
+/**
+ * Supprime une campagne prête : rien n'a été appelé, elle se recrée en un geste (autre version, autre ligne).
+ * Une campagne lancée, même terminée, est de l'historique et ne se supprime pas.
+ */
+export async function supprimerCampagnePrete(campagneId: string): Promise<ResultatAction> {
+  if (!FORME_UUID.test(campagneId)) return { ok: false, raison: INTROUVABLE };
+  return db.transaction(async (tx) => {
+    const [c] = await tx.select({ statut: campagnes.statut }).from(campagnes).where(eq(campagnes.id, campagneId)).for('update');
+    if (!c) return { ok: false as const, raison: INTROUVABLE };
+    if (c.statut !== 'prete') return { ok: false as const, raison: 'Seule une campagne prête (jamais lancée) se supprime : une campagne lancée est de l’historique. terminer_campagne l’arrête.' };
+    if (await tx.$count(appels, eq(appels.campagneId, campagneId))) return { ok: false as const, raison: 'Cette campagne a déjà des appels : elle ne se supprime pas.' };
+    await tx.delete(campagnes).where(eq(campagnes.id, campagneId));
+    return { ok: true as const };
+  });
 }
 
 /** Nombre d'appels d'une campagne par état, pour la liste. */
@@ -315,11 +391,13 @@ export async function ajouterALaCampagne(campagneId: string, prospectIds: readon
     return { ok: false, raison: 'Le script de cette campagne est archivé : réactive-le dans Scripts, ou lance une nouvelle campagne sur un autre script.' };
   }
   const trouves = await db
-    .select({ id: prospects.id, nom: prospects.nom, telephone: prospects.telephone })
+    .select({ id: prospects.id, nom: prospects.nom, telephone: prospects.telephone, archiveLe: prospects.archiveLe })
     .from(prospects)
     .where(and(eq(prospects.entrepriseId, ligne.entrepriseId), inArray(prospects.id, ids)));
   const inconnus = ids.filter((id) => !trouves.some((p) => p.id === id));
   if (inconnus.length) return { ok: false, raison: `Prospect introuvable dans cette entreprise : ${inconnus.join(', ')}. Rien n’a été ajouté.` };
+  const archives = trouves.filter((p) => p.archiveLe);
+  if (archives.length) return { ok: false, raison: `${PROSPECTS_ARCHIVES} : ${archives.map((p) => p.nom).join(', ')}. Rien n’a été ajouté.` };
   const autorisations = await autorisationsDe(trouves.map((p) => p.telephone));
   const nonAutorises = trouves.filter((p) => !autorisations.get(p.telephone)?.autorise);
   if (nonAutorises.length) {

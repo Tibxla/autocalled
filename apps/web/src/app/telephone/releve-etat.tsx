@@ -44,7 +44,7 @@ export function ReleveEtat({ luA }: { luA: string }) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-encre-3">
       <span>
-        lu à <span className="font-mono">{luA}</span>, relu toutes les 5 secondes
+        Lu à <span className="font-mono">{luA}</span>, relu toutes les 5 secondes
       </span>
       <Action
         ton="discret"

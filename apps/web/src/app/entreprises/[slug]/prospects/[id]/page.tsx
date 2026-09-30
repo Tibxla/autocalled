@@ -1,25 +1,28 @@
-import { and, asc, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
+import { bilanEntier } from '@autocalled/domain';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { AjoutClaudeCode } from '@/components/ajout-claude-code';
 import { ListeAppels } from '@/components/liste-appels';
 import { PastilleAutorisation } from '@/components/pastille-autorisation';
-import { cleJour, dateCourte, etatAppel, quandRappeler } from '@/components/format-appel';
-import { Chevron, EtatVide, LienAction, Page, TitreSection } from '@/components/ui';
+import { dateCourte, etatAppel, quandRappeler, rappelEnRetard } from '@/components/format-appel';
+import { Chevron, EtatVide, LienAction, LienTexte, Page, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { appels, consentements, issuesPersonnalisees, prospects, rendezVous, versionsScript } from '@/db/schema';
 import { ligneBloquee } from '@/app/_accueil/situation';
-import { etatLigneServeur } from '@/lib/accueil';
+import type { EtatLigneServeur } from '@/lib/accueil';
 import { rafraichirSiAncien } from '@/lib/agenda';
 import { preparerAppel } from '@/lib/appels';
 import { autorisationsDe } from '@/lib/autorisations';
+import { inventaireEffacement, phrasesEffacement } from '@/lib/effacement';
 import { numeroLisible } from '@/lib/format';
-import { entrepriseParSlug, prospectParId } from '@/lib/pages';
+import { appelIdVivant, etatLigneBorne } from '@/lib/ligne-vivante';
+import { assistantePourLaPage, entrepriseParSlug, prospectParId } from '@/lib/pages';
 import { ajoutParMcp } from '@/lib/prospects';
 import { rappelEnAttente } from '@/lib/rappels';
 import { reglagesDuPont } from '@/lib/pont';
 import { versionsDeLEntreprise } from '@/lib/versions';
 import { BoutonRevoquer } from './bouton-revoquer';
+import { GestesProspect } from './gestes-prospect';
 import { NumeroMasquable, PanneauAppel, type BlocageTelephone, type PlafondsLigne } from './panneau-appel';
 
 export const metadata: Metadata = { title: 'Prospect' };
@@ -53,22 +56,13 @@ async function lirePlafonds(): Promise<PlafondsLigne> {
  * Pourquoi aucun appel ne peut partir par le téléphone passerelle, ou null (ligne prête, ou trop lente à
  * répondre : le serveur garde sa propre vérification au moment d'appeler). Lecture seule, sans bloquer la fiche.
  */
-async function lireBlocageTelephone(): Promise<BlocageTelephone | null> {
-  let minuterie: ReturnType<typeof setTimeout> | undefined;
-  const attente = new Promise<null>((resoudre) => {
-    minuterie = setTimeout(() => resoudre(null), 1500);
-  });
-  try {
-    const etat = await Promise.race([etatLigneServeur(), attente]);
-    if (!etat) return null;
-    const texte = ligneBloquee(etat);
-    if (!texte) return null;
-    return { texte, court: !etat.joignable ? 'injoignable' : !etat.connecte ? 'déconnecté' : 'plafond atteint' };
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(minuterie);
-  }
+async function lireBlocageTelephone(lecture: Promise<EtatLigneServeur | null>): Promise<BlocageTelephone | null> {
+  const etat = await lecture;
+  if (!etat) return null;
+  if (etat.joignable && (etat.appelEnCours || etat.appelId)) return { texte: 'Un appel est déjà en ligne sur le téléphone.', court: 'en appel' };
+  const texte = ligneBloquee(etat);
+  if (!texte) return null;
+  return { texte, court: !etat.joignable ? 'injoignable' : !etat.connecte ? 'déconnecté' : 'plafond atteint' };
 }
 
 /** L'heure se lit hors du rendu. */
@@ -80,9 +74,10 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
   const { slug, id } = await params;
   const entreprise = await entrepriseParSlug(slug);
   const prospect = await prospectParId(entreprise.id, id);
-  // L'agenda se relit dès l'ouverture de la fiche : il sera à jour quand Mina proposera des créneaux.
+  const { nom: nomAssistante } = await assistantePourLaPage();
+  // L'agenda se relit dès l'ouverture de la fiche : il sera à jour quand l'assistante proposera des créneaux.
   await rafraichirSiAncien();
-  const [autorisations, partages, toutesVersions, historique, [derniereRevocation], ordre, issuesPerso, ajoutMcp] = await Promise.all([
+  const [autorisations, partages, toutesVersions, historique, [derniereRevocation], ordre, issuesPerso, ajoutMcp, inventaire] = await Promise.all([
     autorisationsDe([prospect.telephone]),
     db.$count(prospects, and(eq(prospects.entrepriseId, entreprise.id), eq(prospects.telephone, prospect.telephone))),
     versionsDeLEntreprise(entreprise.id),
@@ -97,10 +92,11 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
       .where(and(eq(consentements.numero, prospect.telephone), isNotNull(consentements.revoqueLe)))
       .orderBy(desc(consentements.revoqueLe))
       .limit(1),
+    // L'ordre de la liste : les archivés n'y sont pas, sauf celui qu'on regarde.
     db
       .select({ id: prospects.id })
       .from(prospects)
-      .where(eq(prospects.entrepriseId, entreprise.id))
+      .where(and(eq(prospects.entrepriseId, entreprise.id), or(isNull(prospects.archiveLe), eq(prospects.id, prospect.id))))
       .orderBy(asc(prospects.nom), asc(prospects.id)),
     db
       .select({ id: issuesPersonnalisees.id, libelle: issuesPersonnalisees.libelle })
@@ -108,6 +104,8 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
       .where(eq(issuesPersonnalisees.entrepriseId, entreprise.id)),
     // Consentement entré par le serveur MCP (ADR 0009) : rappelé sur la fiche et dans la confirmation d'appel.
     ajoutParMcp(prospect.telephone),
+    // Ce qu'un effacement supprimerait, pour la confirmation en ligne.
+    inventaireEffacement(entreprise.id, prospect.id),
   ]);
   // Les scripts archivés ne sont plus proposés au lancement.
   const versions = toutesVersions.filter((v) => !v.scriptArchive);
@@ -117,8 +115,8 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
   const lisible = numeroLisible(prospect.telephone);
   const base = `/entreprises/${slug}/prospects`;
 
-  // Ce que Mina recevra au début de l'appel (lecture seule, avec la première version proposée).
-  const preparation = autorise && versions[0] ? await preparerAppel(entreprise.id, prospect.id, versions[0].id) : null;
+  // Ce que l'assistante recevra au début de l'appel (lecture seule, avec la première version proposée).
+  const preparation = autorise && !prospect.archiveLe && versions[0] ? await preparerAppel(entreprise.id, prospect.id, versions[0].id) : null;
 
   // Précédent et suivant, dans l'ordre alphabétique de la liste.
   const rang = ordre.findIndex((p) => p.id === prospect.id);
@@ -150,21 +148,33 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
     : [[], []];
   const nombreEtapes = new Map(etapesVersions.map((e) => [e.id, Number(e.nombre)]));
   const avecRendezVous = new Set(rdvHistorique.map((r) => r.appelId));
-  const etatDernier = dernier ? etatAppel(dernier, { libellePerso: dernier.issue ? libellePerso.get(dernier.issue) : null }) : null;
+  // Une seule lecture de la ligne : l'appel vivant (attendu seulement si un appel téléphone est encore « en cours » en
+  // base) et le blocage du panneau d'appel (jamais attendu).
+  const lectureLigne = etatLigneBorne();
+  const vivantId = historique.some((a) => a.statut === 'en-cours' && a.ligne === 'bluetooth') ? appelIdVivant(await lectureLigne) : null;
+  const maintenant = lireMaintenant();
+  const etatDernier = dernier
+    ? etatAppel(dernier, { vivant: dernier.id === vivantId, libellePerso: dernier.issue ? libellePerso.get(dernier.issue) : null, maintenant })
+    : null;
   // Le rappel à faire : le dernier appel hors simulation a fini en rappel convenu (un appel plus récent le fait).
   const rappel = rappelEnAttente(historique);
-  const maintenant = lireMaintenant();
-  const rappelEnRetard = rappel?.rappelLe ? cleJour(rappel.rappelLe) < cleJour(maintenant) : false;
+  const retard = rappel?.rappelLe ? rappelEnRetard(rappel.rappelLe, rappel.quand, maintenant) : false;
 
   let blocage: { texte: string; lien?: { href: string; libelle: string } } | null = null;
-  if (!autorise) {
+  if (prospect.archiveLe) {
+    blocage = { texte: 'Prospect archivé : il n’est plus appelé. Réactive-le pour l’appeler.' };
+  } else if (!autorise) {
     const raison = autorisation && !autorisation.autorise ? autorisation.raison : 'aucun-consentement';
     blocage =
       raison === 'consentement-revoque'
         ? { texte: `Numéro révoqué${revocation ? ` le ${JOUR_MOIS.format(revocation)}` : ''} : il ne sera plus jamais composé.` }
-        : raison === 'numero-invalide'
-          ? { texte: 'Numéro invalide : corrige-le dans la fiche puis réimporte-la.', lien: { href: `${base}?import=1`, libelle: 'Importer des fiches' } }
-          : { texte: 'Pas de consentement : réimporte la fiche en cochant l’attestation.', lien: { href: `${base}?import=1`, libelle: 'Importer des fiches' } };
+        : raison === 'numero-efface'
+          ? { texte: 'Numéro d’une personne effacée à sa demande : il ne sera plus jamais composé.' }
+          : raison === 'opposition-illisible'
+            ? { texte: 'La liste d’opposition ne se lit plus (SEL_OPPOSITION manque ou a changé dans le .env) : aucun numéro n’est composé.' }
+            : raison === 'numero-invalide'
+              ? { texte: 'Numéro invalide : corrige-le dans la fiche puis réimporte-la.', lien: { href: `${base}?import=1`, libelle: 'Importer des fiches' } }
+              : { texte: 'Pas de consentement : réimporte la fiche en cochant l’attestation.', lien: { href: `${base}?import=1`, libelle: 'Importer des fiches' } };
   } else if (versions.length === 0) {
     blocage = {
       texte: toutesVersions.length > 0 ? 'Tous les scripts sont archivés : réactives-en un ou crées-en un dans Scripts.' : 'Aucun script : crées-en un dans Scripts.',
@@ -172,25 +182,32 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
     };
   }
 
+  // Sous 1024 px, une seule colonne dans l'ordre du geste : l'identité, l'appel, le numéro, l'historique, puis les
+  // gestes qui retirent (Révoquer, Archiver, Effacer). Dès 1024 px, l'encart de droite garde le numéro au-dessus de
+  // l'appel et les gestes dessous. Sous 640 px, Précédent et Suivant passent en bas de la fiche.
   return (
     <Page largeur="lecture">
-      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 pb-8">
-        <div className="grid gap-1">
-          <Link href={base} className="justify-self-start text-sm text-encre-3 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline">
+      <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-6">
+        <div className="grid gap-1 pb-8 max-sm:pb-6">
+          <LienTexte isole href={base} className="justify-self-start text-sm text-encre-3 hover:text-encre-2">
             Prospects
-          </Link>
+          </LienTexte>
           <h2 className="text-lg font-semibold tracking-[-0.01em]">{prospect.nom}</h2>
           {prospect.role || prospect.societe ? <p className="text-md text-encre-2">{[prospect.role, prospect.societe].filter(Boolean).join(', ')}</p> : null}
+          {prospect.archiveLe ? (
+            <p className="max-w-[68ch] pt-1 text-sm text-encre-2">
+              Archivé le <span className="font-mono">{JOUR_MOIS.format(prospect.archiveLe)}</span> : plus proposé pour un appel ni une campagne. Ses appels
+              et son consentement restent.
+            </p>
+          ) : null}
           {dernier && etatDernier ? (
             <p className="flex flex-wrap gap-x-4 gap-y-0.5 pt-1 text-sm text-encre-3">
-              <Link href={`/appels/${dernier.id}?depuis=${encodeURIComponent(`${base}/${prospect.id}`)}`} className="decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline">
-                Dernier appel le <span className="font-mono">{dateCourte(dernier.debutLe).split(' ')[0]}</span> : {etatDernier.libelle}
-              </Link>
+              {/* Le rappel d'abord : c'est ce qui reste à faire. */}
               {rappel ? (
                 <span className="text-encre">
                   {rappel.rappelLe ? (
                     <>
-                      {rappelEnRetard ? 'Rappel en retard' : 'Prochain rappel'} :{' '}
+                      {retard ? <span className="text-alerte">Rappel en retard</span> : 'Prochain rappel'} :{' '}
                       {quandRappeler(rappel.rappelLe, rappel.quand, maintenant)}
                     </>
                   ) : (
@@ -199,119 +216,143 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
                   {rappel.texte ? <span className="text-encre-3"> · « {rappel.texte} »</span> : rappel.rappelLe ? null : ' : moment non précisé'}
                 </span>
               ) : null}
+              <LienTexte href={`/appels/${dernier.id}?depuis=${encodeURIComponent(`${base}/${prospect.id}`)}`} className="hover:text-encre-2 sm:-order-1">
+                Dernier appel le <span className="font-mono">{dateCourte(dernier.debutLe).split(' ')[0]}</span> :{' '}
+                <span className={etatDernier.cle === 'en-cours' && dernier.id === vivantId ? 'text-antenne' : undefined}>{etatDernier.libelle}</span>
+              </LienTexte>
             </p>
           ) : (
             <p className="pt-1 text-sm text-encre-3">Jamais appelé.</p>
           )}
         </div>
-        <nav aria-label="Autres prospects" className="-mx-1.5 flex gap-x-3">
-          {precedent ? (
-            <LienAction ton="discret" touche="K" raccourci="k" libelleRaccourci="Prospect précédent" href={`${base}/${precedent.id}`}>
-              Précédent
-            </LienAction>
-          ) : null}
-          {suivant ? (
-            <LienAction ton="discret" touche="J" raccourci="j" libelleRaccourci="Prospect suivant" href={`${base}/${suivant.id}`}>
-              Suivant
-            </LienAction>
-          ) : null}
-        </nav>
-      </div>
+        {precedent || suivant ? (
+          <nav aria-label="Autres prospects" className="self-start max-sm:order-last max-sm:mt-10 max-sm:border-t max-sm:border-filet max-sm:pt-2">
+            <div className="-mx-1.5 flex gap-x-3 max-sm:justify-between">
+              {precedent ? (
+                <LienAction ton="discret" touche="K" raccourci="k" libelleRaccourci="Prospect précédent" href={`${base}/${precedent.id}`}>
+                  Précédent
+                </LienAction>
+              ) : (
+                <span className="sm:hidden" />
+              )}
+              {suivant ? (
+                <LienAction ton="discret" touche="J" raccourci="j" libelleRaccourci="Prospect suivant" href={`${base}/${suivant.id}`}>
+                  Suivant
+                </LienAction>
+              ) : null}
+            </div>
+          </nav>
+        ) : null}
 
-      <div className="grid grid-cols-1 gap-12 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <div className="grid min-w-0 grid-cols-1 content-start gap-10">
-          <section aria-labelledby="titre-sait" className="grid gap-4">
-            <TitreSection id="titre-sait">Ce que Mina sait</TitreSection>
-            <p className="max-w-[68ch] text-base whitespace-pre-line">{prospect.contexte || 'Pas de contexte dans la fiche.'}</p>
-            <p className="text-sm text-encre-3">
-              Fiche <span className="font-mono">{prospect.id}.md</span>, mise à jour le{' '}
-              <span className="font-mono">{dateCourte(prospect.majLe)}</span>.
-            </p>
-            {preparation?.ok ? (
-              <details className="group max-w-[68ch]">
-                <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-2 text-md text-encre-2 hover:text-encre pointer-coarse:h-11 [&::-webkit-details-marker]:hidden">
-                  <Chevron className="stroke-encre-3 group-open:rotate-90" />
-                  <span className="decoration-souligne underline-offset-4 group-hover:underline">Ce que Mina saura en appelant</span>
-                </summary>
-                <dl className="grid gap-3 rounded-md bg-surface px-3.5 py-3 text-sm">
-                  <div className="grid gap-0.5">
-                    <dt className="font-medium text-encre">Appels précédents</dt>
-                    <dd className="whitespace-pre-line text-encre-2">{preparation.variables.historique_appels}</dd>
-                  </div>
-                  <div className="grid gap-0.5">
-                    <dt className="font-medium text-encre">Rendez-vous à proposer</dt>
-                    <dd className="text-encre-2">{preparation.variables.rendez_vous}</dd>
-                  </div>
-                  <div className="grid gap-0.5">
-                    <dt className="font-medium text-encre">E-mail pour l’invitation</dt>
-                    <dd className="font-mono text-encre-2">{preparation.variables.prospect_email}</dd>
-                  </div>
-                </dl>
-              </details>
-            ) : null}
-          </section>
+        <div className="grid grid-cols-1 gap-12 sm:col-span-2 lg:grid-cols-[minmax(0,1fr)_22rem] lg:grid-rows-[auto_1fr] lg:gap-y-6">
+          <div className="grid min-w-0 grid-cols-1 content-start gap-10 max-lg:order-2 lg:row-span-2">
+            <section aria-labelledby="titre-sait" className="grid gap-4">
+              <TitreSection id="titre-sait">Ce que {nomAssistante} sait</TitreSection>
+              <p className="max-w-[68ch] text-base whitespace-pre-line">{prospect.contexte || 'Pas de contexte dans la fiche.'}</p>
+              <p className="text-sm text-encre-3">
+                Fiche <span className="font-mono">{prospect.id}.md</span>, mise à jour le{' '}
+                <span className="font-mono">{dateCourte(prospect.majLe)}</span>.
+              </p>
+              {preparation?.ok ? (
+                <details className="group max-w-[68ch]">
+                  <summary className="-mx-1.5 inline-flex h-9 cursor-pointer list-none items-center gap-2 rounded-[4px] px-1.5 text-md text-encre-2 hover:text-encre pointer-coarse:h-11 pointer-coarse:active:bg-survol [&::-webkit-details-marker]:hidden">
+                    <Chevron className="stroke-encre-3 group-open:rotate-90" />
+                    <span className="decoration-souligne underline-offset-4 group-hover:underline pointer-coarse:underline">Ce que {nomAssistante} saura en appelant</span>
+                  </summary>
+                  <dl className="grid gap-3 rounded-md bg-surface px-3.5 py-3 text-sm">
+                    <div className="grid gap-0.5">
+                      <dt className="font-medium text-encre">Appels précédents</dt>
+                      <dd className="whitespace-pre-line text-encre-2">{preparation.variables.historique_appels}</dd>
+                    </div>
+                    <div className="grid gap-0.5">
+                      <dt className="font-medium text-encre">Rendez-vous à proposer</dt>
+                      <dd className="text-encre-2">{preparation.variables.rendez_vous}</dd>
+                    </div>
+                    <div className="grid gap-0.5">
+                      <dt className="font-medium text-encre">E-mail pour l’invitation</dt>
+                      <dd className="font-mono break-all text-encre-2">{preparation.variables.prospect_email}</dd>
+                    </div>
+                  </dl>
+                </details>
+              ) : null}
+            </section>
 
-          <section aria-labelledby="titre-appels" className="grid min-w-0 grid-cols-1">
-            <TitreSection id="titre-appels" compte={historique.length}>
-              Appels
-            </TitreSection>
-            {historique.length === 0 ? (
-              <EtatVide titre="Aucun appel pour l’instant.">
-                Chaque appel s’affichera ici avec son issue et son bilan ; Mina s’en souviendra au prochain appel.
-              </EtatVide>
-            ) : (
-              <ListeAppels
-                depuis={`${base}/${prospect.id}`}
-                appels={historique.map((a) => {
-                  const cleIssue = a.issue ?? a.bilan?.issue ?? null;
-                  return {
-                    ...a,
-                    resume: a.bilan?.resume ?? null,
-                    nombreEtapes: nombreEtapes.get(a.versionScriptId) ?? null,
-                    rendezVous: avecRendezVous.has(a.id),
-                    libellePerso: cleIssue ? (libellePerso.get(cleIssue) ?? null) : null,
-                  };
-                })}
+            <section aria-labelledby="titre-appels" className="grid min-w-0 grid-cols-1">
+              <TitreSection id="titre-appels" compte={historique.length}>
+                Appels
+              </TitreSection>
+              {historique.length === 0 ? (
+                <EtatVide titre="Aucun appel pour l’instant.">
+                  Chaque appel s’affichera ici avec son issue et son bilan ; {nomAssistante} s’en souviendra au prochain appel.
+                </EtatVide>
+              ) : (
+                <ListeAppels
+                  depuis={`${base}/${prospect.id}`}
+                  vivantId={vivantId}
+                  appels={historique.map((a) => {
+                    const cleIssue = a.issue ?? a.bilan?.issue ?? null;
+                    return {
+                      ...a,
+                      resume: bilanEntier(a.bilan)?.resume ?? null,
+                      nombreEtapes: nombreEtapes.get(a.versionScriptId) ?? null,
+                      rendezVous: avecRendezVous.has(a.id),
+                      libellePerso: cleIssue ? (libellePerso.get(cleIssue) ?? null) : null,
+                    };
+                  })}
+                />
+              )}
+            </section>
+          </div>
+
+          <aside aria-label="Numéro et appel" className="grid content-start gap-6 max-lg:order-1 lg:col-start-2 lg:row-start-1">
+            <div className="grid gap-2.5 border-t border-filet pt-4 max-lg:order-last">
+              <NumeroMasquable lisible={lisible} />
+              {prospect.email ? <p className="font-mono text-sm break-all text-encre-2">{prospect.email}</p> : null}
+              <PastilleAutorisation autorisation={autorisation} />
+              {ajoutMcp ? (
+                <p className="text-sm text-encre-3">
+                  <AjoutClaudeCode le={ajoutMcp} />
+                </p>
+              ) : null}
+              {revocation ? (
+                <p className="text-sm text-encre-3">
+                  Révoqué le <span className="font-mono">{JOUR_MOIS.format(revocation)}</span>.
+                </p>
+              ) : null}
+              {partages > 1 ? (
+                <p className="text-sm text-encre-3">
+                  Numéro partagé par <span className="font-mono">{partages}</span> prospects.
+                </p>
+              ) : null}
+            </div>
+            <PanneauAppel
+              entrepriseId={entreprise.id}
+              prospectId={prospect.id}
+              prospectNom={prospect.nom}
+              versions={versions.map((v) => ({ id: v.id, libelle: v.libelle }))}
+              autorise={autorise}
+              numero={lisible}
+              ajoutMcp={ajoutMcp}
+              blocage={blocage}
+              plafonds={lirePlafonds()}
+              telephoneBloque={lireBlocageTelephone(lectureLigne)}
+            />
+          </aside>
+
+          {/* Les gestes qui retirent : en dernier sous 1024 px, sous l'encart dès 1024 px. */}
+          <div className="grid content-start gap-6 max-lg:order-3 lg:col-start-2 lg:row-start-2">
+            <BoutonRevoquer numero={prospect.telephone} lisible={lisible} partages={partages} autorise={autorise} />
+            {inventaire ? (
+              <GestesProspect
+                entrepriseId={entreprise.id}
+                prospectId={prospect.id}
+                nom={prospect.nom}
+                archive={Boolean(prospect.archiveLe)}
+                effacement={{ ...phrasesEffacement(inventaire, undefined, { numeroInsecable: true }), obstacle: inventaire.obstacle }}
               />
-            )}
-          </section>
-        </div>
-
-        <aside aria-label="Numéro et appel" className="order-first grid content-start gap-6 lg:order-none">
-          <div className="grid gap-2.5 border-t border-filet pt-4">
-            <NumeroMasquable lisible={lisible} />
-            {prospect.email ? <p className="font-mono text-sm break-all text-encre-2">{prospect.email}</p> : null}
-            <PastilleAutorisation autorisation={autorisation} />
-            {ajoutMcp ? (
-              <p className="text-sm text-encre-3">
-                <AjoutClaudeCode le={ajoutMcp} />
-              </p>
-            ) : null}
-            {revocation ? (
-              <p className="text-sm text-encre-3">
-                Révoqué le <span className="font-mono">{JOUR_MOIS.format(revocation)}</span>.
-              </p>
-            ) : null}
-            {partages > 1 ? (
-              <p className="text-sm text-encre-3">
-                Numéro partagé par <span className="font-mono">{partages}</span> prospects.
-              </p>
             ) : null}
           </div>
-          <PanneauAppel
-            entrepriseId={entreprise.id}
-            prospectId={prospect.id}
-            prospectNom={prospect.nom}
-            versions={versions.map((v) => ({ id: v.id, libelle: v.libelle }))}
-            autorise={autorise}
-            numero={lisible}
-            ajoutMcp={ajoutMcp}
-            blocage={blocage}
-            plafonds={lirePlafonds()}
-            telephoneBloque={lireBlocageTelephone()}
-          />
-          <BoutonRevoquer numero={prospect.telephone} lisible={lisible} partages={partages} autorise={autorise} />
-        </aside>
+        </div>
       </div>
     </Page>
   );

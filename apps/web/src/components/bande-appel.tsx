@@ -6,13 +6,17 @@ import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, 
 import { demanderAnalyse, raccrocherAppelTelephone } from '@/app/appels/actions';
 import { usePriseDeMain, type EtatPrise } from '@/app/appels/[id]/prise-de-main';
 import { Action, LienAction } from './action';
+import { LIEN_TEXTE } from './lien-texte';
+import { useNomAssistante } from './assistante';
 import { toucheAria, useRaccourcis } from './clavier';
 import { Confirmation, useConfirmation } from './confirmation';
+import { etapeAffichee, numeroEtape } from './etape-direct';
 import { useLigne } from './etat-ligne-telephone';
 import { chrono as formatChrono, heure, numeroMasque, prenom } from './format-appel';
 import { useHorloge } from './horloge';
 import { lotDeNiveaux, TamponNiveaux } from './niveaux-direct';
 import { OndeDirect } from './onde-direct';
+import { AxePiste } from '@/app/_accueil/squelette-bande';
 
 /**
  * Bande d'un appel téléphone en cours, commune à l'accueil, à la fiche d'appel et à la régie de campagne.
@@ -43,6 +47,8 @@ export function useFilAppel(
   enLigneDepuis: number | null;
   /** Niveaux des deux voix relayés par le pont ; null tant qu'aucun n'est arrivé (pont ancien, pas encore décroché). */
   niveaux: TamponNiveaux | null;
+  /** Dernière étape du plan signalée par l'assistante (outil etape_script) ; null avant la première ou sans l'outil. */
+  etape: number | null;
 } {
   const router = useRouter();
   const [etat, setEtat] = useState('composition');
@@ -51,6 +57,7 @@ export function useFilAppel(
   const [termineLe, setTermineLe] = useState<number | null>(null);
   const [enLigneDepuis, setEnLigneDepuis] = useState<number | null>(null);
   const [niveaux, setNiveaux] = useState<TamponNiveaux | null>(null);
+  const [etape, setEtape] = useState<number | null>(null);
   const surTermine = useRef(onTermine);
   useEffect(() => {
     surTermine.current = onTermine;
@@ -67,7 +74,7 @@ export function useFilAppel(
     const tampon = new TamponNiveaux();
     let niveauxAnnonces = false;
     source.onmessage = (m) => {
-      const e = JSON.parse(m.data) as { type: string; etat?: string; role?: TourDirect['role']; texte?: string; t?: number };
+      const e = JSON.parse(m.data) as { type: string; etat?: string; role?: TourDirect['role']; texte?: string; t?: number; numero?: unknown };
       if (e.type === 'niveaux') {
         const lot = lotDeNiveaux(e);
         if (!lot) return;
@@ -95,6 +102,10 @@ export function useFilAppel(
       } else if (e.type === 'tour' && e.role && e.texte?.trim()) {
         const tour = { role: e.role, texte: e.texte, recuLe: Date.now() };
         setTours((t) => [...t, tour]);
+      } else if (e.type === 'etape') {
+        // Rejoué d'un coup à qui arrive tard : la dernière étape reçue l'emporte.
+        const n = numeroEtape(e.numero);
+        if (n !== null) setEtape(n);
       }
     };
     // Coupure passagère : EventSource se reconnecte seul et reprend après le dernier événement reçu.
@@ -110,7 +121,7 @@ export function useFilAppel(
     };
   }, [appelId, router, suivre]);
 
-  return { etat, tours, perdu, termineLe, enLigneDepuis, niveaux };
+  return { etat, tours, perdu, termineLe, enLigneDepuis, niveaux, etape };
 }
 
 /* ------------------------------------------------------------------ écoute */
@@ -254,14 +265,13 @@ const LIBELLES_ETAT: Record<string, string> = {
   active: 'En ligne',
   reconnexion: 'Pas de son : reconnexion du téléphone…',
   disconnected: 'Raccroché',
-  'prise-en-main': 'Main reprise : Mina s’est tue',
   termine: 'Appel terminé : rapatriement et analyse…',
 };
 
 const SONNE = new Set(['composition', 'dialing', 'alerting']);
 const EN_LIGNE = new Set(['active', 'prise-en-main']);
 
-/** La phrase de Mina en sous-titre : dernière phrase du dernier tour, jointe à la précédente si elle est courte. */
+/** La phrase de l'assistante en sous-titre : dernière phrase du dernier tour, jointe à la précédente si elle est courte. */
 export function phraseDeMina(texte: string): { phrase: string; taille: 'grande' | 'moyenne' } {
   const phrases = (texte.match(/[^.!?…]+[.!?…]*/g) ?? [texte]).map((p) => p.trim()).filter(Boolean);
   let phrase = phrases.at(-1) ?? texte.trim();
@@ -408,6 +418,10 @@ export interface VueBandeAppelProps {
   ecoute: { active: boolean; erreur: string | null; niveau?: () => number };
   /** Niveaux des deux voix relayés par le pont : l'onde s'en nourrit tant que l'écoute est fermée. */
   niveaux?: TamponNiveaux | null;
+  /** Dernière étape du plan signalée par l'assistante (outil etape_script), affichée tant que l'appel vit. */
+  etape?: number | null;
+  /** Intentions des étapes de la version de l'appel, pour le libellé et le total ; sans elles, « Étape 2 ». */
+  etapes?: readonly string[] | null;
   prise: { etat: EtatPrise; erreur: string | null; muet: boolean; depuis?: number | null };
   raccrochage: { enCours: boolean; erreur: string | null };
   /** Statut traitement : fil figé, contrôles retirés. */
@@ -461,6 +475,8 @@ export function VueBandeAppel({
   chrono,
   ecoute,
   niveaux = null,
+  etape = null,
+  etapes = null,
   prise,
   raccrochage,
   termine = null,
@@ -487,6 +503,7 @@ export function VueBandeAppel({
   const maintenant = useHorloge(Boolean(chrono) || prise.etat === 'active');
   const reduit = useMouvementReduit();
   const nomProspect = libelleProspect ?? (identite ? prenom(identite.prospect) : 'Prospect');
+  const nomAssistante = useNomAssistante();
 
   const confirmationPrise = useConfirmation();
   const [ouverteAuDepart, setOuverteAuDepart] = useState(confirmationInitiale);
@@ -526,31 +543,54 @@ export function VueBandeAppel({
     },
   ]);
 
-  // Version condensée : collée sous la barre quand la bande est sortie de l'écran par le haut.
-  const bande = useRef<HTMLElement>(null);
+  // Version condensée : collée sous la barre dès que les commandes sont passées sous elle. Le repère suit la rangée
+  // des commandes, pas toute la bande : sur un téléphone, la réplique et la piste occupent l'écran bien après
+  // que les gestes en sont sortis.
+  const repere = useRef<HTMLDivElement>(null);
   const [horsEcran, setHorsEcran] = useState(false);
   useEffect(() => {
-    const el = bande.current;
+    const el = repere.current;
     if (!condensee || !el) return;
-    const observateur = new IntersectionObserver(([e]) => setHorsEcran(Boolean(e && !e.isIntersecting && e.boundingClientRect.top < 0)));
+    const barre = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hauteur-barre')) || 0;
+    const observateur = new IntersectionObserver(([e]) => setHorsEcran(Boolean(e && !e.isIntersecting && e.boundingClientRect.top < barre)), {
+      rootMargin: `-${barre}px 0px 0px 0px`,
+    });
     observateur.observe(el);
     return () => observateur.disconnect();
   }, [condensee]);
 
-  // Sous-titre : la dernière réplique de Mina, et celle du prospect qui la précède.
+  // Sous-titre : la dernière réplique de l'assistante, et celle du prospect qui la précède.
   const iMina = tours.findLastIndex((t) => t.role === 'agent');
   const tourMina = iMina >= 0 ? tours[iMina] : undefined;
   const tourProspect = tours.slice(0, iMina >= 0 ? iMina : tours.length).findLast((t) => t.role === 'prospect');
   const sousTitre = tourMina ? phraseDeMina(tourMina.texte) : null;
   const dernierTour = tours.at(-1);
 
-  const texteEtat = LIBELLES_ETAT[etat] ?? etat;
+  // Appel téléphone fini sans réplique à rejouer (page rechargée pendant l'analyse) : le centre de la bande dit
+  // l'analyse et son chrono, le haut seulement l'heure de fin.
+  const analyseCentree = variante === 'bande' && Boolean(termine) && tours.length === 0 && telephone && !onde;
+  const finAppel = termine && termine.le > 0 ? termine.le : null;
+  const texteEtat =
+    etat === 'prise-en-main'
+      ? `Main reprise : ${nomAssistante} s’est tue`
+      : etat === 'termine' && analyseCentree
+        ? finAppel
+          ? `Appel terminé à ${heure(new Date(finAppel))}`
+          : 'Appel terminé'
+        : etat === 'termine' && chrono
+          ? 'Appel terminé'
+          : (LIBELLES_ETAT[etat] ?? etat);
   const couleurEtat = vivant || prise.etat === 'active' ? 'text-antenne' : 'text-encre-3';
+  // Indicatif et discret : le bilan dira l'étape atteinte. Rien après une prise de main (l'assistante s'est tue).
+  const etapeEnCours = enLigne && prise.etat !== 'active' && etat !== 'prise-en-main' ? etapeAffichee(etape, etapes) : null;
 
   const boutons = telephone ? (
-    <div className="-mx-1.5 flex flex-wrap items-center gap-x-1 gap-y-1 max-sm:grid max-sm:w-full max-sm:grid-cols-2 max-sm:[&_.touche]:hidden max-sm:[&>button]:h-11 max-sm:[&>button]:justify-center">
+    // Pavé de touches au doigt : chaque commande de l'appel prend le relief de sa touche ; Raccrocher seul sur sa
+    // rangée sous 640 px, sur voile brique, toujours immédiat (frein, ADR 0009).
+    <div className="-mx-1.5 flex flex-wrap items-center gap-x-1 gap-y-1 pointer-coarse:mx-0 pointer-coarse:gap-x-2 max-sm:grid max-sm:w-full max-sm:grid-cols-2 max-sm:gap-2">
       {voirEcoute ? (
         <Action
+          forme="relief"
           touche="E"
           aria-keyshortcuts={raccourcis ? toucheAria('e') : undefined}
           onClick={basculerEcoute}
@@ -562,12 +602,21 @@ export function VueBandeAppel({
         </Action>
       ) : null}
       {voirPrise ? (
-        <Action ref={boutonPrise} ton="fort" touche="Espace" aria-keyshortcuts={raccourcis ? toucheAria(' ') : undefined} onClick={ouvrirPrise} aria-expanded={priseOuverte}>
+        <Action
+          ref={boutonPrise}
+          ton="fort"
+          forme="relief"
+          touche="Espace"
+          aria-keyshortcuts={raccourcis ? toucheAria(' ') : undefined}
+          onClick={ouvrirPrise}
+          aria-expanded={priseOuverte}
+        >
           Prendre la main
         </Action>
       ) : null}
       {voirMicro ? (
         <Action
+          forme="relief"
           touche="M"
           aria-keyshortcuts={raccourcis ? toucheAria('m') : undefined}
           onClick={onBasculerMicro}
@@ -578,7 +627,15 @@ export function VueBandeAppel({
         </Action>
       ) : null}
       {voirRaccrocher ? (
-        <Action ton="alerte" className="sm:ml-6" onClick={raccrocher} enCours={raccrochage.enCours} libelleEnCours="Raccrochage…" disabled={raccrochage.enCours}>
+        <Action
+          ton="alerte"
+          forme="relief"
+          className="sm:ml-6 max-sm:col-span-2 max-sm:mt-4"
+          onClick={raccrocher}
+          enCours={raccrochage.enCours}
+          libelleEnCours="Raccrochage…"
+          disabled={raccrochage.enCours}
+        >
           Raccrocher
         </Action>
       ) : null}
@@ -589,13 +646,13 @@ export function VueBandeAppel({
 
   return (
     <>
-      <section ref={bande} aria-label="Appel en cours" className="grid min-w-0 grid-cols-1 gap-3.5">
+      <section aria-label="Appel en cours" className="grid min-w-0 grid-cols-1 gap-3.5">
         {/* Rangée 1 : qui, où en est l'appel, les gestes. */}
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
           {identite ? (
             <div className="flex min-w-0 flex-wrap items-baseline gap-x-3.5 gap-y-0.5">
               {identite.lien ? (
-                <Link href={identite.lien} className="text-lg font-semibold decoration-souligne underline-offset-4 hover:underline">
+                <Link href={identite.lien} className={`text-lg font-semibold pointer-coarse:py-3 ${LIEN_TEXTE}`}>
                   {identite.prospect}
                 </Link>
               ) : (
@@ -614,10 +671,12 @@ export function VueBandeAppel({
           ) : null}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 max-sm:w-full">
             <span className={`text-sm ${couleurEtat}`}>{texteEtat}</span>
-            <Chrono chrono={chrono} maintenant={maintenant} enLigne={vivant} etat={etat} />
+            {analyseCentree ? null : <Chrono chrono={chrono} maintenant={maintenant} enLigne={vivant} etat={etat} />}
+            {etapeEnCours ? <EtapeEnCours etape={etapeEnCours} /> : null}
             {termine ? null : boutons}
           </div>
         </div>
+        <div ref={repere} aria-hidden="true" className="-mt-3.5 -mb-px h-px" />
 
         {/* Confirmations et messages, dans le flux, sous les gestes. */}
         {voirPrise || priseOuverte ? (
@@ -631,8 +690,8 @@ export function VueBandeAppel({
             }}
             onAnnuler={fermerPrise}
           >
-            Mina se tait tout de suite et ne reprendra pas : tu termines l’appel toi-même, avec ton micro. Annonce-toi (« Thibaud à l’appareil, je
-            prends le relais »). Mets un casque : sans lui, ton micro reprend la voix du prospect. La transcription et le bilan s’arrêtent au relais.
+            {nomAssistante} se tait tout de suite et ne reprendra pas : tu termines l’appel toi-même, avec ton micro. Annonce-toi par ton prénom (« … à l’appareil,
+            je prends le relais »). Mets un casque : sans lui, ton micro reprend la voix du prospect. La transcription et le bilan s’arrêtent au relais.
           </Confirmation>
         ) : null}
         {prise.etat === 'connexion' ? <p className="text-sm text-encre-3">Connexion au téléphone…</p> : null}
@@ -666,14 +725,14 @@ export function VueBandeAppel({
             <p>Le fil de cet appel ne répond plus (ligne arrêtée ou redémarrée).</p>
             {!conversation ? <p className="text-encre-3">Rien à rapatrier : la conversation n’a pas été ouverte.</p> : null}
             {raccrocherPerdu ? <p>Si le téléphone sonne encore, raccroche d’ici.</p> : null}
-            <div className="-mx-1.5 flex flex-wrap gap-x-4">
+            <div className="-mx-1.5 flex flex-wrap gap-x-4 pointer-coarse:mx-0 max-sm:grid max-sm:justify-items-start max-sm:gap-y-3">
               {raccrocherPerdu ? (
-                <Action ton="alerte" onClick={raccrocher} enCours={raccrochage.enCours} libelleEnCours="Raccrochage…" disabled={raccrochage.enCours}>
+                <Action ton="alerte" forme="relief" onClick={raccrocher} enCours={raccrochage.enCours} libelleEnCours="Raccrochage…" disabled={raccrochage.enCours}>
                   Raccrocher
                 </Action>
               ) : null}
               {conversation && onRapatrier ? (
-                <Action ton="fort" onClick={onRapatrier} enCours={rapatriementEnCours} libelleEnCours="Rapatriement…" disabled={rapatriementEnCours}>
+                <Action ton="fort" forme={raccrocherPerdu ? 'texte' : 'relief'} onClick={onRapatrier} enCours={rapatriementEnCours} libelleEnCours="Rapatriement…" disabled={rapatriementEnCours}>
                   Rapatrier la conversation et le bilan
                 </Action>
               ) : null}
@@ -687,11 +746,18 @@ export function VueBandeAppel({
           </div>
         ) : null}
 
-        {/* Rangée 2 : sous-titre, la dernière phrase de Mina (bande seulement). */}
+        {/* Rangée 2 : sous-titre, la dernière phrase de l'assistante (bande seulement). */}
+        {analyseCentree ? (
+          <div className="flex min-h-[84px] flex-col items-center justify-end gap-1.5 pt-1.5 pb-0.5 text-center max-sm:min-h-0">
+            <p className="max-w-[48ch] text-2xl font-medium tracking-[-0.01em] text-balance max-sm:text-xl">
+              {finAppel ? <ChronoAnalyse depuis={finAppel} /> : 'Rapatriement et analyse du bilan…'}
+            </p>
+          </div>
+        ) : null}
         {variante === 'bande' && (tours.length > 0 || enLigne) ? (
           <div className="flex min-h-[84px] flex-col items-center justify-end gap-1.5 pt-1.5 pb-0.5 text-center max-sm:min-h-0">
             {tourProspect ? (
-              <p aria-hidden="true" className="max-w-full truncate text-lg text-encre-2">
+              <p aria-hidden="true" className="max-w-full truncate text-lg text-encre-2 max-sm:line-clamp-2 max-sm:whitespace-normal">
                 <span className="mr-2.5 text-md font-semibold text-encre-3">{nomProspect}</span>
                 {fin(tourProspect.texte, 90)}
               </p>
@@ -703,14 +769,14 @@ export function VueBandeAppel({
                   sousTitre.taille === 'grande' ? 'max-w-[34ch] text-3xl' : 'max-w-[48ch] text-2xl'
                 }`}
               >
-                <span className="mr-3.5 align-middle text-lg leading-none font-semibold tracking-normal text-antenne">Mina</span>
+                <span className="mr-3.5 align-middle text-lg leading-none font-semibold tracking-normal text-antenne">{nomAssistante}</span>
                 {sousTitre.phrase}
               </p>
             ) : null}
           </div>
         ) : null}
         <p aria-live="polite" className="sr-only">
-          {dernierTour ? `${dernierTour.role === 'agent' ? 'Mina' : nomProspect} : ${dernierTour.texte}` : ''}
+          {dernierTour ? `${dernierTour.role === 'agent' ? nomAssistante : nomProspect} : ${dernierTour.texte}` : ''}
         </p>
 
         {/* Rangée 3 : l'onde (ligne navigateur, ou niveaux du pont écoute fermée), sinon la piste de parole. */}
@@ -719,36 +785,53 @@ export function VueBandeAppel({
             <OndeDirect niveaux={niveaux} actif />
           ) : tours.length > 0 || enLigne ? (
             <PisteParole tours={tours} actif={enLigne} {...(ecoute.active && ecoute.niveau ? { niveau: ecoute.niveau } : {})} />
+          ) : analyseCentree ? (
+            <AxePiste />
           ) : null)}
 
         {/* Fil complet : toujours sur la fiche, avec T sur la bande. */}
-        {filOuvert && tours.length > 0 ? <Fil tours={tours} nomProspect={nomProspect} /> : null}
+        {filOuvert && tours.length > 0 ? <Fil tours={tours} nomProspect={nomProspect} nomAssistante={nomAssistante} /> : null}
       </section>
 
       {condensee && horsEcran ? (
-        <div className="fixed inset-x-0 top-(--hauteur-barre) z-20 flex h-11 items-center gap-4 border-b border-filet bg-fond px-(--gouttiere) text-md">
-          <span className="min-w-0 truncate font-semibold max-sm:max-w-[6rem]">{identite?.prospect ?? nomProspect}</span>
+        <div className="fixed inset-x-0 top-(--hauteur-barre) z-20 flex h-11 items-center gap-4 border-b border-filet bg-fond px-(--gouttiere) text-md max-sm:h-[52px] pointer-coarse:h-[52px]">
+          {/* Sous 640 px, le prénom seul et les actions sans leur touche : elles prennent presque toute la largeur. */}
+          <span className="min-w-0 truncate font-semibold max-sm:max-w-[40%]">
+            <span className="sm:hidden">{identite ? prenom(identite.prospect) : nomProspect}</span>
+            <span className="max-sm:hidden">{identite?.prospect ?? nomProspect}</span>
+          </span>
           <span className={`shrink-0 text-sm max-sm:hidden ${couleurEtat}`}>{texteEtat}</span>
           <span className="max-sm:hidden">
-            <Chrono chrono={chrono} maintenant={maintenant} enLigne={vivant} etat={etat} />
+            {analyseCentree ? null : <Chrono chrono={chrono} maintenant={maintenant} enLigne={vivant} etat={etat} />}
           </span>
           <span className="min-w-0 flex-1 truncate text-encre-2 max-sm:hidden">{tourMina ? fin(tourMina.texte, 60) : ''}</span>
           {termine ? null : (
-            <div className="-mr-1.5 ml-auto flex shrink-0 items-center gap-1 max-sm:[&_.touche]:hidden">
+            <div className="-mr-1.5 ml-auto flex shrink-0 items-center gap-1 pointer-coarse:mr-0 max-sm:gap-3 max-sm:[&_.touche]:hidden">
               {voirEcoute ? (
                 <Action touche="E" onClick={basculerEcoute} className="h-8 max-sm:hidden">
                   {ecoute.active ? 'Arrêter l’écoute' : 'Écouter'}
                 </Action>
               ) : null}
               {voirPrise ? (
-                <Action ton="fort" touche="Espace" onClick={ouvrirPrise} className="h-8">
+                <Action ton="fort" forme="relief" touche="Espace" onClick={ouvrirPrise} className="h-8 max-sm:px-2.5!">
                   Prendre la main
                 </Action>
               ) : null}
               {voirRaccrocher ? (
-                <Action ton="alerte" onClick={raccrocher} enCours={raccrochage.enCours} libelleEnCours="Raccrochage…" disabled={raccrochage.enCours} className="h-8">
-                  Raccrocher
-                </Action>
+                // Sous 640 px, un filet sépare Raccrocher (immédiat) de Prendre la main (sous confirmation) : 25 px en tout.
+                <span className="flex items-center max-sm:self-stretch max-sm:border-l max-sm:border-filet max-sm:pl-3">
+                  <Action
+                    ton="alerte"
+                    forme="relief"
+                    onClick={raccrocher}
+                    enCours={raccrochage.enCours}
+                    libelleEnCours="Raccrochage…"
+                    disabled={raccrochage.enCours}
+                    className="h-8 max-sm:px-2.5!"
+                  >
+                    Raccrocher
+                  </Action>
+                </span>
               ) : null}
             </div>
           )}
@@ -758,8 +841,34 @@ export function VueBandeAppel({
   );
 }
 
+/** « Rapatriement et analyse du bilan… 00:23 », le chrono partant de la fin de l'appel (ms ou date ISO). */
+export function ChronoAnalyse({ depuis }: { depuis: number | string }) {
+  const maintenant = useHorloge();
+  const debut = typeof depuis === 'number' ? depuis : Date.parse(depuis);
+  return (
+    <span>
+      Rapatriement et analyse du bilan…{' '}
+      <span className="font-mono text-encre-3">{maintenant > 0 ? formatChrono(maintenant - debut) : '--:--'}</span>
+    </span>
+  );
+}
+
+/** « Étape 2/4 · Qualification » : où l'assistante en est dans le plan, d'après elle. */
+function EtapeEnCours({ etape }: { etape: NonNullable<ReturnType<typeof etapeAffichee>> }) {
+  return (
+    <span className="min-w-0 truncate text-sm whitespace-nowrap text-encre-3 max-sm:max-w-full">
+      Étape{' '}
+      <span className="font-mono">
+        {etape.numero}
+        {etape.total ? `/${etape.total}` : ''}
+      </span>
+      {etape.libelle ? ` · ${etape.libelle}` : ''}
+    </span>
+  );
+}
+
 /** Le fil complet : défile dans son conteneur seulement, et seulement si l'opérateur était déjà en bas. */
-function Fil({ tours, nomProspect }: { tours: TourDirect[]; nomProspect: string }) {
+function Fil({ tours, nomProspect, nomAssistante }: { tours: TourDirect[]; nomProspect: string; nomAssistante: string }) {
   const conteneur = useRef<HTMLDivElement>(null);
   const [decroche, setDecroche] = useState<number | null>(null);
   const id = useId();
@@ -782,7 +891,7 @@ function Fil({ tours, nomProspect }: { tours: TourDirect[]; nomProspect: string 
         <ol className="grid gap-2.5" aria-label="Fil de l’appel">
           {tours.map((t, i) => (
             <li key={i} className="grid gap-x-3 sm:grid-cols-[5rem_1fr]">
-              <span className={`text-md font-semibold ${t.role === 'agent' ? 'text-antenne' : 'text-encre'}`}>{t.role === 'agent' ? 'Mina' : nomProspect}</span>
+              <span className={`text-md font-semibold ${t.role === 'agent' ? 'text-antenne' : 'text-encre'}`}>{t.role === 'agent' ? nomAssistante : nomProspect}</span>
               <p className="max-w-[68ch] text-base text-encre-2">{t.texte}</p>
             </li>
           ))}
@@ -827,10 +936,13 @@ export function BandeAppel({
   condensee = false,
   onTermine,
   libelleProspect,
+  etapes,
 }: {
   appelId: string;
   variante: 'bande' | 'fiche';
   identite?: IdentiteAppel;
+  /** Intentions des étapes de la version de l'appel : libellé de l'étape signalée en direct. */
+  etapes?: readonly string[] | null;
   /** Nom de qui parle côté prospect quand `identite` manque (fiche d'appel) : sinon « Prospect ». */
   libelleProspect?: string;
   debutLe?: string;
@@ -868,7 +980,7 @@ export function BandeAppel({
   const termine = statut === 'traitement' || fil.etat === 'termine' ? { le: finConnue ?? 0 } : null;
 
   let chrono: VueBandeAppelProps['chrono'] = null;
-  if (termine && finConnue) chrono = { libelle: `terminé à ${heure(new Date(finConnue))} · analyse`, depuis: finConnue };
+  if (termine && finConnue) chrono = { libelle: `à ${heure(new Date(finConnue))} · analyse`, depuis: finConnue };
   else if (!termine && SONNE.has(fil.etat) && !decrocheLigne && debutLe) chrono = { libelle: 'sonne depuis', depuis: Date.parse(debutLe) };
   else if (!termine && enLigneDepuis) chrono = { libelle: 'en ligne', depuis: enLigneDepuis };
   else if (!termine && debutLe) chrono = { libelle: 'depuis la composition', depuis: Date.parse(debutLe) };
@@ -884,6 +996,8 @@ export function BandeAppel({
       chrono={chrono}
       ecoute={{ active: ecoute.active, erreur: ecoute.erreur, niveau: ecoute.niveau }}
       niveaux={fil.niveaux}
+      etape={fil.etape}
+      etapes={etapes ?? null}
       prise={{ etat: prise.etat, erreur: prise.erreur, muet: prise.muet, depuis: priseDepuis }}
       raccrochage={{ enCours: raccrochageEnCours, erreur: erreurRaccrochage }}
       termine={termine}

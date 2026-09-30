@@ -1,3 +1,6 @@
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { ClientAgent } from '@autocalled/agent';
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { creerServeur } from '../mcp/serveur';
@@ -8,8 +11,12 @@ export type Reponse = { erreur: boolean; texte: string; json: unknown; blocs: st
 /**
  * Un client MCP branché en mémoire sur le vrai serveur. `elicitation` simule l'opérateur devant Claude Code :
  * absente, le client ne déclare pas la capacité ; sinon il accepte, refuse ou annule chaque confirmation.
+ * ElevenLabs n'est jamais joint (`clientAgent` absent vaut null) et le vrai `agent/` jamais lu : sans
+ * `dossierAgent`, le serveur pointe un dossier qui n'existe pas.
  */
-export async function clientDeTest(options: { elicitation?: 'accepter' | 'refuser' | 'annuler'; detacher?: Detacher } = {}) {
+export async function clientDeTest(
+  options: { elicitation?: 'accepter' | 'refuser' | 'annuler'; detacher?: Detacher; clientAgent?: ClientAgent | null; dossierAgent?: string } = {},
+) {
   const [cote, coteServeur] = InMemoryTransport.createLinkedPair();
   const messages: string[] = [];
   const client = new Client(
@@ -25,7 +32,11 @@ export async function clientDeTest(options: { elicitation?: 'accepter' | 'refuse
     });
   }
   // Par défaut, aucun processus détaché ne part d'un test : la tâche est seulement notée.
-  await creerServeur({ detacher: options.detacher ?? (() => {}) }).connect(coteServeur);
+  await creerServeur({
+    detacher: options.detacher ?? (() => {}),
+    clientAgent: options.clientAgent ?? null,
+    dossierAgent: options.dossierAgent ?? join(tmpdir(), 'autocalled-agent-absent'),
+  }).connect(coteServeur);
   await client.connect(cote);
 
   async function appeler(nom: string, args: Record<string, unknown> = {}): Promise<Reponse> {

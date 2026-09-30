@@ -19,9 +19,12 @@ recordings/
 *.sqlite
 *.db
 
-# Skills installés localement (restaurables via skills-lock.json)
+# Skills installés localement (restaurables via skills-lock.json), sauf la skill du projet
 .agents/
-.claude/
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/autocalled/
 
 # Divers
 .DS_Store

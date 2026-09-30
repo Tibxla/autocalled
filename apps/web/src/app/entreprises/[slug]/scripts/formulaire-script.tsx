@@ -20,6 +20,7 @@ export function CreationScript({ entrepriseId, slug, compte }: { entrepriseId: s
         action={
           <Action
             ref={bouton}
+            ton="fort"
             touche="N"
             raccourci="n"
             aria-expanded={montree}

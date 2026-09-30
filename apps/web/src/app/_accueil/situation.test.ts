@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AppelDuJour, CampagneJour, EtatLigneServeur } from '@/lib/accueil';
-import { ANALYSE_BLOQUEE_MS, FENETRE_FIN_MS, ligneBloquee, raisonSuspension, situationAccueil } from './situation';
+import { ANALYSE_BLOQUEE_MS, campagneTelephoneEnCours, FENETRE_FIN_MS, ligneBloquee, raisonSuspension, situationAccueil } from './situation';
 
 // Données fictives.
 const MAINTENANT = Date.parse('2026-09-29T12:00:00Z');
@@ -63,7 +63,7 @@ const base = { appelVivant: null, appels: [] as AppelDuJour[], campagnes: [] as 
 
 describe('situationAccueil : priorités', () => {
   it('un appel vivant passe avant tout, identité comprise quand elle correspond', () => {
-    const vivant = { id: 'x', prospect: 'Julie Martin', societe: null, entreprise: 'Atelier Vitrine', version: null, numeroMasque: '06 •• •• •• 01', debutLe: il(0), conversation: true, campagneId: null };
+    const vivant = { id: 'x', prospect: 'Julie Martin', societe: null, entreprise: 'Atelier Vitrine', version: null, numeroMasque: '06 •• •• •• 01', debutLe: il(0), conversation: true, campagneId: null, etapes: ['Accroche'] };
     const s = situationAccueil({
       ...base,
       ligne: { ...LIBRE, appelEnCours: true, appelId: 'x', plafond: 'Plafond atteint.' },
@@ -226,5 +226,14 @@ describe('ligneBloquee', () => {
     expect(ligneBloquee(LIBRE)).toBeNull();
     expect(ligneBloquee({ joignable: false })).toMatch(/injoignable/);
     expect(ligneBloquee({ ...LIBRE, plafond: 'x' })).toMatch(/plafond/);
+  });
+});
+
+describe('campagneTelephoneEnCours', () => {
+  it('rend la campagne téléphone en cours, jamais une suspendue ni une autre ligne', () => {
+    const tel = campagne({ id: 't', ligne: 'bluetooth', statut: 'en-cours' });
+    expect(campagneTelephoneEnCours([campagne({ ligne: 'navigateur', statut: 'en-cours' }), tel])).toBe(tel);
+    expect(campagneTelephoneEnCours([campagne({ ligne: 'bluetooth', statut: 'en-pause' })])).toBeNull();
+    expect(campagneTelephoneEnCours([])).toBeNull();
   });
 });

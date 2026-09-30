@@ -92,6 +92,34 @@
       "when": 1790687369409,
       "tag": "0012_rappel-date",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790696195128,
+      "tag": "0013_assistante",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790709777867,
+      "tag": "0014_effacement-et-archivage",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1790718503007,
+      "tag": "0015_purge-conservation",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790726293935,
+      "tag": "0016_informations-complementaires",
+      "breakpoints": true
     }
   ]
 }

@@ -99,7 +99,7 @@ export function Recapitulatif({
           {sautes > 0 ? (
             <>
               {' '}
-              <span className="font-mono">{sautes}</span> ser{sautes > 1 ? 'ont' : 'a'} sauté{sautes > 1 ? 's' : ''} : numéro non autorisé.
+              <span className="font-mono">{sautes}</span> ne ser{sautes > 1 ? 'ont' : 'a'} pas appelé{sautes > 1 ? 's' : ''} : numéro non autorisé.
             </>
           ) : null}
           {ajoutsMcp > 0 ? (
@@ -126,7 +126,7 @@ export function Recapitulatif({
         {suite.length > 0 ? (
           <details className="group">
             <summary className="flex h-9 cursor-pointer list-none items-center gap-2 text-md text-encre-3 hover:text-encre-2 pointer-coarse:h-11 [&::-webkit-details-marker]:hidden">
-              <span className="decoration-souligne underline-offset-4 group-hover:underline">
+              <span className="decoration-souligne underline-offset-4 group-hover:underline pointer-coarse:underline">
                 <span className="group-open:hidden">
                   et <span className="font-mono">{suite.length}</span> autre{suite.length > 1 ? 's' : ''}
                 </span>

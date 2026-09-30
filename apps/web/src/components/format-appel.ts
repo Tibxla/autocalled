@@ -92,6 +92,22 @@ export function quandRappeler(instant: Date | string, quand: Pick<RappelDate, 'h
   return jour;
 }
 
+/**
+ * Un rappel convenu est en retard quand son jour est passé, ou, le jour même, quand son moment l'est : l'heure dite
+ * dépassée, le matin après 12 h, l'après-midi après 18 h (heure de Paris). Un rappel daté du jour seul ne l'est
+ * qu'au lendemain.
+ */
+export function rappelEnRetard(instant: Date | string, quand: Pick<RappelDate, 'heure' | 'moment'> | null, maintenant: Date = new Date()): boolean {
+  const cle = cleJour(instant);
+  const aujourdhui = cleJour(maintenant);
+  if (cle !== aujourdhui) return cle < aujourdhui;
+  if (!quand || quand.heure) return date(instant).getTime() < maintenant.getTime();
+  const heureParis = Number(heure(maintenant).slice(0, 2));
+  if (quand.moment === 'matin') return heureParis >= 12;
+  if (quand.moment === 'apres-midi') return heureParis >= 18;
+  return false;
+}
+
 const deux = (n: number) => String(n).padStart(2, '0');
 
 /** Durée d'un appel : « 0:47 », « 12:05 », « 1:02:03 » ; rien quand elle est inconnue ou nulle. */

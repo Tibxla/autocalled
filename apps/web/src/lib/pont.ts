@@ -39,11 +39,26 @@ export async function reglagesDuPont(): Promise<ReglagesLigne | null> {
   return etat.ok ? ((etat.corps.reglages as ReglagesLigne | undefined) ?? null) : null;
 }
 
-/** La raison si le plafond d'appels du pont est atteint (ou si le pont ne répond pas), sinon null. */
-export async function refusDuPont(): Promise<string | null> {
+/** La raison si le plafond d'appels du pont est atteint (ou si le pont ne répond pas, ou, avec `ligneLibre`, si un appel est en ligne), sinon null. */
+export async function refusDuPont({ ligneLibre = false }: { ligneLibre?: boolean } = {}): Promise<string | null> {
   const etat = await commanderPont('/etat');
   if (!etat.ok) return etat.raison;
+  // Un appel isolé ne part pas sur une ligne occupée : refusé avant d'être enregistré, il ne laisse pas de « Non composé ».
+  if (ligneLibre && (etat.corps.appelEnCours || typeof etat.corps.appelId === 'string')) return APPEL_DEJA_EN_LIGNE;
   return typeof etat.corps.plafond === 'string' ? etat.corps.plafond : null;
+}
+
+export const APPEL_DEJA_EN_LIGNE = 'Un appel est déjà en ligne sur le téléphone.';
+
+/**
+ * Relance la liaison Bluetooth du téléphone passerelle (liaison figée, téléphone revenu à portée). Ne compose rien ;
+ * refusé pendant un appel, que la relance couperait.
+ */
+export async function reconnecterTelephone(): Promise<ReponsePont> {
+  const etat = await commanderPont('/etat');
+  if (!etat.ok) return etat;
+  if (etat.corps.appelEnCours) return { ok: false, raison: 'Un appel est en cours sur le téléphone : la reconnexion le couperait. Attends qu’il finisse.' };
+  return commanderPont('/telephone/reconnecter', {});
 }
 
 /**

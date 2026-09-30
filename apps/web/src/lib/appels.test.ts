@@ -2,10 +2,13 @@ import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { db } from '@/db';
 import { appels } from '@/db/schema';
-import { entrepriseDeTest } from '../../test/fixtures';
+import { fauxPont } from '../../test/faux-pont';
+import { agendaFrais, entrepriseDeTest, fiche } from '../../test/fixtures';
 import { avecBaseDeTest } from '../../test/outils';
-import { analyserAppel, DUREE_MAX_ANALYSE_S, preparerReanalyse, traiterAppel } from './appels';
+import { analyserAppel, appelerParTelephone, DUREE_MAX_ANALYSE_S, enregistrerAppelSimule, preparerReanalyse, traiterAppel } from './appels';
+import { modifierAssistante } from './assistante';
 import { creerScript } from './entreprises';
+import { importerFiches } from './prospects';
 
 avecBaseDeTest();
 
@@ -78,5 +81,58 @@ describe('preparerReanalyse', () => {
     const a = await appel({ conversationId: 'conv-fictive-4' });
     expect((await preparerReanalyse(a.id)).ok).toBe(false);
     expect(await preparerReanalyse('00000000-0000-0000-0000-000000000000')).toEqual({ ok: false, raison: 'Cet appel n’existe plus.' });
+  });
+});
+
+describe('nom et premier message de l’assistante', () => {
+  async function prospectAutorise() {
+    await agendaFrais();
+    const e = await entrepriseDeTest();
+    const { versionScriptId } = await creerScript(e.id, 'Découverte');
+    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01')]);
+    return { entrepriseId: e.id, versionScriptId };
+  }
+
+  it('fige le nom sur l’appel téléphone et envoie au pont le premier message composé', async () => {
+    const pont = await fauxPont();
+    try {
+      await modifierAssistante({ nom: 'Lina', premierMessage: 'Allô, {{prospect_nom}} ?' }, { origine: 'mcp' });
+      const { entrepriseId, versionScriptId } = await prospectAutorise();
+
+      const r = await appelerParTelephone(entrepriseId, 'julie', versionScriptId);
+
+      expect(r.ok).toBe(true);
+      expect(pont.compositions()[0]?.corps).toMatchObject({
+        premierMessage: 'Allô, Julie Fictive ?',
+        variables: { assistante_nom: 'Lina' },
+      });
+      expect((await lire((r as { appelId: string }).appelId))?.assistanteNom).toBe('Lina');
+    } finally {
+      await pont.fermer();
+    }
+  });
+
+  it('refuse un appel isolé quand la ligne est déjà en appel, sans rien enregistrer ni composer', async () => {
+    const pont = await fauxPont({ etat: { appelEnCours: true, appelId: '00000000-0000-4000-8000-000000000001' } });
+    try {
+      const { entrepriseId, versionScriptId } = await prospectAutorise();
+
+      const r = await appelerParTelephone(entrepriseId, 'julie', versionScriptId);
+
+      expect(r).toEqual({ ok: false, raison: 'Un appel est déjà en ligne sur le téléphone.' });
+      expect(pont.compositions()).toHaveLength(0);
+      expect(await db.$count(appels, eq(appels.entrepriseId, entrepriseId))).toBe(0);
+    } finally {
+      await pont.fermer();
+    }
+  });
+
+  it('fige le nom par défaut sur un appel simulé', async () => {
+    const { entrepriseId, versionScriptId } = await prospectAutorise();
+
+    const r = await enregistrerAppelSimule(entrepriseId, 'julie', versionScriptId);
+
+    expect(r.ok && r.variables.assistante_nom).toBe('Mina');
+    expect((await lire((r as { appelId: string }).appelId))?.assistanteNom).toBe('Mina');
   });
 });

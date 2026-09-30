@@ -10,11 +10,12 @@ import {
   type VariablesDeLAppel,
 } from '@autocalled/domain';
 import { creneauParle } from '@autocalled/agenda';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '@/db';
-import { appels, entreprises, issuesPersonnalisees, objections, prospects, rendezVous, versionsScript } from '@/db/schema';
+import { appels, entreprises, issuesPersonnalisees, objections, prospects, rendezVous, scripts, versionsScript } from '@/db/schema';
 import { variablesPour } from './apercu';
 import { VERSION_ANALYSEUR, analyser } from './analyseur';
+import { lireAssistante } from './assistante';
 import { autorisationsDe } from './autorisations';
 import { rafraichirSiAncien } from './agenda';
 import { audioConversation, lireConversation, simulerConversation } from './elevenlabs';
@@ -26,8 +27,20 @@ export function dossierDonnees(): string {
 }
 
 export type PreparationAppel =
-  | { ok: true; numero: NumeroAutorise; variables: VariablesDeLAppel; entrepriseId: string; motsCles: string[] }
+  | {
+      ok: true;
+      numero: NumeroAutorise;
+      variables: VariablesDeLAppel;
+      entrepriseId: string;
+      motsCles: string[];
+      /** Ce que l'assistante dit si le prospect se tait au décroché, déjà composé. */
+      premierMessage: string;
+      /** Le nom sous lequel l'assistante se présente : figé sur l'appel enregistré. */
+      assistanteNom: string;
+    }
   | { ok: false; raison: string };
+
+export const PROSPECT_ARCHIVE = 'Ce prospect est archivé : il n’est plus appelé. Réactive-le pour l’appeler.';
 
 /**
  * Tout ce qu'il faut pour appeler un prospect, vérifié au dernier moment : le numéro doit être
@@ -39,16 +52,32 @@ export async function preparerAppel(entrepriseId: string, prospectId: string, ve
     .select()
     .from(prospects)
     .where(and(eq(prospects.entrepriseId, entrepriseId), eq(prospects.id, prospectId)));
-  const [version] = await db.select().from(versionsScript).where(eq(versionsScript.id, versionScriptId));
+  // La version doit être celle d'un script de cette entreprise.
+  const [ligneVersion] = await db
+    .select({ version: versionsScript })
+    .from(versionsScript)
+    .innerJoin(scripts, eq(scripts.id, versionsScript.scriptId))
+    .where(and(eq(versionsScript.id, versionScriptId), eq(scripts.entrepriseId, entrepriseId)));
+  const version = ligneVersion?.version;
   if (!entreprise || !prospect || !version) return { ok: false, raison: 'Prospect ou version de script introuvable.' };
+  // Un prospect archivé n'est plus appelé (ADR 0013) : ni appel isolé, ni campagne.
+  if (prospect.archiveLe) return { ok: false, raison: PROSPECT_ARCHIVE };
 
   const autorisation = (await autorisationsDe([prospect.telephone])).get(prospect.telephone);
   if (!autorisation?.autorise) {
-    return { ok: false, raison: 'Ce numéro n’est pas autorisé : aucun consentement actif.' };
+    return {
+      ok: false,
+      raison:
+        autorisation?.raison === 'numero-efface'
+          ? 'Ce numéro appartient à une personne effacée à sa demande : il ne sera plus jamais composé.'
+          : autorisation?.raison === 'opposition-illisible'
+            ? 'La liste d’opposition ne se lit plus (SEL_OPPOSITION manque ou a changé) : aucun numéro n’est composé.'
+            : 'Ce numéro n’est pas autorisé : aucun consentement actif.',
+    };
   }
 
-  const { variables, motsCles } = await variablesPour(entreprise, prospect, version.etapes, new Date());
-  return { ok: true, numero: autorisation.numero, variables, entrepriseId, motsCles };
+  const { variables, motsCles, premierMessage } = await variablesPour(entreprise, prospect, version.etapes, new Date());
+  return { ok: true, numero: autorisation.numero, variables, entrepriseId, motsCles, premierMessage, assistanteNom: variables.assistante_nom };
 }
 
 /**
@@ -63,13 +92,22 @@ export async function appelerParTelephone(
 ): Promise<{ ok: true; appelId: string } | { ok: false; raison: string }> {
   const preparation = await preparerAppel(entrepriseId, prospectId, versionScriptId);
   if (!preparation.ok) return preparation;
-  const refus = await refusDuPont();
+  // Un appel de campagne attend la fin du précédent dans l'enchaînement ; un appel isolé refuse une ligne occupée.
+  const refus = await refusDuPont({ ligneLibre: campagneId === null });
   if (refus) return { ok: false, raison: refus };
 
   await rafraichirSiAncien();
   const [appel] = await db
     .insert(appels)
-    .values({ entrepriseId, prospectId, versionScriptId, campagneId, ligne: 'bluetooth', numero: preparation.numero })
+    .values({
+      entrepriseId,
+      prospectId,
+      versionScriptId,
+      campagneId,
+      ligne: 'bluetooth',
+      numero: preparation.numero,
+      assistanteNom: preparation.assistanteNom,
+    })
     .returning({ id: appels.id });
   if (!appel) return { ok: false, raison: 'Impossible d’enregistrer l’appel.' };
 
@@ -78,6 +116,7 @@ export async function appelerParTelephone(
     numero: preparation.numero,
     variables: preparation.variables,
     motsCles: preparation.motsCles,
+    premierMessage: preparation.premierMessage,
   });
   if (!reponse.ok) {
     await db.update(appels).set({ statut: 'echec', erreur: reponse.raison, finLe: new Date() }).where(eq(appels.id, appel.id));
@@ -97,11 +136,21 @@ export async function enregistrerAppelSimule(
   if (!preparation.ok) return preparation;
   const [appel] = await db
     .insert(appels)
-    .values({ entrepriseId, prospectId, versionScriptId, campagneId, ligne: 'simulation', numero: preparation.numero })
+    .values({
+      entrepriseId,
+      prospectId,
+      versionScriptId,
+      campagneId,
+      ligne: 'simulation',
+      numero: preparation.numero,
+      assistanteNom: preparation.assistanteNom,
+    })
     .returning({ id: appels.id });
   if (!appel) return { ok: false, raison: 'Impossible d’enregistrer l’appel.' };
   return { ok: true, appelId: appel.id, variables: preparation.variables };
 }
+
+export const APPEL_PURGE = 'Cet appel a passé la durée de conservation : son enregistrement, sa transcription et le détail de son bilan sont effacés, il ne se réanalyse plus.';
 
 /** Au-delà, une analyse encore « en traitement » est tenue pour bloquée : on peut la relancer. */
 export const DUREE_MAX_ANALYSE_S = 5 * 60;
@@ -121,17 +170,26 @@ export async function preparerReanalyse(appelId: string, maintenant = new Date()
       debutLe: appels.debutLe,
       finLe: appels.finLe,
       traitementLe: appels.traitementLe,
+      purgeLe: appels.purgeLe,
     })
     .from(appels)
     .where(eq(appels.id, appelId));
   if (!a) return { ok: false, raison: 'Cet appel n’existe plus.' };
+  // Rapatrier de nouveau la conversation rendrait ce que la durée de conservation a effacé (ADR 0014).
+  if (a.purgeLe) return { ok: false, raison: APPEL_PURGE };
   if (!a.transcription && !a.conversationId) return { ok: false, raison: 'Cet appel n’a ni transcription ni conversation à rapatrier : rien à analyser.' };
   if (a.statut === 'en-cours' && a.ligne === 'bluetooth') return { ok: false, raison: 'L’appel est en cours : son bilan sera calculé à la fin.' };
   const depuis = a.traitementLe ?? a.finLe ?? a.debutLe;
   if (a.statut === 'traitement' && maintenant.getTime() - depuis.getTime() < DUREE_MAX_ANALYSE_S * 1000) {
     return { ok: false, raison: 'Le bilan de cet appel est déjà en cours de calcul.' };
   }
-  await db.update(appels).set({ statut: 'traitement', traitementLe: maintenant, erreur: null }).where(eq(appels.id, appelId));
+  // Pas sur un appel purgé entre la lecture et ici.
+  const [pret] = await db
+    .update(appels)
+    .set({ statut: 'traitement', traitementLe: maintenant, erreur: null })
+    .where(and(eq(appels.id, appelId), isNull(appels.purgeLe)))
+    .returning({ id: appels.id });
+  if (!pret) return { ok: false, raison: APPEL_PURGE };
   return { ok: true };
 }
 
@@ -144,7 +202,7 @@ export async function reanalyser(appelId: string): Promise<void> {
 /** Rapatrie la conversation terminée (transcription, durée, audio) puis lance l'analyse. */
 export async function traiterAppel(appelId: string): Promise<void> {
   const [appel] = await db.select().from(appels).where(eq(appels.id, appelId));
-  if (!appel) return;
+  if (!appel || appel.purgeLe) return;
   if (!appel.conversationId) {
     await db
       .update(appels)
@@ -169,9 +227,10 @@ export async function traiterAppel(appelId: string): Promise<void> {
     let audio: string | null = null;
     if (conversation.audio) {
       const dossier = join(dossierDonnees(), 'enregistrements');
-      await mkdir(dossier, { recursive: true });
+      // La voix du prospect : au seul compte du service.
+      await mkdir(dossier, { recursive: true, mode: 0o700 });
       audio = `enregistrements/${appelId}.mp3`;
-      await writeFile(join(dossierDonnees(), audio), Buffer.from(await audioConversation(appel.conversationId)));
+      await writeFile(join(dossierDonnees(), audio), Buffer.from(await audioConversation(appel.conversationId)), { mode: 0o600 });
     }
 
     await db
@@ -182,7 +241,8 @@ export async function traiterAppel(appelId: string): Promise<void> {
         versionAgent: conversation.versionAgent,
         audio,
       })
-      .where(eq(appels.id, appelId));
+      // Jamais sur un appel purgé entre-temps (ADR 0014).
+      .where(and(eq(appels.id, appelId), isNull(appels.purgeLe)));
   } catch (erreur) {
     await db.update(appels).set({ statut: 'echec', erreur: (erreur as Error).message }).where(eq(appels.id, appelId));
     return;
@@ -193,7 +253,7 @@ export async function traiterAppel(appelId: string): Promise<void> {
 /** Produit et enregistre le bilan d'un appel dont la transcription est connue. Peut être relancé. */
 export async function analyserAppel(appelId: string): Promise<void> {
   const [appel] = await db.select().from(appels).where(eq(appels.id, appelId));
-  if (!appel) return;
+  if (!appel || appel.purgeLe) return;
   if (!appel.transcription) {
     const erreur = appel.conversationId
       ? 'La transcription n’a pas été rapatriée : rapatrie la conversation pour obtenir le bilan.'
@@ -240,6 +300,8 @@ export async function analyserAppel(appelId: string): Promise<void> {
         debutAppel: appel.debutLe,
       },
       entreprise: entreprise.nom,
+      // Le nom de l'époque de l'appel : un renommage ne réécrit pas les bilans passés.
+      assistante: appel.assistanteNom ?? (await lireAssistante()).nom,
       etapes: version.etapes.map((e) => e.intention),
       objections: listeObjections.map((o) => ({ id: o.id, libelle: o.libelle })),
       issues,
@@ -256,13 +318,13 @@ export async function analyserAppel(appelId: string): Promise<void> {
         versionAnalyseur: VERSION_ANALYSEUR,
         statut: 'termine',
       })
-      .where(eq(appels.id, appelId));
+      .where(and(eq(appels.id, appelId), isNull(appels.purgeLe)));
   } catch (erreur) {
     await db.update(appels).set({ statut: 'echec', erreur: (erreur as Error).message }).where(eq(appels.id, appelId));
   }
 }
 
-/** Le personnage que le modèle joue face à Mina, tiré de la fiche prospect. */
+/** Le personnage que le modèle joue face à l'assistante, tiré de la fiche prospect. */
 function personnage(variables: VariablesDeLAppel): string {
   return `Tu es ${variables.prospect_nom}, ${variables.prospect_role} chez ${variables.prospect_societe}. Tu décroches ton téléphone sans t'attendre à cet appel. Ce que l'on sait de toi : ${variables.prospect_contexte}
 Tu es un vrai professionnel occupé : tu réponds court, comme au téléphone. Tu n'es pas facile à convaincre, tu soulèves au moins une objection réaliste, et tu ne dis oui à un rendez-vous que si on a vraiment écouté ce que tu dis. Tu peux aussi refuser, demander qu'on te rappelle, ou demander un mail.`;

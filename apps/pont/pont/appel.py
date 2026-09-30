@@ -16,14 +16,53 @@ from gi.repository import GLib
 
 from .audio import Pont, temps_de_reponse
 from .ofono import Telephone, dans_glib
+from .plafond import Plafond
 
-SILENCE_AU_DECROCHE_S = 2.0  # sans voix du prospect passé ce délai, Mina ouvre par « Allô ? »
+SILENCE_AU_DECROCHE_S = 2.0  # sans voix du prospect passé ce délai, l'assistante ouvre par son premier message
+PREMIER_MESSAGE_PAR_DEFAUT = "Allô ?"
+PREMIER_MESSAGE_MAX = 300  # au-delà, ce n'est plus une phrase d'ouverture : on reprend « Allô ? »
 # Le canal son s'ouvre entre 0,5 s (réseau mobile) et 3,5 s (appels Wi-Fi) après la composition : on ne conclut à
 # une panne qu'après 10 s, ou 3 s après le décroché (constat du 28/09).
 DELAI_CANAL_SON_S = 10.0
 DELAI_CANAL_APRES_DECROCHE_S = 3.0
 DUREE_MAX_S = 6 * 60  # au-delà du plafond de l'agent (300 s) : filet si la fin de session se perd
 DUREE_MAX_OPERATEUR_S = 60 * 60  # après une prise de main, l'opérateur parle aussi longtemps qu'il veut
+ETAPE_MAX = 10  # le plus grand nombre d'étapes d'un script (MAX_ETAPES, apps/web/src/lib/schemas.ts)
+
+
+def premier_message_valide(valeur: Any) -> str:
+    """La phrase dite quand le prospect se tait au décroché, telle que l'application l'envoie (déjà composée).
+
+    Absente, vide, trop longue ou d'un autre type : « Allô ? ». Une application plus ancienne ne l'envoie pas.
+    """
+    if not isinstance(valeur, str):
+        return PREMIER_MESSAGE_PAR_DEFAUT
+    texte = " ".join(valeur.split())
+    if not texte or len(texte) > PREMIER_MESSAGE_MAX:
+        return PREMIER_MESSAGE_PAR_DEFAUT
+    return texte
+
+
+def numero_d_etape(valeur: Any) -> int | None:
+    """Le numéro d'étape signalé par l'assistante (outil etape_script) : un entier de 1 à ETAPE_MAX, sinon None.
+
+    Le modèle peut l'envoyer en nombre ou en texte (« 2 », 2.0). Un numéro hors du plan n'est pas ramené à la
+    borne : il afficherait une étape fausse.
+    """
+    if isinstance(valeur, bool):
+        return None
+    if isinstance(valeur, str):
+        valeur = valeur.strip()
+        if not (valeur.isascii() and valeur.isdigit()):
+            return None
+        valeur = int(valeur)
+    if isinstance(valeur, float):
+        if not valeur.is_integer():
+            return None
+        valeur = int(valeur)
+    if not isinstance(valeur, int) or not 1 <= valeur <= ETAPE_MAX:
+        return None
+    return valeur
 
 
 class Rappels(Protocol):
@@ -93,11 +132,16 @@ class Appel:
         dossier: Path,
         nom: str,
         rappels: Rappels,
+        premier_message: str = PREMIER_MESSAGE_PAR_DEFAUT,
+        plafond: Plafond | None = None,
     ):
         self._telephone = telephone
+        self._plafond = plafond
+        self._annule = False
         self._numero = numero
+        self._premier_message = premier_message_valide(premier_message)
         self._rappels = rappels
-        dossier.mkdir(parents=True, exist_ok=True)
+        dossier.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.journal = Journal(dossier / f"{nom}.log")
         self._enregistrement = str(dossier / f"{nom}.wav")
         self._pont = Pont(self._enregistrement, self.journal)
@@ -115,13 +159,16 @@ class Appel:
         self._termine = threading.Event()
         self._pings: list[int] = []
         self._codec: int | None = None
-        # Fil de l'appel pour la page en direct : états du téléphone et tours de parole, rejoués à qui arrive tard.
+        # Fil de l'appel pour la page en direct : états du téléphone, tours de parole et étapes du plan, rejoués à qui
+        # arrive tard.
         self.evenements: list[dict[str, Any]] = []
         self._nouveau = threading.Condition()
 
         outils = ClientTools()
         for nom_outil in ("proposer_creneaux", "reserver_creneau"):
             outils.register(nom_outil, self._outil(nom_outil))
+        # Affichage seulement (« Étape 2 » dans la bande d'appel) : traité ici, sans aller-retour vers l'application.
+        outils.register("etape_script", self._etape)
         self._conversation = ConversationPont(
             ElevenLabs(api_key=cles["ELEVENLABS_API_KEY"]),
             cles["ELEVENLABS_AGENT_ID"],
@@ -166,11 +213,28 @@ class Appel:
     # --- commandes -------------------------------------------------------------------------------
 
     def lancer(self) -> None:
-        """Depuis le thread GLib."""
+        """Depuis le thread GLib. Chaque composition compte au plafond, recomposition comprise : une ligne dont le
+        canal son manque à chaque appel ne doit pas passer deux fois plus d'appels que le plafond affiché."""
+        if self._annule:
+            self.journal("composition annulée : le service a déjà répondu que l'appel n'était pas parti")
+            with self._nouveau:
+                self._termine.set()
+                self._nouveau.notify_all()
+            return
+        if self._plafond is not None:
+            if raison := self._plafond.refus():
+                if self._tentatives == 0:
+                    raise RuntimeError(raison)
+                self.journal("recomposition refusée :", raison)
+                threading.Thread(target=self._terminer, args=("plafond atteint",), daemon=True).start()
+                return
+            self._plafond.compter()
         self._tentatives += 1
         self.journal("composition du", self._numero[:4] + "…" + self._numero[-2:])
         self._telephone.composer(self._numero, self, self._composition_echouee)
         self._en_ligne = True
+        if self._annule:  # annulé pendant la composition : raccrocher aussitôt
+            self._telephone.raccrocher()
         self._conversation.precharger_url()
         self._evenement("etat", {"etat": "composition"})
         GLib.timeout_add(int(DELAI_CANAL_SON_S * 1000), self._verifier_canal)
@@ -201,6 +265,13 @@ class Appel:
     @property
     def main_prise(self) -> bool:
         return self._prise_en_main is not None
+
+    def annuler(self) -> None:
+        """Le service a répondu en échec alors que la composition était déjà programmée (boucle D-Bus trop lente) :
+        elle ne doit pas partir, ou doit être raccrochée si elle est partie entre-temps."""
+        self._annule = True
+        if self._en_ligne:
+            self._telephone.raccrocher()
 
     def raccrocher(self) -> None:
         self.journal("raccrochage demandé")
@@ -288,12 +359,13 @@ class Appel:
 
     def _ouvrir_conversation(self) -> None:
         # Le prospect parle d'habitude le premier : on attend sa voix pour ouvrir (son « allô » est gardé et
-        # transmis). S'il se tait, c'est à Mina de dire « Allô ? », par le premier message de la conversation.
+        # transmis). S'il se tait, c'est à l'assistante de parler, par le premier message de la conversation
+        # (« Allô ? » par défaut, réglé dans l'application).
         if self._pont.prospect_parle.wait(SILENCE_AU_DECROCHE_S):
             self.journal("le prospect parle : ouverture de la conversation")
         else:
-            self.journal(f"silence depuis {SILENCE_AU_DECROCHE_S:.0f} s : Mina ouvre par « Allô ? »")
-            self._conversation.config.conversation_config_override["agent"] = {"first_message": "Allô ?"}
+            self.journal(f"silence depuis {SILENCE_AU_DECROCHE_S:.0f} s : l'assistante ouvre par « {self._premier_message} »")
+            self._conversation.config.conversation_config_override["agent"] = {"first_message": self._premier_message}
         with self._verrou:
             if self._prise_en_main is not None:
                 return  # l'opérateur a pris la main avant que Mina ne parle
@@ -301,16 +373,29 @@ class Appel:
         self._conversation.start_session()
 
     def _tour(self, role: str, texte: str) -> None:
-        self.journal("Mina :" if role == "agent" else "prospect :", texte)
+        # Le texte part dans le fil de l'appel, pas au journal : celui-ci finit aussi dans journald, et la parole du
+        # prospect n'a rien à y faire (l'application garde la transcription, et elle seule s'efface).
+        self.journal("assistante :" if role == "agent" else "prospect :", f"{len(texte)} caractères")
         self._evenement("tour", {"role": role, "texte": texte})
 
     def _outil(self, nom: str) -> Callable[[dict[str, Any]], str]:
         def executer(parametres: dict[str, Any]) -> str:
             utiles = {k: v for k, v in parametres.items() if k != "tool_call_id"}
-            self.journal("outil", nom, utiles)
+            # Les clés seulement : les valeurs (adresse e-mail dictée…) sont des données du prospect.
+            self.journal("outil", nom, sorted(utiles))
             return self._rappels.outil(nom, utiles)
 
         return executer
+
+    def _etape(self, parametres: dict[str, Any]) -> str:
+        """Outil etape_script : l'assistante entre dans une étape du plan. Un événement du fil, rien d'autre."""
+        numero = numero_d_etape(parametres.get("numero"))
+        if numero is None:
+            self.journal("étape illisible :", parametres.get("numero"))
+            return ""
+        self.journal("étape", numero)
+        self._evenement("etape", {"numero": numero})
+        return ""
 
     def _fin_de_session(self) -> None:
         # Mina a terminé (end_call ou plafond de durée) : laisser partir la fin de sa phrase, puis raccrocher.

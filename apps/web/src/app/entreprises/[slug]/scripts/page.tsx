@@ -1,14 +1,13 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { BoutonArchive } from '@/components/bouton-archive';
 import { NavigationListe } from '@/components/clavier';
-import { FUSEAU } from '@/components/format-appel';
-import { Cellule, CelluleEnTete, EnTeteTable, EtatVide, LienLigne, LigneTable, Page, TableDense, TitreSection } from '@/components/ui';
+import { comptesCampagne, FUSEAU } from '@/components/format-appel';
+import { Cellule, CelluleEnTete, EnTeteTable, EtatVide, LienLigne, LienTexte, LigneTable, Page, TableDense, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { campagnes, scripts, versionsScript } from '@/db/schema';
 import { analyseEntreprise } from '@/lib/lecture';
-import { entrepriseParSlug } from '@/lib/pages';
+import { assistantePourLaPage, entrepriseParSlug } from '@/lib/pages';
 import { basculerArchiveScript } from '../actions';
 import { CreationScript } from './formulaire-script';
 
@@ -20,6 +19,7 @@ const JOUR_MOIS = new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-d
 export default async function PageScripts({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const entreprise = await entrepriseParSlug(slug);
+  const { nom } = await assistantePourLaPage();
   const [liste, versions, actives, analyse] = await Promise.all([
     db.select({ id: scripts.id, nom: scripts.nom, archive: scripts.archive }).from(scripts).where(eq(scripts.entrepriseId, entreprise.id)).orderBy(asc(scripts.creeLe)),
     db
@@ -34,7 +34,7 @@ export default async function PageScripts({ params }: { params: Promise<{ slug: 
       .innerJoin(scripts, eq(scripts.id, versionsScript.scriptId))
       .where(eq(scripts.entrepriseId, entreprise.id)),
     db
-      .select({ versionScriptId: campagnes.versionScriptId, statut: campagnes.statut })
+      .select({ versionScriptId: campagnes.versionScriptId, statut: campagnes.statut, entrees: campagnes.entrees })
       .from(campagnes)
       .where(and(eq(campagnes.entrepriseId, entreprise.id), inArray(campagnes.statut, ['en-cours', 'en-pause']))),
     analyseEntreprise(entreprise.id, false),
@@ -51,15 +51,18 @@ export default async function PageScripts({ params }: { params: Promise<{ slug: 
       derniere,
       conversations: derniere ? (analyse.parVersion.find((v) => v.versionScriptId === derniere.id)?.conversations ?? 0) : 0,
       campagne: servies.some((c) => c.statut === 'en-cours') ? 'en-cours' : servies.length ? 'en-pause' : null,
+      // L'antenne ne s'allume que pendant un appel, pas entre deux appels d'une campagne en cours.
+      enAppel: servies.some((c) => c.statut === 'en-cours' && comptesCampagne(c.entrees).enAppel > 0),
     };
   });
 
   return (
     <Page largeur="lecture">
       <div className="grid max-w-[60rem] grid-cols-[minmax(0,1fr)] gap-6">
+        {/* Sous 640 px, la première phrase seule. */}
         <p className="max-w-[62ch] text-sm text-encre-3">
-          Un script est un plan que Mina suit sans le réciter. Chaque modification crée une nouvelle version, pour que les bilans
-          comparent des choses comparables.
+          Un script est un plan que {nom} suit sans le réciter.{' '}
+          <span className="max-sm:hidden">Chaque modification crée une nouvelle version, pour que les bilans comparent des choses comparables.</span>
         </p>
         <section aria-labelledby="titre-scripts">
           <CreationScript entrepriseId={entreprise.id} slug={slug} compte={lignes.length} />
@@ -81,12 +84,12 @@ export default async function PageScripts({ params }: { params: Promise<{ slug: 
                   <CelluleEnTete>Version</CelluleEnTete>
                   <CelluleEnTete align="droite">Étapes</CelluleEnTete>
                   <CelluleEnTete align="droite">Dernière version</CelluleEnTete>
-                  <CelluleEnTete align="droite">Conversations</CelluleEnTete>
+                  <CelluleEnTete align="droite">Aboutis</CelluleEnTete>
                   <CelluleEnTete>Campagne</CelluleEnTete>
                 </EnTeteTable>
                 <div role="rowgroup">
                   {lignes.map((s) => (
-                    <LigneTable key={s.id} etat={s.campagne === 'en-cours' ? 'vivante' : 'normale'}>
+                    <LigneTable key={s.id} etat={s.enAppel ? 'vivante' : 'normale'}>
                       <Cellule tronquee titre={s.nom} className="font-medium max-sm:order-1 max-sm:flex-1">
                         <LienLigne href={`/entreprises/${slug}/scripts/${s.id}`}>{s.nom}</LienLigne>
                       </Cellule>
@@ -102,7 +105,7 @@ export default async function PageScripts({ params }: { params: Promise<{ slug: 
                       </Cellule>
                       <Cellule align="droite" mono className="max-sm:order-3">
                         {s.conversations}
-                        <span className="sm:hidden"> conv.</span>
+                        <span className="sm:hidden"> aboutis</span>
                       </Cellule>
                       <Cellule etat tronquee className={`max-sm:order-3 ${s.campagne === 'en-pause' ? 'text-encre-2' : ''}`}>
                         {s.campagne === 'en-cours' ? 'sert la campagne en cours' : s.campagne === 'en-pause' ? 'sert une campagne suspendue' : null}
@@ -123,14 +126,10 @@ export default async function PageScripts({ params }: { params: Promise<{ slug: 
             </TitreSection>
             <ul>
               {archives.map((s) => (
-                <li key={s.id} className="flex min-h-[38px] flex-wrap items-center gap-x-4 border-b border-filet py-1 text-encre-3">
-                  <Link
-                    href={`/entreprises/${slug}/scripts/${s.id}`}
-                    className="min-w-0 flex-1 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline"
-                  >
+                <li key={s.id} className="flex min-h-[38px] flex-wrap items-center gap-x-4 border-b border-filet py-1 text-encre-3 pointer-coarse:min-h-11">
+                  <LienTexte href={`/entreprises/${slug}/scripts/${s.id}`} className="min-w-0 flex-1 hover:text-encre-2">
                     {s.nom}
-                  </Link>
-                  <span className="text-sm">Archivé</span>
+                  </LienTexte>
                   <BoutonArchive archivee masculin nom={s.nom} action={basculerArchiveScript.bind(null, entreprise.id, s.id, false)} />
                 </li>
               ))}

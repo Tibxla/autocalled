@@ -5,6 +5,8 @@ const LIBELLES = {
   'consentement-revoque': 'Révoqué',
   'aucun-consentement': 'Sans consentement',
   'numero-invalide': 'Numéro invalide',
+  'numero-efface': 'Effacé',
+  'opposition-illisible': 'Opposition illisible',
 } as const;
 
 const COULEURS = {
@@ -12,6 +14,8 @@ const COULEURS = {
   'aucun-consentement': { texte: 'text-encre-3', trait: 'stroke-trait' },
   'consentement-revoque': { texte: 'text-alerte', trait: 'stroke-alerte' },
   'numero-invalide': { texte: 'text-alerte', trait: 'stroke-alerte' },
+  'numero-efface': { texte: 'text-alerte', trait: 'stroke-alerte' },
+  'opposition-illisible': { texte: 'text-alerte', trait: 'stroke-alerte' },
 } as const;
 
 /** Trait de 8 px : plein si le numéro peut être appelé, interrompu sinon. Le cas normal ne crie pas. */

@@ -1,24 +1,29 @@
-import { type IssueSysteme, LIBELLES_ISSUES } from '@autocalled/domain';
+import { bilanEntier, type IssueSysteme, LIBELLES_ISSUES } from '@autocalled/domain';
 import { eq } from 'drizzle-orm';
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
 import { FUSEAU, LIGNES_LONGUES, duree, etatAppel, heure, jourCourt, numeroMasque, prenom } from '@/components/format-appel';
-import { EtatVide, GlypheEtape, LienAction, Message, Page, TitreSection } from '@/components/ui';
+import { EtatVide, GlypheEtape, LienAction, LienTexte, Message, Page, TitreSection, classesAction } from '@/components/ui';
 import { db } from '@/db';
 import { campagnes, scripts } from '@/db/schema';
 import { DUREE_MAX_ANALYSE_S } from '@/lib/appels';
+import { mentionPurge } from '@/lib/conservation';
 import { numeroLisible } from '@/lib/format';
 import { lireAppel, voisinsAppel } from '@/lib/lecture';
+import { assistantePourLaPage } from '@/lib/pages';
 import { lireFiltresAppels } from '../filtres';
 import { Actualisation, Ecoule } from './actualisation';
 import { BoutonRelancer } from './bouton-relancer';
 import { LecteurAppel } from './lecteur-appel';
+import { ReconnexionAppel } from './reconnexion-appel';
 import { SuiviTelephone } from './suivi-telephone';
 
 const lire = cache(lireAppel);
 const FORME_ID = /^[0-9a-f-]{36}$/;
+
+/** Les temps CRAC, tels que l'écran les nomme. */
+const TEMPS_CRAC: Record<string, string> = { creuser: 'creuser', reformuler: 'reformuler', argumenter: 'argumenter', controler: 'contrôler' };
 
 /** Au-delà, un appel navigateur ou simulé encore « en cours » n'est plus présenté comme vivant. */
 const VIE_MAX_S = 10 * 60;
@@ -38,6 +43,12 @@ function ecouleDepuis(d: Date): number {
 
 const FORMAT_JOUR_LONG = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: FUSEAU });
 const FORMAT_JOUR_MOIS = new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', timeZone: FUSEAU });
+
+/**
+ * Point de séparation porté par l'élément qui le précède : un « · » ne peut pas ouvrir une ligne quand la rangée passe
+ * à la ligne. Muet pour les lecteurs d'écran (texte de remplacement vide).
+ */
+const SEPARE = "not-last:after:ml-2 not-last:after:text-encre-3 not-last:after:content-['·'_/_'']";
 
 /** D'où vient l'opérateur : libellé et lien du retour, et la liste d'appels d'origine s'il y en a une. */
 function origine(depuis: string | undefined, nomProspect: string): { href: string; libelle: string; liste: URL | null } {
@@ -77,6 +88,8 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
   const lu = await lire(id);
   if (!lu) notFound();
   const { appel, entreprise, prospect, version, objections: listeObjections, personnalisees, rendezVous: rdv } = lu;
+  // Le nom sous lequel l'assistante s'est présentée à cet appel, pas celui d'aujourd'hui.
+  const nomAssistante = appel.assistanteNom ?? (await assistantePourLaPage()).nom;
 
   const nomProspect = prospect?.nom ?? appel.prospectId;
   const retour = origine(sp.depuis, nomProspect);
@@ -88,6 +101,9 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
   ]);
 
   const bilan = appel.bilan;
+  // Passé la durée de conservation (ADR 0014), le bilan n'a plus que ses champs structurés, et l'appel plus ni son ni transcription.
+  const entier = bilanEntier(bilan);
+  const purge = appel.purgeLe !== null;
   // Le rappel daté par l'analyse, en date absolue (la fiche d'appel se relit longtemps après).
   const rappelDate =
     appel.rappelLe && bilan?.rappelLe
@@ -121,8 +137,8 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
   meta.push(<span key="ligne">{LIGNES_LONGUES[appel.ligne] ?? appel.ligne}</span>);
   if (appel.versionAgent)
     meta.push(
-      <span key="mina">
-        Mina <span className="font-mono">{appel.versionAgent.slice(-6)}</span>
+      <span key="assistante" title={`Configuration ${appel.versionAgent.slice(-6)}`}>
+        {nomAssistante}
       </span>,
     );
   if (version)
@@ -133,13 +149,9 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
     );
   if (appel.campagneId && campagne)
     meta.push(
-      <Link
-        key="campagne"
-        href={`/campagnes/${appel.campagneId}`}
-        className="decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline"
-      >
+      <LienTexte key="campagne" href={`/campagnes/${appel.campagneId}`} className="hover:text-encre-2">
         Campagne du <span className="font-mono">{FORMAT_JOUR_MOIS.format(campagne.creeLe)}</span>
-      </Link>,
+      </LienTexte>,
     );
   meta.push(
     <span key="numero" title={numero} className="font-mono">
@@ -166,12 +178,15 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
         finLe={appel.finLe?.toISOString() ?? null}
         conversation={Boolean(appel.conversationId)}
         {...(prospect?.nom ? { libelleProspect: prenom(prospect.nom) } : {})}
+        etapes={etapes.map((e) => e.intention)}
       />
     ) : null;
 
   let etatDirect: React.ReactNode = null;
   let actualisation: React.ReactNode = null;
-  if (appel.statut === 'en-cours' && telephone) {
+  if (purge) {
+    // Rien à suivre ni à relancer : la mention de la purge dit ce qui reste.
+  } else if (appel.statut === 'en-cours' && telephone) {
     // Filet de sécurité : la fin peut ne jamais arriver par le fil (pont redémarré). La bande garde son fil.
     actualisation = <Actualisation secondes={10} />;
   } else if (appel.statut === 'en-cours' && appel.ligne === 'simulation' && age < VIE_MAX_S) {
@@ -183,14 +198,14 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
   } else if (appel.statut === 'en-cours') {
     etatDirect = (
       <Message ton="neutre" titre="Appel resté ouvert : la page qui le portait a été fermée pendant l’appel.">
-        {appel.conversationId ? <div className="-mx-1.5 pt-1.5">{rapatrier()}</div> : 'Rien à rapatrier : la conversation n’a pas été ouverte.'}
+        {appel.conversationId ? <div className="-mx-1.5 pt-1.5 pointer-coarse:mx-0">{rapatrier()}</div> : 'Rien à rapatrier : la conversation n’a pas été ouverte.'}
       </Message>
     );
   } else if (appel.statut === 'traitement' && analyseBloquee) {
     etatDirect = (
       <Message ton="neutre" titre="L’analyse ne progresse plus.">
         Le rapatriement a commencé il y a plus de cinq minutes sans aboutir.
-        {appel.conversationId ? <div className="-mx-1.5 pt-1.5">{rapatrier()}</div> : null}
+        {appel.conversationId ? <div className="-mx-1.5 pt-1.5 pointer-coarse:mx-0">{rapatrier()}</div> : null}
       </Message>
     );
   } else if (appel.statut === 'traitement') {
@@ -202,15 +217,19 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
       );
     actualisation = <Actualisation secondes={3} dureeMaxSecondes={Math.max(3, Math.ceil(DUREE_MAX_ANALYSE_S - ageAnalyse))} />;
   } else if (appel.statut === 'echec' && !appel.conversationId) {
+    // Faute de téléphone, la reconnexion suit le message (ReconnexionAppel décide d'après la ligne relevée).
     etatDirect = (
-      <Message ton="alerte" action={<LienAction href="/telephone">Voir la ligne</LienAction>}>
-        L’appel n’est pas parti : {appel.erreur ?? 'aucune raison enregistrée.'}
-      </Message>
+      <>
+        <Message ton="alerte" action={<LienAction href="/telephone">Voir la ligne</LienAction>}>
+          L’appel n’est pas parti : {appel.erreur ?? 'aucune raison enregistrée.'}
+        </Message>
+        <ReconnexionAppel appel={{ ligne: appel.ligne, statut: appel.statut, conversation: false, erreur: appel.erreur }} />
+      </>
     );
   } else if (appel.statut === 'echec') {
     etatDirect = (
       <Message ton="alerte" titre={`L’analyse a échoué : ${appel.erreur ?? 'aucune raison enregistrée.'}`}>
-        <div className="-mx-1.5 pt-1.5">
+        <div className="-mx-1.5 pt-1.5 pointer-coarse:mx-0">
           <BoutonRelancer appelId={appel.id} libelle="Relancer l’analyse" ton="fort" />
         </div>
       </Message>
@@ -231,10 +250,14 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
           <p className="text-xl font-semibold tracking-[-0.01em] text-encre">{libelleIssue}</p>
           {perso && issue ? <span className="text-md text-encre-3">{LIBELLES_ISSUES[issue as IssueSysteme]}</span> : null}
         </div>
-        {bilan?.rappel ? (
+        {entier?.rappel ? (
           <p className="text-base text-encre-2">
             Rappel convenu : {rappelDate ? <span className="text-encre">{rappelDate}</span> : null}
-            {rappelDate ? <span className="text-encre-3"> · « {bilan.rappel} »</span> : bilan.rappel}
+            {rappelDate ? <span className="text-encre-3"> · « {entier.rappel} »</span> : entier.rappel}
+          </p>
+        ) : purge && rappelDate ? (
+          <p className="text-base text-encre-2">
+            Rappel convenu : <span className="text-encre">{rappelDate}</span>
           </p>
         ) : null}
         {rendezVousPris && !rdv ? (
@@ -252,15 +275,11 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
                 'Aucune étape du script atteinte'
               )}
             </p>
-            <ol aria-label="Étapes du script" className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
+            <ol aria-label="Étapes du script" className="grid max-w-[68ch] gap-1 text-sm">
               {etapes.map((e, i) => (
-                <li
-                  key={i}
-                  title={e.intention}
-                  className={`flex max-w-[32ch] min-w-0 items-baseline gap-1.5 ${i < bilan.etapeAtteinte ? 'text-encre' : 'text-encre-3'}`}
-                >
+                <li key={i} className={`grid grid-cols-[1.25rem_minmax(0,1fr)] items-baseline ${i < bilan.etapeAtteinte ? 'text-encre' : 'text-encre-3'}`}>
                   <span className="font-mono text-xs">{i + 1}</span>
-                  <span className="truncate">{e.intention}</span>
+                  <span className="line-clamp-2">{e.intention}</span>
                 </li>
               ))}
             </ol>
@@ -273,23 +292,19 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
               <span className="font-mono">
                 {heure(rdv.debut)} à {heure(rdv.fin)}
               </span>
+              {rdv.statut === 'cree' ? <span className="text-sm text-encre-3"> · Événement créé dans l’agenda</span> : null}
+              {rdv.statut === 'a-creer' ? <span className="text-sm text-encre-3"> · Événement à créer</span> : null}
             </p>
-            <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-              {rdv.statut === 'cree' ? <span className="px-1.5 text-encre-2">Dans l’agenda</span> : null}
-              {rdv.statut === 'a-creer' ? <span className="px-1.5 text-encre-3">Événement à créer</span> : null}
+            <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 pointer-coarse:mx-0">
               {rdv.statut === 'echec' ? (
                 <>
                   <span className="px-1.5 text-alerte">Création échouée : {rdv.erreur ?? 'raison inconnue.'}</span>
                   <LienAction href="/reglages">Voir dans Réglages</LienAction>
                 </>
               ) : null}
+              {/* L'action de la zone du rendez-vous : au doigt, en relief, comme toute action forte. */}
               {rdv.lienVisio ? (
-                <a
-                  href={rdv.lienVisio}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex h-9 items-center rounded-[4px] px-1.5 text-md font-medium text-encre-2 decoration-souligne underline-offset-4 hover:text-encre hover:underline pointer-coarse:h-11"
-                >
+                <a href={rdv.lienVisio} target="_blank" rel="noreferrer" className={classesAction('fort', 'relief')}>
                   Ouvrir la visio
                 </a>
               ) : null}
@@ -304,7 +319,7 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
       </section>
     ) : null;
 
-  const objections = (bilan?.objections ?? []).map((o) => ({
+  const objections = (entier?.objections ?? []).map((o) => ({
     libelle: o.objectionId ? (listeObjections.find((x) => x.id === o.objectionId)?.libelle ?? o.libelle) : o.libelle,
     levee: o.levee,
     tempsBloquant: o.tempsBloquant,
@@ -312,33 +327,33 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
     repertoriee: o.objectionId !== null,
   }));
 
-  const hautBilan = bilan ? (
+  const hautBilan = entier ? (
     <>
       <TitreSection>Bilan</TitreSection>
       <section className="grid gap-1.5">
         <h3 className="text-md font-semibold">Résumé</h3>
-        <p className="text-base text-encre-2">{bilan.resume}</p>
+        <p className="text-base text-encre-2">{entier.resume}</p>
       </section>
     </>
   ) : null;
 
-  const basBilan = bilan ? (
+  const basBilan = entier ? (
     <>
-      {bilan.pointsForts.length ? (
+      {entier.pointsForts.length ? (
         <section className="grid gap-1.5">
           <h3 className="text-md font-semibold">Ce qui a marché</h3>
           <ul className="grid gap-1.5 text-base text-encre-2">
-            {bilan.pointsForts.map((p, i) => (
+            {entier.pointsForts.map((p, i) => (
               <li key={i}>{p}</li>
             ))}
           </ul>
         </section>
       ) : null}
-      {bilan.pointsFaibles.length ? (
+      {entier.pointsFaibles.length ? (
         <section className="grid gap-1.5">
           <h3 className="text-md font-semibold">Ce qui a moins marché</h3>
           <ul className="grid gap-1.5 text-base text-encre-2">
-            {bilan.pointsFaibles.map((p, i) => (
+            {entier.pointsFaibles.map((p, i) => (
               <li key={i}>{p}</li>
             ))}
           </ul>
@@ -369,6 +384,37 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
     </>
   ) : null;
 
+  // Ce qui reste d'un appel purgé : la mention, puis ses objections par libellé de la fiche, levées ou non.
+  const blocPurge = purge ? (
+    <section aria-label={bilan ? 'Bilan purgé' : 'Appel purgé'} className="grid max-w-[68ch] gap-6">
+      <Message ton="neutre">{mentionPurge(Boolean(bilan))}</Message>
+      {bilan?.objections.length ? (
+        <section aria-labelledby="titre-objections" className="grid gap-3">
+          <TitreSection id="titre-objections" compte={bilan.objections.length}>
+            Objections
+          </TitreSection>
+          <ul className="grid gap-4">
+            {bilan.objections.map((o, i) => (
+              <li key={i} className="grid gap-1">
+                <p className="font-medium text-encre">
+                  {o.objectionId ? (listeObjections.find((x) => x.id === o.objectionId)?.libelle ?? 'Objection supprimée de la fiche') : 'Objection nouvelle, libellé effacé'}
+                </p>
+                <p className={`text-sm ${o.levee ? 'text-encre-2' : 'text-encre-3'}`}>
+                  {o.levee ? 'Levée' : o.tempsBloquant ? `Bloquée à « ${TEMPS_CRAC[o.tempsBloquant] ?? o.tempsBloquant} »` : 'Non levée'}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {appel.versionAnalyseur ? (
+        <p className="text-sm text-encre-3">
+          Analyseur <span className="font-mono">{appel.versionAnalyseur}</span>
+        </p>
+      ) : null}
+    </section>
+  ) : null;
+
   const transcription = appel.transcription ?? [];
   const voisinsVisibles = precedent || suivant;
 
@@ -387,19 +433,23 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
             </LienAction>
           </div>
           <h1 className="text-xl font-semibold tracking-[-0.01em] text-balance">{nomProspect}</h1>
-          <p className="text-md text-encre-3">
-            <Link href={`/entreprises/${entreprise.slug}`} className="decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline">
-              {entreprise.nom}
-            </Link>
-            {' · '}
-            <Link href={ficheProspect} className="decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline">
-              {prospect?.societe || 'Fiche du prospect'}
-            </Link>
+          {/* Le lien vers la fiche le dit : « Fiche du prospect », pas seulement un nom de société. */}
+          <p className="flex flex-wrap gap-x-2 text-md text-encre-3">
+            <span className={SEPARE}>
+              <LienTexte href={`/entreprises/${entreprise.slug}`} className="hover:text-encre-2">
+                {entreprise.nom}
+              </LienTexte>
+            </span>
+            {prospect?.societe ? <span className={SEPARE}>{prospect.societe}</span> : null}
+            <span className={SEPARE}>
+              <LienTexte href={ficheProspect} className="text-encre-2 hover:text-encre">
+                Fiche du prospect
+              </LienTexte>
+            </span>
           </p>
           <p className="flex flex-wrap gap-x-2 text-sm text-encre-3">
             {meta.map((m, i) => (
-              <span key={i} className="inline-flex gap-x-2">
-                {i > 0 ? <span aria-hidden="true">·</span> : null}
+              <span key={i} className={SEPARE}>
                 {m}
               </span>
             ))}
@@ -429,13 +479,14 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
           </div>
         ) : null}
         {blocIssue}
-        {transcription.length > 0 || bilan ? (
+        {blocPurge ?? (transcription.length > 0 || entier ? (
           <LecteurAppel
             appelId={appel.id}
             audio={Boolean(appel.audio)}
             transcription={transcription}
             objections={objections}
             nomProspect={prenom(nomProspect)}
+            nomAssistante={nomAssistante}
             recherche={q}
             bilan={hautBilan}
             pied={basBilan}
@@ -443,7 +494,7 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
           />
         ) : appel.statut === 'termine' ? (
           <EtatVide titre="Aucune conversation enregistrée : messagerie, pas de réponse ou appel coupé avant le décroché." />
-        ) : null}
+        ) : null)}
       </div>
 
       {voisinsVisibles ? (

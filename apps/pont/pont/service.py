@@ -4,9 +4,10 @@ N'écoute que sur 127.0.0.1. Chaque requête porte `Authorization: Bearer $PONT_
 présente le même secret à l'application quand il la rappelle (`$WEB_URL/api/pont/…`).
 
     GET  /etat                        le téléphone passerelle, l'appel en cours (décroché), le plafond
-    POST /appels                      {appelId, numero, variables, motsCles} : compose
+    POST /appels                      {appelId, numero, variables, motsCles, premierMessage?} : compose ; premierMessage
+                                      est la phrase dite si le prospect se tait au décroché (« Allô ? » sans elle)
     POST /appels/<id>/raccrocher
-    GET  /appels/<id>/evenements      fil de l'appel en SSE (états, tours de parole), rejoué depuis le début ;
+    GET  /appels/<id>/evenements      fil de l'appel en SSE (états, tours de parole, étapes du plan), rejoué depuis le début ;
                                       s'y glissent, sans `id:` et sans rejeu, les niveaux des deux voix (voir plus bas)
     GET  /appels/<id>/ecoute          prospect et Mina mélangés, PCM 16 bits mono (taux dans x-taux)
     GET  /appairage                   la fenêtre d'appairage et son code
@@ -19,7 +20,8 @@ présente le même secret à l'application quand il la rappelle (`$WEB_URL/api/p
 
 Prise de main (ADR 0008), WebSocket sur 127.0.0.1:PONT_PORT_WS, joint par `tailscale serve` sous /prise-en-main :
     /appels/<id>   le navigateur de l'opérateur envoie sa voix (PCM 16 kHz) et reçoit le prospect ;
-                   accepté seulement si l'en-tête Tailscale-User-Login est celui de l'opérateur (ADR 0006).
+                   accepté seulement si l'en-tête Tailscale-User-Login est celui de l'opérateur (ADR 0006)
+                   et si l'en-tête Origin est celui de l'interface (ORIGINE_APP).
 
 Fil d'un appel (`data:` de chaque message SSE, JSON). `t` : heure du pont, en millisecondes depuis l'epoch.
     id: n   {"type": "etat", "etat": "composition" | "alerting" | "active" | "prise-en-main" | …, "t": …}
@@ -52,7 +54,7 @@ from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
 from .appairage import Appairage
-from .appel import Appel, Journal
+from .appel import Appel, Journal, premier_message_valide
 from .audio import NIVEAU_PAS_MS
 from .ofono import Telephone, dans_glib
 from .plafond import Plafond
@@ -137,12 +139,43 @@ def decroche_le(appel: Any) -> int | None:
     return next((e.get("t") for e in list(appel.evenements) if e.get("type") == "etat" and e.get("etat") == "active"), None)
 
 
+NUMERO_E164 = re.compile(r"\+[1-9][0-9]{7,14}")
+
+
+def numero_valide(numero: Any) -> bool:
+    """Un numéro E.164, rien d'autre : le téléphone passerelle interpréterait un code de service (`**21*…#`,
+    renvoi d'appel) au lieu de composer. L'application ne compose que des numéros validés ; c'est une seconde garde."""
+    return isinstance(numero, str) and NUMERO_E164.fullmatch(numero) is not None
+
+
+def origine_attendue(cles: dict[str, str]) -> str | None:
+    """L'origine de l'interface (`ORIGINE_APP`), sans barre finale, en minuscules ; None si elle manque."""
+    origine = cles.get("ORIGINE_APP", "").strip().rstrip("/").lower()
+    return origine or None
+
+
+def prise_de_main_autorisee(login: str | None, origine: str | None, operateur: str, attendue: str | None) -> bool:
+    """La poignée de main du WebSocket de prise de main : l'identité de l'opérateur (posée par `tailscale serve`)
+    ET l'origine de l'interface. Une page tierce ouverte sur un appareil de l'opérateur porte aussi son identité
+    (les WebSocket échappent à CORS), mais pas cette origine."""
+    if not operateur or (login or "").strip().lower() != operateur:
+        return False
+    return attendue is not None and (origine or "").strip().rstrip("/").lower() == attendue
+
+
+def preparer_dossier(dossier: Path) -> None:
+    """Transcriptions et enregistrements : lisibles par le seul compte du service."""
+    dossier.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(dossier, 0o700)
+
+
 class Service:
     def __init__(self, cles: dict[str, str], racine: Path):
         self._cles = cles
         self._secret = cles["PONT_SECRET"]
         self._web = cles.get("WEB_URL", "http://127.0.0.1:3020")
         self._dossier = racine / "data" / "pont"
+        preparer_dossier(self._dossier)
         self._reglages = Reglages(self._dossier / "reglages.json", cles)
         self._plafond = Plafond(
             self._dossier / "historique-appels.json",
@@ -210,6 +243,8 @@ class Service:
         appel_id = str(corps.get("appelId", ""))
         if not re.fullmatch(r"[0-9a-f-]{36}", appel_id) or not corps.get("numero"):
             return 400, {"erreur": "appelId et numero sont requis"}
+        if not numero_valide(corps["numero"]):
+            return 400, {"erreur": "numero doit être un numéro au format international (+33…)"}
         with self._verrou:
             if not self._telephone.libre():
                 return 409, {"erreur": "Un appel est déjà en cours sur le téléphone."}
@@ -225,15 +260,24 @@ class Service:
                 self._dossier,
                 appel_id,
                 rappels,
+                premier_message_valide(corps.get("premierMessage")),
+                plafond=self._plafond,  # chaque composition y compte, recomposition comprise
             )
             rappels.journal = appel.journal
+            # Suivi avant la composition : si la boucle D-Bus tarde, l'appel reste raccrochable et visible dans /etat.
+            self._appels[appel_id] = appel
             try:
                 dans_glib(appel.lancer)
+            except TimeoutError as e:
+                # La composition est programmée et peut encore partir : elle est annulée, ou raccrochée si elle part.
+                appel.annuler()
+                appel.journal("composition impossible :", e)
+                threading.Thread(target=self._oublier_a_la_fin, args=(appel_id,), daemon=True).start()
+                return 503, {"erreur": f"Composition impossible : {e}"}
             except Exception as e:
+                self._appels.pop(appel_id, None)
                 appel.journal("composition impossible :", e)
                 return 503, {"erreur": f"Composition impossible : {e}"}
-            self._plafond.compter()
-            self._appels[appel_id] = appel
             threading.Thread(target=self._oublier_a_la_fin, args=(appel_id,), daemon=True).start()
         return 202, {"ok": True}
 
@@ -275,12 +319,16 @@ class Service:
 
     async def _prise_de_main(self, port: int) -> None:
         operateur = self._cles.get("OPERATEUR_TAILSCALE_LOGIN", "").strip().lower()
+        attendue = origine_attendue(self._cles)
+        if attendue is None:
+            self.journal("ORIGINE_APP absente du .env : toute prise de main sera refusée")
 
         def verifier(connexion: ServerConnection, requete):
-            # Identité posée par `tailscale serve` ; sans elle (ou si ce n'est pas l'opérateur), refus.
-            login = (requete.headers.get("Tailscale-User-Login") or "").strip().lower()
-            if not operateur or login != operateur:
-                return connexion.respond(403, "Prise de main réservée à l'opérateur.\n")
+            # Identité posée par `tailscale serve`, et origine de l'interface ; sinon, refus.
+            if not prise_de_main_autorisee(
+                requete.headers.get("Tailscale-User-Login"), requete.headers.get("Origin"), operateur, attendue
+            ):
+                return connexion.respond(403, "Prise de main réservée à l'opérateur, depuis l'interface.\n")
             return None
 
         async with serve(self._relier, "127.0.0.1", port, process_request=verifier, max_size=2**16):
@@ -475,5 +523,6 @@ class Service:
 def servir(cles: dict[str, str], racine: Path) -> int:
     if not cles.get("PONT_SECRET"):
         raise SystemExit("PONT_SECRET manquant dans .env (le script d'installation le génère)")
+    os.umask(0o077)  # journaux, enregistrements, plafond : au seul compte du service
     Service(cles, racine).lancer(int(cles.get("PONT_PORT", os.environ.get("PONT_PORT", "3021"))))
     return 0

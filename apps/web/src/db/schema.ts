@@ -1,8 +1,9 @@
-import type { Bilan, EntreeCampagne, IssueSysteme, PlageHoraire, StatutCampagne, TourDeParole } from '@autocalled/domain';
+import type { BilanEnregistre, EntreeCampagne, IssueSysteme, PlageHoraire, StatutCampagne, TourDeParole } from '@autocalled/domain';
 import { ISSUES_SYSTEME } from '@autocalled/domain';
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -32,6 +33,8 @@ export const entreprises = pgTable('entreprises', {
   arguments: text().notNull().default(''),
   prixConsigne: text().notNull().default(''),
   interdits: text().notNull().default(''),
+  /** Informations complémentaires : texte libre que l'assistante n'emploie que si la conversation y mène. */
+  complements: text().notNull().default(''),
   dureeRendezVousMinutes: integer().notNull().default(30),
   /** La personne avec qui le prospect aura sa visio (« Camille »). */
   interlocuteur: text().notNull().default(''),
@@ -158,6 +161,13 @@ export const prospects = pgTable(
     contexte: text().notNull(),
     importId: uuid().references(() => imports.id),
     majLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Archivé (ADR 0013) : hors des listes par défaut et des choix de campagne, jamais appelé ni ajouté à une campagne
+     * tant qu'il l'est ; ses appels, bilans et le consentement de son numéro restent. Null : actif. Un réimport de la
+     * fiche ne le réactive pas.
+     */
+    archiveLe: timestamp({ withTimezone: true }),
+    archivePar: text().$type<Origine>(),
   },
   (t) => [primaryKey({ columns: [t.entrepriseId, t.id] })],
 );
@@ -201,6 +211,11 @@ export const appels = pgTable('appels', {
   conversationId: text().unique(),
   /** Version de l'agent ElevenLabs qui a parlé : les bilans comparent aussi cela. */
   versionAgent: text(),
+  /**
+   * Le nom sous lequel l'assistante s'est présentée, figé au lancement : transcriptions et bilans gardent le nom
+   * de leur époque après un renommage. Null seulement pour une ligne écrite sans lui ; on lit alors le nom actuel.
+   */
+  assistanteNom: text(),
   statut: statutAppel().notNull().default('en-cours'),
   debutLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
   finLe: timestamp({ withTimezone: true }),
@@ -210,7 +225,8 @@ export const appels = pgTable('appels', {
   transcription: jsonb().$type<TourDeParole[]>(),
   /** Chemin relatif de l'enregistrement dans le dossier de données, hors dépôt. */
   audio: text(),
-  bilan: jsonb().$type<Bilan>(),
+  /** Le bilan entier, ou ce qu'il en reste après la durée de conservation (`purge: true`, ADR 0014). */
+  bilan: jsonb().$type<BilanEnregistre>(),
   issue: text(),
   issueSysteme: issueSysteme(),
   /**
@@ -220,6 +236,11 @@ export const appels = pgTable('appels', {
   rappelLe: timestamp({ withTimezone: true }),
   versionAnalyseur: text(),
   erreur: text(),
+  /**
+   * Passé la durée de conservation (ADR 0014, `DUREE_CONSERVATION_MOIS`) : enregistrements, transcription, texte libre
+   * du bilan et de l'erreur effacés ; issue, étape, objections, durée, dates, ligne et versions restent. Null : entier.
+   */
+  purgeLe: timestamp({ withTimezone: true }),
 }, (t) => [index('appels_rappel_le_idx').on(t.rappelLe).where(sql`${t.rappelLe} is not null`)]);
 
 /** La connexion Google Agenda de l'opérateur (une seule). Le jeton de rafraîchissement est chiffré. */
@@ -279,4 +300,56 @@ export const journalMcp = pgTable('journal_mcp', {
   message: text(),
   /** Pour les gestes confirmés par l'opérateur : ce qu'il a répondu, ou `indisponible` sans élicitation. */
   confirmation: text().$type<'acceptee' | 'refusee' | 'indisponible'>(),
+});
+
+/**
+ * Ce que l'application envoie à l'assistante avec chaque appel, sans poussée vers ElevenLabs : son nom (variable
+ * `assistante_nom`) et son premier message, la phrase dite quand le prospect se tait au décroché. Une seule ligne ;
+ * absente, les valeurs par défaut valent (lib/assistante.ts).
+ */
+export const assistante = pgTable(
+  'assistante',
+  {
+    id: integer().primaryKey().default(1),
+    nom: text().notNull().default('Mina'),
+    premierMessage: text().notNull().default('Allô ?'),
+    modifieLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    modifiePar: text().$type<Origine>(),
+  },
+  (t) => [check('assistante_une_seule_ligne', sql`${t.id} = 1`)],
+);
+
+/** D'où vient un instantané de la configuration ElevenLabs : poussée par le MCP, ligne de commande, tableau de bord. */
+export type OrigineVersionAssistante = 'mcp' | 'cli' | 'distante';
+
+/**
+ * Instantanés de la configuration ElevenLabs de l'assistante (champs gérés par `agent/`), consignés à chaque poussée
+ * ou rapatriement par le MCP. `appels.version_agent` y renvoie : on sait avec quel prompt un appel a été passé.
+ */
+export const versionsAssistante = pgTable('versions_assistante', {
+  id: uuid().primaryKey().defaultRandom(),
+  /** Le `version_id` d'ElevenLabs (agtvrsn_…). */
+  versionId: text().notNull().unique(),
+  empreinte: text().notNull(),
+  prompt: text().notNull(),
+  /** Les champs gérés, sans le prompt. */
+  configuration: jsonb().$type<Record<string, unknown>>().notNull(),
+  origine: text().$type<OrigineVersionAssistante>().notNull(),
+  consigneLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Liste d'opposition (ADR 0013) : l'empreinte irréversible (HMAC-SHA256, sel `SEL_OPPOSITION` de l'installation) du
+ * numéro de chaque personne effacée. Le consentement disparaît avec la personne ; l'interdiction de la rappeler reste :
+ * `autorisationsDe` et l'import consultent cette table. Aucune donnée personnelle en clair. La ligne `temoin` porte
+ * l'empreinte d'une constante : si le sel change ou manque, elle ne se retrouve plus et plus rien n'est composé.
+ */
+export const oppositions = pgTable('oppositions', {
+  empreinte: text().primaryKey(),
+  temoin: boolean().notNull().default(false),
+  le: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  /** Par où l'effacement a été demandé ; null pour le témoin. */
+  par: text().$type<Origine>(),
+  /** Ce que l'effacement a supprimé, en comptes seulement (appels, fichiers, rendez-vous…). */
+  bilan: jsonb().$type<Record<string, number>>(),
 });

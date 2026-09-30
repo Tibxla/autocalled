@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { NomDeLAssistante } from '@/components/assistante';
 import { RangeeCreation } from '@/components/rangee-creation';
 import { Action, EnTetePage } from '@/components/ui';
 import { creerEntreprise } from './actions';
@@ -27,9 +28,13 @@ export function CreationEntreprise({ compte }: { compte: number }) {
       <EnTetePage
         titre="Entreprises"
         compte={compte}
-        sousTitre="Chaque entreprise que Mina peut représenter."
+        sousTitre={
+          <>
+            Chaque entreprise que <NomDeLAssistante /> peut représenter.
+          </>
+        }
         action={
-          <Action ref={bouton} touche="N" raccourci="n" aria-expanded={montree} onClick={ouvrir} className="-mr-1.5">
+          <Action ref={bouton} ton="fort" touche="N" raccourci="n" aria-expanded={montree} onClick={ouvrir} className="-mr-1.5">
             Nouvelle entreprise
           </Action>
         }

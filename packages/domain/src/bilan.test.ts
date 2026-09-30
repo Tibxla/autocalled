@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { type ContexteBilan, type TourDeParole, instantDuRappel, precisionDuRappel, schemaJsonBilan, validerBilan } from './bilan.ts';
+import { statistiquesObjections, statistiquesParVersion } from './analyse.ts';
+import {
+  type ContexteBilan,
+  type TourDeParole,
+  estBilanPurge,
+  instantDuRappel,
+  precisionDuRappel,
+  purgerBilan,
+  schemaBilanPurge,
+  schemaJsonBilan,
+  validerBilan,
+} from './bilan.ts';
 
 const transcription: TourDeParole[] = [
   { role: 'prospect', texte: 'Allô ?', secondes: 0 },
@@ -194,5 +205,47 @@ describe('schemaJsonBilan', () => {
     expect(schema.additionalProperties).toBe(false);
     expect(schema.required).toContain('issue');
     expect(schema).not.toHaveProperty('$schema');
+  });
+});
+
+describe('purgerBilan', () => {
+  const avecNouvelle = {
+    ...valide,
+    objections: [...valide.objections, { objectionId: null, libelle: 'Pas le temps', levee: true, tempsBloquant: null, citation: 'je suis en plein ménage' }],
+    rappelLe: { date: '2026-10-01', heure: null, moment: 'matin' as const },
+  };
+
+  it('ne garde que les champs structurés : issue, étape, objections par identifiant, date du rappel', () => {
+    const purge = purgerBilan(avecNouvelle as Parameters<typeof purgerBilan>[0]);
+
+    expect(purge).toEqual({
+      purge: true,
+      issue: 'rappel-convenu',
+      etapeAtteinte: 2,
+      objections: [
+        { objectionId: 'obj-booking', levee: false, tempsBloquant: 'argumenter' },
+        { objectionId: null, levee: true, tempsBloquant: null },
+      ],
+      rappelLe: { date: '2026-10-01', heure: null, moment: 'matin' },
+    });
+    expect(JSON.stringify(purge)).not.toMatch(/Booking|ménage|Julie|jeudi|Mina/);
+    expect(schemaBilanPurge.safeParse(purge).success).toBe(true);
+    expect(estBilanPurge(purge)).toBe(true);
+  });
+
+  it('est idempotent et reconnaît un bilan entier', () => {
+    const une = purgerBilan(valide as Parameters<typeof purgerBilan>[0]);
+
+    expect(purgerBilan(une)).toEqual(une);
+    expect(une).not.toHaveProperty('rappelLe');
+    expect(estBilanPurge(valide as Parameters<typeof estBilanPurge>[0])).toBe(false);
+  });
+
+  it('garde les chiffres de l’analyse des versions', () => {
+    const entier = { versionScriptId: 'v1', issueSysteme: 'rappel-convenu' as const, ...(avecNouvelle as Parameters<typeof purgerBilan>[0]) };
+    const purge = { versionScriptId: 'v1', issueSysteme: 'rappel-convenu' as const, ...purgerBilan(entier) };
+
+    expect(statistiquesParVersion([purge])).toEqual(statistiquesParVersion([entier]));
+    expect(statistiquesObjections([purge])).toEqual(statistiquesObjections([entier]));
   });
 });

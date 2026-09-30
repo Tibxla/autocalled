@@ -67,6 +67,11 @@ typography:
     fontSize: "0.6875rem"
     fontWeight: 400
     lineHeight: "18px"
+  champ-tactile:
+    fontFamily: "Chivo, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "1rem"
+    fontWeight: 400
+    lineHeight: "1.5rem"
 rounded:
   trace: "2px"
   touche: "3px"
@@ -83,6 +88,7 @@ spacing:
   ligne: "38px"
   controle: "36px"
   barre: "64px"
+  cible-tactile: "44px"
 components:
   action-forte:
     textColor: "{colors.encre}"
@@ -112,6 +118,16 @@ components:
     rounded: "{rounded.action}"
     padding: "0 6px"
     height: "36px"
+  action-relief:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.encre}"
+    typography: "{typography.body}"
+    rounded: "{rounded.action}"
+    padding: "0 16px"
+    height: "44px"
+  action-relief-alerte:
+    backgroundColor: "{colors.alerte-fond}"
+    textColor: "{colors.alerte}"
   touche:
     textColor: "{colors.encre-3}"
     typography: "{typography.touche}"
@@ -149,6 +165,11 @@ components:
     height: "40px"
   lien-nav-actif:
     textColor: "{colors.encre}"
+  nav-bas:
+    backgroundColor: "{colors.fond}"
+    textColor: "{colors.encre-3}"
+    typography: "{typography.label}"
+    height: "56px"
   ligne-table:
     textColor: "{colors.encre}"
     typography: "{typography.body}"
@@ -182,7 +203,7 @@ components:
 
 L’interface opérateur d’Autocalled est une régie d’écoute sombre : un poste de travail sur graphite chaud, fait pour enchaîner une centaine d’appels par jour et pour être lu par-dessus l’épaule pendant une démo. L’écran se tait jusqu’à ce qu’un appel vive. Tout est en neutres chauds, du graphite du fond au blanc cassé du texte ; la hiérarchie vient de la graisse, de la taille et de trois niveaux d’encre. Une seule couleur a le droit de vivre : le rouge « antenne », sur l’appel en cours, la voix de Mina, le point du logo et la position de l’appel sur la frise. Tant que rien ne sonne, il est absent.
 
-La densité est assumée : barre de 64 px, puis le contenu en pleine largeur, des tableaux à lignes de 38 px séparées par des filets d’un pixel, des comptes en chasse fixe dans les filtres et les lignes. Le clavier passe d’abord : chaque action est un texte précédé de sa touche (`E Écouter`, `Espace Prendre la main`, `/` pour chercher), les filtres sont du texte souligné quand ils sont actifs, les champs sont des filets bas. Le soin tient aux détails : filets fins, alignements exacts, soulignements décalés de 4 px, focus qui ne décale rien.
+La densité est assumée : barre de 64 px, puis le contenu en pleine largeur, des tableaux à lignes de 38 px séparées par des filets d’un pixel, des comptes en chasse fixe dans les filtres et les lignes. Le clavier passe d’abord : chaque action est un texte précédé de sa touche (`E Écouter`, `Espace Prendre la main`, `/` pour chercher), les filtres sont du texte souligné quand ils sont actifs, les champs sont des filets bas. Au doigt, où il n’y a ni clavier ni survol, la touche s’efface et l’action principale devient elle-même une touche : son libellé se pose dans un relief d’un pixel sur `surface` ; toute autre action reste du texte, soulignée en permanence. Le soin tient aux détails : filets fins, alignements exacts, soulignements décalés de 4 px, focus qui ne décale rien.
 
 Deux éléments signature portent le monde. Pendant un appel, la phrase de Mina s’affiche au centre en sous-titre, au-dessus de la piste de parole (une barre par mot, Mina en antenne au-dessus de l’axe, le prospect en gris dessous). Sur la journée, une frise de 9 h à 19 h pose un trait par appel, dont la hauteur dit l’étape atteinte et le blanc un rendez-vous pris.
 
@@ -191,7 +212,7 @@ Rejets confirmés par la direction (`docs/direction-visuelle.md`) : dégradés v
 **Key Characteristics:**
 - Graphite chaud (`fond`) et texte blanc cassé, trois encres de texte et quatre filets ; aucune teinte de statut décorative, aucun vert.
 - Un rouge vivant (`antenne`) réservé à l’appel en cours ; une brique mate (`alerte`) pour les erreurs, la révocation et les ruptures.
-- Actions en texte précédées de leur touche : aucun bouton à fond plein ni à contour.
+- Actions en texte précédées de leur touche ; au doigt, l’action principale d’une zone prend le relief de sa touche. Jamais de bouton plein, jamais la paire plein et contour.
 - Chivo pour le texte, Chivo Mono pour tout ce qui se lit caractère par caractère.
 - Tableaux denses en filets d’un pixel, jamais en cartes.
 - Plat : la profondeur vient du ton ; une seule ombre, sous le panneau flottant des raccourcis.
@@ -257,12 +278,13 @@ Graisses en usage : 400, 500, 600. Pas de 700, pas de capitales forcées, pas d�
 
 Pleine largeur par défaut, dans une gouttière de 16 px, 32 px dès 640 px, 48 px dès 1280 px (`--gouttiere`). Les pages de lecture se limitent à 72 rem, alignées à gauche, jamais centrées. Aucune barre latérale.
 
-- **Barre du haut :** 64 px, collante dès 640 px, fermée par un filet : marque (17 px de haut), navigation espacée de 24 px, puis à droite l’état de la ligne et « Raccourcis ». Sous 640 px, deux rangées : marque et état (48 px), puis la navigation qui défile seule (40 px), barre non collante.
+- **Barre du haut :** 64 px, collante dès 640 px, fermée par un filet : marque (17 px de haut), navigation espacée de 24 px (16 px sous 1024 px, 12 px sous 768 px ; « Assistante » dès 1280 px seulement ; en dessous et dans la barre du bas, Réglages porte la page Assistante et s’allume pour elle), puis à droite l’état de la ligne et « Raccourcis ». La ligne d’état dit aussi le plafond atteint (« Plafond atteint · prochain appel à 14:32 ») et, pendant un appel téléphone, le chrono depuis le décroché ; une campagne en cours ou suspendue s’y ajoute en lien vers sa régie, par son compte en mono (« 34/100 ») ou « suspendue », précédé dès 1280 px de son nom (« Campagne X · 34/100 »). Sous 1024 px, l’état de la ligne prend sa forme courte (trait de 16 px, « Libre », « Déconnecté ») et « Raccourcis » sa seule touche ; de 640 à 767 px, ni campagne ni « Raccourcis » : la navigation et l’état de la ligne prennent la rangée, sans jamais déborder. Sous 640 px, une seule rangée de 48 px, non collante : marque, campagne (« Campagne 34/100 », le compte seul sous 400 px) et état de la ligne ; la navigation descend dans la barre du bas.
+- **Barre du bas (sous 640 px) :** collée au bas de l’écran, 56 px plus la zone de sécurité, sur `fond`, fermée en haut par un filet, sans ombre. Cinq liens texte en Label, chacun large de son libellé plus une part égale de la place restante ; le lien courant en `encre`, marqué d’un trait de 1,5 px en encre sur le bord haut. Au-dessus de « Téléphone », le trait de la ligne d’état en 16 px. Elle s’efface tant qu’un champ de saisie a le focus : le clavier de l’écran prend sa place. Toute barre collée en bas se pose au-dessus d’elle.
 - **En-tête de page :** 32 px au-dessus, 20 px au-dessous (24 et 16 sur mobile) ; lien retour en `encre-3`, titre, sous-titre ; l’action alignée en bas à droite.
-- **Tableaux :** grille de colonnes par tableau (`--colonnes`), 16 px entre colonnes, lignes de 38 px ; sous 640 px, chaque ligne passe sur deux rangées de 52 px au moins, les en-têtes deviennent réservés aux lecteurs d’écran et les cellules secondaires disparaissent. Toute la ligne est cliquable par son seul lien.
-- **Filtres et recherche :** filtres en ligne espacés de 22 px, recherche de 300 px à droite, pleine largeur et au-dessus sur mobile.
+- **Tableaux :** grille de colonnes par tableau (`--colonnes`), 16 px entre colonnes, lignes de 38 px ; une colonne de largeur fixe cède quand la place manque (de 640 à 800 px, téléphone couché) et reprend sa largeur dès qu’il y a la place : la page ne défile jamais en largeur ; sous 640 px, chaque ligne passe sur deux rangées de 52 px au moins, les en-têtes deviennent réservés aux lecteurs d’écran et les cellules secondaires disparaissent. Toute la ligne est cliquable par son seul lien. Sous 640 px, un chevron `encre-3` en bout de ligne dit qu’elle s’ouvre ; le nom n’est jamais coupé sur une seule ligne (deux lignes au plus) ; chaque chiffre porte son unité ; les gestes qui retirent, archivent ou effacent quittent les lignes pour la fiche.
+- **Filtres et recherche :** filtres en ligne espacés de 22 px, recherche de 300 px à droite, pleine largeur et au-dessus sur mobile. Sous 640 px, la recherche passe en tête, pleine largeur ; les filtres tiennent sur une rangée qui défile, fondue sur le bord qui déborde, et un filtre à compte nul en disparaît. Une page qui a plusieurs familles de filtres range les familles secondaires dans un volet « Filtres » replié, dont le bouton compte et résume les filtres actifs.
 - **Rythme :** 6 px entre libellé, champ et aide ; 8 à 16 px entre actions voisines ; 14 px entre les rangées de la bande d’appel ; zones posées bord à bord (`PleineLargeur`) quand elles doivent couper la page.
-- **Tactile :** au pointeur grossier, actions, filtres et liens montent à 44 px et les touches disparaissent.
+- **Tactile :** un seul critère, le pointeur grossier (`pointer-coarse:`) ; la largeur décide de la disposition (640 et 1024 px), le pointeur de l’affordance. Au doigt, toute cible fait 44 × 44 px au moins, les touches disparaissent, les champs passent à 16 px (Safari n’agrandit plus la page au focus), l’action principale prend le relief de sa touche, toute autre action et tout lien se soulignent en permanence, et un appui se voit.
 
 ## Elevation & Depth
 
@@ -273,9 +295,10 @@ Le système est plat. La profondeur vient du ton (`fond`, `surface` un cran plus
 - **Filet bas appuyé** (`box-shadow: inset 0 -1.5px 0 var(--encre)`) : le soulignement du filtre actif.
 - **Épaississement au focus** (`box-shadow: inset 0 -0.5px 0 var(--encre)`, ou `var(--alerte)` en erreur) : ajouté au filet bas d’un champ pour le porter à 1,5 px.
 - **Relief de touche** (`box-shadow: inset 0 0 0 1px var(--filet-fort), inset 0 -1px 0 var(--filet-fort)` ; `var(--trait)` pour une touche forte) : cadre et fond appuyé d’une touche.
+- **Relief d’action au doigt** (`box-shadow: inset 0 0 0 1px var(--trait), inset 0 -1px 0 var(--trait)` sur `surface` ; `var(--filet-fort)` pour une action normale ; `var(--alerte)` sur `alerte-fond` pour Raccrocher et la confirmation d’un geste irréversible) : le relief de touche, agrandi à l’action. Appuyée, le bord bas s’efface et le fond passe en `filet-2`.
 
 ### Named Rules
-**La règle du plat.** Rien ne flotte hors du panneau des raccourcis : pas d’autre ombre portée, pas de flou, pas de verre. Un état se signale par un changement de ton, de trait ou de soulignement.
+**La règle du plat.** Rien ne flotte hors du panneau des raccourcis : pas d’autre ombre portée, pas de flou, pas de verre. Un état se signale par un changement de ton, de trait ou de soulignement. La barre du bas est une barre, pas un calque : un filet, aucune ombre.
 
 ## Shapes
 
@@ -284,11 +307,12 @@ Des angles à peine adoucis, et de moins en moins à mesure que l’objet rapeti
 ## Components
 
 ### Actions
-Des mots, pas des boutons : un libellé précédé de sa touche, sans fond ni contour.
+Des mots, pas des boutons : au clavier, un libellé précédé de sa touche, sans fond ni contour ; au doigt, la touche disparaît et l’action principale devient la touche.
 - **Shape :** zone de 36 px de haut (44 px au toucher), 6 px de marge horizontale compensée par un retrait négatif pour que le texte s’aligne sur la colonne, rayon 4 px, texte Body, 8 px entre touche et libellé.
 - **Forte :** `encre` en 600, touche au contour `trait`. Une par contexte : soumettre, créer, confirmer, prendre la main.
 - **Normale :** `encre-2` en 500, `encre` au survol. **Discrète :** `encre-3`, `encre-2` au survol (annuler, effacer). **Alerte :** brique en 500 (raccrocher, révoquer).
 - **Hover / Focus :** le libellé se souligne d’un pixel en `souligne`, décalé de 4 px ; anneau de focus de 2 px en `focus`, décalé de 2 px. Désactivé à 45 %, sans soulignement. Pendant l’envoi, le libellé d’attente se superpose au libellé pour que la largeur ne bouge pas. Transitions de 150 ms sur la couleur.
+- **Au doigt :** l’action forte d’une zone (soumettre, créer, confirmer, l’action de secours d’un état bloqué) prend le relief de sa touche : 44 px de haut, 16 px de marge, rayon 4 px, libellé centré. Une par zone. Les commandes de ce qui vit (Écouter, Prendre la main, micro, Raccrocher ; Appeler maintenant, Suspendre, Reprendre) forment un pavé de touches, toutes en relief, Raccrocher seul sur sa rangée, sur voile brique. Toute autre action, normale, discrète ou d’alerte (Révoquer, Effacer, Retirer, Archiver, Oublier), reste du texte, soulignée en permanence en `souligne`. Jamais de texte gras nu : un libellé en 600 sans relief ni soulignement ne se lit pas comme une action.
 
 ### Touche
 Petit cadre en Chivo Mono 11 px, 18 px de haut, 18 px de large au moins, rayon 3 px, fond appuyé d’un pixel. Ordinaire en `encre-3` sur `filet-fort` ; forte en `encre` sur `trait`. Les combinaisons posent une touche par partie (« Ctrl » « Entrée »). Décorative dans une action, masquée au toucher.
@@ -297,32 +321,33 @@ Petit cadre en Chivo Mono 11 px, 18 px de haut, 18 px de large au moins, rayon 3
 Texte en ligne, espacé de 22 px, avec son compte en mono `encre-3`. Inactif : `encre-3`, souligné en `souligne` au survol. Actif : `encre` en 600, souligné d’un filet intérieur de 1,5 px en encre. Un filtre à compte nul reste à sa place, inerte, en `trait`.
 
 ### Inputs / Fields
-- **Style :** saisie et menu déroulant sur filet bas d’un pixel en `filet-fort`, sans fond, sans coins, sans marge intérieure horizontale, 36 px de haut, placeholder `encre-3`. Chevron de 10 × 6 px au trait de 1,25 px, en `encre-3`, à 4 px du bord. La zone de texte, seule, est posée sur `surface` avec 6 px de rayon, 80 px de haut au moins, hauteur qui suit le contenu ; Ctrl Entrée soumet.
+- **Style :** saisie et menu déroulant sur filet bas d’un pixel en `filet-fort`, sans fond, sans coins, sans marge intérieure horizontale, 36 px de haut, placeholder `encre-3`. Chevron de 10 × 6 px au trait de 1,25 px, en `encre-3`, à 4 px du bord. La zone de texte, seule, est posée sur `surface` avec 6 px de rayon, 80 px de haut au moins, hauteur qui suit le contenu ; Ctrl Entrée soumet. Au doigt : 44 px de haut, texte à 16 px.
 - **Focus :** le filet passe en `encre` et s’épaissit à 1,5 px ; c’est l’indicateur, sans anneau en plus. Au survol, le filet passe en `souligne`.
 - **Error / Disabled :** filet en brique à 1,5 px, message d’erreur en brique sous le champ ; désactivé à 45 %.
 - **Champ :** libellé Label 500 en `encre` au-dessus, aide en `encre-3` dessous, 6 px entre chaque. Cases et radios natifs teintés en `encre`.
-- **Recherche :** filet bas de 30 px, 300 px de large, « / » affiché en touche à droite tant que le champ est vide ; Échap vide puis rend le focus, ↓ descend aux résultats.
+- **Recherche :** filet bas de 30 px, 300 px de large, « / » affiché en touche à droite tant que le champ est vide ; Échap vide puis rend le focus, ↓ descend aux résultats ; au doigt, « Effacer » à droite dès que le champ contient du texte.
 
 ### Navigation
-Liens texte en Body, `encre-3` au repos, `encre-2` au survol avec un filet d’un pixel en `souligne` 11 px sous la ligne médiane ; lien courant en `encre`, filet de 1,5 px en encre. La graisse ne change jamais : la navigation ne saute pas. Variante onglet en Label, 36 px, avec compte en mono, pour les sections d’une entreprise.
+Liens texte en Body, `encre-3` au repos, `encre-2` au survol avec un filet d’un pixel en `souligne` 11 px sous la ligne médiane ; lien courant en `encre`, filet de 1,5 px en encre. La graisse ne change jamais : la navigation ne saute pas. Variante onglet en Label, 36 px, avec compte en mono, pour les sections d’une entreprise. Sous 640 px, la navigation principale est la barre du bas.
 
 ### Tableau dense
-Rôles de tableau sur une grille. En-tête en Données `encre-3` sur un filet `filet-2` ; lignes de 38 px séparées par des filets `filet`, voile `survol` au survol ou à la sélection, anneau de focus rentré (décalé de −2 px) sur toute la ligne. Heures et durées en mono 12 px `encre-3`, alignées à droite pour les durées. Une ligne vivante passe sa cellule d’état en antenne ; une ligne atténuée passe en `encre-3`. Termes trouvés surlignés en `filet-2`.
+Rôles de tableau sur une grille. En-tête en Données `encre-3` sur un filet `filet-2` ; lignes de 38 px séparées par des filets `filet`, voile `survol` au survol ou à la sélection, anneau de focus rentré (décalé de −2 px) sur toute la ligne. Heures et durées en mono 12 px `encre-3`, alignées à droite pour les durées. Une ligne vivante passe sa cellule d’état en antenne ; une ligne atténuée passe en `encre-3`. Termes trouvés surlignés en `filet-2`. Les gestes d’une ligne (`S Sauter`, `Retirer` dans la file d’une campagne ; `Archiver` ou `Réactiver`, `Effacer` dans la liste des prospects) sont des actions discrètes en bout de ligne ; leur confirmation s’ouvre sous la ligne. Sous 640 px, ils quittent les lignes, sauf Sauter et Retirer sur la ligne « Suivant » de la file (et sur les lignes à appeler quand ce filtre est actif) ; le retour d’un geste s’écrit dans la ligne, qui reste à sa place, atténuée, jusqu’à la relecture de la liste.
 
 ### Blocs posés
 - **Message :** 6 px de rayon, 10 × 14 px de marge, texte Label. Neutre : `surface` et `encre-2`, en `status`. Alerte : voile brique et brique, en `alert`.
-- **Confirmation :** en ligne, juste sous l’action qui l’ouvre, sur `surface` (12 × 14 px, 6 px de rayon) : question en Body 500, conséquences en Label `encre-2` (68 ch), puis « Entrée » + action forte ou alerte et « Échap Annuler ». Le focus va au conteneur, jamais à un bouton. Obligatoire pour tout geste qui fait sonner, raccroche, révoque ou desserre un garde-fou.
+- **Confirmation :** en ligne, juste sous l’action qui l’ouvre, sur `surface` (12 × 14 px, 6 px de rayon) : question en Body 500, conséquences en Label `encre-2` (68 ch), puis « Entrée » + action forte ou alerte et « Échap Annuler ». Le focus va au conteneur, jamais à un bouton. Obligatoire pour tout geste qui fait sonner, prend la main, révoque, desserre un garde-fou ou ne se défait pas (retirer un prospect de la file, l’archiver quand il y attend encore, terminer une campagne, archiver un script en usage, oublier le téléphone, effacer une personne, dont la confirmation liste ce qui sera effacé). Jamais pour un frein : Raccrocher, Suspendre et Sauter sont immédiats. Sous 640 px, les deux actions s’empilent : l’action en relief sur toute la largeur, « Annuler » dessous, en texte ; elle s’ouvre au-dessus de la barre du bas, jamais dessous.
+- **Conflit :** message d’alerte posé dans le formulaire refusé, qui dit qui a modifié et quand (« Fiche modifiée par Claude Code à 14:02 ») puis deux actions normales, « Recharger » et « Écraser » ; la saisie reste en place.
 - **État vide :** pas de bloc ni d’illustration : un titre Body 500, une phrase en `encre-3` (56 ch), l’action suivante ; 40 px de marge et un filet dessous.
-- **Squelette :** lignes de 38 px sur filet, barres `survol` de 12 px aux coins de 3 px, statiques, sans reflet.
+- **Squelette :** lignes de 38 px (52 px sous 640 px) sur filet, barres `survol` de 12 px aux coins de 3 px, statiques, sans reflet.
 
 ### Pastille d’autorisation
-Trait de 8 px à 1,5 px suivi du libellé Label. Autorisé : trait plein, `encre-2`. Sans consentement : trait interrompu (3 px, 2 px) en `trait`, libellé `encre-3`. Révoqué ou numéro invalide : trait interrompu et libellé en brique. Le cas normal ne crie pas.
+Trait de 8 px à 1,5 px suivi du libellé Label. Autorisé : trait plein, `encre-2`. Sans consentement : trait interrompu (3 px, 2 px) en `trait`, libellé `encre-3`. Révoqué, effacé ou numéro invalide : trait interrompu et libellé en brique. Le cas normal ne crie pas.
 
 ### Ligne d’état (signature)
-Toujours dans la barre, à droite : un trait de 56 × 16 px (16 px sur mobile) à 1,5 px, puis le libellé Label, dans un lien vers la page Téléphone. Libre ou relevé : pointillé (2 px, 4 px) en `trait`, libellé `encre-3`. En appel : trait plein et libellé en antenne. Coupée (déconnecté, injoignable) : trait coupé au milieu en brique, libellé `encre-2`. Inconnu : trait coupé en `trait`. Transition de 300 ms sur la couleur. `role="status"`.
+Toujours dans la barre, à droite : un trait de 56 × 16 px (16 px sur mobile) à 1,5 px, puis le libellé Label, dans un lien vers la page Téléphone. Libre ou relevé : pointillé (2 px, 4 px) en `trait`, libellé `encre-3`. En appel : trait plein et libellé en antenne. Coupée (déconnecté, injoignable) : trait coupé au milieu en brique, libellé `encre-2`. Inconnu : trait coupé en `trait`. Sous 768 px, en appel téléphone, trait et chrono sans libellé : la campagne (sous 640 px) ou la navigation tient à côté. Sous 1024 px, le trait fait 16 px et le libellé est court. Transition de 300 ms sur la couleur. `role="status"`.
 
 ### Bande d’appel (signature)
-Trois rangées espacées de 14 px. En haut, l’identité (nom en Title 600, entreprise et numéro masqué en `encre-3`) à gauche, l’état, le chrono en mono 15 px (antenne en ligne) et les actions `E Écouter`, `Espace Prendre la main`, `Raccrocher` à droite. Au centre, la réplique du prospect en Title `encre-2` puis la phrase de Mina en sous-titre, sur 84 px au moins. En bas, la piste de parole de 40 px (32 px sur mobile) : une barre de 2 px par mot, Mina en antenne au-dessus d’un axe `filet-2`, le prospect en `encre-3` dessous ; seule la réplique en cours s’anime (`parole`, 0,8 s, alternée). Quand la ligne relaie les niveaux des deux voix et que l’écoute est fermée, l’onde remplace la piste à la même place : une barre de 2 px tous les 5 px par relevé de 50 ms, Mina en antenne au-dessus, le prospect dessous, qui défile de droite à gauche au rythme du temps ; en mouvement réduit, la piste reste. Hors de vue, un bandeau collant de 44 px sous la barre reprend nom, état, chrono, fin de phrase et actions.
+Trois rangées espacées de 14 px. En haut, l’identité (nom en Title 600, entreprise et numéro masqué en `encre-3`) à gauche, l’état, le chrono en mono 15 px (antenne en ligne), l’étape signalée par Mina (« Étape 2/4 · Qualification », Label `encre-3`, numéros en mono, tronquée ; absente pendant une prise de main) et les actions `E Écouter`, `Espace Prendre la main`, `Raccrocher` à droite. Au centre, la réplique du prospect en Title `encre-2` puis la phrase de Mina en sous-titre, sur 84 px au moins. En bas, la piste de parole de 40 px (32 px sur mobile) : une barre de 2 px par mot, Mina en antenne au-dessus d’un axe `filet-2`, le prospect en `encre-3` dessous ; seule la réplique en cours s’anime (`parole`, 0,8 s, alternée). Quand la ligne relaie les niveaux des deux voix et que l’écoute est fermée, l’onde remplace la piste à la même place : une barre de 2 px tous les 5 px par relevé de 50 ms, Mina en antenne au-dessus, le prospect dessous, qui défile de droite à gauche au rythme du temps ; en mouvement réduit, la piste reste. Hors de vue, un bandeau collant de 44 px sous la barre reprend nom, état, chrono, fin de phrase et actions.
 
 ### Frise de la journée (signature)
 Bande posée sur `surface`, bord à bord, entre deux filets. Graduations horaires en Touche `encre-3`, lignes d’heure d’un pixel en `grille`, 48 px de haut sur un filet `filet-2`. Un trait par appel, de 2 px au moins (1 px sur mobile), dont la hauteur suit l’étape atteinte : `trait` par défaut, `encre` pour un rendez-vous, antenne sur 5 px pour l’appel en cours, point creux brique de 7 px pour un échec. Maintenant marqué d’un pointillé vertical en `trait`. Au survol d’une ligne du tableau, le trait correspondant prend un contour `encre-2` ; les appels filtrés hors vue tombent à 35 %.
@@ -339,11 +364,13 @@ Mot-symbole « autocalled. » en `encre`, 17 px de haut. Le point final est le v
 - **Do** séparer les lignes par des filets d’un pixel en `filet`, sur 38 px de haut dans les tableaux.
 - **Do** dire un état par la forme d’abord (trait plein, pointillé ou coupé, point creux), la couleur ensuite.
 - **Do** garder tout texte utile à `encre-3` ou au-dessus ; `trait` et `trait-2` restent aux traits et aux glyphes.
-- **Do** ouvrir une confirmation en ligne pour tout geste qui fait sonner un téléphone, raccroche, révoque ou desserre un garde-fou.
+- **Do** ouvrir une confirmation en ligne pour tout geste qui fait sonner un téléphone, prend la main, révoque, desserre un garde-fou ou ne se défait pas ; laisser les freins (raccrocher, suspendre, sauter) immédiats.
 - **Do** réserver le mouvement à ce qui vit, et le couper sous `prefers-reduced-motion`.
+- **Do** donner au doigt le relief de sa touche à l’action principale d’une zone, et à elle seule ; souligner en permanence toute autre action et tout lien.
 
 ### Don't:
-- **Don't** poser de bouton à fond plein ni à contour, ni la paire des deux.
+- **Don't** poser de bouton à fond plein, ni la paire bouton plein et bouton contour. Au doigt, seul le relief de touche donne une forme à une action ; jamais de texte gras nu.
+- **Don't** faire défiler une liste dans un cadre à l’intérieur de la page, ni cacher une information utile dans un `title`.
 - **Don't** encadrer un filtre en puce ni un champ de recherche : texte souligné et filet bas.
 - **Don't** employer l’antenne hors de ce qui vit, ni ajouter un point rouge « live » à côté de celui du logo.
 - **Don't** utiliser la brique en texte hors des erreurs, de la révocation et du raccrochage.

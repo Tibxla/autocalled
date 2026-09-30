@@ -1,5 +1,7 @@
 # Piloter Autocalled depuis Claude Code : un serveur MCP local en stdio, sous confirmation de l'opérateur
 
+Statut : amendée par l’ADR 0010 (configuration de l’assistante).
+
 Autocalled expose un serveur MCP (`apps/web/mcp/`), déclaré dans `.mcp.json` à la racine du dépôt et lancé en stdio par Claude Code sur le serveur. Il n'est jamais servi en HTTP : un connecteur claude.ai l'appellerait depuis Internet, ce que les ADR 0004 et 0006 excluent. Ses outils appellent les mêmes fonctions de `lib/` que les server actions de l'interface, validées par les mêmes schémas, et chaque appel d'outil laisse une ligne dans la table `journal_mcp`, lectures comprises (visible dans Réglages).
 
 Le modèle qui lit une transcription d'appel lit la parole d'un tiers (ADR 0005), et il a aussi les outils qui appellent. Tout ce qui fait sonner le téléphone (appel, campagne), révoque un numéro, envoie une invitation à un prospect ou desserre les plafonds de la ligne demande donc une confirmation par élicitation : Claude Code pose la question à l'opérateur, le serveur la rédige depuis la base (prospect, numéro, script, heure, plafonds), et le modèle ne peut pas y répondre à sa place. Un client sans élicitation, comme `claude -p`, se voit refuser ces gestes. Les freins (raccrocher, suspendre une campagne, resserrer un plafond) passent sans confirmation.

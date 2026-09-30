@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useRef, useSyncExternalStore } from 'react';
+import { Action } from './action';
 import { Touche } from './touche';
 
 /**
@@ -20,9 +21,10 @@ import { Touche } from './touche';
  *   V nouvelle version ; R relire (Téléphone) ; 1 à 8 onglets d'entreprise ; j et k élément suivant et
  *   précédent sur une fiche ; lecteur d'un appel terminé : Espace, ← →, ↑ ↓, Échap.
  * - Globaux : ? aide, / recherche (puis ↓ vers les résultats), g puis h, e, a, t, r (retenus par la garde
- *   de sortie pendant un appel navigateur).
+ *   de sortie pendant un appel navigateur). g puis t mène à Téléphone, dont « Reconnecter le téléphone » est
+ *   la première action : aucune touche ne déclenche la reconnexion elle-même.
  * - Jamais de touche seule pour Raccrocher, Lancer, Reprendre, Suspendre, Révoquer, Oublier, Archiver,
- *   Réanalyser, Importer, Enregistrer, Appeler.
+ *   Réanalyser, Importer, Enregistrer, Appeler, Reconnecter.
  */
 
 export type GroupeRaccourci = 'Appel' | 'Liste' | 'Navigation' | 'Page' | 'Confirmation';
@@ -262,7 +264,7 @@ export function FournisseurClavier({ children }: { children: React.ReactNode }) 
     { touche: 'h', sequence: 'g', libelle: 'Aller à l’accueil', groupe: 'Navigation', couche: 'global', action: () => aller('/') },
     { touche: 'e', sequence: 'g', libelle: 'Aller aux entreprises', groupe: 'Navigation', couche: 'global', action: () => aller('/entreprises') },
     { touche: 'a', sequence: 'g', libelle: 'Aller aux appels', groupe: 'Navigation', couche: 'global', action: () => aller('/appels') },
-    { touche: 't', sequence: 'g', libelle: 'Aller au téléphone', groupe: 'Navigation', couche: 'global', action: () => aller('/telephone') },
+    { touche: 't', sequence: 'g', libelle: 'Aller au téléphone (reconnexion)', groupe: 'Navigation', couche: 'global', action: () => aller('/telephone') },
     { touche: 'r', sequence: 'g', libelle: 'Aller aux réglages', groupe: 'Navigation', couche: 'global', action: () => aller('/reglages') },
   ]);
 
@@ -480,9 +482,10 @@ export function AideRaccourcis() {
         <h2 id={titre} className="text-md font-semibold">
           Raccourcis clavier
         </h2>
-        <span className="flex items-center gap-1.5 text-sm text-encre-3">
-          <Touche>Échap</Touche> fermer
-        </span>
+        {/* Une action, pas une légende : le panneau se ferme aussi au doigt (44 px) ou à la souris. */}
+        <Action ton="discret" touche="Échap" onClick={() => fermerAide()} className="-my-2 -mr-1.5">
+          Fermer
+        </Action>
       </div>
       <div className="mt-3 grid gap-4">
         {groupes.map(({ groupe, lignes }) => (
@@ -515,7 +518,7 @@ export function AideRaccourcis() {
   );
 }
 
-/** « ? Raccourcis » dans la barre ; masqué au toucher et sous 640 px (la place va à l'état de la ligne). */
+/** « ? Raccourcis » dans la barre ; « ? » seul sous 1024 px, masqué au toucher et sous 768 px (la place va à la navigation et à l'état de la ligne). */
 export function BoutonAideRaccourcis() {
   const { ouverte } = useAide();
   return (
@@ -525,10 +528,11 @@ export function BoutonAideRaccourcis() {
       aria-controls={ouverte ? 'aide-raccourcis' : undefined}
       aria-keyshortcuts="?"
       onClick={(e) => basculerAide(e.currentTarget)}
-      className="group inline-flex h-9 items-center gap-2 rounded-[4px] px-1.5 text-md whitespace-nowrap text-encre-3 transition-colors duration-150 hover:text-encre-2 max-sm:hidden pointer-coarse:hidden"
+      className="group inline-flex h-9 items-center gap-2 rounded-[4px] px-1.5 text-md whitespace-nowrap text-encre-3 transition-colors duration-150 hover:text-encre-2 max-md:hidden pointer-coarse:hidden"
     >
       <Touche decorative>?</Touche>
-      <span className="decoration-souligne decoration-1 underline-offset-4 group-hover:underline">Raccourcis</span>
+      {/* De 768 à 1023 px, la touche seule : le libellé reste aux lecteurs d'écran. */}
+      <span className="decoration-souligne decoration-1 underline-offset-4 group-hover:underline max-lg:sr-only">Raccourcis</span>
     </button>
   );
 }

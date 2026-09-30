@@ -47,7 +47,7 @@ describe('revoquer_numero', () => {
     expect(messages[0]).toBe(
       'Révoquer définitivement le numéro 06 39 98 00 01 de Julie Fictive (Gîte fictif) : il ne sera plus jamais appelé, pour les 2 prospects qui le partagent, et aucun import ne le réautorisera.',
     );
-    expect(r.json).toEqual({ numero: '06 39 98 00 01', revoque: true, prospectsTouches: 2 });
+    expect(r.json).toEqual({ numero: '06 39 98 00 01', revoque: true, consentementsClos: 1, prospectsTouches: { entreprise: 2, toutes: 2 } });
     expect(await revoques()).toBe(1);
   });
 
@@ -82,11 +82,11 @@ describe('recreer_evenement', () => {
   }
 
   it('annonce l’invitation à l’adresse du prospect, et ne crée rien sans accord', async () => {
-    const rdv = await rendezVousEnEchec('julie@exemple.fr');
+    const rdv = await rendezVousEnEchec('julie@exemple.test');
     const { appeler, messages } = await connecter({ elicitation: 'refuser' });
 
     expect((await appeler('recreer_evenement', { rendezVousId: rdv.id })).erreur).toBe(true);
-    expect(messages[0]).toBe('Créer dans Google Agenda la visio de Julie Fictive (Gîte fictif) du mardi 6 octobre 2026 à 10:00, et envoyer l’invitation à julie@exemple.fr.');
+    expect(messages[0]).toBe('Créer dans Google Agenda la visio de Julie Fictive (Gîte fictif) du mardi 6 octobre 2026 à 10:00, et envoyer l’invitation à julie@exemple.test.');
     expect(await db.select({ statut: rendezVous.statut, erreur: rendezVous.erreur }).from(rendezVous)).toEqual([{ statut: 'echec', erreur: 'panne' }]);
   });
 
@@ -97,7 +97,8 @@ describe('recreer_evenement', () => {
     const r = await appeler('recreer_evenement', { rendezVousId: rdv.id });
 
     expect(messages[0]).toContain('sans invité : aucun e-mail ne part');
-    expect(r).toMatchObject({ erreur: true, texte: 'La création a encore échoué : claude -p est interdit dans les tests' });
+    // Le message d'un claude -p échoué (qui reprend la réponse du modèle) reste au journal du service.
+    expect(r).toMatchObject({ erreur: true, texte: expect.stringMatching(/^L’inscription a encore échoué : La création de l’événement par le connecteur Google Agenda de Claude a échoué/) });
   });
 
   it('refuse un rendez-vous déjà dans l’agenda, sans rien demander', async () => {

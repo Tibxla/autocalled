@@ -1,0 +1,12 @@
+# Lance autocalled-purge.service chaque jour ; un jour manqué (serveur éteint) est rattrapé au démarrage.
+# Installation : scripts/installer-services.sh
+[Unit]
+Description=Autocalled, purge quotidienne des données passées la durée de conservation
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

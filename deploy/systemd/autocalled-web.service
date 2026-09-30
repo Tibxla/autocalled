@@ -11,6 +11,12 @@ Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=%h/projects/autocalled/apps/web/node_modules/.bin/next start -H 127.0.0.1 -p 3020
 Restart=on-failure
 RestartSec=5
+# Enregistrements au seul compte du service ; aucune élévation (sudo, setuid) depuis l'application ni depuis
+# le `claude -p` qu'elle lance. Pas de ProtectHome : `claude` lit ~/.claude.
+UMask=0077
+NoNewPrivileges=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
 
 [Install]
 WantedBy=default.target

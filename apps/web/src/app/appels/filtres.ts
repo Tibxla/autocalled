@@ -52,7 +52,8 @@ export function lireFiltresAppels(p: Record<string, string | undefined>): { para
     ligne,
     version: p.version && FORME_UUID.test(p.version) ? p.version : undefined,
     periode,
-    avant: p.avant && FORME_UUID.test(p.avant) ? p.avant : undefined,
+    // Les rappels à faire suivent la date de rappel, pas le début d'appel : pas de curseur.
+    avant: p.rappels !== '1' && p.avant && FORME_UUID.test(p.avant) ? p.avant : undefined,
   };
   const filtres: FiltresAppels = { reels: true };
   if (q) filtres.recherche = q;

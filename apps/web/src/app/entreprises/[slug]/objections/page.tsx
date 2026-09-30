@@ -4,7 +4,7 @@ import { Page } from '@/components/ui';
 import { db } from '@/db';
 import { objections } from '@/db/schema';
 import { analyseEntreprise } from '@/lib/lecture';
-import { entrepriseParSlug } from '@/lib/pages';
+import { assistantePourLaPage, entrepriseParSlug } from '@/lib/pages';
 import { ListeObjections, type ChiffresObjection } from './liste-objections';
 
 export const metadata: Metadata = { title: 'Objections' };
@@ -19,6 +19,7 @@ export default async function PageObjections({
   const { slug } = await params;
   const { objection: demandee } = await searchParams;
   const entreprise = await entrepriseParSlug(slug);
+  const { nom } = await assistantePourLaPage();
   const [liste, analyse] = await Promise.all([
     db
       .select({
@@ -55,9 +56,10 @@ export default async function PageObjections({
   return (
     <Page largeur="lecture">
       <div className="grid max-w-[52rem] grid-cols-[minmax(0,1fr)] gap-6">
+        {/* Sous 640 px, la première phrase seule. */}
         <p className="max-w-[62ch] text-sm text-encre-3">
-          Mina traite chaque objection en quatre temps : creuser, reformuler, argumenter, contrôler (CRAC). Les bilans disent à quel
-          temps une objection a coincé.
+          {nom} traite chaque objection en quatre temps : creuser, reformuler, argumenter, contrôler (CRAC).{' '}
+          <span className="max-sm:hidden">Les bilans disent à quel temps une objection a coincé.</span>
         </p>
         <ListeObjections
           entrepriseId={entreprise.id}

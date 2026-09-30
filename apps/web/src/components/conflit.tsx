@@ -62,7 +62,8 @@ export function MessageConflit({
       ton="alerte"
       className={className}
       action={
-        <span className="flex flex-wrap gap-x-3">
+        // Sous 640 px, Recharger et Écraser s'empilent : deux effets opposés, jamais côte à côte sous le doigt.
+        <span className="flex flex-wrap gap-x-3 max-sm:grid max-sm:justify-items-start max-sm:gap-y-1">
           <Action ton="normal" onClick={onRecharger} enCours={rechargement} libelleEnCours="Rechargement…" disabled={rechargement || desactive}>
             Recharger
           </Action>

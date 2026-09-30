@@ -14,7 +14,13 @@ export default defineConfig({
     include: ['src/**/*.test.ts', 'mcp/**/*.test.ts'],
     globalSetup: ['./test/migrer.ts'],
     setupFiles: ['./test/garde-fous.ts'],
-    env: { DATABASE_URL: urlBaseDeTest(), PONT_SECRET: 'secret-de-test', PONT_URL: 'http://127.0.0.1:9' },
+    env: {
+      DATABASE_URL: urlBaseDeTest(),
+      PONT_SECRET: 'secret-de-test',
+      PONT_URL: 'http://127.0.0.1:9',
+      // Sel de la liste d'opposition (ADR 0013), propre aux tests.
+      SEL_OPPOSITION: 'sel-de-test-de-la-liste-d-opposition-0123456789',
+    },
     // Une seule base pour tous les fichiers : ils passent l'un après l'autre.
     fileParallelism: false,
   },

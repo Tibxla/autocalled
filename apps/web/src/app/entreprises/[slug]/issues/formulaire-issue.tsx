@@ -30,13 +30,13 @@ export function AjoutPrecision({ entrepriseId, issueSysteme, libelleIssue }: { e
           ref={bouton}
           ton="discret"
           aria-expanded={false}
-          aria-label={`Ajouter une issue personnalisée à « ${libelleIssue} »`}
+          aria-label={`Ajouter une précision à « ${libelleIssue} »`}
           onClick={() => {
             setAnnonce(null);
             setOuvert(true);
           }}
         >
-          Ajouter une issue personnalisée
+          Ajouter une précision
         </Action>
         <span role="status" className="text-sm text-encre-3">
           {annonce}
@@ -97,12 +97,12 @@ function FormulairePrecision({
   });
 
   return (
-    <form {...proprietes} aria-label={`Nouvelle issue personnalisée de « ${libelleIssue} »`} className="grid gap-1 pt-1">
+    <form {...proprietes} aria-label={`Nouvelle issue personnalisée de « ${libelleIssue} »`} className="grid gap-1.5 pt-1">
       <input type="hidden" name="issueSysteme" value={issueSysteme} />
+      <label htmlFor={id} className="text-sm font-medium text-encre">
+        Précision de « {libelleIssue} »
+      </label>
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-        <label htmlFor={id} className="sr-only">
-          Issue personnalisée de « {libelleIssue} »
-        </label>
         <Saisie
           ref={saisie}
           id={id}
@@ -116,7 +116,7 @@ function FormulairePrecision({
           aria-describedby={erreur ? `${id}-erreur` : undefined}
           className="max-w-[22rem] min-w-[12rem] flex-1"
         />
-        <div className="-mx-1.5 flex items-center gap-3">
+        <div className="-mx-1.5 flex items-center gap-3 pointer-coarse:mx-0">
           <Action type="submit" ton="fort" touche="Entrée" enCours={enCours} libelleEnCours="Ajout…" disabled={enCours}>
             Ajouter
           </Action>

@@ -1,6 +1,6 @@
 import 'server-only';
-import { ISSUES_SYSTEME, type IssueSysteme, type TourDeParole, statistiquesObjections, statistiquesParVersion } from '@autocalled/domain';
-import { type SQL, and, asc, desc, eq, ilike, isNotNull, ne, or, sql } from 'drizzle-orm';
+import { ISSUES_SYSTEME, type IssueSysteme, type RappelDate, type TourDeParole, statistiquesObjections, statistiquesParVersion } from '@autocalled/domain';
+import { type SQL, and, asc, desc, eq, gte, ilike, isNotNull, ne, or, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { appels, entreprises, issuesPersonnalisees, journalMcp, objections, prospects, rendezVous, versionsScript } from '@/db/schema';
 import { RAPPEL_A_FAIRE } from './rappels';
@@ -144,10 +144,12 @@ export async function listerAppels(f: FiltresAppels, limite: number, { avant }: 
  * Une page de la liste des appels, sans les colonnes lourdes (transcription seulement pendant une recherche,
  * pour l'extrait) : société, nombre d'étapes, libellé d'issue personnalisée et rendez-vous en une requête.
  * `suivant` est le curseur de la page suivante (plus ancienne), null en fin de liste.
+ * `ordre: 'rappel'` (vue « Rappels à faire ») : du rappel le plus ancien au plus tardif, les rappels sans date à la
+ * fin, sans curseur (le curseur suit l'ordre des débuts d'appel) ; `suivant` dit alors seulement qu'il en reste.
  */
-export async function pageAppels(f: FiltresAppels, { taille, avant }: { taille: number; avant?: string }) {
+export async function pageAppels(f: FiltresAppels, { taille, avant, ordre = 'debut' }: { taille: number; avant?: string; ordre?: 'debut' | 'rappel' }) {
   const conditions = conditionsAppels(f);
-  if (avant && FORME_UUID.test(avant)) conditions.push(plusAnciensQue(avant));
+  if (ordre === 'debut' && avant && FORME_UUID.test(avant)) conditions.push(plusAnciensQue(avant));
   const avecTranscription = Boolean(f.recherche?.trim());
   const lignes = await db
     .select({
@@ -168,6 +170,13 @@ export async function pageAppels(f: FiltresAppels, { taille, avant }: { taille: 
       prospect: prospects.nom,
       societe: prospects.societe,
       entreprise: entreprises.nom,
+      entrepriseSlug: entreprises.slug,
+      rappelLe: appels.rappelLe,
+      rappelQuand: sql<RappelDate | null>`${appels.bilan}->'rappelLe'`,
+      rappelTexte: sql<string | null>`${appels.bilan}->>'rappel'`,
+      versionScriptId: appels.versionScriptId,
+      campagneId: appels.campagneId,
+      assistanteNom: appels.assistanteNom,
       nombreEtapes: sql<number | null>`jsonb_array_length(${versionsScript.etapes})`.mapWith(Number),
       libellePerso: issuesPersonnalisees.libelle,
       rendezVous: sql<boolean>`exists (select 1 from ${rendezVous} where ${rendezVous.appelId} = ${appels.id})`,
@@ -178,7 +187,7 @@ export async function pageAppels(f: FiltresAppels, { taille, avant }: { taille: 
     .leftJoin(versionsScript, eq(versionsScript.id, appels.versionScriptId))
     .leftJoin(issuesPersonnalisees, sql`${ISSUE_CHOISIE} = 'perso:' || ${issuesPersonnalisees.id}::text`)
     .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(appels.debutLe), desc(appels.id))
+    .orderBy(...(ordre === 'rappel' ? [sql`${appels.rappelLe} asc nulls last`, asc(appels.debutLe), asc(appels.id)] : [desc(appels.debutLe), desc(appels.id)]))
     .limit(taille + 1);
   const page = lignes.slice(0, taille);
   return { lignes: page, suivant: lignes.length > taille ? (page.at(-1)?.id ?? null) : null };
@@ -265,6 +274,9 @@ export async function lireAppel(id: string) {
   return { appel, entreprise, prospect: prospect ?? null, version: version ?? null, objections: listeObjections, personnalisees, rendezVous: rdv ?? null };
 }
 
+/** Les versions d'agent ElevenLabs commencent par agtvrsn_ : aucune ne se confond avec ce repère. */
+const VERSION_AGENT_INCONNUE = 'inconnue';
+
 /**
  * Chiffres de l'écran d'analyse : par version de script (dans l'ordre des scripts, la plus récente d'abord)
  * et par objection. Les appels simulés sont exclus sauf demande, et toujours comptés à part.
@@ -272,7 +284,13 @@ export async function lireAppel(id: string) {
 export async function analyseEntreprise(entrepriseId: string, avecSimules: boolean) {
   const [lignes, versions, listeObjections] = await Promise.all([
     db
-      .select({ ligne: appels.ligne, versionScriptId: appels.versionScriptId, issueSysteme: appels.issueSysteme, bilan: appels.bilan })
+      .select({
+        ligne: appels.ligne,
+        versionScriptId: appels.versionScriptId,
+        versionAgent: appels.versionAgent,
+        issueSysteme: appels.issueSysteme,
+        bilan: appels.bilan,
+      })
       .from(appels)
       .where(and(eq(appels.entrepriseId, entrepriseId), eq(appels.statut, 'termine'), isNotNull(appels.issueSysteme))),
     versionsDeLEntreprise(entrepriseId),
@@ -284,6 +302,7 @@ export async function analyseEntreprise(entrepriseId: string, avecSimules: boole
     .filter((l) => avecSimules || l.ligne !== 'simulation')
     .map((l) => ({
       versionScriptId: l.versionScriptId,
+      versionAgent: l.versionAgent,
       issueSysteme: l.issueSysteme as IssueSysteme,
       etapeAtteinte: l.bilan?.etapeAtteinte ?? 0,
       objections: l.bilan?.objections ?? [],
@@ -291,9 +310,15 @@ export async function analyseEntreprise(entrepriseId: string, avecSimules: boole
   const parVersion = statistiquesParVersion(retenus).sort(
     (a, b) => versions.findIndex((v) => v.id === a.versionScriptId) - versions.findIndex((v) => v.id === b.versionScriptId),
   );
+  // Mêmes chiffres, regroupés par configuration de l'assistante (version de l'agent ElevenLabs) : la mesure qui
+  // boucle un réglage du prompt. `versionScriptId` porte ici la version de l'agent, « inconnue » sans elle.
+  const parVersionAssistante = statistiquesParVersion(retenus.map((r) => ({ ...r, versionScriptId: r.versionAgent ?? VERSION_AGENT_INCONNUE }))).map(
+    ({ versionScriptId, ...chiffres }) => ({ versionAgent: versionScriptId === VERSION_AGENT_INCONNUE ? null : versionScriptId, ...chiffres }),
+  );
   return {
     simules,
     parVersion,
+    parVersionAssistante,
     parObjection: statistiquesObjections(retenus),
     libelleVersion: (id: string) => versions.find((v) => v.id === id)?.libelle ?? 'Version supprimée',
     libelleObjection: (id: string | null) =>
@@ -301,7 +326,7 @@ export async function analyseEntreprise(entrepriseId: string, avecSimules: boole
   };
 }
 
-/** Les derniers rendez-vous réservés par Mina, avec l'état de leur événement Google. */
+/** Les derniers rendez-vous réservés par l’assistante, avec l'état de leur événement Google. */
 export async function rendezVousRecents(limite = 20) {
   return db
     .select({ rdv: rendezVous, prospect: prospects.nom, appelId: appels.id })
@@ -312,7 +337,49 @@ export async function rendezVousRecents(limite = 20) {
     .limit(limite);
 }
 
-/** Les derniers appels d'outils du serveur MCP (ADR 0009), du plus récent au plus ancien. */
-export async function journalMcpRecent(limite = 30) {
-  return db.select().from(journalMcp).orderBy(desc(journalMcp.le)).limit(limite);
+/** Les derniers appels d'outils du serveur MCP (ADR 0009), du plus récent au plus ancien : d'un outil, d'un résultat, depuis une date. */
+export async function journalMcpRecent(
+  limite = 30,
+  filtres: { outil?: string; resultat?: 'ok' | 'refus' | 'erreur' | 'confirmation-demandee'; depuis?: Date } = {},
+) {
+  return db
+    .select()
+    .from(journalMcp)
+    .where(
+      and(
+        filtres.outil ? eq(journalMcp.outil, filtres.outil) : undefined,
+        filtres.resultat ? eq(journalMcp.resultat, filtres.resultat) : undefined,
+        filtres.depuis ? gte(journalMcp.le, filtres.depuis) : undefined,
+      ),
+    )
+    .orderBy(desc(journalMcp.le))
+    .limit(limite);
+}
+
+export const STATUTS_RENDEZ_VOUS = ['a-creer', 'cree', 'echec'] as const;
+
+/**
+ * Les rendez-vous, du plus tardif au plus ancien, par pages (`avant` : identifiant du dernier lu), d'une entreprise
+ * et d'un statut si demandé : un rendez-vous en échec ancien se retrouve ainsi pour être recréé.
+ */
+export async function pageRendezVous(f: { entrepriseId?: string; statut?: (typeof STATUTS_RENDEZ_VOUS)[number]; limite: number; avant?: string }) {
+  const lignes = await db
+    .select({ rdv: rendezVous, prospect: prospects.nom, prospectId: appels.prospectId, appelId: appels.id, entreprise: entreprises.slug })
+    .from(rendezVous)
+    .innerJoin(appels, eq(appels.id, rendezVous.appelId))
+    .innerJoin(entreprises, eq(entreprises.id, appels.entrepriseId))
+    .leftJoin(prospects, JOINTURE_PROSPECT)
+    .where(
+      and(
+        f.entrepriseId ? eq(appels.entrepriseId, f.entrepriseId) : undefined,
+        f.statut ? eq(rendezVous.statut, f.statut) : undefined,
+        f.avant && FORME_UUID.test(f.avant)
+          ? sql`(${rendezVous.debut}, ${rendezVous.id}) < (select r.debut, r.id from rendez_vous r where r.id = ${f.avant})`
+          : undefined,
+      ),
+    )
+    .orderBy(desc(rendezVous.debut), desc(rendezVous.id))
+    .limit(f.limite + 1);
+  const page = lignes.slice(0, f.limite);
+  return { lignes: page, suivant: lignes.length > f.limite ? (page.at(-1)?.rdv.id ?? null) : null };
 }

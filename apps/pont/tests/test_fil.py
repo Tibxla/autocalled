@@ -50,7 +50,8 @@ class Fil(unittest.TestCase):
             appel.pont.niveaux.ajouter(voix, voix, COMPENSATION_MINA_DB)
             time.sleep(0.2)
             appel.evenements.append({"type": "tour", "role": "agent", "texte": "Bonjour", "t": 2})
-            appel.evenements.append({"type": "etat", "etat": "termine", "t": 3})
+            appel.evenements.append({"type": "etape", "numero": 2, "t": 3})
+            appel.evenements.append({"type": "etat", "etat": "termine", "t": 4})
             appel._fini.set()
 
         threading.Thread(target=produire, daemon=True).start()
@@ -68,7 +69,9 @@ class Fil(unittest.TestCase):
         lot = json.loads(niveaux[0].removeprefix("data: "))
         self.assertEqual(len(lot["mina"]), 2)
         numerotes = [m.split("\n")[0] for m in messages if m.startswith("id:")]
-        self.assertEqual(numerotes, ["id: 1", "id: 2", "id: 3"])
+        self.assertEqual(numerotes, ["id: 1", "id: 2", "id: 3", "id: 4"])
+        etape = next(m for m in messages if m.startswith("id: 3"))
+        self.assertEqual(json.loads(etape.split("\n")[1].removeprefix("data: ")), {"type": "etape", "numero": 2, "t": 3})
 
 
 if __name__ == "__main__":

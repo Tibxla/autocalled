@@ -1,0 +1,20 @@
+# Durée de conservation (ADR 0014) : purge les données personnelles des appels passés DUREE_CONSERVATION_MOIS
+# (enregistrements, transcriptions, texte des bilans) et le journal MCP ancien. Lancé par autocalled-purge.timer.
+# Installation : scripts/installer-services.sh. À la main : systemctl --user start autocalled-purge.service
+[Unit]
+Description=Autocalled, purge des données des appels passés la durée de conservation
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Même copie que l'interface : le dossier de données (data/ à la racine, ou DOSSIER_DONNEES) est le sien.
+WorkingDirectory=%h/projects/autocalled/apps/web
+Environment=NODE_ENV=production
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/env node --env-file=../../.env --conditions=react-server --import ./scripts/resolution.ts scripts/purger.ts
+# Supprime des fichiers et des lignes : au seul compte du service, sans élévation (sudo, setuid), et jamais plus d'une heure.
+UMask=0077
+NoNewPrivileges=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+TimeoutStartSec=1h

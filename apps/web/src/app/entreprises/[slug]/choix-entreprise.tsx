@@ -12,7 +12,8 @@ const ONGLETS_PARTAGES = new Set(['scripts', 'objections', 'prospects', 'campagn
 /**
  * Passer d'une entreprise à l'autre sans revenir à la liste, en gardant l'onglet ouvert : depuis l'analyse
  * d'une entreprise, on arrive sur l'analyse de l'autre. Un details sans habillage de bouton ; Échap et un
- * clic ailleurs le referment.
+ * clic ailleurs le referment. Sous 640 px, la liste s'accroche à la rangée du titre (layout.tsx) et en prend la
+ * largeur : accrochée au chevron, qui suit le nom, elle sortait de l'écran.
  */
 export function ChoixEntreprise({ slug, autres }: { slug: string; autres: { slug: string; nom: string }[] }) {
   const chemin = usePathname();
@@ -39,7 +40,7 @@ export function ChoixEntreprise({ slug, autres }: { slug: string; autres: { slug
   }, [ouvert]);
 
   return (
-    <details ref={racine} open={ouvert} onToggle={(e) => setOuvert(e.currentTarget.open)} className="relative">
+    <details ref={racine} open={ouvert} onToggle={(e) => setOuvert(e.currentTarget.open)} className="sm:relative">
       <summary
         aria-label="Changer d’entreprise"
         className="grid size-8 cursor-pointer list-none place-items-center rounded-[4px] text-encre-3 transition-colors duration-150 hover:text-encre pointer-coarse:size-11 [&::-webkit-details-marker]:hidden"
@@ -48,14 +49,14 @@ export function ChoixEntreprise({ slug, autres }: { slug: string; autres: { slug
       </summary>
       <ul
         aria-label="Autres entreprises"
-        className="absolute top-full left-0 z-20 mt-1 max-h-[min(60vh,24rem)] w-max max-w-[min(22rem,calc(100vw-2rem))] min-w-[14rem] overflow-y-auto rounded-md border border-filet-2 bg-surface py-1"
+        className="absolute top-full left-0 z-20 mt-1 max-h-[min(60vh,24rem)] w-max max-w-[min(22rem,calc(100vw-2rem))] min-w-[14rem] max-sm:right-0 max-sm:w-auto max-sm:max-w-none overflow-y-auto rounded-md border border-filet-2 bg-surface py-1"
       >
         {autres.map((e) => (
           <li key={e.slug}>
             <Link
               href={`/entreprises/${e.slug}${suffixe}`}
               onClick={() => setOuvert(false)}
-              className="block truncate px-3 py-2 text-md text-encre-2 hover:bg-survol hover:text-encre focus-interne"
+              className="block truncate px-3 py-2 text-md text-encre-2 hover:bg-survol hover:text-encre focus-interne pointer-coarse:py-3 pointer-coarse:active:bg-survol"
             >
               {e.nom}
             </Link>

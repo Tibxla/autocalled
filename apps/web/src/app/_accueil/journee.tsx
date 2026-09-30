@@ -1,12 +1,13 @@
 'use client';
 
 import { LIBELLES_ISSUES } from '@autocalled/domain';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { memo, useMemo, useRef, useState } from 'react';
 import { Action, LienAction } from '@/components/action';
+import { useNomAssistante } from '@/components/assistante';
 import { NavigationListe } from '@/components/clavier';
 import { useLigne } from '@/components/etat-ligne-telephone';
+import { LienTexte } from '@/components/lien-texte';
 import { dateCourte, duree, etatAppel, heure, LIBELLE_NON_COMPOSE, LIGNES_COURTES, prenom, type EtatAppelAffiche } from '@/components/format-appel';
 import {
   Cellule,
@@ -37,6 +38,8 @@ import { useMinute } from './minute';
 
 const COLONNES = '52px 230px 130px 200px minmax(0,1fr) 44px';
 const DIX_MINUTES = 10 * 60 * 1000;
+/** Sous 640 px, sans filtre : les dix derniers appels, puis « Tous les appels du jour » vers la page Appels. */
+const LIGNES_MOBILE = 10;
 
 const TONS: Record<EtatAppelAffiche['ton'], string> = {
   antenne: 'text-antenne',
@@ -215,7 +218,17 @@ export function Journee({
                 <span className="flex flex-wrap items-center gap-x-1 pb-1.5">
                   <span className="font-mono">{visibles.length}</span> {pluriel(visibles.length, 'appel', 'appels')} sur{' '}
                   <span className="font-mono">{totalVue}</span>
-                  {serveurApplique ? ' · transcriptions comprises' : texte.trim().length >= 3 ? ' · Entrée pour chercher aussi dans les transcriptions' : ''}
+                  {serveurApplique ? (
+                    ' · transcriptions comprises'
+                  ) : texte.trim().length >= 3 ? (
+                    <>
+                      {' · '}
+                      <span className="pointer-coarse:hidden">Entrée pour chercher aussi dans les transcriptions</span>
+                      <span className="hidden pointer-coarse:inline">Valide la recherche pour chercher aussi dans les transcriptions</span>
+                    </>
+                  ) : (
+                    ''
+                  )}
                   {' · '}
                   <Action ton="discret" className="-ml-1.5 h-7" onClick={effacer}>
                     Effacer
@@ -261,9 +274,10 @@ export function Journee({
                       <CelluleEnTete align="droite">Durée</CelluleEnTete>
                     </EnTeteTable>
                     <div role="rowgroup">
-                      {visibles.map((a) => (
+                      {visibles.map((a, i) => (
                         <LigneAppel
                           key={a.id}
+                          masqueeMobile={!filtreActif && i >= LIGNES_MOBILE}
                           appel={a}
                           vivant={a.id === idVivant}
                           ligneRelevee={ligneRelevee}
@@ -276,6 +290,13 @@ export function Journee({
                 </div>
               </NavigationListe>
             )}
+            {!filtreActif && visibles.length > LIGNES_MOBILE ? (
+              <p className="pt-2 sm:hidden">
+                <LienTexte isole href="/appels?periode=aujourdhui" className="text-md text-encre-2">
+                  Tous les appels du jour ({comptes.tous})
+                </LienTexte>
+              </p>
+            ) : null}
           </>
         )}
       </section>
@@ -321,14 +342,14 @@ function EnTeteJournee({ appels, campagnes }: { appels: AppelDuJour[]; campagnes
             const statut = STATUTS[c.statut];
             return (
               <li key={c.id}>
-                <Link href={`/campagnes/${c.id}`} className="decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline">
+                <LienTexte href={`/campagnes/${c.id}`} className="hover:text-encre-2">
                   Campagne du <span className="font-mono">{dateCourte(c.creeLe).split(' ')[0]}</span> · {c.entreprise} · {c.version} ·{' '}
                   {LIGNES_COURTES[c.ligne] ?? c.ligne} ·{' '}
                   <span className="font-mono">
                     {c.comptes.traites}/{c.comptes.total}
                   </span>
                   {'\u00a0'}traités · <span className={statut.classe}>{statut.libelle}</span>
-                </Link>
+                </LienTexte>
               </li>
             );
           })}
@@ -455,13 +476,18 @@ const LigneAppel = memo(function LigneAppel({
   ligneRelevee,
   maintenant,
   extrait,
+  masqueeMobile,
 }: {
+  /** Au-delà des dix premières lignes, sans filtre : masquée sous 640 px. */
+  masqueeMobile: boolean;
   appel: AppelDuJour;
   vivant: boolean;
   ligneRelevee: boolean;
   maintenant: number;
   extrait: ResultatRecherche['extrait'];
 }) {
+  // L'accueil ne lit pas le nom figé sur chaque appel : les répliques de l'assistante portent son nom actuel.
+  const nomAssistante = useNomAssistante();
   // Avant le premier relevé de la ligne, un appel téléphone ouvert depuis peu n'est ni vivant ni « resté ouvert ».
   const enAttente = !vivant && !ligneRelevee && a.statut === 'en-cours' && a.ligne === 'bluetooth' && maintenant - Date.parse(a.debutLe) < DIX_MINUTES;
   const etat: EtatAppelAffiche = vivant
@@ -479,14 +505,14 @@ const LigneAppel = memo(function LigneAppel({
           : vivant
             ? 'vivant'
             : 'sans-bilan';
-  const qui = extrait ? (extrait.role === 'agent' ? 'Mina' : prenom(a.prospect)) : '';
+  const qui = extrait ? (extrait.role === 'agent' ? nomAssistante : prenom(a.prospect)) : '';
   // Un appel non composé : l'erreur de la ligne, précédée de ce qu'elle veut dire pour l'opérateur.
   const detail = etat.detail ? (etat.cle === 'pas-parti' ? `La ligne n’a pas composé : ${etat.detail}` : etat.detail) : '';
   const resume = extrait ? `${qui} : ${extrait.avant}${extrait.terme}${extrait.apres}` : (a.resume ?? detail);
   const lieu = [a.prospect, a.societe].filter(Boolean).join(' · ');
 
   return (
-    <LigneTable id={`appel-${a.id}`} etat={vivant ? 'vivante' : 'normale'} className="data-survol:bg-survol">
+    <LigneTable id={`appel-${a.id}`} etat={vivant ? 'vivante' : 'normale'} className={`data-survol:bg-survol ${masqueeMobile ? 'max-sm:hidden' : ''}`}>
       <Cellule mono className="max-sm:order-1 max-sm:w-11">
         {heure(a.debutLe)}
       </Cellule>
@@ -502,9 +528,8 @@ const LigneAppel = memo(function LigneAppel({
       </Cellule>
       <Cellule etat className={`flex items-center gap-2 max-sm:order-4 max-sm:ml-14 max-sm:max-w-[55%] ${TONS[etat.ton]}`}>
         <GlypheEtape etape={a.etapeAtteinte} nombre={a.nombreEtapes} etat={glyphe} rendezVous={etat.ton === 'encre' && etat.cle === 'issue'} />
-        <span className="truncate" title={etat.detail}>
-          {etat.libelle}
-        </span>
+        {/* Le détail (erreur de la ligne) est dit dans la colonne du résumé, sur la seconde rangée sous 640 px. */}
+        <span className="truncate">{etat.libelle}</span>
       </Cellule>
       <Cellule attenuee tronquee titre={resume} className="max-sm:order-5 max-sm:flex-1">
         {extrait ? (

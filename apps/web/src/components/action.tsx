@@ -4,18 +4,33 @@ import Link from 'next/link';
 import { useCallback, useRef, type ComponentProps, type Ref } from 'react';
 import { toucheAria, useRaccourci, type GroupeRaccourci } from './clavier';
 import { Touches } from './touche';
+import {
+  classesElement,
+  formeDe,
+  SOULIGNE,
+  SOULIGNE_TEXTE,
+  type FormeAction,
+  type TonAction,
+} from './classes-action';
+export { classesAction, type FormeAction, type TonAction } from './classes-action';
 
 /**
  * Actions en texte précédées de leur touche : jamais de fond plein ni de contour (fin de la paire bouton
  * plein + bouton contour). Un raccourci ne fait que le même clic que la souris ; ce clic ouvre une
  * Confirmation quand le geste fait sonner un téléphone, détruit, révoque ou desserre un garde-fou.
+ *
+ * Au doigt (`pointer-coarse:`, seul critère tactile), la touche disparaît et l'action devient la touche :
+ * la forme « relief » pose le libellé dans le relief de `<kbd>` agrandi à 44 px, sur `surface` ; la forme
+ * « texte » reste un mot, souligné en permanence. Tout est derrière `pointer-coarse:` : au pointeur fin,
+ * rien ne change. Défaut : relief pour le ton fort, texte pour les autres ; le ton discret reste toujours du
+ * texte. Une seule action en relief par zone, sauf le pavé des commandes de ce qui vit (appel, campagne).
  */
-
-export type TonAction = 'fort' | 'normal' | 'discret' | 'alerte';
 
 interface OptionsAction {
   /** Défaut 'normal'. */
   ton?: TonAction;
+  /** Au doigt seulement. Défaut : 'relief' pour le ton fort, 'texte' sinon ; toujours 'texte' pour le ton discret. */
+  forme?: FormeAction;
   /** Texte de la Touche affichée devant le libellé (« E », « Espace », « Ctrl Entrée »). */
   touche?: string;
   /** event.key écouté ('e', ' ', 'n'…) : fait le même clic que la souris. */
@@ -28,24 +43,23 @@ interface OptionsAction {
   libelleEnCours?: string;
 }
 
-const BASE =
-  'group inline-flex h-9 items-center gap-2 rounded-[4px] px-1.5 text-left text-md whitespace-nowrap transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45 aria-disabled:cursor-not-allowed aria-disabled:opacity-45 pointer-coarse:h-11';
-
-const TONS: Record<TonAction, string> = {
-  fort: 'font-semibold text-encre',
-  normal: 'font-medium text-encre-2 hover:text-encre',
-  discret: 'text-encre-3 hover:text-encre-2',
-  alerte: 'font-medium text-alerte',
-};
-
-const SOULIGNE = 'decoration-souligne decoration-1 underline-offset-4 group-hover:underline group-disabled:no-underline';
-
-function Libelle({ children, enCours, libelleEnCours }: { children: React.ReactNode; enCours?: boolean; libelleEnCours?: string }) {
-  if (!libelleEnCours) return <span className={SOULIGNE}>{children}</span>;
+function Libelle({
+  children,
+  enCours,
+  libelleEnCours,
+  forme,
+}: {
+  children: React.ReactNode;
+  enCours?: boolean;
+  libelleEnCours?: string;
+  forme: FormeAction;
+}) {
+  const souligne = forme === 'texte' ? SOULIGNE_TEXTE : SOULIGNE;
+  if (!libelleEnCours) return <span className={souligne}>{children}</span>;
   // Les deux libellés superposés : la largeur ne bouge pas pendant l'envoi.
   return (
     <span className="grid *:col-start-1 *:row-start-1">
-      <span className={`${SOULIGNE} ${enCours ? 'invisible' : ''}`} aria-hidden={enCours || undefined}>
+      <span className={`${souligne} ${enCours ? 'invisible' : ''}`} aria-hidden={enCours || undefined}>
         {children}
       </span>
       <span className={enCours ? '' : 'invisible'} aria-hidden={!enCours || undefined}>
@@ -61,6 +75,7 @@ function libelleAide(libelle: string | undefined, children: React.ReactNode, rac
 
 export function Action({
   ton = 'normal',
+  forme,
   touche,
   raccourci,
   groupeRaccourci,
@@ -74,6 +89,7 @@ export function Action({
   ref,
   ...props
 }: ComponentProps<'button'> & OptionsAction) {
+  const f = formeDe(ton, forme);
   const bouton = useRef<HTMLButtonElement | null>(null);
   const attacher = useCallback(
     (noeud: HTMLButtonElement | null) => {
@@ -101,11 +117,11 @@ export function Action({
       disabled={disabled}
       aria-busy={enCours || undefined}
       aria-keyshortcuts={raccourci ? toucheAria(raccourci) : undefined}
-      className={`${BASE} ${TONS[ton]} ${className}`}
+      className={`${classesElement(ton, f)} ${className}`}
       {...props}
     >
       {touche ? <Touches touche={touche} forte={ton === 'fort'} /> : null}
-      <Libelle enCours={enCours} {...(libelleEnCours ? { libelleEnCours } : {})}>
+      <Libelle forme={f} enCours={enCours} {...(libelleEnCours ? { libelleEnCours } : {})}>
         {children}
       </Libelle>
     </button>
@@ -114,6 +130,7 @@ export function Action({
 
 export function LienAction({
   ton = 'normal',
+  forme,
   touche,
   raccourci,
   groupeRaccourci,
@@ -123,6 +140,7 @@ export function LienAction({
   ref,
   ...props
 }: ComponentProps<typeof Link> & Omit<OptionsAction, 'enCours' | 'libelleEnCours'>) {
+  const f = formeDe(ton, forme);
   const lien = useRef<HTMLAnchorElement | null>(null);
   const externe = ref as Ref<HTMLAnchorElement> | undefined;
   const attacher = useCallback(
@@ -147,11 +165,11 @@ export function LienAction({
     <Link
       ref={attacher}
       aria-keyshortcuts={raccourci ? toucheAria(raccourci) : undefined}
-      className={`${BASE} ${TONS[ton]} ${className}`}
+      className={`${classesElement(ton, f)} ${className}`}
       {...props}
     >
       {touche ? <Touches touche={touche} forte={ton === 'fort'} /> : null}
-      <Libelle>{children}</Libelle>
+      <Libelle forme={f}>{children}</Libelle>
     </Link>
   );
 }

@@ -13,6 +13,7 @@ import {
   numeroMasque,
   prenom,
   quandRappeler,
+  rappelEnRetard,
 } from './format-appel';
 
 describe('heure de Paris', () => {
@@ -172,5 +173,26 @@ describe('quandRappeler', () => {
 
   it('sans précision connue, donne l’heure de l’instant', () => {
     expect(quandRappeler('2026-09-29T12:30:00Z', null, maintenant)).toBe('aujourd’hui à 14:30');
+  });
+});
+
+describe('rappelEnRetard', () => {
+  // 29/09 à 20:00, heure de Paris.
+  const soir = new Date('2026-09-29T18:00:00Z');
+  const matin = new Date('2026-09-29T08:00:00Z');
+  it('un jour passé est en retard, un jour à venir ne l’est pas', () => {
+    expect(rappelEnRetard('2026-09-28T07:00:00Z', { heure: null, moment: 'matin' }, matin)).toBe(true);
+    expect(rappelEnRetard('2026-09-30T07:00:00Z', { heure: null, moment: 'matin' }, soir)).toBe(false);
+  });
+  it('le jour même : l’heure dite dépassée, le matin après 12 h, l’après-midi après 18 h', () => {
+    expect(rappelEnRetard('2026-09-29T09:00:00Z', { heure: '11:00', moment: null }, soir)).toBe(true);
+    expect(rappelEnRetard('2026-09-29T09:00:00Z', { heure: '11:00', moment: null }, matin)).toBe(false);
+    expect(rappelEnRetard('2026-09-29T07:00:00Z', { heure: null, moment: 'matin' }, matin)).toBe(false);
+    expect(rappelEnRetard('2026-09-29T07:00:00Z', { heure: null, moment: 'matin' }, new Date('2026-09-29T10:00:00Z'))).toBe(true);
+    expect(rappelEnRetard('2026-09-29T12:00:00Z', { heure: null, moment: 'apres-midi' }, new Date('2026-09-29T15:59:00Z'))).toBe(false);
+    expect(rappelEnRetard('2026-09-29T12:00:00Z', { heure: null, moment: 'apres-midi' }, soir)).toBe(true);
+  });
+  it('un rappel daté du jour seul ne l’est qu’au lendemain', () => {
+    expect(rappelEnRetard('2026-09-29T07:00:00Z', { heure: null, moment: null }, soir)).toBe(false);
   });
 });

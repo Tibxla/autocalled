@@ -9,7 +9,7 @@ export default function EntrepriseIntrouvable() {
     <div className="grid max-w-[60ch] justify-items-start gap-2 pt-8">
       <h1 className="text-xl font-semibold tracking-[-0.01em]">Aucune entreprise à cette adresse.</h1>
       <p className="text-base text-encre-2">Le lien est peut-être ancien, ou l’entreprise a changé de nom.</p>
-      <div className="-mx-1.5 flex flex-wrap gap-x-4 pt-2">
+      <div className="-mx-1.5 flex flex-wrap gap-x-4 pt-2 pointer-coarse:mx-0">
         <LienAction href="/entreprises" ton="fort">
           Voir les entreprises
         </LienAction>

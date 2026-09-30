@@ -2,6 +2,8 @@
 
 import type { PlageHoraire } from '@autocalled/domain';
 import { useState } from 'react';
+import { NomDeLAssistante, useNomAssistante } from '@/components/assistante';
+import { BarreActions } from '@/components/barre-actions';
 import { useRaccourci } from '@/components/clavier';
 import { ChampConnu, MessageConflit, useRechargement } from '@/components/conflit';
 import { Action, Champ, Compteur, Message, Saisie, Selection, TitreSection, ZoneTexte } from '@/components/ui';
@@ -18,7 +20,7 @@ const HEURES = Array.from({ length: 31 }, (_, i) => {
 });
 
 /** Limites de lib/schemas.ts (ficheSchema), affichées par les compteurs. */
-const LIMITES = { offre: 400, cible: 400, arguments: 1200, prixConsigne: 400, interdits: 600 } as const;
+const LIMITES = { offre: 400, cible: 400, arguments: 1200, prixConsigne: 400, interdits: 600, complements: 1500 } as const;
 type ChampLimite = keyof typeof LIMITES;
 
 /** Nom de chaque champ dans le message de refus, dans l'ordre de la page, avec l'id qui reçoit le focus. */
@@ -29,6 +31,7 @@ const CHAMPS: { cle: string; libelle: string; id: string }[] = [
   { cle: 'arguments', libelle: 'Ce qui fait la différence', id: 'arguments' },
   { cle: 'prixConsigne', libelle: 'Consigne sur le prix', id: 'prixConsigne' },
   { cle: 'interdits', libelle: 'À ne jamais dire ni promettre', id: 'interdits' },
+  { cle: 'complements', libelle: 'Informations complémentaires', id: 'complements' },
   { cle: 'interlocuteur', libelle: 'Avec qui', id: 'interlocuteur' },
   { cle: 'dureeRendezVousMinutes', libelle: 'Durée', id: 'dureeRendezVousMinutes' },
   { cle: 'delaiMinimumHeures', libelle: 'Pas avant', id: 'delaiMinimumHeures' },
@@ -44,6 +47,7 @@ interface Fiche {
   arguments: string;
   prixConsigne: string;
   interdits: string;
+  complements: string;
   dureeRendezVousMinutes: number;
   interlocuteur: string;
   plagesRendezVous: PlageHoraire[];
@@ -88,7 +92,12 @@ const LISTE_FR = new Intl.ListFormat('fr-FR', { type: 'conjunction' });
 function ResumePlages({ plages, fuseau }: { plages: Plage[]; fuseau: string }) {
   const actifs = plages.flatMap((p, i) => (p.actif ? [{ ...p, jour: i }] : []));
   const zone = fuseau === 'Europe/Paris' ? 'heure de Paris' : `heure de ${(fuseau.split('/').at(-1) ?? fuseau).replaceAll('_', ' ')}`;
-  if (actifs.length === 0) return <>Aucun jour coché : Mina ne proposera aucun créneau.</>;
+  if (actifs.length === 0)
+    return (
+      <>
+        Aucun jour coché : <NomDeLAssistante /> ne proposera aucun créneau.
+      </>
+    );
 
   const groupes = [...Map.groupBy(actifs, (p) => `${p.debut}-${p.fin}`).values()];
   const heures = (p: Plage) => (
@@ -139,6 +148,7 @@ function Formulaire({ fiche, recharger, rechargement }: { fiche: Fiche; recharge
     arguments: fiche.arguments.length,
     prixConsigne: fiche.prixConsigne.length,
     interdits: fiche.interdits.length,
+    complements: fiche.complements.length,
   }));
   const suivre = (cle: ChampLimite) => (ev: React.FormEvent<HTMLTextAreaElement>) => {
     const n = ev.currentTarget.value.length;
@@ -146,8 +156,9 @@ function Formulaire({ fiche, recharger, rechargement }: { fiche: Fiche; recharge
   };
   const compteur = (cle: ChampLimite) => <Compteur valeur={longueurs[cle]} max={LIMITES[cle]} />;
 
-  // L'aide des visios cite la valeur saisie : ce que Mina annoncera vraiment.
+  // L'aide des visios cite la valeur saisie : ce que l'assistante annoncera vraiment.
   const [interlocuteur, setInterlocuteur] = useState(fiche.interlocuteur);
+  const nomAssistante = useNomAssistante();
 
   const [plages, setPlages] = useState<Plage[]>(() =>
     NOMS_JOURS.map((_, i) => {
@@ -187,22 +198,49 @@ function Formulaire({ fiche, recharger, rechargement }: { fiche: Fiche; recharge
   };
 
   const statut = enCours ? null : modifie ? (
-    <span className="text-encre-2">Modifications non enregistrées</span>
+    <span className="text-encre-2">
+      <span className="sm:hidden">Non enregistré</span>
+      <span className="max-sm:hidden">Modifications non enregistrées</span>
+    </span>
   ) : etat?.ok ? (
     <span className="text-encre-3">{etat.message ?? 'Fiche enregistrée.'}</span>
   ) : null;
 
+  const messageConflit =
+    etat?.conflit && etat.message ? (
+      <MessageConflit message={etat.message} jeton={etat.conflit.jeton} onRecharger={recharger} rechargement={rechargement} desactive={enCours} />
+    ) : etat && !etat.ok && etat.message ? (
+      <Message ton="alerte">{etat.message}</Message>
+    ) : null;
+  const messages =
+    fautifs.length > 0 || messageConflit ? (
+      <>
+        {fautifs.length > 0 ? (
+          <Message ton="alerte">
+            {fautifs.length} {fautifs.length > 1 ? 'champs à corriger' : 'champ à corriger'} :{' '}
+            {fautifs.map((c, i) => (
+              <span key={c.cle}>
+                {i > 0 ? ', ' : ''}
+                <a href={`#${c.id}`} onClick={allerAuChamp(c.id)} className="underline underline-offset-4">
+                  {c.libelle}
+                </a>
+              </span>
+            ))}
+          </Message>
+        ) : null}
+        {messageConflit}
+      </>
+    ) : null;
+
   return (
-    // Marge basse de défilement égale à la hauteur de la barre collée (--barre) : un champ atteint au clavier
-    // s'arrête au-dessus de « Enregistrer la fiche », jamais dessous.
-    <form
-      {...proprietes}
-      aria-label="Fiche de l’entreprise"
-      className="grid gap-12 [--barre:4rem] [&_:is(input,textarea,select,summary)]:scroll-mb-(--barre)"
-    >
+    // Un champ atteint au clavier s'arrête au-dessus de la barre d'actions : règle `form:has(.barre-actions)` de globals.css.
+    <form {...proprietes} aria-label="Fiche de l’entreprise" className="grid gap-12">
       <ChampConnu valeur={fiche.modifieLe.toISOString()} />
       <section aria-labelledby="titre-mina" className="grid max-w-[44rem] gap-6">
-        <TitreSection id="titre-mina">Ce que Mina dit de l’entreprise</TitreSection>
+        <TitreSection id="titre-mina">Ce que {nomAssistante} dit de l’entreprise</TitreSection>
+        <p className="max-w-[62ch] text-sm text-encre-2">
+          Un champ laissé vide n’est pas transmis : {nomAssistante} n’en parle pas et n’invente rien.
+        </p>
         <Champ libelle="Nom" htmlFor="nom" erreur={e.nom}>
           <Saisie id="nom" name="nom" defaultValue={fiche.nom} required maxLength={80} autoComplete="off" />
         </Champ>
@@ -216,7 +254,7 @@ function Formulaire({ fiche, recharger, rechargement }: { fiche: Fiche; recharge
           libelle="Ce qui fait la différence"
           htmlFor="arguments"
           erreur={e.arguments}
-          aide="Trois ou quatre arguments. Mina en choisit un selon ce que dit le prospect."
+          aide={`Trois ou quatre arguments. ${nomAssistante} en choisit un selon ce que dit le prospect.`}
           complement={compteur('arguments')}
         >
           <ZoneTexte id="arguments" name="arguments" defaultValue={fiche.arguments} onInput={suivre('arguments')} />
@@ -225,13 +263,22 @@ function Formulaire({ fiche, recharger, rechargement }: { fiche: Fiche; recharge
           libelle="Consigne sur le prix"
           htmlFor="prixConsigne"
           erreur={e.prixConsigne}
-          aide="Ce que Mina a le droit d’en dire au téléphone."
+          aide={`Ce que ${nomAssistante} a le droit d’en dire au téléphone.`}
           complement={compteur('prixConsigne')}
         >
           <ZoneTexte id="prixConsigne" name="prixConsigne" defaultValue={fiche.prixConsigne} onInput={suivre('prixConsigne')} />
         </Champ>
         <Champ libelle="À ne jamais dire ni promettre" htmlFor="interdits" erreur={e.interdits} complement={compteur('interdits')}>
           <ZoneTexte id="interdits" name="interdits" defaultValue={fiche.interdits} onInput={suivre('interdits')} />
+        </Champ>
+        <Champ
+          libelle="Informations complémentaires"
+          htmlFor="complements"
+          erreur={e.complements}
+          aide={`Ce que ${nomAssistante} peut dire si la conversation y mène, par exemple « Parking : gratuit devant le gîte ».`}
+          complement={compteur('complements')}
+        >
+          <ZoneTexte id="complements" name="complements" defaultValue={fiche.complements} onInput={suivre('complements')} />
         </Champ>
       </section>
 
@@ -243,8 +290,8 @@ function Formulaire({ fiche, recharger, rechargement }: { fiche: Fiche; recharge
           erreur={e.interlocuteur}
           aide={
             interlocuteur.trim()
-              ? `Mina l’annonce au prospect : « une visio avec ${interlocuteur.trim()} ».`
-              : 'Champ vide : Mina parlera d’une visio avec un membre de l’équipe.'
+              ? `${nomAssistante} l’annonce au prospect : « une visio avec ${interlocuteur.trim()} ».`
+              : `Champ vide : ${nomAssistante} parlera d’une visio avec un membre de l’équipe.`
           }
         >
           <Saisie
@@ -285,7 +332,7 @@ function Formulaire({ fiche, recharger, rechargement }: { fiche: Fiche; recharge
               const inversee = p.actif && p.debut >= p.fin;
               return (
                 <div key={jour} className={`flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-filet py-2 last:border-b-0 ${p.actif ? '' : 'text-encre-3'}`}>
-                  <label className="flex w-[7.5rem] items-center gap-2.5 text-md pointer-coarse:min-h-11">
+                  <label className="flex w-[7.5rem] items-center gap-2.5 text-md max-sm:w-24 pointer-coarse:min-h-11">
                     <input
                       id={`plage-${jour}`}
                       type="checkbox"
@@ -332,44 +379,12 @@ function Formulaire({ fiche, recharger, rechargement }: { fiche: Fiche; recharge
         </fieldset>
       </section>
 
-      {/* self-end : la barre garde la hauteur de son contenu au lieu de s'étirer sur sa rangée de grille. */}
-      <div className="sticky bottom-0 z-10 -mx-(--gouttiere) -mb-24 grid gap-2 self-end border-t border-filet bg-fond px-(--gouttiere) py-3 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        {fautifs.length > 0 ? (
-          <Message ton="alerte" className="max-w-[44rem]">
-            {fautifs.length} {fautifs.length > 1 ? 'champs à corriger' : 'champ à corriger'} :{' '}
-            {fautifs.map((c, i) => (
-              <span key={c.cle}>
-                {i > 0 ? ', ' : ''}
-                <a href={`#${c.id}`} onClick={allerAuChamp(c.id)} className="underline underline-offset-4">
-                  {c.libelle}
-                </a>
-              </span>
-            ))}
-          </Message>
-        ) : null}
-        {etat?.conflit && etat.message ? (
-          <MessageConflit
-            message={etat.message}
-            jeton={etat.conflit.jeton}
-            onRecharger={recharger}
-            rechargement={rechargement}
-            desactive={enCours}
-            className="max-w-[44rem]"
-          />
-        ) : etat && !etat.ok && etat.message ? (
-          <Message ton="alerte" className="max-w-[44rem]">
-            {etat.message}
-          </Message>
-        ) : null}
-        <div className="flex max-w-[44rem] flex-wrap items-center justify-between gap-x-6 gap-y-1">
-          <Action type="submit" ton="fort" touche="Ctrl Entrée" enCours={enCours} libelleEnCours="Enregistrement…" disabled={enCours} className="-ml-1.5">
-            Enregistrer la fiche
-          </Action>
-          <p role="status" className="text-sm">
-            {statut}
-          </p>
-        </div>
-      </div>
+      {/* Les rangées de la barre suivent la colonne du formulaire (44 rem) ; la barre, elle, va d'un bord à l'autre. */}
+      <BarreActions statut={statut} messages={messages} className="[&>div]:max-w-[44rem]">
+        <Action type="submit" ton="fort" touche="Ctrl Entrée" enCours={enCours} libelleEnCours="Enregistrement…" disabled={enCours} className="-ml-1.5">
+          Enregistrer la fiche
+        </Action>
+      </BarreActions>
     </form>
   );
 }

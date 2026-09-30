@@ -17,6 +17,7 @@ import {
   enregistrerCampagne,
   retirerProspect,
   sauterProspect,
+  supprimerCampagnePrete,
   terminerCampagne,
 } from './campagnes';
 import { basculerArchiveScript, creerScript } from './entreprises';
@@ -91,6 +92,9 @@ describe('Sauter', () => {
     await finDAppel(id);
     expect(numerosComposes()).toEqual(['+33639980001', '+33639980003']);
     expect((await lire(id)).entrees.find((e) => e.prospectId === 'marc')).toEqual({ prospectId: 'marc', etat: 'a-appeler', sauts: 1 });
+    // Chaque composition porte le premier message de l'assistante, et chaque appel le nom sous lequel elle parle.
+    expect(pont.compositions().map((r) => (r.corps as { premierMessage: string }).premierMessage)).toEqual(['Allô ?', 'Allô ?']);
+    expect((await db.select({ nom: appels.assistanteNom }).from(appels)).map((a) => a.nom)).toEqual(['Mina', 'Mina']);
   });
 
   it('refuse l’appel en cours, le dernier à appeler et une campagne terminée, en le disant', async () => {
@@ -269,5 +273,18 @@ describe('ligne navigateur', () => {
 
     expect(r).toEqual({ type: 'attente', raison: expect.stringContaining('La file a changé') });
     expect(await db.$count(appels)).toBe(0);
+  });
+});
+
+describe('supprimerCampagnePrete', () => {
+  it('supprime une campagne jamais lancée, refuse une campagne lancée', async () => {
+    const prete = await enregistrerCampagne(entrepriseId, { versionScriptId, ligne: 'simulation', prospects: ['julie'] });
+    const lancee = await enregistrerCampagne(entrepriseId, { versionScriptId, ligne: 'simulation', prospects: ['marc'] });
+    await db.update(campagnes).set({ statut: 'terminee' }).where(eq(campagnes.id, lancee));
+
+    expect(await supprimerCampagnePrete(prete)).toEqual({ ok: true });
+    expect(await supprimerCampagnePrete(lancee)).toMatchObject({ ok: false, raison: expect.stringContaining('Seule une campagne prête') });
+    expect(await supprimerCampagnePrete('pas-un-uuid')).toEqual({ ok: false, raison: 'Campagne introuvable.' });
+    expect((await db.select({ id: campagnes.id }).from(campagnes)).map((c) => c.id)).toEqual([lancee]);
   });
 });

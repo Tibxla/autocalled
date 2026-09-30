@@ -3,14 +3,19 @@
 import type { Autorisation, IssueSysteme } from '@autocalled/domain';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { nouvelleCampagne } from '@/app/campagnes/actions';
+import { useNomAssistante } from '@/components/assistante';
 import { PastilleAutorisation } from '@/components/pastille-autorisation';
 import { useFormulaire } from '@/components/use-formulaire';
+import { BarreActions } from '@/components/barre-actions';
 import { Action, Champ, EtatVide, Filtre, Filtres, LienAction, Message, Recherche, Selection, TitreSection } from '@/components/ui';
 import type { EtatFormulaire } from '@/lib/formulaire';
 
 /**
  * Création d'une campagne, en volet au-dessus de la liste (N). Rien ne sonne à la création : la campagne est
  * « Prête » et se lance depuis sa page, après un récapitulatif.
+ *
+ * Sous 640 px, la liste des prospects ne défile plus dans un cadre : la page défile, et « Créer » vit dans une
+ * barre d'actions collée en bas (BarreActions), avec le compte des cochés masqués par le filtre.
  */
 
 export interface ProspectCampagne {
@@ -59,9 +64,9 @@ function sansAccents(texte: string): string {
 }
 
 const LIGNES = [
-  { valeur: 'navigateur', libelle: 'Ligne navigateur', aide: 'tu joues chaque prospect' },
-  { valeur: 'simulation', libelle: 'Simulation', aide: 'un modèle joue les prospects' },
-  { valeur: 'bluetooth', libelle: 'Téléphone passerelle', aide: 'Mina appelle les vrais numéros' },
+  { valeur: 'navigateur', libelle: 'Ligne navigateur', aide: () => 'tu joues chaque prospect' },
+  { valeur: 'simulation', libelle: 'Simulation', aide: () => 'un modèle joue les prospects' },
+  { valeur: 'bluetooth', libelle: 'Téléphone passerelle', aide: (assistante: string) => `${assistante} appelle les vrais numéros` },
 ] as const;
 
 export function FormulaireCampagne({
@@ -75,6 +80,7 @@ export function FormulaireCampagne({
   prospects: ProspectCampagne[];
   focusAuMontage?: boolean;
 }) {
+  const nomAssistante = useNomAssistante();
   const { etat, enCours, proprietes } = useFormulaire<EtatFormulaire>(nouvelleCampagne.bind(null, entrepriseId), null);
   const [coches, setCoches] = useState<Set<string>>(() => new Set(prospects.filter(cocheParDefaut).map((p) => p.id)));
   const [filtre, setFiltre] = useState<CleFiltre | null>(null);
@@ -113,7 +119,7 @@ export function FormulaireCampagne({
     });
 
   return (
-    <form {...proprietes} aria-label="Nouvelle campagne" className="grid gap-6">
+    <form {...proprietes} aria-label="Nouvelle campagne" className="grid grid-cols-1 gap-6">
       <div className="grid grid-cols-1 items-start gap-6 sm:grid-cols-[minmax(0,18rem)_minmax(0,1fr)] sm:gap-10">
         <Champ libelle="Version de script" htmlFor="versionScriptId">
           <Selection ref={version} id="versionScriptId" name="versionScriptId" className="font-mono">
@@ -124,23 +130,26 @@ export function FormulaireCampagne({
             ))}
           </Selection>
         </Champ>
-        <fieldset className="grid gap-1">
+        <fieldset className="grid min-w-0 gap-1">
           <legend className="mb-1.5 text-sm font-medium">Ligne</legend>
+          {/* Bouton calé sur la première ligne : le libellé passe sur deux lignes en fenêtre étroite. */}
           {LIGNES.map((l, i) => (
-            <label key={l.valeur} className="flex min-h-7 cursor-pointer items-center gap-2.5 text-md pointer-coarse:min-h-11">
-              <input type="radio" name="ligne" value={l.valeur} defaultChecked={i === 0} className="size-4 accent-[var(--encre)]" />
+            <label key={l.valeur} className="flex min-h-7 cursor-pointer items-start gap-2.5 py-1 text-md pointer-coarse:min-h-11 pointer-coarse:py-3">
+              <input type="radio" name="ligne" value={l.valeur} defaultChecked={i === 0} className="mt-0.5 size-4 shrink-0 accent-[var(--encre)]" />
               <span>
                 <span className="font-medium">{l.libelle}</span>
-                <span className="text-encre-3"> : {l.aide}</span>
+                <span className="text-encre-3"> : {l.aide(nomAssistante)}</span>
               </span>
             </label>
           ))}
         </fieldset>
       </div>
 
-      <fieldset className="grid gap-3">
+      {/* min-w-0 : un fieldset prend la largeur de son contenu le plus large, la rangée de filtres qui défile. */}
+      <fieldset className="grid min-w-0 grid-cols-1 gap-3">
         <legend className="mb-1 text-sm font-medium">Prospects, appelés dans l’ordre alphabétique</legend>
-        <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
+        {/* Sous 640 px, la recherche en tête, pleine largeur, puis la rangée de filtres qui défile. */}
+        <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3 max-sm:grid max-sm:grid-cols-1">
           <Filtres libelle="Filtrer les prospects de la campagne">
             <Filtre actif={filtre === null} compte={prospects.length} onClick={() => setFiltre(null)}>
               Tous
@@ -151,7 +160,13 @@ export function FormulaireCampagne({
               </Filtre>
             ))}
           </Filtres>
-          <Recherche sansFormulaire instantane={setTexte} placeholder="Chercher un prospect" libelle="Chercher un prospect à ajouter" />
+          <Recherche
+            sansFormulaire
+            instantane={setTexte}
+            placeholder="Chercher un prospect"
+            libelle="Chercher un prospect à ajouter"
+            className="w-full max-sm:order-first sm:w-[300px]"
+          />
         </div>
         <div className="-mx-1.5 flex flex-wrap items-center gap-x-4">
           <Action ton="discret" disabled={cochables.length === 0} onClick={() => toutCocher(true)}>
@@ -169,7 +184,8 @@ export function FormulaireCampagne({
 
         {visibles.length === 0 ? <EtatVide forme="filtre" titre="Aucun prospect ne correspond." /> : null}
         {/* Les lignes filtrées restent dans le formulaire (hidden) : un prospect coché puis masqué part quand même. */}
-        <ul className="max-h-[60vh] overflow-y-auto border-t border-filet">
+        {/* Un cadre qui défile au bureau seulement : au doigt, jamais de défilement dans le défilement. */}
+        <ul className="border-t border-filet sm:max-h-[60vh] sm:overflow-y-auto">
           {prospects.map((p) => {
             const autorise = Boolean(p.autorisation?.autorise);
             return (
@@ -188,9 +204,15 @@ export function FormulaireCampagne({
                     onChange={() => basculer(p.id)}
                     className="size-4 shrink-0 accent-[var(--encre)]"
                   />
-                  <span className="min-w-0 flex-1 truncate">
-                    <span className={autorise ? 'font-medium' : ''}>{p.nom}</span>
-                    {p.societe ? <span className="text-encre-3"> · {p.societe}</span> : null}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">
+                      <span className={autorise ? 'font-medium' : ''}>{p.nom}</span>
+                      {p.societe ? <span className="text-encre-3"> · {p.societe}</span> : null}
+                    </span>
+                    {/* Sous 640 px, la dernière issue passe sous le nom. */}
+                    {autorise ? (
+                      <span className="block truncate text-sm text-encre-3 sm:hidden">{p.derniere ? p.derniere.libelle : 'Jamais appelé'}</span>
+                    ) : null}
                   </span>
                   {autorise ? (
                     <span className="shrink-0 text-sm text-encre-3 max-sm:hidden">{p.derniere ? p.derniere.libelle : 'Jamais appelé'}</span>
@@ -206,19 +228,37 @@ export function FormulaireCampagne({
         </ul>
       </fieldset>
 
-      {etat?.message ? <Message ton="alerte">{etat.message}</Message> : null}
-
-      <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-        <Action ton="fort" type="submit" disabled={coches.size === 0 || enCours} enCours={enCours} libelleEnCours="Création…">
-          Créer la campagne · {coches.size} prospect{coches.size > 1 ? 's' : ''}
+      {/* Dans un volet que la liste des campagnes suit : pas de marge négative de fin de page. */}
+      <BarreActions
+        className="mb-0!"
+        messages={etat?.message ? <Message ton="alerte">{etat.message}</Message> : null}
+        statut={
+          cochesMasques > 0 ? (
+            <span className="text-encre-2">
+              dont <span className="font-mono">{cochesMasques}</span> hors du filtre
+            </span>
+          ) : (
+            <span className="text-encre-3">
+              <span className="max-sm:hidden">Rien ne sonne avant que tu la lances.</span>
+              <span className="sm:hidden">Rien ne sonne ici.</span>
+            </span>
+          )
+        }
+      >
+        <Action
+          ton="fort"
+          type="submit"
+          className="-ml-1.5"
+          disabled={coches.size === 0 || enCours}
+          enCours={enCours}
+          libelleEnCours="Création…"
+          aria-label={`Créer la campagne : ${coches.size} prospect${coches.size > 1 ? 's' : ''}`}
+        >
+          <span className="max-sm:hidden">Créer la campagne · </span>
+          <span className="sm:hidden">Créer · </span>
+          {coches.size} prospect{coches.size > 1 ? 's' : ''}
         </Action>
-        {cochesMasques > 0 ? (
-          <span className="px-1.5 text-sm text-encre-2">
-            dont <span className="font-mono">{cochesMasques}</span> hors du filtre
-          </span>
-        ) : null}
-        <span className="px-1.5 text-sm text-encre-3">Rien ne sonne avant que tu la lances.</span>
-      </div>
+      </BarreActions>
     </form>
   );
 }

@@ -1,6 +1,7 @@
 import 'server-only';
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
+import { lireAssistante } from './assistante';
 import { trouverEntreprise, trouverProspect } from './donnees';
 
 /**
@@ -20,3 +21,6 @@ export const entrepriseParSlug = cache(async (slug: string) => (await lireEntrep
 export async function prospectParId(entrepriseId: string, id: string) {
   return (await trouverProspect(entrepriseId, id)) ?? notFound();
 }
+
+/** Le nom et le premier message de l'assistante, lus une seule fois par requête (layout, pages, métadonnées). */
+export const assistantePourLaPage = cache(lireAssistante);

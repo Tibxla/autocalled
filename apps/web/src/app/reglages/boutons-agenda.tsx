@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import { chrono } from '@/components/format-appel';
 import { useHorloge } from '@/components/horloge';
-import { Action } from '@/components/ui';
+import { Action, classesAction } from '@/components/ui';
 import type { ResultatAction } from '@/lib/formulaire';
 import { recreerEvenement, relireAgenda } from './actions';
 
@@ -12,7 +12,14 @@ import { recreerEvenement, relireAgenda } from './actions';
  * temps le bouton reste désactivé (plus de double lecture) et un chrono montre que ça avance ; à la fin, ce
  * que la lecture a donné, ou pourquoi elle a échoué.
  */
-export function BoutonRelire({ relire = relireAgenda }: { relire?: () => Promise<ResultatAction<{ plagesOccupees: number }>> }) {
+export function BoutonRelire({
+  relire = relireAgenda,
+  ton = 'fort',
+}: {
+  relire?: () => Promise<ResultatAction<{ plagesOccupees: number }>>;
+  /** Fort (défaut) : l'action principale de la zone Agenda ; normal quand « Connecter l'API Google Agenda » s'affiche. */
+  ton?: 'fort' | 'normal';
+}) {
   const [enCours, demarrer] = useTransition();
   const [debut, setDebut] = useState(0);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -22,9 +29,10 @@ export function BoutonRelire({ relire = relireAgenda }: { relire?: () => Promise
 
   return (
     <div className="grid gap-1">
-      <div className="-mx-1.5 flex flex-wrap items-center gap-x-3">
+      {/* En relief au doigt, l'enveloppe lâche le retrait qui aligne le texte. */}
+      <div className={`-mx-1.5 flex flex-wrap items-center gap-x-3 ${ton === 'fort' ? 'pointer-coarse:mx-0' : ''}`}>
         <Action
-          ton="normal"
+          ton={ton}
           disabled={enCours}
           enCours={enCours}
           libelleEnCours="Lecture de l’agenda…"
@@ -61,6 +69,19 @@ export function BoutonRelire({ relire = relireAgenda }: { relire?: () => Promise
         {fait}
       </p>
     </div>
+  );
+}
+
+/**
+ * « Connecter l'API Google Agenda » : un lien simple, jamais un <Link> (un préchargement ouvrirait la connexion
+ * OAuth). L'action principale de sa zone : ton fort, en relief au doigt. Composant client : classesAction vient
+ * d'un module client, qu'une page serveur ne peut pas appeler.
+ */
+export function LienConnecterGoogle() {
+  return (
+    <a href="/google/connexion" className={`-mx-1.5 justify-self-start ${classesAction('fort')}`}>
+      Connecter l’API Google Agenda
+    </a>
   );
 }
 

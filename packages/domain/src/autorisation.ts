@@ -19,9 +19,16 @@ export interface Consentement {
  */
 export type NumeroAutorise = NumeroE164 & { readonly __autorise: true };
 
+/**
+ * `numero-efface` : la personne a été effacée, son numéro est dans la liste d'opposition (plus aucun consentement ne
+ * vaut). `opposition-illisible` : la liste d'opposition ne se lit plus (sel absent ou changé) ; par prudence, aucun
+ * numéro n'est autorisé. Ces deux raisons viennent de l'application, qui seule connaît la liste.
+ */
+export type RaisonRefus = 'numero-invalide' | 'aucun-consentement' | 'consentement-revoque' | 'numero-efface' | 'opposition-illisible';
+
 export type Autorisation =
   | { autorise: true; numero: NumeroAutorise; consentement: Consentement }
-  | { autorise: false; raison: 'numero-invalide' | 'aucun-consentement' | 'consentement-revoque' };
+  | { autorise: false; raison: RaisonRefus };
 
 function estActif(consentement: Consentement, maintenant: Date): boolean {
   if (consentement.accordeLe > maintenant) return false;

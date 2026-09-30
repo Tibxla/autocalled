@@ -1,15 +1,17 @@
-import { and, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { heure, jourCourt } from '@/components/format-appel';
-import { EnTetePage, LigneDefinition, Message, Page, TitreSection } from '@/components/ui';
+import { EnTetePage, LIEN_TEXTE, LienAction, LigneDefinition, Message, Page, TitreSection } from '@/components/ui';
 import { db } from '@/db';
-import { appels, rendezVous } from '@/db/schema';
+import { appels, entreprises, prospects, rendezVous } from '@/db/schema';
 import { calendrierConfigure, etatAgenda } from '@/lib/agenda';
+import { derniereVersionAssistante } from '@/lib/assistante';
 import { clientGoogle, connexion } from '@/lib/google';
 import { journalMcpRecent, rendezVousRecents } from '@/lib/lecture';
+import { assistantePourLaPage } from '@/lib/pages';
 import { BoutonDeconnecter } from './bouton-deconnecter';
-import { BoutonRelire } from './boutons-agenda';
-import { JournalClaudeCode } from './journal-claude-code';
+import { BoutonRelire, LienConnecterGoogle } from './boutons-agenda';
+import { JournalClaudeCode, type LigneJournal } from './journal-claude-code';
 import { MessageGoogle } from './message-google';
 import { RendezVousMina } from './rendez-vous-mina';
 
@@ -34,7 +36,30 @@ function ilYA(minutes: number): string {
   return `il y a ${Math.floor(heures / 24)} jours`;
 }
 
+/** D'où vient la dernière configuration ElevenLabs consignée (versions_assistante). */
+const ORIGINE_CONFIGURATION = {
+  mcp: 'poussée par Claude Code',
+  cli: 'poussée en ligne de commande',
+  distante: 'rapatriée du tableau de bord ElevenLabs',
+} as const;
+
 const SECTION = 'grid scroll-mt-[calc(var(--hauteur-barre)+16px)] gap-5';
+
+/**
+ * Lien vers une section de la page : un lien texte, pas un filtre ; 44 px de haut et souligné au doigt, deux
+ * rangées au plus sous 640 px.
+ */
+function Ancre({ href, compte, children }: { href: string; compte?: number; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      className={`inline-flex items-baseline gap-1.5 rounded-[4px] py-1 whitespace-nowrap text-encre-3 hover:text-encre-2 pointer-coarse:min-h-11 pointer-coarse:items-center pointer-coarse:py-0 ${LIEN_TEXTE}`}
+    >
+      {children}
+      {compte !== undefined ? <span className="font-mono text-encre-3">{compte}</span> : null}
+    </a>
+  );
+}
 
 /**
  * Appels réels dont l'issue dit Rendez-vous pris sans aucune réservation liée dans l'agenda : Appels les compte
@@ -55,16 +80,46 @@ async function rendezVousSansReservation(): Promise<number> {
   return Number(ligne?.n ?? 0);
 }
 
+/** Les noms des entreprises et des prospects cités par slug ou identifiant dans les arguments du journal. */
+async function nommer(journal: Omit<LigneJournal, 'noms'>[]): Promise<LigneJournal[]> {
+  const texte = (v: unknown) => (typeof v === 'string' && v ? v : null);
+  const slugs = [...new Set(journal.map((l) => texte(l.arguments.entreprise)).filter((v): v is string => v !== null))];
+  if (slugs.length === 0) return journal;
+  const ids = [...new Set(journal.map((l) => texte(l.arguments.prospect)).filter((v): v is string => v !== null))];
+  const [listeEntreprises, listeProspects] = await Promise.all([
+    db.select({ slug: entreprises.slug, nom: entreprises.nom }).from(entreprises).where(inArray(entreprises.slug, slugs)),
+    ids.length
+      ? db
+          .select({ id: prospects.id, nom: prospects.nom, slug: entreprises.slug })
+          .from(prospects)
+          .innerJoin(entreprises, eq(entreprises.id, prospects.entrepriseId))
+          .where(and(inArray(entreprises.slug, slugs), inArray(prospects.id, ids)))
+      : Promise.resolve([]),
+  ]);
+  const entreprise = new Map(listeEntreprises.map((e) => [e.slug, e.nom]));
+  const prospect = new Map(listeProspects.map((p) => [`${p.slug}/${p.id}`, p.nom]));
+  return journal.map((l) => {
+    const slug = texte(l.arguments.entreprise);
+    const id = texte(l.arguments.prospect);
+    const nomEntreprise = slug ? entreprise.get(slug) : undefined;
+    const nomProspect = slug && id ? prospect.get(`${slug}/${id}`) : undefined;
+    return { ...l, noms: { ...(nomEntreprise ? { entreprise: nomEntreprise } : {}), ...(nomProspect ? { prospect: nomProspect } : {}) } };
+  });
+}
+
 export default async function PageReglages({ searchParams }: { searchParams: Promise<{ google?: string }> }) {
   const { google } = await searchParams;
-  const [client, api, etat, rdvs, journal, sansReservation] = await Promise.all([
+  const [client, api, etat, rdvs, journal, sansReservation, assistante, configuration] = await Promise.all([
     clientGoogle(),
     connexion(),
     etatAgenda(),
     rendezVousRecents(),
-    journalMcpRecent(100),
+    journalMcpRecent(100).then(nommer),
     rendezVousSansReservation(),
+    assistantePourLaPage(),
+    derniereVersionAssistante(),
   ]);
+  const { nom } = assistante;
   const maintenant = new Date();
   const calendrier = calendrierConfigure();
   const age = etat ? Math.max(0, Math.floor((maintenant.getTime() - etat.synchroniseLe.getTime()) / 60_000)) : null;
@@ -72,9 +127,10 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
 
   return (
     <Page largeur="lecture">
-      <EnTetePage titre="Réglages" sousTitre="L’agenda lu par Mina, les rendez-vous qu’elle a pris, et ce que Claude Code a fait." />
+      <EnTetePage titre="Réglages" sousTitre={`${nom}, l’agenda qu’elle lit, les rendez-vous qu’elle a pris, et ce que Claude Code a fait.`} />
       <div className="grid max-w-[48rem] gap-12">
-        <nav aria-label="Sections de la page" className="-mt-2 flex flex-wrap gap-x-[22px] gap-y-1 text-md">
+        <nav aria-label="Sections de la page" className="-mt-2 flex flex-wrap gap-x-[22px] gap-y-1 text-md pointer-coarse:gap-y-0">
+          <Ancre href="#assistante">Assistante</Ancre>
           <Ancre href="#agenda">Agenda</Ancre>
           <Ancre href="#rendez-vous" compte={rdvs.length}>
             Rendez-vous
@@ -84,10 +140,66 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
           </Ancre>
         </nav>
 
+        <section id="assistante" aria-labelledby="titre-assistante" className={SECTION}>
+          <TitreSection id="titre-assistante">Assistante</TitreSection>
+          <p className="max-w-[62ch] text-sm text-encre-2">
+            Son nom et son premier message valent dès l’appel suivant. Son prompt, sa voix et son tour de parole partent chez ElevenLabs par
+            une poussée. Tout se règle depuis Claude Code, qui demande ton accord avant que quoi que ce soit change pour les prospects.
+          </p>
+          <dl className="border-t border-filet">
+            <LigneDefinition intitule="Nom">{nom}</LigneDefinition>
+            <LigneDefinition intitule="Premier message">
+              « {assistante.premierMessage} »
+              <span className="block text-sm text-encre-3">Ce qu’elle dit quand le prospect se tait au décroché.</span>
+            </LigneDefinition>
+            <LigneDefinition intitule="Dernière modification">
+              {assistante.modifieLe ? (
+                <>
+                  <time dateTime={assistante.modifieLe.toISOString()} className="font-mono text-sm">
+                    {jourCourt(assistante.modifieLe)} {heure(assistante.modifieLe)}
+                  </time>
+                  {assistante.modifiePar ? (
+                    <span className="text-encre-3"> · {assistante.modifiePar === 'mcp' ? 'par Claude Code' : 'dans l’interface'}</span>
+                  ) : null}
+                </>
+              ) : (
+                <span className="text-encre-2">valeurs par défaut</span>
+              )}
+            </LigneDefinition>
+            <LigneDefinition intitule="Configuration">
+              {configuration ? (
+                <>
+                  <span className="font-mono text-sm">{configuration.versionId.slice(-8)}</span>
+                  <span className="text-encre-3"> · {ORIGINE_CONFIGURATION[configuration.origine]}</span>
+                  <span className="block text-sm text-encre-3">
+                    Consignée le{' '}
+                    <time dateTime={configuration.consigneLe.toISOString()} className="font-mono">
+                      {jourCourt(configuration.consigneLe)} {heure(configuration.consigneLe)}
+                    </time>
+                    .
+                  </span>
+                </>
+              ) : (
+                <span className="text-encre-2">
+                  aucune consignée
+                  <span className="block text-sm text-encre-3">Elle le sera à la première poussée par Claude Code.</span>
+                </span>
+              )}
+            </LigneDefinition>
+          </dl>
+          {/* L'action de la section : la page Assistante (prompt, configuration, outils, ce qu'elle voit), en lecture seule. */}
+          <div className="-mx-1.5 grid justify-items-start gap-1 pointer-coarse:mx-0">
+            <LienAction href="/assistante" ton="fort" className="max-sm:h-auto max-sm:min-h-11 max-sm:py-2 max-sm:whitespace-normal">
+              Voir et télécharger la configuration de l’assistante
+            </LienAction>
+            <p className="px-1.5 text-sm text-encre-3 pointer-coarse:px-0">Prompt, voix, outils et ce que {nom} reçoit pour un appel choisi.</p>
+          </div>
+        </section>
+
         <section id="agenda" aria-labelledby="titre-agenda" className={SECTION}>
           <TitreSection id="titre-agenda">Agenda</TitreSection>
           <p className="max-w-[62ch] text-sm text-encre-2">
-            Mina propose des créneaux libres sur l’ensemble de tes calendriers. L’agenda est relu avant les appels (toutes les dix minutes
+            {nom} propose des créneaux libres sur l’ensemble de tes calendriers. L’agenda est relu avant les appels (toutes les dix minutes
             au plus) ; un rendez-vous réservé pendant un appel est inscrit dans Google juste après.
           </p>
           <dl className="border-t border-filet">
@@ -96,8 +208,7 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
                 'API Google Agenda'
               ) : (
                 <>
-                  Connecteur Google Agenda de claude.ai, lu par <span className="font-mono text-sm">claude -p</span>{' '}
-                  <span className="text-encre-3">(environ 20 s)</span>
+                  Google Agenda, lu par Claude Code <span className="text-encre-3">(environ 20 s)</span>
                 </>
               )}
             </LigneDefinition>
@@ -147,10 +258,13 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
           </dl>
           {etat?.erreur ? (
             <Message ton="alerte" titre="La dernière lecture a échoué.">
-              {etat.erreur} La copie affichée date de la lecture précédente.
+              {/* L'erreur brute, close par un point, puis l'explication. */}
+              {etat.erreur.trim()}
+              {/[.!?…]$/.test(etat.erreur.trim()) ? '' : '.'} La copie affichée date de la lecture précédente.
             </Message>
           ) : null}
-          <BoutonRelire />
+          {/* Une seule action forte dans l'agenda : la connexion de l'API quand elle est proposée, sinon la relecture. */}
+          <BoutonRelire ton={client && !api ? 'normal' : 'fort'} />
 
           <div className="grid gap-3 pt-2">
             <h3 className="text-md font-semibold">API Google Agenda</h3>
@@ -173,21 +287,13 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
                 <BoutonDeconnecter />
               </div>
             ) : (
-              // Lien simple, jamais un <Link> : un préchargement ouvrirait la connexion OAuth.
-              <a
-                href="/google/connexion"
-                className="group -mx-1.5 inline-flex h-9 items-center justify-self-start rounded-[4px] px-1.5 text-md font-medium text-encre-2 transition-colors duration-150 hover:text-encre pointer-coarse:h-11"
-              >
-                <span className="decoration-souligne decoration-1 underline-offset-4 group-hover:underline">
-                  Connecter l’API Google Agenda
-                </span>
-              </a>
+              <LienConnecterGoogle />
             )}
           </div>
         </section>
 
         <section id="rendez-vous" aria-labelledby="titre-rendez-vous" className={SECTION}>
-          <TitreSection id="titre-rendez-vous">Rendez-vous pris par Mina</TitreSection>
+          <TitreSection id="titre-rendez-vous">Rendez-vous pris par {nom}</TitreSection>
           <RendezVousMina rdvs={rdvs} maintenant={maintenant} limite={RENDEZ_VOUS_LUS} sansReservation={sansReservation} />
         </section>
 
@@ -195,23 +301,12 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
           <TitreSection id="titre-claude-code">Claude Code</TitreSection>
           <p className="max-w-[62ch] text-sm text-encre-2">
             Outils du serveur MCP d’Autocalled (<span className="font-mono">.mcp.json</span>) appelés par Claude Code. Les gestes qui font
-            sonner le téléphone ou écrivent à un prospect attendent ton accord dans Claude Code.
+            sonner le téléphone, révoquent un numéro, invitent un prospect, desserrent un garde-fou ou changent ce que dit l’assistante
+            attendent ton accord dans Claude Code.
           </p>
           <JournalClaudeCode lignes={journal} />
         </section>
       </div>
     </Page>
-  );
-}
-
-function Ancre({ href, compte, children }: { href: string; compte?: number; children: React.ReactNode }) {
-  return (
-    <a
-      href={href}
-      className="inline-flex items-baseline gap-1.5 rounded-[4px] py-1 whitespace-nowrap text-encre-3 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline pointer-coarse:py-2.5"
-    >
-      {children}
-      {compte !== undefined ? <span className="font-mono text-encre-3">{compte}</span> : null}
-    </a>
   );
 }

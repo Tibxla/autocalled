@@ -13,7 +13,7 @@ avecBaseDeTest();
 const vide = { creuser: '', reformuler: '', argumenter: '', controler: '' };
 
 describe('apercuVariablesAppel', () => {
-  it('sans prospect : les variables de l’entreprise, la dernière version du premier script, les défauts signalés', async () => {
+  it('sans prospect : les variables de l’entreprise, la dernière version du premier script, les défauts et les champs non transmis', async () => {
     const e = await entrepriseDeTest();
     const { scriptId } = await creerScript(e.id, 'Découverte');
     await creerVersion(e.id, scriptId, [{ intention: 'Accroche courte', exemples: ['Bonjour !'] }]);
@@ -24,8 +24,18 @@ describe('apercuVariablesAppel', () => {
     expect(apercu).toMatchObject({ ok: true, prospect: null, version: { numero: 2, script: 'Découverte' }, motsCles: ['Gîte fictif'] });
     if (!apercu.ok) return;
     expect(apercu.variables.script_etapes).toBe('1. Accroche courte (par exemple : « Bonjour ! »)');
-    expect(apercu.variables.entreprise_offre).toBe('à présenter simplement.');
-    expect(apercu.parDefaut).toEqual(expect.arrayContaining(['entreprise_offre', 'rendez_vous', 'objections']));
+    expect(apercu.variables.entreprise_offre).toBe('');
+    expect(apercu.variables.entreprise_complements).toBe('');
+    expect(apercu.nonTransmis).toEqual([
+      'entreprise_offre',
+      'entreprise_cible',
+      'entreprise_arguments',
+      'entreprise_prix_consigne',
+      'entreprise_interdits',
+      'entreprise_complements',
+    ]);
+    expect(apercu.parDefaut).toEqual(expect.arrayContaining(['rendez_vous', 'objections']));
+    expect(apercu.parDefaut).not.toContain('entreprise_offre');
     expect(apercu.parDefaut).not.toContain('script_etapes');
     expect(apercu.dependDuProspect).toContain('prospect_nom');
     expect(await db.$count(appels)).toBe(0);
@@ -33,7 +43,7 @@ describe('apercuVariablesAppel', () => {
 
   it('avec un prospect : les mêmes variables que l’appel réel, objections dans l’ordre', async () => {
     const e = await entrepriseDeTest();
-    await db.update(entreprises).set({ offre: 'Des nuits au calme.' });
+    await db.update(entreprises).set({ offre: 'Des nuits au calme.', complements: 'Parking : gratuit devant le gîte.' });
     await enregistrerObjection(e.id, null, { libelle: 'Trop cher', ...vide });
     await enregistrerObjection(e.id, null, { libelle: 'Pas le temps', ...vide });
     await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01')]);
@@ -49,7 +59,10 @@ describe('apercuVariablesAppel', () => {
     expect(apercu.variables.objections).toBe('Trop cher\nPas le temps');
     expect(apercu.prospect).toEqual({ id: 'julie', nom: 'Julie Fictive', refus: null });
     expect(apercu.parDefaut).toContain('prospect_role');
-    expect(apercu.parDefaut).not.toContain('entreprise_offre');
+    expect(apercu.variables.entreprise_complements).toBe('Parking : gratuit devant le gîte.');
+    expect(apercu.nonTransmis).not.toContain('entreprise_offre');
+    expect(apercu.nonTransmis).not.toContain('entreprise_complements');
+    expect(apercu.nonTransmis).toContain('entreprise_cible');
   });
 
   it('signale un numéro révoqué sans refuser l’aperçu', async () => {

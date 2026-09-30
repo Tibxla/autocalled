@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { NomDeLAssistante } from '@/components/assistante';
 import { useFormulaire } from '@/components/use-formulaire';
 import { Action, Message } from '@/components/ui';
 import { type RapportImport, importerFiches } from './actions';
@@ -72,6 +73,7 @@ function Rapport({ rapport }: { rapport: Extract<RapportImport, { etat: 'fait' }
         <LigneRapport libelle={pluriel(rapport.crees.length, 'créée', 'créées')} ids={rapport.crees} />
         <LigneRapport libelle={pluriel(rapport.misAJour.length, 'mise à jour', 'mises à jour')} ids={rapport.misAJour} />
         <LigneRapport libelle={pluriel(rapport.inchanges.length, 'inchangée', 'inchangées')} ids={rapport.inchanges} />
+        <LigneRapport libelle={rapport.archives.length > 1 ? 'Restent archivés' : 'Reste archivé'} ids={rapport.archives} />
         {rapport.numerosAutorises > 0 ? (
           <li className="border-b border-filet py-2 text-encre-2">
             {pluriel(rapport.numerosAutorises, 'numéro autorisé', 'numéros autorisés')} par cet import.
@@ -186,7 +188,7 @@ export function FormulaireImport({
             ref={champ}
             type="file"
             name="fiches"
-            accept=".md,text/markdown"
+            accept=".md,text/markdown,text/plain"
             multiple
             required
             className="sr-only"
@@ -194,7 +196,7 @@ export function FormulaireImport({
           />
         </label>
 
-        <label className="flex items-start gap-3">
+        <label className="flex cursor-pointer items-start gap-3 pointer-coarse:min-h-11 pointer-coarse:py-1">
           <input type="checkbox" name="consentement" required className="mt-1 size-4 shrink-0 accent-[var(--encre)]" />
           <span className="grid gap-1">
             <span className="text-md">Chaque personne de cette liste a accepté ce texte :</span>
@@ -202,7 +204,7 @@ export function FormulaireImport({
           </span>
         </label>
 
-        <div className="-mx-1.5 flex flex-wrap items-center gap-x-4">
+        <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 pointer-coarse:mx-0">
           <Action ton="fort" type="submit" disabled={noms.length === 0 || invalide || enCours} enCours={enCours} libelleEnCours="Import…">
             {noms.length === 0 ? 'Importer des fiches' : `Importer ${pluriel(noms.length, 'fiche')}`}
           </Action>
@@ -232,7 +234,7 @@ export function FormulaireImport({
         <p className="text-sm text-encre-3">
           <span className="font-mono">nom</span> et <span className="font-mono">telephone</span> sont obligatoires ;{' '}
           <span className="font-mono">societe</span>, <span className="font-mono">role</span> et <span className="font-mono">email</span>{' '}
-          facultatifs. Sous l’en-tête, le contexte que Mina doit connaître : 500 mots au plus. Réimporter un fichier du même nom met la fiche à
+          facultatifs. Sous l’en-tête, le contexte que <NomDeLAssistante /> doit connaître : 500 mots au plus. Réimporter un fichier du même nom met la fiche à
           jour.
         </p>
       </section>

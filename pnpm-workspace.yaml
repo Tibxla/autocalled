@@ -3,6 +3,7 @@ packages:
   - apps/*
 
 allowBuilds:
-  esbuild: set this to true or false
+  # drizzle-kit (développement) trouve son binaire dans les paquets optionnels d'esbuild : pas de script d'installation.
+  esbuild: false
   sharp: false
   unrs-resolver: false

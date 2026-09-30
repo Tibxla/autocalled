@@ -1,0 +1,1 @@
+ALTER TABLE "entreprises" ADD COLUMN "complements" text DEFAULT '' NOT NULL;

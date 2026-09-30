@@ -23,11 +23,13 @@ export async function POST(requete: Request, { params }: { params: Promise<{ id:
   if (conversationId) {
     await db.update(appels).set({ conversationId, finLe: new Date() }).where(eq(appels.id, id));
     after(() => traiterAppel(id));
-  } else if (fin.raison === 'canal son absent' || fin.raison === 'composition impossible') {
+  } else if (fin.raison === 'canal son absent' || fin.raison === 'composition impossible' || fin.raison === 'plafond atteint') {
     const erreur =
       fin.raison === 'canal son absent'
         ? 'Le téléphone passerelle n’a pas ouvert le canal son, même après reconnexion.'
-        : 'Le téléphone passerelle n’a pas composé, même après reconnexion : vérifie qu’il est allumé et à portée (page Téléphone).';
+        : fin.raison === 'plafond atteint'
+          ? 'Plafond d’appels atteint avant la recomposition : l’appel n’est pas reparti (chaque composition compte).'
+          : 'Le téléphone passerelle n’a pas composé, même après reconnexion : vérifie qu’il est allumé et à portée (page Téléphone).';
     await db.update(appels).set({ finLe: new Date(), statut: 'echec', erreur }).where(eq(appels.id, id));
   } else {
     // Pas de bilan, mais une issue système : les lectures (listes, filtres, analyse) comptent l'appel.

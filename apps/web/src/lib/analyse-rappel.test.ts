@@ -5,6 +5,7 @@ import { appels } from '@/db/schema';
 import { entrepriseDeTest } from '../../test/fixtures';
 import { avecBaseDeTest } from '../../test/outils';
 import { analyserAppel } from './appels';
+import { modifierAssistante } from './assistante';
 import { claudeStructure } from './claude';
 import { creerScript } from './entreprises';
 
@@ -91,5 +92,28 @@ describe('analyse d’un rappel convenu', () => {
 
     const [lu] = await db.select().from(appels).where(eq(appels.id, appelId));
     expect(lu).toMatchObject({ issueSysteme: 'refus', rappelLe: null });
+  });
+});
+
+describe('nom de l’assistante dans les consignes', () => {
+  it('garde le nom figé sur l’appel, même après un renommage', async () => {
+    await db.update(appels).set({ assistanteNom: 'Lina' }).where(eq(appels.id, appelId));
+    await modifierAssistante({ nom: 'Nora' }, { origine: 'mcp' });
+    vi.mocked(claudeStructure).mockResolvedValue({ ...bilanDeBase, issue: 'refus', rappel: null, rappelLe: null });
+
+    await analyserAppel(appelId);
+
+    const consignes = vi.mocked(claudeStructure).mock.calls[0]?.[0].prompt ?? '';
+    expect(consignes).toContain('passé par Lina, l\'assistante de');
+    expect(consignes).not.toMatch(/Mina|Nora/);
+  });
+
+  it('prend le nom actuel pour un appel enregistré sans nom', async () => {
+    await modifierAssistante({ nom: 'Nora' }, { origine: 'mcp' });
+    vi.mocked(claudeStructure).mockResolvedValue({ ...bilanDeBase, issue: 'refus', rappel: null, rappelLe: null });
+
+    await analyserAppel(appelId);
+
+    expect(vi.mocked(claudeStructure).mock.calls[0]?.[0].prompt ?? '').toContain('passé par Nora,');
   });
 });

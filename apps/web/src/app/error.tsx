@@ -20,7 +20,7 @@ export default function Erreur({ error, retry }: { error: Error & { digest?: str
           Référence <span className="font-mono">{error.digest}</span>
         </p>
       ) : null}
-      <div className="-mx-1.5 flex flex-wrap gap-x-4 pt-2">
+      <div className="-mx-1.5 flex flex-wrap gap-x-4 pt-2 pointer-coarse:mx-0">
         <Action ton="fort" onClick={() => retry()}>
           Réessayer
         </Action>

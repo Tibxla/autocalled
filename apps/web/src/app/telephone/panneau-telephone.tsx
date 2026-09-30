@@ -1,7 +1,8 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState, useTransition, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, useTransition, type FormEvent } from 'react';
+import { NomDeLAssistante } from '@/components/assistante';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
 import { Action, Champ, LigneDefinition, Message, Saisie } from '@/components/ui';
 import {
@@ -175,12 +176,17 @@ export function PanneauTelephone({
   // Après une expiration, le formulaire revient avec l'adresse déjà saisie et « Rouvrir l'appairage ».
   const adresseTentee = appairage?.etat === 'expire' ? (appairage.adresse ?? '') : '';
 
+  // Un appel en cours sans téléphone connu (relevé partiel du pont) : l'appairage le couperait, il attend.
+  if (!telephone.adresse && telephone.appelEnCours) {
+    return <p className="max-w-[62ch] text-base text-encre-2">L’appairage attendra la fin de l’appel.</p>;
+  }
+
   if (!telephone.adresse) {
     return (
       <div className="grid gap-5">
         {issue}
         <p className="max-w-[62ch] text-base text-encre-2">
-          Appaire le téléphone qui passera les appels de Mina : donne son adresse Bluetooth, puis compare le code qu’il affiche avec celui
+          Appaire le téléphone qui passera les appels de <NomDeLAssistante /> : donne son adresse Bluetooth, puis compare le code qu’il affiche avec celui
           qui apparaîtra ici.
         </p>
         <FormulaireAdresse
@@ -230,8 +236,6 @@ export function PanneauTelephone({
           nom={telephone.nom || 'ce téléphone'}
           adresse={telephone.adresse}
           oublier={gestes.oublier}
-          // Déconnecté, « Reconnecter le téléphone » est déjà sous le verdict de la page : une seule fois par écran.
-          reconnecter={telephone.connecte ? gestes.reconnecter : null}
           onChanger={() => {
             setAppairage(null);
             setChanger(true);
@@ -259,7 +263,8 @@ export function DetailTelephone({ telephone }: { telephone: EtatTelephone }) {
         </span>
         {telephone.adresse ? (
           <details className="mt-0.5 text-sm text-encre-3">
-            <summary className="w-fit cursor-pointer decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline">
+            {/* Au doigt, 44 px de haut et souligné : le marqueur du détail reste (pas de flex). */}
+            <summary className="w-fit cursor-pointer decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline pointer-coarse:py-[13px] pointer-coarse:underline">
               Afficher l’adresse complète
             </summary>
             <span className="font-mono text-xs text-encre-2">{telephone.adresse}</span>
@@ -312,10 +317,12 @@ const ATTENTE_RECONNEXION_MS = 12_000;
 
 /**
  * Relance la liaison Bluetooth à distance : utile quand le téléphone ne répond plus (liaison endormie) ou vient
- * de revenir à portée, sans avoir à le toucher. Personne n'est appelé : ni confirmation ni raccourci clavier.
- * « Reconnexion… » tient une douzaine de secondes, puis la page se relit.
+ * de revenir à portée, sans avoir à le toucher. Personne n'est appelé : ni confirmation ni raccourci clavier
+ * (aucun raccourci n'écrit, clavier.tsx). « Reconnexion… » tient une douzaine de secondes, puis la page se
+ * relit ; `apres` passe alors, pour effacer un échec d'appel devenu périmé.
+ * Où l'action apparaît, et quand : reconnexion.ts.
  */
-export function useReconnexion(reconnecter: GestesTelephone['reconnecter'] = reconnecterTelephone) {
+export function useReconnexion(reconnecter: GestesTelephone['reconnecter'] = reconnecterTelephone, apres?: () => void) {
   const router = useRouter();
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -337,6 +344,7 @@ export function useReconnexion(reconnecter: GestesTelephone['reconnecter'] = rec
     }
     minuterie.current = setTimeout(() => {
       setEnCours(false);
+      apres?.();
       router.refresh();
     }, ATTENTE_RECONNEXION_MS);
   };
@@ -344,24 +352,48 @@ export function useReconnexion(reconnecter: GestesTelephone['reconnecter'] = rec
 }
 
 /**
- * « Reconnecter le téléphone » et son éventuelle erreur. Posée dans une rangée d'actions `flex-wrap` :
- * l'erreur passe sur sa propre ligne sous la rangée.
+ * « Reconnecter le téléphone », son aide et son éventuelle erreur, dans une rangée d'actions `flex-wrap` :
+ * l'aide et l'erreur passent chacune sur leur ligne sous l'action. Forte quand la ligne est coupée (c'est le
+ * geste de secours, en relief au doigt), normale ou discrète quand le téléphone est dit connecté. En relief,
+ * l'aide et l'erreur s'alignent sur le bord du relief, non plus sur le texte (l'appelant lâche son retrait).
  */
 export function ActionReconnecter({
   reconnecter,
   ton = 'normal',
+  aide,
+  suite,
+  apres,
 }: {
   reconnecter?: GestesTelephone['reconnecter'];
-  ton?: 'normal' | 'discret';
+  ton?: 'fort' | 'normal' | 'discret';
+  aide?: string;
+  /** Les actions voisines, sur la même rangée, avant l'aide et l'erreur. */
+  suite?: React.ReactNode;
+  /** Après la reconnexion, quand la page se relit. */
+  apres?: () => void;
 }) {
-  const { enCours, erreur, lancer } = useReconnexion(reconnecter);
+  const { enCours, erreur, lancer } = useReconnexion(reconnecter, apres);
+  const idAide = useId();
   return (
     <>
-      <Action ton={ton} enCours={enCours} libelleEnCours="Reconnexion…" disabled={enCours} onClick={lancer}>
+      <Action
+        ton={ton}
+        enCours={enCours}
+        libelleEnCours="Reconnexion…"
+        disabled={enCours}
+        onClick={lancer}
+        aria-describedby={aide ? idAide : undefined}
+      >
         Reconnecter le téléphone
       </Action>
+      {suite}
+      {aide ? (
+        <p id={idAide} className={`basis-full px-1.5 text-sm text-encre-3 ${ton === 'fort' ? 'pointer-coarse:px-0' : ''}`}>
+          {aide}
+        </p>
+      ) : null}
       {erreur ? (
-        <Message ton="alerte" className="mx-1.5 basis-full">
+        <Message ton="alerte" className={`mx-1.5 basis-full ${ton === 'fort' ? 'pointer-coarse:mx-0' : ''}`}>
           {erreur}
         </Message>
       ) : null}
@@ -370,20 +402,18 @@ export function ActionReconnecter({
 }
 
 /**
- * Rangée des gestes sur le téléphone connu : reconnecter (réversible, sans confirmation ; téléphone connecté
- * mais figé, sinon la page l'offre sous son verdict), changer, oublier.
+ * Rangée des gestes sur le téléphone connu : changer, oublier. « Reconnecter le téléphone » est en tête de la
+ * page, sous son verdict, connecté ou non : une seule fois par écran.
  */
 function ActionsTelephone({
   nom,
   adresse,
   oublier,
-  reconnecter,
   onChanger,
 }: {
   nom: string;
   adresse: string;
   oublier: GestesTelephone['oublier'];
-  reconnecter: GestesTelephone['reconnecter'] | null;
   onChanger: () => void;
 }) {
   const router = useRouter();
@@ -392,8 +422,8 @@ function ActionsTelephone({
   const [enCours, lancer] = useTransition();
   return (
     <div className="grid gap-3">
-      <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-        {reconnecter ? <ActionReconnecter reconnecter={reconnecter} /> : null}
+      {/* 24 px entre les deux : Oublier, sous confirmation, ne se touche pas en visant Changer. */}
+      <div className="-mx-1.5 flex flex-wrap items-center gap-x-6 gap-y-1">
         <Action ton="normal" onClick={onChanger} disabled={confirmation.ouverte}>
           Changer de téléphone
         </Action>
@@ -429,7 +459,7 @@ function ActionsTelephone({
           })
         }
       >
-        Le serveur l’oubliera. Mina ne pourra plus appeler par le téléphone jusqu’au prochain appairage ; une campagne en cours se mettra en
+        Le serveur l’oubliera. <NomDeLAssistante /> ne pourra plus appeler par le téléphone jusqu’au prochain appairage ; une campagne en cours se mettra en
         pause au prochain appel.
       </Confirmation>
     </div>
@@ -492,6 +522,7 @@ function FormulaireAdresse({
             className="max-w-[14rem] font-mono"
             autoComplete="off"
             autoCapitalize="characters"
+            enterKeyHint="go"
             spellCheck={false}
             maxLength={17}
             required
@@ -503,7 +534,7 @@ function FormulaireAdresse({
         téléphone avant d’accepter.
       </p>
       {erreur ? <Message ton="alerte">{erreur}</Message> : null}
-      <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+      <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 pointer-coarse:mx-0">
         <Action type="submit" ton="fort" enCours={enCours} libelleEnCours="Ouverture…" disabled={enCours}>
           {rouvrir ? 'Rouvrir l’appairage (3 min)' : 'Ouvrir l’appairage (3 min)'}
         </Action>

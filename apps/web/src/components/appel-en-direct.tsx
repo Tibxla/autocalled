@@ -7,8 +7,10 @@ import { type DemarrageAppel, demarrerAppelNavigateur, terminerAppelNavigateur }
 import { outilProposerCreneaux, outilReserverCreneau } from '@/app/appels/outils';
 import { definirEtatLigne } from '@/lib/etat-ligne';
 import { Action } from './action';
+import { useNomAssistante } from './assistante';
 import { type TourDirect, VueBandeAppel } from './bande-appel';
 import { Saisie } from './champs';
+import { numeroEtape } from './etape-direct';
 import { prenom } from './format-appel';
 import { OndeDirect } from './onde-direct';
 
@@ -18,6 +20,8 @@ interface Proprietes {
   prospectNom: string;
   versionScriptId: string;
   campagneId?: string | null;
+  /** Intentions des étapes de la version, si l'ouverture ne les rend pas (enchaînement d'une campagne). */
+  etapes?: readonly string[] | null;
   /**
    * Appelé quand l'appel est fini ; par défaut, on ouvre la page de l'appel. `echec` porte le message quand
    * la connexion à Mina a raté : l'appel a été clos sans conversation, rien ne doit s'enchaîner derrière.
@@ -33,7 +37,7 @@ interface Proprietes {
 type Phase = 'repos' | 'connexion' | 'en-appel' | 'fin';
 
 const rien = () => {};
-const ERREUR_CONNEXION = 'La connexion à Mina a échoué. Réessaie ; si ça recommence, vérifie la connexion réseau.';
+const erreurConnexion = (assistante: string) => `La connexion à ${assistante} a échoué. Réessaie ; si ça recommence, vérifie la connexion réseau.`;
 
 /**
  * Ligne navigateur : l'opérateur joue le prospect au micro. Même bande que la ligne téléphone (sous-titre de
@@ -46,17 +50,22 @@ function Conversation({
   prospectNom,
   versionScriptId,
   campagneId = null,
+  etapes: etapesParDefaut = null,
   onFin,
   demarrageAuto,
   ouvrir,
   clore,
 }: Proprietes) {
   const router = useRouter();
+  const nomAssistante = useNomAssistante();
   const [phase, setPhase] = useState<Phase>('repos');
   const [erreur, setErreur] = useState<string | null>(null);
   const [tours, setTours] = useState<TourDirect[]>([]);
   const [enLigneDepuis, setEnLigneDepuis] = useState<number | null>(null);
   const [finLe, setFinLe] = useState(0);
+  // Étape du plan signalée par l'assistante (outil etape_script), et les intentions de la version pour la nommer.
+  const [etape, setEtape] = useState<number | null>(null);
+  const [etapes, setEtapes] = useState<readonly string[] | null>(etapesParDefaut);
   const appelId = useRef<string | null>(null);
   const phaseCourante = useRef<Phase>('repos');
   const idReponse = useId();
@@ -107,7 +116,7 @@ function Conversation({
       setTours((t) => [...t, tour]);
     },
     onError: (message) => {
-      const texte = typeof message === 'string' && message.trim() ? `La connexion à Mina a échoué : ${message}` : ERREUR_CONNEXION;
+      const texte = typeof message === 'string' && message.trim() ? `La connexion à ${nomAssistante} a échoué : ${message}` : erreurConnexion(nomAssistante);
       if (phaseCourante.current === 'connexion') abandonner(texte);
       else setErreur(texte);
     },
@@ -119,6 +128,7 @@ function Conversation({
     setErreur(null);
     setTours([]);
     setEnLigneDepuis(null);
+    setEtape(null);
     changerPhase('connexion');
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -141,6 +151,7 @@ function Conversation({
     }
     appelId.current = demarrage.appelId;
     const id = demarrage.appelId;
+    setEtapes(demarrage.etapes ?? etapesParDefaut);
     conversation.startSession({
       conversationToken: demarrage.jeton,
       connectionType: 'webrtc',
@@ -150,9 +161,14 @@ function Conversation({
         proposer_creneaux: () => outilProposerCreneaux(id),
         reserver_creneau: (parametres: { debut?: string; email?: string; adresse_confirmee?: boolean }) =>
           outilReserverCreneau(id, parametres?.debut, parametres?.email, parametres?.adresse_confirmee),
+        // Silencieux (expects_response faux) : l'étape s'affiche, rien ne revient à l'assistante.
+        etape_script: (parametres: { numero?: unknown }) => {
+          const n = numeroEtape(parametres?.numero);
+          if (n !== null) setEtape(n);
+        },
       },
     });
-  }, [abandonner, campagneId, changerPhase, conversation, entrepriseId, ouvrir, prospectId, versionScriptId]);
+  }, [abandonner, campagneId, changerPhase, conversation, entrepriseId, etapesParDefaut, ouvrir, prospectId, versionScriptId]);
 
   const lance = useRef(false);
   useEffect(() => {
@@ -174,8 +190,8 @@ function Conversation({
   if (phase === 'repos') {
     return (
       <div className="grid justify-items-start gap-3">
-        <div className="-mx-1.5">
-          {/* Pas de raccourci : l'appel est enregistré en base dès le clic (règle du clavier). */}
+        <div className="-mx-1.5 pointer-coarse:mx-0">
+          {/* Pas de raccourci : l'appel est enregistré en base dès le clic (règle du clavier). Ton fort : relief au doigt. */}
           <Action ton="fort" onClick={() => void demarrer()}>
             Appeler {prenom(prospectNom)} au micro
           </Action>
@@ -187,9 +203,10 @@ function Conversation({
 
   const actions =
     phase === 'en-appel' ? (
-      <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-        <span className="px-1.5 text-sm text-encre-3">{conversation.isSpeaking ? 'Mina parle' : 'Mina écoute'}</span>
-        <Action ton="alerte" onClick={() => conversation.endSession()}>
+      // Raccrocher : le relief d'alerte au doigt, seul sur sa rangée sous 640 px, 16 px sous le reste.
+      <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 max-sm:grid max-sm:gap-y-4 pointer-coarse:mx-0">
+        <span className="px-1.5 text-sm text-encre-3">{conversation.isSpeaking ? `${nomAssistante} parle` : `${nomAssistante} écoute`}</span>
+        <Action ton="alerte" forme="relief" className="max-sm:w-full" onClick={() => conversation.endSession()}>
           Raccrocher
         </Action>
       </div>
@@ -201,11 +218,13 @@ function Conversation({
     <div className="grid gap-4">
       <VueBandeAppel
         variante="bande"
-        etat={phase === 'connexion' ? 'Connexion à Mina…' : phase === 'fin' ? 'termine' : 'active'}
+        etat={phase === 'connexion' ? `Connexion à ${nomAssistante}…` : phase === 'fin' ? 'termine' : 'active'}
         perdu={false}
         tours={tours}
         chrono={phase === 'en-appel' && enLigneDepuis ? { libelle: 'en ligne', depuis: enLigneDepuis } : null}
         ecoute={{ active: false, erreur: null }}
+        etape={etape}
+        etapes={etapes}
         prise={{ etat: 'repos', erreur: null, muet: false }}
         raccrochage={{ enCours: false, erreur: null }}
         termine={phase === 'fin' ? { le: finLe } : null}

@@ -7,10 +7,11 @@ import { Action, Saisie } from '@/components/ui';
 import { basculerArchiveScript, renommerScript } from '../../actions';
 
 /**
- * Renommer et archiver un script, sous son titre. Renommer ouvre une rangée d'édition (Entrée enregistre, Échap
- * annule). Archiver est direct, comme pour une objection, sauf si une campagne (en cours ou suspendue) ou un
- * appel en ligne utilise l'une de ses versions : une confirmation en ligne rappelle alors qu'ils continuent.
- * Aucune touche seule n'archive.
+ * Renommer et archiver un script, en bas de sa page, à 32 px l'un de l'autre. Renommer ouvre une rangée d'édition
+ * (Entrée enregistre, Échap annule). Archiver est direct, comme pour une objection, sauf si une campagne (en cours ou
+ * suspendue) ou un appel en ligne utilise l'une de ses versions : une confirmation en ligne rappelle alors qu'ils
+ * continuent. Après l'archivage, le statut propose « Annuler ». Aucune touche seule n'archive. La page dit, sous le
+ * titre, qu'un script est archivé.
  */
 export function ActionsScript({
   entrepriseId,
@@ -30,6 +31,8 @@ export function ActionsScript({
   const [erreurNom, setErreurNom] = useState<string | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [annonce, setAnnonce] = useState<string | null>(null);
+  /** Vrai juste après un archivage : « Annuler » le défait. */
+  const [annulable, setAnnulable] = useState(false);
   const [renommage, demarrerRenommage] = useTransition();
   const [archivage, demarrerArchivage] = useTransition();
   const confirmation = useConfirmation();
@@ -73,6 +76,7 @@ export function ActionsScript({
         const resultat = await basculerArchiveScript(entrepriseId, scriptId, vers);
         if (!resultat.ok) return setErreur(resultat.raison);
         confirmation.fermer();
+        setAnnulable(vers);
         setAnnonce(vers ? 'Script archivé : il n’est plus proposé pour lancer un appel ou une campagne.' : 'Script réactivé : il est de nouveau proposé au lancement.');
       } catch {
         setErreur(vers ? 'L’archivage a échoué : réessaie.' : 'La réactivation a échoué : réessaie.');
@@ -87,12 +91,6 @@ export function ActionsScript({
 
   return (
     <div className="grid gap-2">
-      {archive ? (
-        <p className="text-sm text-encre-2">
-          Script archivé : il n’est plus proposé pour lancer un appel ou une campagne. Ses versions et ses appels restent.
-        </p>
-      ) : null}
-
       {edition ? (
         <form ref={formulaire} onSubmit={renommer} aria-label="Renommer le script" className="grid gap-1">
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
@@ -111,7 +109,7 @@ export function ActionsScript({
               aria-describedby={erreurNom ? 'nom-script-renomme-erreur' : undefined}
               className="max-w-[26rem] min-w-[12rem] flex-1"
             />
-            <div className="-mx-1.5 flex items-center gap-3">
+            <div className="-mx-1.5 flex items-center gap-3 pointer-coarse:mx-0">
               <Action type="submit" ton="fort" touche="Entrée" enCours={renommage} libelleEnCours="Enregistrement…" disabled={renommage}>
                 Renommer
               </Action>
@@ -127,13 +125,14 @@ export function ActionsScript({
           ) : null}
         </form>
       ) : (
-        <div className="-mx-1.5 flex flex-wrap items-center gap-x-5 gap-y-1">
+        <div className="-mx-1.5 flex flex-wrap items-center gap-x-8 gap-y-1">
           <Action
             ref={boutonRenommer}
             ton="discret"
             onClick={() => {
               setSaisie(nom);
               setAnnonce(null);
+              setAnnulable(false);
               setEdition(true);
             }}
           >
@@ -147,6 +146,7 @@ export function ActionsScript({
             aria-expanded={!archive && utilise ? confirmation.ouverte : undefined}
             onClick={() => {
               setAnnonce(null);
+              setAnnulable(false);
               if (!archive && utilise) confirmation.ouvrir();
               else basculer(!archive);
             }}
@@ -175,9 +175,18 @@ export function ActionsScript({
           {erreur}
         </p>
       ) : null}
-      <p role="status" className="text-sm text-encre-3 empty:-mt-2">
-        {annonce}
-      </p>
+      <div className="flex flex-wrap items-center gap-x-4 has-[[role=status]:empty]:-mt-2">
+        <p role="status" className="text-sm text-encre-3">
+          {annonce}
+        </p>
+        {annulable && archive ? (
+          <span className="-mx-1.5">
+            <Action ton="normal" enCours={archivage} libelleEnCours="Réactivation…" disabled={archivage} onClick={() => basculer(false)}>
+              Annuler
+            </Action>
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
