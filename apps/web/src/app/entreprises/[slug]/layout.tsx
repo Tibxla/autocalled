@@ -1,12 +1,13 @@
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
-import Link from 'next/link';
 import { comptesCampagne } from '@/components/format-appel';
+import { LienTexte } from '@/components/ui';
 import { db } from '@/db';
 import { campagnes, prospects } from '@/db/schema';
 import { autorisationsDe } from '@/lib/autorisations';
 import { listerEntreprises } from '@/lib/donnees';
 import { lireEntreprise } from '@/lib/pages';
 import { ChoixEntreprise } from './choix-entreprise';
+import { EtatEntreprise } from './etat-entreprise';
 import { OngletsEntreprise } from './onglets-entreprise';
 
 /**
@@ -17,6 +18,8 @@ import { OngletsEntreprise } from './onglets-entreprise';
  * couvre) : ses lectures sont légères et parallèles. L'entreprise est lue une fois pour le layout et la page
  * (`lireEntreprise`, cache de la requête). Un slug inconnu ne lève pas notFound() ici, sinon la 404 sortirait
  * du segment : l'en-tête s'efface et la page, qui lit la même entreprise, répond par [slug]/not-found.tsx.
+ * Sous 640 px, la ligne d'état ne paraît en entier que sur la Fiche (EtatEntreprise) : ailleurs, le lien de la
+ * campagne active reste seul, et l'onglet commence plus haut.
  */
 export default async function LayoutEntreprise({ params, children }: { params: Promise<{ slug: string }>; children: React.ReactNode }) {
   const { slug } = await params;
@@ -46,9 +49,9 @@ export default async function LayoutEntreprise({ params, children }: { params: P
   const campagne = campagnesActives.find((c) => c.statut === 'en-cours') ?? campagnesActives[0];
 
   const manque = (href: string, texte: string) => (
-    <Link href={href} className="text-encre-2 underline decoration-souligne underline-offset-4 hover:text-encre">
+    <LienTexte href={href} className="text-encre-2 underline hover:text-encre">
       {texte}
-    </Link>
+    </LienTexte>
   );
   const pluriel = (n: number, un: string, plusieurs: string) => (n > 1 ? plusieurs : un);
 
@@ -99,44 +102,30 @@ export default async function LayoutEntreprise({ params, children }: { params: P
     etat.push({
       cle: 'campagne',
       contenu: (
-        <Link
+        <LienTexte
           href={`/campagnes/${campagne.id}`}
-          className={`underline decoration-souligne underline-offset-4 hover:text-encre ${vivante ? 'text-antenne' : enCours ? 'text-encre' : 'text-encre-2'}`}
+          className={`underline hover:text-encre ${vivante ? 'text-antenne' : enCours ? 'text-encre' : 'text-encre-2'}`}
         >
           {enCours ? 'Campagne en cours' : 'Campagne suspendue'} ·{' '}
           <span className="font-mono">
             {traites}/{total}
           </span>
-        </Link>
+        </LienTexte>
       ),
     });
   }
 
   return (
     <>
-      <div className="pt-8 max-sm:pt-6">
-        <Link
-          href="/entreprises"
-          className="text-sm text-encre-3 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline"
-        >
+      <div className="pt-8 max-sm:pt-4">
+        <LienTexte isole href="/entreprises" className="text-sm text-encre-3 hover:text-encre-2">
           Entreprises
-        </Link>
+        </LienTexte>
         <div className="mt-1 flex items-center gap-1.5">
           <h1 className="min-w-0 text-xl font-semibold tracking-[-0.01em] text-balance break-words">{entreprise.nom}</h1>
           {autres.length > 0 ? <ChoixEntreprise slug={slug} autres={autres} /> : null}
         </div>
-        <p className="mt-1.5 flex flex-wrap gap-x-2 text-sm text-encre-3">
-          {etat.map((e, i) => (
-            <span key={e.cle} className="whitespace-nowrap">
-              {e.contenu}
-              {i < etat.length - 1 ? (
-                <span aria-hidden="true" className="ml-2 text-encre-3">
-                  ·
-                </span>
-              ) : null}
-            </span>
-          ))}
-        </p>
+        <EtatEntreprise base={base} elements={etat} />
       </div>
       <OngletsEntreprise
         slug={slug}
