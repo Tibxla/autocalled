@@ -130,16 +130,17 @@ export function LigneStatut() {
 export function VueLigneStatut({ etat, maintenant = 0 }: { etat: EtatLigneClient; maintenant?: number }) {
   const a = affichageLigne(etat);
   const decrocheLe = etat.etat === 'en-appel' && etat.ligne === 'telephone' ? (etat.decrocheLe ?? null) : null;
-  // Sous 640 px, le chrono tient lieu de libellé : trait et chrono, en antenne, disent l'appel, et la campagne
+  // Sous 768 px, le chrono tient lieu de libellé : trait et chrono, en antenne, disent l'appel, et la campagne
   // garde sa place à côté. Il prend alors le soulignement du libellé au doigt.
   const avecChrono = decrocheLe !== null && maintenant > 0;
   const contenu = (
     <>
-      <TraitLigne largeur={56} trait={a.trait} couleur={a.couleurTrait} className="hidden sm:block" />
-      <TraitLigne largeur={16} trait={a.trait} couleur={a.couleurTrait} className="sm:hidden" />
-      <span className={`libelle text-sm whitespace-nowrap ${a.couleurTexte} ${avecChrono ? 'max-sm:hidden' : ''}`}>
-        <span className="hidden sm:inline">{a.libelle}</span>
-        <span className="sm:hidden">{a.court}</span>
+      {/* De 640 à 1023 px aussi, la forme courte : la navigation y prend la place (sinon la barre déborde). */}
+      <TraitLigne largeur={56} trait={a.trait} couleur={a.couleurTrait} className="hidden lg:block" />
+      <TraitLigne largeur={16} trait={a.trait} couleur={a.couleurTrait} className="lg:hidden" />
+      <span className={`libelle text-sm whitespace-nowrap ${a.couleurTexte} ${avecChrono ? 'max-md:hidden' : ''}`}>
+        <span className="hidden lg:inline">{a.libelle}</span>
+        <span className="lg:hidden">{a.court}</span>
       </span>
       {avecChrono ? (
         <span

@@ -3,8 +3,8 @@
  * 640 px). Module sans directive : un tableau exporté d'un module client arriverait dans un composant serveur comme
  * une référence client, pas comme un tableau.
  *
- * « Assistante » ne tient que dans la barre du haut dès 1024 px (`large`) : la barre du bas est mesurée pour cinq
- * liens, et à 640 px la barre du haut n'a plus de place à droite pour l'état de la ligne. Ailleurs, la page
+ * « Assistante » ne tient que dans la barre du haut dès 1280 px (`large`) : la barre du bas est mesurée pour cinq
+ * liens, et en dessous de 1280 px la barre du haut n'a plus de place à droite pour la campagne et l'état de la ligne. Ailleurs, la page
  * Assistante s'ouvre depuis Réglages, qui s'allume alors à sa place (`aussiSansLarge`).
  */
 export interface EntreeNav {
@@ -14,9 +14,9 @@ export interface EntreeNav {
   exact?: boolean;
   /** Autres chemins rattachés (une campagne relève d'Entreprises). */
   aussi?: string[];
-  /** Barre du haut dès 1024 px seulement. */
+  /** Barre du haut dès 1280 px seulement. */
   large?: boolean;
-  /** Chemins rattachés là où les entrées `large` n'ont pas de lien (barre du bas, barre du haut sous 1024 px). */
+  /** Chemins rattachés là où les entrées `large` n'ont pas de lien (barre du bas, barre du haut sous 1280 px). */
   aussiSansLarge?: string[];
 }
 

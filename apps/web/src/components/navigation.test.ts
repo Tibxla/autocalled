@@ -10,7 +10,7 @@ describe('navigation principale', () => {
     expect(estCourante('/reglages', reglages)).toBe(true);
   });
 
-  it('dès 1024 px, Assistante s’allume seule sur sa page', () => {
+  it('dès 1280 px, Assistante s’allume seule sur sa page', () => {
     const assistante = NAVIGATION_PRINCIPALE.find((e) => e.href === '/assistante')!;
     const reglages = NAVIGATION_PRINCIPALE.find((e) => e.href === '/reglages')!;
     expect(assistante.large).toBe(true);

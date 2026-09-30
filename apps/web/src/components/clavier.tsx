@@ -518,7 +518,7 @@ export function AideRaccourcis() {
   );
 }
 
-/** « ? Raccourcis » dans la barre ; masqué au toucher et sous 640 px (la place va à l'état de la ligne). */
+/** « ? Raccourcis » dans la barre ; « ? » seul sous 1024 px, masqué au toucher et sous 768 px (la place va à la navigation et à l'état de la ligne). */
 export function BoutonAideRaccourcis() {
   const { ouverte } = useAide();
   return (
@@ -528,10 +528,11 @@ export function BoutonAideRaccourcis() {
       aria-controls={ouverte ? 'aide-raccourcis' : undefined}
       aria-keyshortcuts="?"
       onClick={(e) => basculerAide(e.currentTarget)}
-      className="group inline-flex h-9 items-center gap-2 rounded-[4px] px-1.5 text-md whitespace-nowrap text-encre-3 transition-colors duration-150 hover:text-encre-2 max-sm:hidden pointer-coarse:hidden"
+      className="group inline-flex h-9 items-center gap-2 rounded-[4px] px-1.5 text-md whitespace-nowrap text-encre-3 transition-colors duration-150 hover:text-encre-2 max-md:hidden pointer-coarse:hidden"
     >
       <Touche decorative>?</Touche>
-      <span className="decoration-souligne decoration-1 underline-offset-4 group-hover:underline">Raccourcis</span>
+      {/* De 768 à 1023 px, la touche seule : le libellé reste aux lecteurs d'écran. */}
+      <span className="decoration-souligne decoration-1 underline-offset-4 group-hover:underline max-lg:sr-only">Raccourcis</span>
     </button>
   );
 }
