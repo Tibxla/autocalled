@@ -15,13 +15,20 @@ export interface ChiffresObjection {
 
 const VERBE_TEMPS: Record<string, string> = Object.fromEntries(TEMPS.map((t) => [t.nom, t.verbe]));
 
-/** C R A C : le temps rempli en encre, le temps vide en encre-3 ; la phrase complète pour les lecteurs d'écran. */
+/**
+ * C R A C : le temps rempli en encre, le temps vide en encre-3 ; la phrase complète pour les lecteurs d'écran. Sous
+ * 640 px, où rien ne se lit au survol, le sigle cède la place à des mots : « manque : contrôler », « 2/4 temps ».
+ */
 function Crac({ objection }: { objection: Objection }) {
   const manquants = TEMPS.filter((t) => !objection[t.nom].trim());
   const titre = manquants.length ? `Manque : ${manquants.map((t) => t.verbe).join(', ')}` : '4 temps sur 4 remplis';
+  const enMots = manquants.length === 1 ? `manque : ${manquants[0]!.verbe}` : `${4 - manquants.length}/4 temps`;
   return (
-    <span className="font-mono text-xs" title={titre}>
-      <span aria-hidden="true" className="inline-flex">
+    <span className="font-mono text-xs">
+      <span aria-hidden="true" className={`text-sm font-sans sm:hidden ${manquants.length ? 'text-encre-2' : 'text-encre-3'}`}>
+        {enMots}
+      </span>
+      <span aria-hidden="true" title={titre} className="inline-flex max-sm:hidden">
         {TEMPS.map((t) => (
           <span key={t.nom} className={objection[t.nom].trim() ? 'text-encre' : 'text-encre-3'}>
             {t.lettre}
@@ -113,7 +120,10 @@ export function ListeObjections({
     if (!suivi || suiviTraite.current === suivi || ordre === suivi.avant) return;
     suiviTraite.current = suivi;
     const ligne = document.getElementById(`objection-${suivi.id}`);
-    const bouton = suivi.bouton ? ligne?.querySelector<HTMLButtonElement>(`[data-deplacer="${suivi.sens}"]:not(:disabled)`) : null;
+    // Les flèches de bout de ligne (dès 640 px) ou « Monter » et « Descendre » du panneau (en dessous) : celles qu'on voit.
+    const bouton = suivi.bouton
+      ? [...(ligne?.querySelectorAll<HTMLButtonElement>(`[data-deplacer="${suivi.sens}"]:not(:disabled)`) ?? [])].find((b) => b.offsetParent !== null)
+      : null;
     (bouton ?? ligne?.querySelector('summary'))?.focus();
   }, [ordre, suivi]);
 
@@ -216,6 +226,29 @@ export function ListeObjections({
                       </span>
                     </summary>
                     <div className="pl-5 max-sm:pl-0">
+                      {/* Sous 640 px, déplacer se fait depuis le panneau déplié : la ligne garde toute sa largeur. */}
+                      {actives.length > 1 ? (
+                        <div className="-mx-1.5 flex gap-x-2 pt-2 sm:hidden">
+                          <Action
+                            ton="discret"
+                            data-deplacer="monter"
+                            aria-label={`Monter « ${o.libelle} »`}
+                            disabled={rang === 0 || deplacement}
+                            onClick={() => deplacer(o, 'monter', true)}
+                          >
+                            Monter
+                          </Action>
+                          <Action
+                            ton="discret"
+                            data-deplacer="descendre"
+                            aria-label={`Descendre « ${o.libelle} »`}
+                            disabled={rang === actives.length - 1 || deplacement}
+                            onClick={() => deplacer(o, 'descendre', true)}
+                          >
+                            Descendre
+                          </Action>
+                        </div>
+                      ) : null}
                       <FormulaireObjection
                         entrepriseId={entrepriseId}
                         objection={o}
@@ -238,7 +271,7 @@ export function ListeObjections({
                     </div>
                   </details>
                   {actives.length > 1 ? (
-                    <span className="flex shrink-0 pt-px">
+                    <span className="flex shrink-0 pt-px max-sm:hidden pointer-coarse:gap-x-2">
                       <Action
                         ton="discret"
                         className="text-base"
