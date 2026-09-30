@@ -19,7 +19,9 @@ if systemctl --user is-active --quiet wireplumber 2>/dev/null; then
 fi
 
 echo "→ règle D-Bus : $utilisateur peut piloter oFono"
-sed "s/@UTILISATEUR@/$utilisateur/" "$racine/deploy/dbus/autocalled-ofono.conf" | sudo install -m 644 /dev/stdin /etc/dbus-1/system.d/autocalled-ofono.conf
+sed "s/@UTILISATEUR@/$utilisateur/" "$racine/deploy/dbus/autocalled-ofono.conf" | sudo tee /etc/dbus-1/system.d/autocalled-ofono.conf >/dev/null
+# umask 077 plus haut : dbus-daemon (compte messagebus) doit pouvoir relire la règle.
+sudo chmod 644 /etc/dbus-1/system.d/autocalled-ofono.conf
 sudo systemctl reload dbus
 
 echo "→ environnement Python du pont"
