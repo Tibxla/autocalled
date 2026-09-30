@@ -12,7 +12,7 @@ import { journalMcpRecent, rendezVousRecents } from '@/lib/lecture';
 import { assistantePourLaPage } from '@/lib/pages';
 import { BoutonDeconnecter } from './bouton-deconnecter';
 import { BoutonRelire, LienConnecterGoogle } from './boutons-agenda';
-import { JournalClaudeCode, type LigneJournal } from './journal-claude-code';
+import { JournalDesGestes, type LigneJournal } from './journal-des-gestes';
 import { MessageGoogle } from './message-google';
 import { RendezVousMina } from './rendez-vous-mina';
 
@@ -122,7 +122,7 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
 
   return (
     <Page largeur="lecture">
-      <EnTetePage titre="Réglages" sousTitre={`${nom}, l’agenda qu’elle lit, les rendez-vous qu’elle a pris, et ce que Claude Code a fait.`} />
+      <EnTetePage titre="Réglages" sousTitre={`${nom}, l’agenda qu’elle lit, les rendez-vous qu’elle a pris, et le journal de ce que Claude Code et l’interface ont fait.`} />
       <div className="grid max-w-[48rem] gap-12">
         <nav aria-label="Sections de la page" className="-mt-2 flex flex-wrap gap-x-[22px] gap-y-1 text-md pointer-coarse:gap-y-0">
           <Ancre href="#assistante">Assistante</Ancre>
@@ -130,8 +130,8 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
           <Ancre href="#rendez-vous" compte={rdvs.length}>
             Rendez-vous
           </Ancre>
-          <Ancre href="#claude-code" compte={journal.length}>
-            Claude Code
+          <Ancre href="#journal" compte={journal.length}>
+            Journal
           </Ancre>
         </nav>
 
@@ -295,14 +295,14 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
           <RendezVousMina rdvs={rdvs} maintenant={maintenant} limite={RENDEZ_VOUS_LUS} sansReservation={sansReservation} />
         </section>
 
-        <section id="claude-code" aria-labelledby="titre-claude-code" className={SECTION}>
-          <TitreSection id="titre-claude-code">Claude Code</TitreSection>
+        <section id="journal" aria-labelledby="titre-journal" className={SECTION}>
+          <TitreSection id="titre-journal">Journal des gestes</TitreSection>
           <p className="max-w-[62ch] text-sm text-encre-2">
-            Outils du serveur MCP d’Autocalled (<span className="font-mono">.mcp.json</span>) appelés par Claude Code. Les gestes qui font
-            sonner le téléphone, révoquent un numéro, invitent un prospect, desserrent un garde-fou ou changent ce que dit l’assistante
-            attendent ton accord dans Claude Code.
+            Les outils du serveur MCP d’Autocalled (<span className="font-mono">.mcp.json</span>) appelés par Claude Code, et tes gestes sur la
+            page Assistante. Les gestes qui font sonner le téléphone, révoquent un numéro, invitent un prospect, desserrent un garde-fou ou
+            changent ce que dit l’assistante attendent ton accord, dans Claude Code ou dans la page ; la question lue reste au journal.
           </p>
-          <JournalClaudeCode lignes={journal} />
+          <JournalDesGestes lignes={journal} />
         </section>
       </div>
     </Page>
