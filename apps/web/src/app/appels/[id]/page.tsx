@@ -16,6 +16,7 @@ import { lireFiltresAppels } from '../filtres';
 import { Actualisation, Ecoule } from './actualisation';
 import { BoutonRelancer } from './bouton-relancer';
 import { LecteurAppel } from './lecteur-appel';
+import { ReconnexionAppel } from './reconnexion-appel';
 import { SuiviTelephone } from './suivi-telephone';
 
 const lire = cache(lireAppel);
@@ -216,10 +217,14 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
       );
     actualisation = <Actualisation secondes={3} dureeMaxSecondes={Math.max(3, Math.ceil(DUREE_MAX_ANALYSE_S - ageAnalyse))} />;
   } else if (appel.statut === 'echec' && !appel.conversationId) {
+    // Faute de téléphone, la reconnexion suit le message (ReconnexionAppel décide d'après la ligne relevée).
     etatDirect = (
-      <Message ton="alerte" action={<LienAction href="/telephone">Voir la ligne</LienAction>}>
-        L’appel n’est pas parti : {appel.erreur ?? 'aucune raison enregistrée.'}
-      </Message>
+      <>
+        <Message ton="alerte" action={<LienAction href="/telephone">Voir la ligne</LienAction>}>
+          L’appel n’est pas parti : {appel.erreur ?? 'aucune raison enregistrée.'}
+        </Message>
+        <ReconnexionAppel appel={{ ligne: appel.ligne, statut: appel.statut, conversation: false, erreur: appel.erreur }} />
+      </>
     );
   } else if (appel.statut === 'echec') {
     etatDirect = (
