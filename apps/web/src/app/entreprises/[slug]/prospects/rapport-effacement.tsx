@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import { LienTexte } from '@/components/ui';
 import type { RapportEffacement } from './actions';
 
 const JOUR_HEURE = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' });
@@ -59,12 +59,9 @@ export function RapportEffacementMessage({ rapport }: { rapport: RapportEffaceme
           {rapport.autresPorteurs.map((a, i) => (
             <span key={`${a.entreprise}/${a.prospect}`}>
               {i > 0 ? ', ' : ''}
-              <Link
-                href={`/entreprises/${a.entreprise}/prospects/${a.prospect}`}
-                className="font-mono text-encre decoration-souligne underline-offset-4 hover:underline"
-              >
+              <LienTexte href={`/entreprises/${a.entreprise}/prospects/${a.prospect}`} className="font-mono text-encre">
                 {a.entreprise}/{a.prospect}
-              </Link>
+              </LienTexte>
             </span>
           ))}
           , désormais inappelable{rapport.autresPorteurs.length > 1 ? 's' : ''} : si c’est la même personne, efface{' '}
