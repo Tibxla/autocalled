@@ -147,12 +147,13 @@ function nomComplet(p: Prochain): string {
 /**
  * Rangée d'actions de la régie. Sous 640 px, une colonne ; `pave` : les commandes de ce qui vit (Appeler
  * maintenant, Suspendre) forment un pavé de touches sur deux colonnes, toutes en relief au doigt, l'aide sur
- * toute la largeur dessous. Au doigt, le relief lâche le retrait qui aligne le texte sur la colonne.
+ * toute la largeur dessous. Au doigt, le relief lâche le retrait qui aligne le texte sur la colonne ; `texte` :
+ * la rangée ne porte que des actions en texte, qui gardent ce retrait.
  */
-function Actions({ children, pave = false }: { children: React.ReactNode; pave?: boolean }) {
+function Actions({ children, pave = false, texte = false }: { children: React.ReactNode; pave?: boolean; texte?: boolean }) {
   return (
     <div
-      className={`-mx-1.5 flex flex-wrap items-center gap-x-5 gap-y-1 max-sm:grid pointer-coarse:mx-0 pointer-coarse:gap-y-2 ${
+      className={`-mx-1.5 flex flex-wrap items-center gap-x-5 gap-y-1 max-sm:grid pointer-coarse:gap-y-2 ${texte ? '' : 'pointer-coarse:mx-0'} ${
         pave ? 'max-sm:grid-cols-2 max-sm:gap-x-2 max-sm:[&>button]:w-full' : 'max-sm:justify-items-start'
       }`}
     >
@@ -163,6 +164,8 @@ function Actions({ children, pave = false }: { children: React.ReactNode; pave?:
 
 /** Aide à côté d'une action : alignée sur le texte au clavier, sur le bord du relief au doigt ; toute la largeur du pavé. */
 const AIDE = 'px-1.5 text-sm text-encre-3 max-sm:col-span-full pointer-coarse:px-0';
+/** Aide dans une rangée d'actions en texte (`texte`) : alignée sur le texte, au doigt aussi. */
+const AIDE_TEXTE = 'px-1.5 text-sm text-encre-3';
 
 function Suspendre({ onClick, enCours }: { onClick: () => void; enCours: boolean }) {
   return (
@@ -241,11 +244,11 @@ function Terminer({ campagneId, restants, enAppel }: { campagneId: string; resta
   };
   return (
     <div className="grid justify-items-start gap-2 pointer-coarse:pt-1">
-      <Actions>
+      <Actions texte>
         <Action ton="discret" aria-expanded={confirmation.ouverte} onClick={(e) => confirmation.ouvrir(e.currentTarget)}>
           Terminer la campagne
         </Action>
-        <span className={AIDE}>Les prospects restants ne seront pas appelés ; aucun appel n’est coupé.</span>
+        <span className={AIDE_TEXTE}>Les prospects restants ne seront pas appelés ; aucun appel n’est coupé.</span>
       </Actions>
       <Confirmation
         className="justify-self-stretch"
@@ -585,7 +588,7 @@ function RegieNavigateur(props: ProprietesRegie) {
     corps = (
       <>
         <p className="text-base text-encre-2">Un appel de cette campagne est resté ouvert : la page a sans doute été fermée pendant l’appel.</p>
-        <Actions>
+        <Actions texte>
           <Action
             enCours={enCours}
             libelleEnCours="Clôture…"
