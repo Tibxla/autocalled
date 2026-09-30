@@ -65,13 +65,15 @@
 
 /*
  * Clavier de l'écran ouvert (un champ de saisie a le focus) : la barre du bas s'efface, et toute barre collée en
- * bas (BarreActions) descend tout en bas. Hors couche : passe devant les utilitaires (`flex` de la barre).
+ * bas (BarreActions) descend tout en bas. Pas `select` : un menu déroulant ouvre un sélecteur, pas un clavier, et
+ * garde le focus après le choix, ce qui cacherait la navigation jusqu'au prochain appui ailleurs. Hors couche :
+ * passe devant les utilitaires (`flex` de la barre).
  */
 @media (max-width: 639.98px) {
-  :root:has(:is(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [type="button"], [type="submit"]), textarea, select):focus) {
+  :root:has(:is(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [type="button"], [type="submit"]), textarea):focus) {
     --hauteur-nav-bas: 0px;
   }
-  :root:has(:is(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [type="button"], [type="submit"]), textarea, select):focus) .nav-bas {
+  :root:has(:is(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [type="button"], [type="submit"]), textarea):focus) .nav-bas {
     display: none;
   }
 }
