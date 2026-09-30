@@ -29,7 +29,7 @@ export function LienNav({
 }) {
   const chemin = usePathname();
   const actif = estCourante(chemin, { href, exact, aussi });
-  const taille = variante === 'onglet' ? 'h-9 text-sm pointer-coarse:h-11' : 'h-10 text-md pointer-coarse:h-11';
+  const taille = variante === 'onglet' ? 'h-9 text-sm pointer-coarse:h-11 pointer-coarse:min-w-11 pointer-coarse:justify-center' : 'h-10 text-md pointer-coarse:h-11';
 
   return (
     <Link

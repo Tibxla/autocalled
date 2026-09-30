@@ -238,7 +238,7 @@ export function Filtres({
 }
 
 const BASE_FILTRE =
-  'inline-flex shrink-0 items-baseline gap-1.5 rounded-[4px] py-1 whitespace-nowrap pointer-coarse:min-h-11 pointer-coarse:items-center pointer-coarse:active:text-encre-2';
+  'inline-flex shrink-0 items-baseline gap-1.5 rounded-[4px] py-1 whitespace-nowrap pointer-coarse:min-h-11 pointer-coarse:min-w-11 pointer-coarse:items-center pointer-coarse:justify-center pointer-coarse:active:text-encre-2';
 const FILTRE_ACTIF = 'font-semibold text-encre shadow-[inset_0_-1.5px_0_var(--encre)]';
 const FILTRE_INACTIF = 'text-encre-3 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline';
 
