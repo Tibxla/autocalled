@@ -397,13 +397,21 @@ function BilanCampagne({
   } else if (aboutis === 0) {
     phrase = `Aucun appel abouti sur ${liste.length} ${mot}.`;
   } else {
-    const taux = aboutis >= 10 ? ` · ${Math.round((rendezVous / aboutis) * 100)} %` : '';
+    const taux = aboutis >= 10 ? ` · ${Math.round((rendezVous / aboutis) * 100)}\u00a0%` : '';
     phrase = `${rendezVous} rendez-vous sur ${aboutis} ${mot} aboutis${taux}`;
   }
 
   return (
     <section aria-labelledby="titre-bilan" className="grid gap-4">
-      <TitreSection id="titre-bilan" action={<LienAction href={`/entreprises/${slug}/analyse`}>Voir l’analyse de l’entreprise</LienAction>}>
+      <TitreSection
+        id="titre-bilan"
+        action={
+          <LienAction href={`/entreprises/${slug}/analyse`} aria-label="Voir l’analyse de l’entreprise">
+            <span className="sm:hidden">Voir l’analyse</span>
+            <span className="max-sm:hidden">Voir l’analyse de l’entreprise</span>
+          </LienAction>
+        }
+      >
         Campagne terminée
       </TitreSection>
       <div className="grid gap-1">
@@ -417,8 +425,14 @@ function BilanCampagne({
         {aboutis > 0 && aboutis < 10 ? (
           <p className="text-sm text-encre-3">Pas de taux sous 10 appels aboutis : il ne voudrait rien dire.</p>
         ) : null}
+        {/* Sous 640 px, la phrase et la durée cumulée suffisent : les comptes par issue restent dans la file (ses filtres). */}
+        {secondes > 0 ? (
+          <p className="text-sm text-encre-3 sm:hidden">
+            Durée cumulée <span className="font-mono">{duree(secondes)}</span>
+          </p>
+        ) : null}
       </div>
-      <dl className="flex flex-wrap gap-x-7 gap-y-2 text-md">
+      <dl className="flex flex-wrap gap-x-7 gap-y-2 text-md max-sm:hidden">
         {ISSUES_SYSTEME.filter((i) => parIssue.has(i)).map((i) => (
           <div key={i} className="flex items-baseline gap-2">
             <dt className={i === 'rendez-vous-pris' ? 'text-encre' : 'text-encre-2'}>{LIBELLES_ISSUES[i]}</dt>
