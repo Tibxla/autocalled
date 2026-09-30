@@ -326,7 +326,7 @@ La ligne navigateur suit le même chemin sans pont ni téléphone : le navigateu
 | Langage | TypeScript 5.9 dans l'application, 7.0 dans les paquets, Node 24, pnpm 12.6 |
 | Données | Postgres 18 (Docker Compose), Drizzle ORM 0.45.3 et drizzle-kit 0.31.11, postgres.js 3.4.9 |
 | Domaine | Zod 4.6.5, Luxon 3.7.2, libphonenumber-js 1.13.14, yaml 2.9.1 |
-| Voix | ElevenLabs Agents : modèle `claude-haiku-4-5`, voix « Stella » en `eleven_v4_turbo`, `@elevenlabs/react` 1.15.2 dans le navigateur |
+| Voix | ElevenLabs Agents : modèle `qwen35-397b-a17b`, voix « Stella » en `eleven_v4_turbo`, `@elevenlabs/react` 1.15.2 dans le navigateur |
 | Pont | Python 3 (3.14 sur le serveur), SDK `elevenlabs` 2.69.0, soxr 1.1.0, numpy, dbus-python, PyGObject, BlueZ, oFono, libsbc |
 | Bilans et agenda | Claude Code en mode headless (`claude -p`), connecteur Google Agenda de Claude |
 | Pilotage | `@modelcontextprotocol/server` 2.1.0, skill de projet Claude Code |
