@@ -143,7 +143,10 @@ export function FormulaireReglages({ reglages, empreinte }: { reglages: PatchReg
     if (CHAMPS.every((c) => valeurs[c.cle] === base.initiales[c.cle])) setValeurs(initiales);
   }
 
-  const changes = CHAMPS.filter((c) => valeurs[c.cle] !== initiales[c.cle]);
+  // « 1,2 » et « 1.2 » disent la même chose : un champ n'est modifié que si sa valeur lue change.
+  const differe = (c: DefinitionChamp) =>
+    valeurs[c.cle] !== initiales[c.cle] && JSON.stringify(enValeur(valeurs[c.cle] ?? '', c.genre)) !== JSON.stringify(enValeur(initiales[c.cle] ?? '', c.genre));
+  const changes = CHAMPS.filter(differe);
   const patch: Record<string, unknown> = {};
   for (const c of changes) poser(patch, c.cle, enValeur(valeurs[c.cle] ?? '', c.genre));
   const verification = patchReglagesSchema.safeParse(patch);
@@ -205,7 +208,7 @@ export function FormulaireReglages({ reglages, empreinte }: { reglages: PatchReg
                 id={`${id}-${c.cle.replace('.', '-')}`}
                 definition={c}
                 valeur={valeurs[c.cle] ?? ''}
-                modifie={valeurs[c.cle] !== initiales[c.cle]}
+                modifie={differe(c)}
                 erreur={montrerErreurs ? erreurs[c.cle] : undefined}
                 desactive={envoi}
                 onChange={(t) => changer(c.cle, t)}

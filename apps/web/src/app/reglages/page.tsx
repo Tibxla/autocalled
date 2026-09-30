@@ -6,6 +6,7 @@ import { db } from '@/db';
 import { appels, entreprises, prospects, rendezVous } from '@/db/schema';
 import { calendrierConfigure, etatAgenda } from '@/lib/agenda';
 import { derniereVersionAssistante } from '@/lib/assistante';
+import { ORIGINE_VERSION } from '@/lib/vue-assistante';
 import { clientGoogle, connexion } from '@/lib/google';
 import { journalMcpRecent, rendezVousRecents } from '@/lib/lecture';
 import { assistantePourLaPage } from '@/lib/pages';
@@ -36,13 +37,6 @@ function ilYA(minutes: number): string {
   return `il y a ${Math.floor(heures / 24)} jours`;
 }
 
-/** D'où vient la dernière configuration ElevenLabs consignée (versions_assistante). */
-const ORIGINE_CONFIGURATION = {
-  mcp: 'poussée par Claude Code',
-  interface: 'poussée depuis l’interface',
-  cli: 'poussée en ligne de commande',
-  distante: 'rapatriée du tableau de bord ElevenLabs',
-} as const;
 
 const SECTION = 'grid scroll-mt-[calc(var(--hauteur-barre)+16px)] gap-5';
 
@@ -172,7 +166,7 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
               {configuration ? (
                 <>
                   <span className="font-mono text-sm">{configuration.versionId.slice(-8)}</span>
-                  <span className="text-encre-3"> · {ORIGINE_CONFIGURATION[configuration.origine]}</span>
+                  <span className="text-encre-3"> · {ORIGINE_VERSION[configuration.origine] ?? configuration.origine}</span>
                   <span className="block text-sm text-encre-3">
                     Consignée le{' '}
                     <time dateTime={configuration.consigneLe.toISOString()} className="font-mono">
