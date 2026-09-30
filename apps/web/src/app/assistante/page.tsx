@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { heure, jourCourt } from '@/components/format-appel';
-import { EnTetePage, EtatVide, LigneDefinition, Message, Page, TitreSection } from '@/components/ui';
+import { EnTetePage, EtatVide, LIEN_TEXTE, LigneDefinition, Message, Page, TitreSection } from '@/components/ui';
 import { derniereVersionAssistante } from '@/lib/assistante';
 import { ceQueVoitLAssistante } from '@/lib/ce-que-voit-l-assistante';
 import { lireFichiersAssistante } from '@/lib/fichiers-assistante';
@@ -77,7 +77,7 @@ export default async function PageAssistante({ searchParams }: { searchParams: P
         sousTitre={`Ce que ${nom} dit, reçoit et sait faire à chaque appel, à télécharger. Rien ne se modifie ici : les réglages passent par Claude Code.`}
       />
       <div className="grid max-w-[56rem] min-w-0 gap-12">
-        <nav aria-label="Sections de la page" className="-mt-2 flex flex-wrap gap-x-[22px] gap-y-1 text-md">
+        <nav aria-label="Sections de la page" className="-mt-2 flex flex-wrap gap-x-[22px] gap-y-1 text-md pointer-coarse:gap-y-0">
           <Ancre href="#identite">Identité</Ancre>
           <Ancre href="#prompt">Prompt</Ancre>
           <Ancre href="#configuration">Configuration</Ancre>
@@ -415,7 +415,7 @@ function Ancre({ href, compte, children }: { href: string; compte?: number; chil
   return (
     <a
       href={href}
-      className="inline-flex items-baseline gap-1.5 rounded-[4px] py-1 whitespace-nowrap text-encre-3 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline pointer-coarse:py-2.5"
+      className={`inline-flex items-baseline gap-1.5 rounded-[4px] py-1 whitespace-nowrap text-encre-3 hover:text-encre-2 pointer-coarse:min-h-11 pointer-coarse:items-center pointer-coarse:py-0 ${LIEN_TEXTE}`}
     >
       {children}
       {compte !== undefined ? <span className="font-mono text-encre-3">{compte}</span> : null}
