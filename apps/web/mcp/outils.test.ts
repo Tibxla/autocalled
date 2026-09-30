@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, isNotNull } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/db';
 import { appels, assistante, campagnes, consentements, entreprises, journalMcp, prospects } from '@/db/schema';
@@ -170,6 +170,8 @@ describe('gestes confirmés sans élicitation', () => {
         ['ajouter_a_la_campagne', { campagneId, prospects: ['marc'] }],
         ['modifier_prospect', { entreprise: 'gite-fictif', prospect: 'julie', champs: { telephone: '06 39 98 00 09' } }],
         ['importer_fiches', { entreprise: 'gite-fictif', fiches: [fiche('julie', 'Julie Fictive', '06 39 98 00 09')] }],
+        // Julie attend dans la file de la campagne en cours : l'archiver l'en retirerait.
+        ['archiver_prospect', { entreprise: 'gite-fictif', prospect: 'julie' }],
       ] as const) {
         expect(await appeler(outil, args), outil).toMatchObject({ erreur: true, texte: expect.stringContaining('à faire depuis l’interface') });
       }
@@ -183,7 +185,8 @@ describe('gestes confirmés sans élicitation', () => {
       expect((await db.select().from(campagnes))[0]?.entrees).toHaveLength(1);
       expect(faux.modifications).toBe(0);
       const journal = await db.select().from(journalMcp).where(eq(journalMcp.resultat, 'refus'));
-      expect(journal.filter((j) => j.confirmation === 'indisponible')).toHaveLength(7);
+      expect(journal.filter((j) => j.confirmation === 'indisponible')).toHaveLength(8);
+      expect(await db.$count(prospects, isNotNull(prospects.archiveLe))).toBe(0);
       expect((await db.select({ telephone: prospects.telephone }).from(prospects).where(eq(prospects.id, 'julie')))[0]?.telephone).toBe('+33639980001');
     } finally {
       await agent.effacer();

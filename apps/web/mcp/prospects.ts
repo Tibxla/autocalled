@@ -8,7 +8,7 @@ import { autorisationsDe } from '@/lib/autorisations';
 import { trouverEntreprise, trouverProspect } from '@/lib/donnees';
 import { MENTION_NEUTRE, effacerPersonne, inventaireEffacement, phrasesEffacement } from '@/lib/effacement';
 import { numeroLisible } from '@/lib/format';
-import { archiverProspect, filesTelephoneEnCours, modifierProspect, reactiverProspect, revoquerNumero } from '@/lib/prospects';
+import { archiverProspect, filesEnAttente, filesTelephoneEnCours, modifierProspect, reactiverProspect, revoquerNumero } from '@/lib/prospects';
 import { patchFicheSchema } from '@/lib/schemas';
 import { champEntreprise, champProspect, entrepriseInconnue, prospectInconnu } from './communs';
 import { champ, citation, confirmer, heureDeParis, refusDeConfirmation } from './confirmation';
@@ -91,22 +91,48 @@ export function outilsDeProspects(declarer: Declarer, serveur: McpServer): void 
     'archiver_prospect',
     {
       description:
-        'Archive un prospect : il sort de lister_prospects (sauf `archives: true`) et des choix de campagne, et ne peut plus être appelé ni ajouté à une campagne tant qu’il l’est. Ses appels, bilans et le consentement de son numéro restent ; reactiver_prospect le fait revenir. S’il attend dans la file d’une campagne non terminée, il en est retiré (motif retrait) et n’y revient pas à la réactivation. Refusé pendant un appel avec lui. C’est un frein, réversible : pas de confirmation. Pour qu’une personne ne soit plus jamais appelée : revoquer_numero ; pour l’effacer entièrement : effacer_personne.',
+        'Archive un prospect : il sort de lister_prospects (sauf `archives: true`) et des choix de campagne, et ne peut plus être appelé ni ajouté à une campagne tant qu’il l’est. Ses appels, bilans et le consentement de son numéro restent ; reactiver_prospect le fait revenir. C’est un frein, réversible, sans confirmation, sauf s’il attend dans la file d’une campagne non terminée : il en serait retiré (motif retrait) sans y revenir à la réactivation, donc l’opérateur confirme, sur la question qui nomme ces campagnes. Refusé pendant un appel avec lui. Pour qu’une personne ne soit plus jamais appelée : revoquer_numero ; pour l’effacer entièrement : effacer_personne.',
       entree: z.strictObject({ entreprise: champEntreprise, prospect: champProspect }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     },
-    async ({ entreprise: slug, prospect: id }) => {
+    async ({ entreprise: slug, prospect: id }, ctx) => {
       const e = await trouverEntreprise(slug);
       if (!e) return refus(entrepriseInconnue(slug));
-      const r = await archiverProspect(e.id, id, 'mcp');
-      if (!r.ok) return refus(r.raison);
-      return reussite({
-        prospect: id,
-        archive: true,
-        dejaArchive: r.deja,
-        retireDesFiles: r.retireDe,
-        ...(r.terminees.length ? { campagnesTerminees: r.terminees } : {}),
-      });
+      const p = await trouverProspect(e.id, id);
+      if (!p) return refus(prospectInconnu(id));
+      // Lu ici pour la question ; archiverProspect relit les files sous verrou et refuse une file qui n'y figurait pas.
+      const files = p.archiveLe ? [] : await filesEnAttente(e.id, id);
+      let confirmation: 'acceptee' | undefined;
+      if (files.length) {
+        const garde = await confirmer(
+          serveur,
+          ctx,
+          `Archiver ${champ(p.nom)}${p.societe ? ` (${champ(p.societe)})` : ''}, de l’entreprise ${champ(e.nom)}, et le retirer de la file ${
+            files.length > 1 ? `de ${files.length} campagnes` : 'd’une campagne'
+          } où il attend d’être appelé : ${files.map((f) => `${f.libelle}${f.derniere ? ' (il y est le dernier : elle se terminera)' : ''}`).join(' ; ')}. Il n’y sera pas appelé, et le retrait ne se défait pas : réactivé, il ne revient dans aucune file.`,
+          ['archiver_prospect', e.id, id, files.map((f) => f.id)],
+        );
+        if (garde.etat === 'a-demander') return garde.issue;
+        if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);
+        confirmation = 'acceptee';
+      }
+      const r = await archiverProspect(
+        e.id,
+        id,
+        'mcp',
+        files.map((f) => f.id),
+      );
+      if (!r.ok) return refus(r.raison, confirmation);
+      return reussite(
+        {
+          prospect: id,
+          archive: true,
+          dejaArchive: r.deja,
+          retireDesFiles: r.retireDe,
+          ...(r.terminees.length ? { campagnesTerminees: r.terminees } : {}),
+        },
+        { confirmation },
+      );
     },
   );
 

@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/db';
 import { appels, campagnes, consentements, imports, journalMcp, oppositions, prospects } from '@/db/schema';
@@ -57,16 +57,15 @@ describe('modifier_prospect', () => {
 });
 
 describe('archiver_prospect et reactiver_prospect', () => {
-  it('archive sans rien demander, le retire de la file, le cache de la liste, et le réactive', async () => {
+  it('archive sans rien demander hors de toute file, le cache de la liste, et le réactive', async () => {
     const { versionScriptId } = await creerScript(entrepriseId, 'Découverte');
-    const campagneId = await enregistrerCampagne(entrepriseId, { versionScriptId, ligne: 'simulation', prospects: ['julie', 'marc'] });
     const { appeler, messages } = await connecter('accepter');
 
     expect((await appeler('archiver_prospect', { entreprise: 'gite-fictif', prospect: 'julie' })).json).toEqual({
       prospect: 'julie',
       archive: true,
       dejaArchive: false,
-      retireDesFiles: [campagneId],
+      retireDesFiles: [],
     });
     expect(messages).toHaveLength(0);
     const liste = async (args: Record<string, unknown> = {}) =>
@@ -85,6 +84,37 @@ describe('archiver_prospect et reactiver_prospect', () => {
 
     expect((await appeler('reactiver_prospect', { entreprise: 'gite-fictif', prospect: 'julie' })).json).toEqual({ prospect: 'julie', archive: false, dejaActif: false });
     expect(await liste()).toEqual(['julie', 'marc']);
+  });
+
+  it('demande l’accord, rédigé depuis la base, quand il attend dans une file, et n’archive rien sans lui', async () => {
+    const { versionScriptId } = await creerScript(entrepriseId, 'Découverte');
+    const campagneId = await enregistrerCampagne(entrepriseId, { versionScriptId, ligne: 'simulation', prospects: ['julie', 'marc'] });
+    const { appeler, messages } = await connecter('refuser');
+
+    expect(await appeler('archiver_prospect', { entreprise: 'gite-fictif', prospect: 'julie' })).toMatchObject({ erreur: true, texte: expect.stringContaining('n’a pas confirmé') });
+
+    expect(messages[0]).toMatch(
+      /^Archiver Julie Fictive \(Société fictive\), de l’entreprise Gîte fictif, et le retirer de la file d’une campagne où il attend d’être appelé : Campagne du \d\d\/\d\d · Découverte v1, prête\. Il n’y sera pas appelé, et le retrait ne se défait pas : réactivé, il ne revient dans aucune file\.$/,
+    );
+    expect(await db.$count(prospects, isNotNull(prospects.archiveLe))).toBe(0);
+    expect((await db.select().from(campagnes).where(eq(campagnes.id, campagneId)))[0]?.entrees[0]).toEqual({ prospectId: 'julie', etat: 'a-appeler' });
+  });
+
+  it('archive et retire de la file après l’accord, en disant la campagne qui se termine', async () => {
+    const { versionScriptId } = await creerScript(entrepriseId, 'Découverte');
+    const campagneId = await enregistrerCampagne(entrepriseId, { versionScriptId, ligne: 'simulation', prospects: ['julie'] });
+    const { appeler, messages } = await connecter('accepter');
+
+    expect((await appeler('archiver_prospect', { entreprise: 'gite-fictif', prospect: 'julie' })).json).toEqual({
+      prospect: 'julie',
+      archive: true,
+      dejaArchive: false,
+      retireDesFiles: [campagneId],
+      campagnesTerminees: [campagneId],
+    });
+    expect(messages[0]).toContain('(il y est le dernier : elle se terminera)');
+    const [ligne] = await db.select().from(journalMcp).where(and(eq(journalMcp.outil, 'archiver_prospect'), eq(journalMcp.resultat, 'ok')));
+    expect(ligne?.confirmation).toBe('acceptee');
   });
 });
 
