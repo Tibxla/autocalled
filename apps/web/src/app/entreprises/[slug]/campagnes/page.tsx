@@ -164,7 +164,12 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
                         {comptes.traites} traités sur {comptes.total}
                       </span>
                     </Cellule>
-                    <Cellule align="droite" masqueeMobile className={`font-mono text-xs ${rendezVous > 0 ? 'text-encre' : 'text-encre-3'}`}>
+                    {/* Sous 640 px, à côté du statut et du compte, avec son unité ; rien quand aucun rendez-vous n'est pris. */}
+                    <Cellule
+                      align="droite"
+                      unite="rendez-vous"
+                      className={`font-mono text-xs max-sm:order-3 ${rendezVous > 0 ? 'text-encre' : 'text-encre-3 max-sm:hidden'}`}
+                    >
                       {rendezVous}
                     </Cellule>
                   </LigneTable>
