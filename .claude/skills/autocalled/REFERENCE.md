@@ -19,6 +19,8 @@ Nature : **L** lecture, **É** écriture, **É !** écriture destructive ; **⇄
 | `historique_assistante` | `versionId?` | L | non | configurations consignées, ou un instantané et sa différence |
 | `restaurer_assistante` | `versionId` | É | non | réécrit `agent/` depuis un instantané, à pousser ensuite |
 
+La page Assistante de l’interface (`/assistante`) fait la même chose que ces outils, par les mêmes fonctions et avec les mêmes refus (`connu`, `empreinteConnue`, verrou, liste fermée, 4 000 caractères), **sauf le prompt**, qui reste en lecture et se modifie par `modifier_prompt_assistante`, puis se pousse depuis la page ou par `pousser_assistante`. Dans la page, le nom et le premier message, la poussée, le rapatriement et la restauration passent par une confirmation en ligne rédigée par le serveur ; la poussée y est refusée pendant un appel. Ce que la page écrit est consigné d’origine `interface` (`modifiePar` de l’assistante, `origine` de la version poussée) : un `connu` ou une `empreinteConnue` périmé après un geste dans la page n’est pas une erreur, il suffit de relire (`lire_assistante`).
+
 ## Entreprises
 
 | Outil | Entrées | Nature | Confirmation | Rôle |
