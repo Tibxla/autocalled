@@ -1,10 +1,7 @@
 import type { ClientAgent } from '@autocalled/agent';
 import type { McpServer } from '@modelcontextprotocol/server';
-import { and, countDistinct, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
-import { db } from '@/db';
-import { campagnes, consentements } from '@/db/schema';
-import { lireAssistante, modifierAssistante, nomAssistanteSchema, premierMessageSchema } from '@/lib/assistante';
+import { lireAssistante, modifierAssistante, preparerModificationAssistante } from '@/lib/assistante';
 import {
   historiqueAssistante,
   lireConfigurationAssistante,
@@ -32,20 +29,6 @@ const LECTURE_OUVERTE = { readOnlyHint: true, openWorldHint: true } as const;
 const ECRITURE_FICHIERS = { readOnlyHint: false, destructiveHint: false, openWorldHint: true } as const;
 
 const coupe = (t: string, max = 300) => (t.length > max ? `${t.slice(0, max)}…` : t);
-
-/** Le texte de consentement v1 nomme « Mina » : combien de numéros ont encore un accord actif donné sur ce texte. */
-async function consentementsActifsV1(): Promise<number> {
-  const [r] = await db
-    .select({ n: countDistinct(consentements.numero) })
-    .from(consentements)
-    .where(and(isNull(consentements.revoqueLe), eq(consentements.texteVersion, 1)));
-  return Number(r?.n ?? 0);
-}
-
-async function campagneEnCours(): Promise<boolean> {
-  const [c] = await db.select({ id: campagnes.id }).from(campagnes).where(eq(campagnes.statut, 'en-cours')).limit(1);
-  return Boolean(c);
-}
 
 export function outilsDAssistante(declarer: Declarer, serveur: McpServer, agent: OptionsAgent = {}): void {
   declarer(
@@ -83,41 +66,18 @@ export function outilsDAssistante(declarer: Declarer, serveur: McpServer, agent:
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
     async ({ nom, premierMessage, connu }, ctx) => {
-      const nouveauNom = nom === undefined ? undefined : nomAssistanteSchema.safeParse(nom);
-      if (nouveauNom && !nouveauNom.success) return refus(`Nom refusé : ${nouveauNom.error.issues[0]?.message}`);
-      const nouveauMessage = premierMessage === undefined ? undefined : premierMessageSchema.safeParse(premierMessage);
-      if (nouveauMessage && !nouveauMessage.success) return refus(`Premier message refusé : ${nouveauMessage.error.issues[0]?.message}`);
-
-      const actuelle = await lireAssistante();
-      if (connu && actuelle.modifieLe?.getTime() !== Date.parse(connu)) {
-        return refus('La configuration de l’assistante a changé depuis ta lecture : relis-la avec lire_assistante.');
-      }
-      const changeNom = nouveauNom?.data !== undefined && nouveauNom.data !== actuelle.nom;
-      const changeMessage = nouveauMessage?.data !== undefined && nouveauMessage.data !== actuelle.premierMessage;
-      if (!changeNom && !changeMessage) return refus('Rien ne change : ce sont déjà le nom et le premier message de l’assistante.');
-
-      const [enCours, v1] = await Promise.all([campagneEnCours(), changeNom ? consentementsActifsV1() : Promise.resolve(0)]);
-      const lignes = [
-        changeNom && `Changer le nom de l’assistante : « ${actuelle.nom} » → « ${nouveauNom?.data} ».`,
-        changeMessage && `Changer son premier message, dit quand le prospect se tait au décroché : « ${actuelle.premierMessage} » → « ${nouveauMessage?.data} ».`,
-        `Les prospects l’entendront dès le prochain appel${enCours ? ', y compris dans la campagne en cours' : ''}, sans autre relecture.`,
-        changeNom && v1 > 0 && `${v1} numéro${v1 > 1 ? 's ont' : ' a'} un consentement actif donné sur le texte version 1, qui nomme l’assistante « Mina ».`,
-      ].filter(Boolean);
-      const garde = await confirmer(serveur, ctx, lignes.join(' '), [
-        'modifier_assistante',
-        actuelle.nom,
-        actuelle.premierMessage,
-        actuelle.modifieLe?.toISOString() ?? null,
-        changeNom ? nouveauNom?.data : null,
-        changeMessage ? nouveauMessage?.data : null,
-      ]);
+      const prep = await preparerModificationAssistante(
+        { ...(nom !== undefined ? { nom } : {}), ...(premierMessage !== undefined ? { premierMessage } : {}) },
+        { connu: connu ?? null, relire: 'relis-la avec lire_assistante' },
+      );
+      if (!prep.ok) return refus(prep.raison);
+      const { actuelle, changement } = prep;
+      const changeNom = changement.nom !== undefined;
+      const garde = await confirmer(serveur, ctx, prep.lignes.join(' '), ['modifier_assistante', ...prep.jeton]);
       if (garde.etat === 'a-demander') return garde.issue;
       if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);
 
-      const r = await modifierAssistante(
-        { ...(changeNom ? { nom: nouveauNom?.data } : {}), ...(changeMessage ? { premierMessage: nouveauMessage?.data } : {}) },
-        { origine: 'mcp', connu: actuelle.modifieLe?.toISOString() ?? null },
-      );
+      const r = await modifierAssistante(changement, { origine: 'mcp', connu: actuelle.modifieLe?.toISOString() ?? null });
       if (!r.ok) return refus(r.raison);
       const apres = await lireAssistante();
       let libelle: string | undefined;

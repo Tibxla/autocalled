@@ -319,12 +319,15 @@ export const assistante = pgTable(
   (t) => [check('assistante_une_seule_ligne', sql`${t.id} = 1`)],
 );
 
-/** D'où vient un instantané de la configuration ElevenLabs : poussée par le MCP, ligne de commande, tableau de bord. */
-export type OrigineVersionAssistante = 'mcp' | 'cli' | 'distante';
+/**
+ * D'où vient un instantané de la configuration ElevenLabs : poussée par le MCP, par l'interface (page Assistante) ou
+ * en ligne de commande, ou rapatriée du tableau de bord. Colonne texte : une origine de plus ne demande pas de migration.
+ */
+export type OrigineVersionAssistante = 'mcp' | 'interface' | 'cli' | 'distante';
 
 /**
  * Instantanés de la configuration ElevenLabs de l'assistante (champs gérés par `agent/`), consignés à chaque poussée
- * ou rapatriement par le MCP. `appels.version_agent` y renvoie : on sait avec quel prompt un appel a été passé.
+ * ou rapatriement par le MCP ou l'interface. `appels.version_agent` y renvoie : on sait avec quel prompt un appel a été passé.
  */
 export const versionsAssistante = pgTable('versions_assistante', {
   id: uuid().primaryKey().defaultRandom(),
