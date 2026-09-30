@@ -94,7 +94,7 @@ describe('archiver_prospect et reactiver_prospect', () => {
     expect(await appeler('archiver_prospect', { entreprise: 'gite-fictif', prospect: 'julie' })).toMatchObject({ erreur: true, texte: expect.stringContaining('n’a pas confirmé') });
 
     expect(messages[0]).toMatch(
-      /^Archiver Julie Fictive \(Société fictive\), de l’entreprise Gîte fictif, et le retirer de la file d’une campagne où il attend d’être appelé : Campagne du \d\d\/\d\d · Découverte v1, prête\. Il n’y sera pas appelé, et le retrait ne se défait pas : réactivé, il ne revient dans aucune file\.$/,
+      /^Retirer Julie Fictive \(Société fictive\), de l’entreprise Gîte fictif, de la file d’une campagne où ce prospect attend d’être appelé, et l’archiver : Campagne du \d\d\/\d\d · Découverte v1, prête\. Il n’y sera pas appelé, et le retrait ne se défait pas : réactivé, il ne revient dans aucune file\.$/,
     );
     expect(await db.$count(prospects, isNotNull(prospects.archiveLe))).toBe(0);
     expect((await db.select().from(campagnes).where(eq(campagnes.id, campagneId)))[0]?.entrees[0]).toEqual({ prospectId: 'julie', etat: 'a-appeler' });
@@ -112,7 +112,7 @@ describe('archiver_prospect et reactiver_prospect', () => {
       retireDesFiles: [campagneId],
       campagnesTerminees: [campagneId],
     });
-    expect(messages[0]).toContain('(il y est le dernier : elle se terminera)');
+    expect(messages[0]).toContain('(plus personne d’autre à y appeler : elle se terminera)');
     const [ligne] = await db.select().from(journalMcp).where(and(eq(journalMcp.outil, 'archiver_prospect'), eq(journalMcp.resultat, 'ok')));
     expect(ligne?.confirmation).toBe('acceptee');
   });

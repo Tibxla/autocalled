@@ -213,7 +213,7 @@ export function ConfirmationArchivage({
       className={className}
       ouverte={ouverte}
       ton="alerte"
-      question={`Archiver ${nom} et le retirer de ${plusieurs ? `${files.length} files` : 'la file'} ?`}
+      question={`Retirer ${nom} de ${plusieurs ? `${files.length}\u00a0files` : 'la file'} et l’archiver\u00a0?`}
       libelleConfirmer="Archiver et retirer"
       enCours={enCours}
       libelleEnCours="Archivage…"
@@ -222,17 +222,20 @@ export function ConfirmationArchivage({
     >
       <div className="grid gap-2">
         <div>
-          <p>{plusieurs ? 'Il attend dans la file de ces campagnes :' : 'Il attend dans la file de cette campagne :'}</p>
+          <p>{plusieurs ? 'Ce prospect attend dans la file de ces campagnes :' : 'Ce prospect attend dans la file de cette campagne :'}</p>
           <ul className="list-disc pl-4 marker:text-encre-3">
             {files.map((f) => (
               <li key={f.id}>
                 {f.libelle}
-                {f.derniere ? ' : il y est le dernier à appeler, elle se terminera' : ''}
+                {f.derniere ? ' : plus personne d’autre à y appeler, elle se terminera' : ''}
               </li>
             ))}
           </ul>
         </div>
-        <p>Il ne sera pas appelé dans {plusieurs ? 'ces campagnes' : 'cette campagne'}. Le retrait ne se défait pas : réactivé, il ne revient dans aucune file.</p>
+        <p>
+          Ce prospect ne sera pas appelé dans {plusieurs ? 'ces campagnes' : 'cette campagne'}. Le retrait ne se défait pas : réactivé, il ne revient dans
+          aucune file.
+        </p>
       </div>
     </Confirmation>
   );

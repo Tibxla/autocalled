@@ -107,9 +107,9 @@ export function outilsDeProspects(declarer: Declarer, serveur: McpServer): void 
         const garde = await confirmer(
           serveur,
           ctx,
-          `Archiver ${champ(p.nom)}${p.societe ? ` (${champ(p.societe)})` : ''}, de l’entreprise ${champ(e.nom)}, et le retirer de la file ${
+          `Retirer ${champ(p.nom)}${p.societe ? ` (${champ(p.societe)})` : ''}, de l’entreprise ${champ(e.nom)}, de la file ${
             files.length > 1 ? `de ${files.length} campagnes` : 'd’une campagne'
-          } où il attend d’être appelé : ${files.map((f) => `${f.libelle}${f.derniere ? ' (il y est le dernier : elle se terminera)' : ''}`).join(' ; ')}. Il n’y sera pas appelé, et le retrait ne se défait pas : réactivé, il ne revient dans aucune file.`,
+          } où ce prospect attend d’être appelé, et l’archiver : ${files.map((f) => `${f.libelle}${f.derniere ? ' (plus personne d’autre à y appeler : elle se terminera)' : ''}`).join(' ; ')}. Il n’y sera pas appelé, et le retrait ne se défait pas : réactivé, il ne revient dans aucune file.`,
           ['archiver_prospect', e.id, id, files.map((f) => f.id)],
         );
         if (garde.etat === 'a-demander') return garde.issue;
