@@ -1,3 +1,4 @@
+import { classesAction } from '@/components/classes-action';
 import { Chevron } from '@/components/ui';
 import { LIBELLES_ETAT, segmenter, type SegmentResolu } from '@/lib/vue-assistante';
 
@@ -20,7 +21,10 @@ export function TexteAvecVariables({ texte }: { texte: string }) {
   );
 }
 
-/** Le texte résolu : chaque valeur venue d'une variable surlignée, son nom en infobulle ; les manques en encre sourde. */
+/**
+ * Le texte résolu : chaque valeur venue d'une variable surlignée, son nom en infobulle ; les manques en encre sourde.
+ * Une variable vide ne transmet rien : l'écran le dit par un marqueur, que le texte téléchargé ne porte pas.
+ */
 export function TexteResolu({ segments }: { segments: readonly SegmentResolu[] }) {
   return (
     <>
@@ -30,7 +34,7 @@ export function TexteResolu({ segments }: { segments: readonly SegmentResolu[] }
         if (s.etat === 'vide' || s.etat === 'selon-la-fiche') {
           return (
             <span key={i} title={`{{${s.nom}}}`} className="rounded-[2px] bg-filet-2 px-0.5 font-mono text-[0.9em] text-encre-3 [overflow-wrap:anywhere]">
-              {s.texte}
+              {s.etat === 'vide' ? `[${LIBELLES_ETAT.vide}]` : s.texte}
             </span>
           );
         }
@@ -48,13 +52,16 @@ export function TexteResolu({ segments }: { segments: readonly SegmentResolu[] }
   );
 }
 
-/** Un texte long posé sur la surface, replié derrière son résumé ; retours à la ligne gardés, sans défilement horizontal. */
+/**
+ * Un texte long posé sur la surface, replié derrière son résumé ; retours à la ligne gardés, sans défilement horizontal.
+ * Le résumé est une action normale en texte : souligné au survol, en permanence au doigt, 44 px de haut.
+ */
 export function BlocRepliable({ resume, ouvert = false, children }: { resume: string; ouvert?: boolean; children: React.ReactNode }) {
   return (
     <details className="group min-w-0" open={ouvert}>
-      <summary className="inline-flex min-h-9 cursor-pointer list-none items-center gap-2 text-md text-encre-2 hover:text-encre max-sm:min-h-11 pointer-coarse:min-h-11 [&::-webkit-details-marker]:hidden">
+      <summary className={`${classesAction('normal')} -mx-1.5 cursor-pointer list-none max-sm:h-11 [&::-webkit-details-marker]:hidden`}>
         <Chevron className="stroke-encre-3 group-open:rotate-90" />
-        <span className="decoration-souligne underline-offset-4 group-hover:underline">{resume}</span>
+        {resume}
       </summary>
       <div className="mt-2 max-w-[80ch] rounded-md bg-surface px-3 py-3 text-base leading-relaxed break-words whitespace-pre-wrap sm:px-4">{children}</div>
     </details>
@@ -62,17 +69,13 @@ export function BlocRepliable({ resume, ouvert = false, children }: { resume: st
 }
 
 /**
- * Un téléchargement : une action en texte comme les autres, 44 px au doigt et sur petit écran. Lien simple, jamais un
- * <Link> : un préchargement lancerait le téléchargement.
+ * Un téléchargement : une action normale en texte, soulignée en permanence au doigt, 44 px au doigt et sur petit
+ * écran. Lien simple, jamais un <Link> : un préchargement lancerait le téléchargement.
  */
 export function LienTelechargement({ href, children }: { href: string; children: React.ReactNode }) {
   return (
-    <a
-      href={href}
-      download
-      className="group -mx-1.5 inline-flex h-9 items-center justify-self-start rounded-[4px] px-1.5 text-md font-medium text-encre-2 transition-colors duration-150 hover:text-encre max-sm:h-11 pointer-coarse:h-11"
-    >
-      <span className="decoration-souligne decoration-1 underline-offset-4 group-hover:underline">{children}</span>
+    <a href={href} download className={`${classesAction('normal')} -mx-1.5 justify-self-start max-sm:h-11`}>
+      {children}
     </a>
   );
 }

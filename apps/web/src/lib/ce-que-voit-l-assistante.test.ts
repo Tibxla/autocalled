@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { db } from '@/db';
-import { prospects, scripts, versionsScript } from '@/db/schema';
+import { eq } from 'drizzle-orm';
+import { entreprises, prospects, scripts, versionsScript } from '@/db/schema';
 import { entrepriseDeTest } from '../../test/fixtures';
 import { avecBaseDeTest } from '../../test/outils';
 import { ceQueVoitLAssistante } from './ce-que-voit-l-assistante';
@@ -27,11 +28,24 @@ describe('ce que voit l’assistante', () => {
     expect(r.entreprise?.slug).toBe('atelier-fictif');
     expect(r.erreur).toBeNull();
     expect(r.vue?.version).toEqual({ script: 'Accroche courte', numero: 1 });
-    expect(r.etats).toMatchObject({ prospect_nom: 'selon-la-fiche', entreprise_offre: 'par-defaut', entreprise_nom: 'valeur' });
+    // Champs vides de la fiche : non transmis (la variable part vide), jamais un texte par défaut.
+    expect(r.etats).toMatchObject({ prospect_nom: 'selon-la-fiche', entreprise_offre: 'vide', entreprise_complements: 'vide', entreprise_nom: 'valeur' });
     const prompt = texteDesSegments(resoudre(r.vue!.prompt, r.vue!.variables, r.etats));
     expect(prompt).toContain('Atelier fictif');
     expect(prompt).toContain('[{{prospect_nom}} : selon la fiche du prospect]');
     expect(prompt).not.toMatch(/\{\{(?!prospect_|historique_appels)\w+\}\}/);
+    expect(prompt).not.toContain('non transmis');
+  });
+
+  it('transmet les informations complémentaires quand la fiche en a', async () => {
+    const entreprise = await entrepriseDeTest();
+    await db.update(entreprises).set({ complements: '  Chantiers dans la région seulement.  ' }).where(eq(entreprises.id, entreprise.id));
+
+    const r = await ceQueVoitLAssistante({ entreprise: entreprise.slug });
+
+    expect(r.etats.entreprise_complements).toBe('valeur');
+    expect(r.vue?.variables.entreprise_complements).toBe('Chantiers dans la région seulement.');
+    expect(texteDesSegments(resoudre(r.vue!.prompt, r.vue!.variables, r.etats))).toContain('Chantiers dans la région seulement.');
   });
 
   it('résout les variables du prospect choisi', async () => {

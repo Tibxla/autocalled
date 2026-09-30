@@ -10,6 +10,7 @@ import {
   connaissancesDe,
   enTeteTelechargement,
   etatsDesVariables,
+  GROUPES_VARIABLES,
   markdownDeLaVue,
   nomDeFichier,
   outilsDe,
@@ -48,6 +49,15 @@ describe('mise en évidence des variables', () => {
   });
 });
 
+describe('libellés des variables', () => {
+  it('couvrent exactement les variables de l’appel, une fois chacune', () => {
+    const cles = GROUPES_VARIABLES.flatMap((g) => g.cles.map(([cle]) => cle));
+    expect(new Set(cles).size).toBe(cles.length);
+    expect([...cles].sort()).toEqual([...VARIABLES_DE_L_APPEL].sort());
+    expect(GROUPES_VARIABLES[0]?.cles).toContainEqual(['entreprise_complements', 'Informations complémentaires']);
+  });
+});
+
 describe('prompt résolu', () => {
   const variables = { assistante_nom: 'Mina', entreprise_offre: 'à présenter simplement.', prospect_nom: '', prospect_role: 'responsable' };
 
@@ -64,12 +74,12 @@ describe('prompt résolu', () => {
     });
   });
 
-  it('remplace chaque variable, marque celles sans valeur et laisse une inconnue telle quelle', () => {
+  it('remplace chaque variable, laisse vide ce qui ne part pas, marque la fiche absente et laisse une inconnue telle quelle', () => {
     const etats = { assistante_nom: 'valeur', entreprise_offre: 'par-defaut', prospect_nom: 'vide', prospect_role: 'selon-la-fiche' } as const;
     const segments = resoudre('{{assistante_nom}} : {{entreprise_offre}} / {{prospect_nom}} / {{prospect_role}} / {{inventee}}', variables, etats);
-    expect(texteDesSegments(segments)).toBe(
-      'Mina : à présenter simplement. / [non renseigné, non transmis] / [{{prospect_role}} : selon la fiche du prospect] / {{inventee}}',
-    );
+    // Une variable vide part vide, comme dans l'appel réel : le texte téléchargé ne lui invente aucun marqueur.
+    expect(texteDesSegments(segments)).toBe('Mina : à présenter simplement. /  / [{{prospect_role}} : selon la fiche du prospect] / {{inventee}}');
+    expect(segments.find((s) => s.type === 'variable' && s.nom === 'prospect_nom')).toEqual({ type: 'variable', nom: 'prospect_nom', etat: 'vide', texte: '' });
     expect(segments.find((s) => s.type === 'inconnue')).toEqual({ type: 'inconnue', nom: 'inventee', texte: '{{inventee}}' });
   });
 });
@@ -143,9 +153,9 @@ describe('téléchargements', () => {
       calculeLe: new Date('2026-09-30T08:00:00Z'),
       modelePremierMessage: 'Allô, ici {{assistante_nom}} ?',
       premierMessage: 'Allô, ici Mina ?',
-      prompt: '# Personnalité\n\nTu es {{assistante_nom}}. Tu appelles {{prospect_nom}}.\n\n```\nbloc\n```\n',
-      variables: { assistante_nom: 'Mina', prospect_nom: '', entreprise_offre: 'à présenter simplement.' },
-      etats: { assistante_nom: 'valeur', prospect_nom: 'selon-la-fiche', entreprise_offre: 'par-defaut' },
+      prompt: '# Personnalité\n\nTu es {{assistante_nom}}. Tu appelles {{prospect_nom}}.\nPrix : {{entreprise_prix_consigne}}\n\n```\nbloc\n```\n',
+      variables: { assistante_nom: 'Mina', prospect_nom: '', rendez_vous: 'une visio de 30 minutes avec un membre de l’équipe', entreprise_prix_consigne: '' },
+      etats: { assistante_nom: 'valeur', prospect_nom: 'selon-la-fiche', rendez_vous: 'par-defaut', entreprise_prix_consigne: 'vide' },
       motsCles: ['Atelier fictif'],
       outils: outilsDe(configuration).filter((o) => o.nom === 'etape_script'),
       connaissances: [],
@@ -156,8 +166,10 @@ describe('téléchargements', () => {
     expect(md).toContain('- Prospect : aucun prospect choisi');
     expect(md).toContain('- Tel que transmis : « Allô, ici Mina ? »');
     // Le prompt contient une clôture de trois accents graves : le sien en prend quatre.
-    expect(md).toContain('````markdown\n# Personnalité\n\nTu es Mina. Tu appelles [{{prospect_nom}} : selon la fiche du prospect].\n\n```\nbloc\n```\n````');
-    expect(md).toContain('#### Offre (`entreprise_offre`)\n\n*non renseigné : texte par défaut transmis*\n\n```text\nà présenter simplement.\n```');
+    expect(md).toContain('````markdown\n# Personnalité\n\nTu es Mina. Tu appelles [{{prospect_nom}} : selon la fiche du prospect].\nPrix : \n\n```\nbloc\n```\n````');
+    expect(md).toContain('#### Rendez-vous (`rendez_vous`)\n\n*non renseigné : texte par défaut transmis*\n\n```text\nune visio de 30 minutes avec un membre de l’équipe\n```');
+    // Un champ vide de la fiche : dit non transmis, sans bloc de valeur.
+    expect(md).toContain('#### Consigne sur le prix (`entreprise_prix_consigne`)\n\n*non renseigné, non transmis*\n\n####');
     expect(md).toContain('#### Nom (`prospect_nom`)\n\n*aucun prospect choisi : selon la fiche du prospect*\n\n####');
     expect(md).toContain('### etape_script');
     expect(md).toContain('- Quand elle s’en sert : À chaque passage');

@@ -1,3 +1,4 @@
+import type { VARIABLES_DE_L_APPEL } from '@autocalled/domain';
 import { slugifier } from './slug';
 
 /**
@@ -79,9 +80,13 @@ export type SegmentResolu =
   /** Une `{{variable}}` que l'application n'envoie pas : laissée telle quelle. */
   | { type: 'inconnue'; nom: string; texte: string };
 
-/** Le texte que porte une variable dans le prompt résolu, marqueur compris quand elle n'a pas de valeur. */
+/**
+ * Le texte que porte une variable dans le prompt résolu. Vide, elle reste vide, comme dans l'appel réel (le prompt dit
+ * qu'une ligne sans rien après ses deux-points n'existe pas) : seul l'écran pose un marqueur (`TexteResolu`). Sans
+ * prospect choisi, un marqueur dit que la valeur dépendra de sa fiche.
+ */
 function texteResolu(nom: string, valeur: string, etat: EtatVariable): string {
-  if (etat === 'vide') return `[${LIBELLES_ETAT.vide}]`;
+  if (etat === 'vide') return '';
   if (etat === 'selon-la-fiche') return `[{{${nom}}} : selon la fiche du prospect]`;
   return valeur;
 }
@@ -99,8 +104,11 @@ export function resoudre(texte: string, variables: Record<string, string>, etats
 
 export const texteDesSegments = (segments: readonly SegmentResolu[]) => segments.map((s) => s.texte).join('');
 
-/** Libellés lisibles des variables, par groupe, dans l'ordre de l'aperçu des fiches d'entreprise. */
-export const GROUPES_VARIABLES: { titre: string; cles: [string, string][] }[] = [
+/**
+ * Libellés lisibles des variables, par groupe : la seule liste, partagée par la page Assistante, son téléchargement et
+ * l'aperçu de la fiche d'entreprise. Un test vérifie qu'elle couvre exactement `VARIABLES_DE_L_APPEL`.
+ */
+export const GROUPES_VARIABLES: { titre: string; cles: [(typeof VARIABLES_DE_L_APPEL)[number], string][] }[] = [
   {
     titre: 'Entreprise',
     cles: [
@@ -109,11 +117,18 @@ export const GROUPES_VARIABLES: { titre: string; cles: [string, string][] }[] = 
       ['entreprise_cible', 'Pour qui'],
       ['entreprise_arguments', 'Ce qui fait la différence'],
       ['entreprise_prix_consigne', 'Consigne sur le prix'],
-      ['entreprise_interdits', 'À ne jamais dire'],
+      ['entreprise_interdits', 'À ne jamais dire ni promettre'],
+      ['entreprise_complements', 'Informations complémentaires'],
       ['rendez_vous', 'Rendez-vous'],
     ],
   },
-  { titre: 'Script', cles: [['script_etapes', 'Étapes'], ['objections', 'Objections']] },
+  {
+    titre: 'Script',
+    cles: [
+      ['script_etapes', 'Étapes'],
+      ['objections', 'Objections'],
+    ],
+  },
   {
     titre: 'Prospect',
     cles: [
@@ -125,7 +140,13 @@ export const GROUPES_VARIABLES: { titre: string; cles: [string, string][] }[] = 
       ['historique_appels', 'Appels précédents'],
     ],
   },
-  { titre: 'Appel', cles: [['assistante_nom', 'Nom de l’assistante'], ['date_du_jour', 'Date du jour']] },
+  {
+    titre: 'Appel',
+    cles: [
+      ['assistante_nom', 'Nom de l’assistante'],
+      ['date_du_jour', 'Date du jour'],
+    ],
+  },
 ];
 
 /* ------------------------------------------------------------------ configuration */

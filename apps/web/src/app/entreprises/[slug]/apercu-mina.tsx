@@ -4,49 +4,9 @@ import { useEffect, useId, useRef, useState, useTransition } from 'react';
 import { useNomAssistante } from '@/components/assistante';
 import { Chevron, Message, Selection } from '@/components/ui';
 import type { ResultatAction } from '@/lib/formulaire';
-import type { ApercuVariables, CleVariable } from '@/lib/apercu';
+import type { ApercuVariables } from '@/lib/apercu';
+import { GROUPES_VARIABLES } from '@/lib/vue-assistante';
 import { lireApercu } from './actions';
-
-const GROUPES: { titre: string; cles: [CleVariable, string][] }[] = [
-  {
-    titre: 'Entreprise',
-    cles: [
-      ['entreprise_nom', 'Nom'],
-      ['entreprise_offre', 'Offre'],
-      ['entreprise_cible', 'Pour qui'],
-      ['entreprise_arguments', 'Ce qui fait la différence'],
-      ['entreprise_prix_consigne', 'Consigne sur le prix'],
-      ['entreprise_interdits', 'À ne jamais dire ni promettre'],
-      ['entreprise_complements', 'Informations complémentaires'],
-      ['rendez_vous', 'Rendez-vous'],
-    ],
-  },
-  {
-    titre: 'Script',
-    cles: [
-      ['script_etapes', 'Étapes'],
-      ['objections', 'Objections'],
-    ],
-  },
-  {
-    titre: 'Prospect',
-    cles: [
-      ['prospect_nom', 'Nom'],
-      ['prospect_role', 'Rôle'],
-      ['prospect_societe', 'Société'],
-      ['prospect_contexte', 'Contexte'],
-      ['prospect_email', 'E-mail'],
-      ['historique_appels', 'Appels précédents'],
-    ],
-  },
-  {
-    titre: 'Appel',
-    cles: [
-      ['assistante_nom', 'Nom de l’assistante'],
-      ['date_du_jour', 'Date du jour'],
-    ],
-  },
-];
 
 const REFUS: Record<string, string> = {
   'aucun-consentement': 'sans consentement',
@@ -200,7 +160,7 @@ export function ApercuMina({
               ) : null}
             </p>
             <dl className="border-t border-filet">
-              {GROUPES.map((g) => (
+              {GROUPES_VARIABLES.map((g) => (
                 <div key={g.titre} className="border-b border-filet py-2">
                   <dt className="pb-1 text-sm font-medium text-encre">{g.titre}</dt>
                   <dd>
