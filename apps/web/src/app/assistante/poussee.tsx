@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useRef, useState, useTransition } from 'react';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
 import { Action, Message } from '@/components/ui';
+import { POUSSEE, RAPATRIEMENT } from '@/lib/questions-assistante';
 import { preparerPousseeAction, pousserAction, rapatrierAction } from './actions';
 import { BlocDifference } from './blocs';
 
@@ -104,7 +105,7 @@ export function Poussee() {
 
       <Confirmation
         ouverte={confirmationPoussee.ouverte && preparation !== null}
-        question="Pousser cette différence vers ElevenLabs ?"
+        question={POUSSEE.question}
         libelleConfirmer="Pousser"
         enCours={poussee}
         libelleEnCours="Poussée…"
@@ -118,7 +119,7 @@ export function Poussee() {
         {preparation ? (
           <div className="grid gap-2">
             <p>{preparation.question}</p>
-            <p className="text-encre-3">De la configuration ElevenLabs actuelle vers les fichiers de agent/ :</p>
+            <p className="text-encre-3">{POUSSEE.difference}</p>
             <BlocDifference texte={preparation.difference} libelle="Différence de la poussée" />
           </div>
         ) : null}
@@ -126,7 +127,7 @@ export function Poussee() {
 
       <Confirmation
         ouverte={confirmationRapatriement.ouverte}
-        question="Réécrire agent/ d’après ElevenLabs ?"
+        question={RAPATRIEMENT.question}
         libelleConfirmer="Rapatrier"
         enCours={rapatriement}
         libelleEnCours="Rapatriement…"
@@ -134,8 +135,7 @@ export function Poussee() {
         onAnnuler={confirmationRapatriement.fermer}
         onConfirmer={confirmerRapatriement}
       >
-        Les fichiers de agent/ prennent la configuration actuelle d’ElevenLabs (modifiée dans le tableau de bord, par exemple), consignée dans
-        l’historique. Refusé s’il reste des modifications non poussées. Rien ne change pour les appels.
+        {RAPATRIEMENT.explication}
       </Confirmation>
     </div>
   );

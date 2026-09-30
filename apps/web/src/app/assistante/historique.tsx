@@ -5,6 +5,7 @@ import { useRef, useState, useTransition } from 'react';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
 import { heure, jourCourt } from '@/components/format-appel';
 import { Action, Message } from '@/components/ui';
+import { RESTAURATION } from '@/lib/questions-assistante';
 import { ORIGINE_VERSION } from '@/lib/vue-assistante';
 import { detailVersionAction, restaurerAction } from './actions';
 import { BlocDifference } from './blocs';
@@ -110,7 +111,7 @@ export function Historique({ versions }: { versions: LigneVersion[] }) {
             {retour?.versionId === v.versionId ? <Message ton={retour.ton}>{retour.texte}</Message> : null}
             <Confirmation
               ouverte={ouverte}
-              question="Restaurer cette version dans agent/ ?"
+              question={RESTAURATION.question}
               libelleConfirmer="Restaurer"
               enCours={ecriture}
               libelleEnCours="Restauration…"
@@ -120,15 +121,12 @@ export function Historique({ versions }: { versions: LigneVersion[] }) {
             >
               {detail ? (
                 <div className="grid gap-2">
-                  <p>
-                    Les fichiers de agent/ reprennent le prompt et les réglages de cette version. Rien ne change pour les appels avant la poussée.
-                    Refusé s’il reste des modifications non poussées.
-                  </p>
+                  <p>{RESTAURATION.explication}</p>
                   {detail.identique ? (
-                    <p className="text-encre-3">Les fichiers sont déjà identiques à cette version.</p>
+                    <p className="text-encre-3">{RESTAURATION.identique}</p>
                   ) : (
                     <>
-                      <p className="text-encre-3">De cette version vers les fichiers actuels (ce que la restauration défait) :</p>
+                      <p className="text-encre-3">{RESTAURATION.difference}</p>
                       <BlocDifference texte={detail.difference} libelle="Différence avec les fichiers de agent/" />
                     </>
                   )}
