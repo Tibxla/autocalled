@@ -24,7 +24,7 @@ export function BarreHaut() {
             </LienNav>
           ))}
         </nav>
-        <div className="ml-auto flex min-w-0 items-center gap-4 max-sm:gap-3 max-sm:pl-4 xl:pl-6">
+        <div className="ml-auto flex min-w-0 items-center gap-4 max-sm:gap-6 max-sm:pl-4 xl:pl-6">
           <CampagneStatut />
           <LigneStatut />
           <BoutonAideRaccourcis />

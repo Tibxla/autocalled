@@ -130,23 +130,29 @@ export function LigneStatut() {
 export function VueLigneStatut({ etat, maintenant = 0 }: { etat: EtatLigneClient; maintenant?: number }) {
   const a = affichageLigne(etat);
   const decrocheLe = etat.etat === 'en-appel' && etat.ligne === 'telephone' ? (etat.decrocheLe ?? null) : null;
+  // Sous 640 px, le chrono tient lieu de libellé : trait et chrono, en antenne, disent l'appel, et la campagne
+  // garde sa place à côté. Il prend alors le soulignement du libellé au doigt.
+  const avecChrono = decrocheLe !== null && maintenant > 0;
   const contenu = (
     <>
       <TraitLigne largeur={56} trait={a.trait} couleur={a.couleurTrait} className="hidden sm:block" />
       <TraitLigne largeur={16} trait={a.trait} couleur={a.couleurTrait} className="sm:hidden" />
-      <span className={`libelle text-sm whitespace-nowrap ${a.couleurTexte}`}>
+      <span className={`libelle text-sm whitespace-nowrap ${a.couleurTexte} ${avecChrono ? 'max-sm:hidden' : ''}`}>
         <span className="hidden sm:inline">{a.libelle}</span>
         <span className="sm:hidden">{a.court}</span>
       </span>
-      {decrocheLe !== null && maintenant > 0 ? (
-        <span aria-hidden="true" className="font-mono text-sm text-antenne">
-          {chrono(Math.max(0, maintenant - decrocheLe))}
+      {avecChrono ? (
+        <span
+          aria-hidden="true"
+          className="font-mono text-sm text-antenne max-sm:decoration-souligne max-sm:underline-offset-4 max-sm:pointer-coarse:underline"
+        >
+          {chrono(Math.max(0, maintenant - (decrocheLe ?? 0)))}
         </span>
       ) : null}
     </>
   );
   return (
-    <div role="status" aria-live="polite" className="flex items-center">
+    <div role="status" aria-live="polite" className="flex shrink-0 items-center">
       {a.lien ? (
         <Link
           href={a.lien.href}
@@ -189,7 +195,9 @@ export function TitreEnAppel() {
 /**
  * La campagne qui tourne ou attend, vue de toute page : « Campagne Gîtes · 34/100 » ou « · suspendue », lien
  * vers sa régie. Rien sans campagne ouverte. De 640 à 1280 px, où la barre n’a pas la place du nom, seul le
- * compte reste (« 12/14 ») ; sous 640 px, où la navigation est descendue, « Campagne 12/14 ». 44 px au doigt.
+ * compte reste (« 12/14 ») ; sous 640 px, où la navigation est descendue, « Campagne 12/14 », et le compte seul
+ * sous 400 px, où il ne tiendrait pas à côté de l'état de la ligne. S'il déborde encore, il se coupe plutôt que de
+ * chevaucher l'état de la ligne, qui ne rétrécit pas. 44 px au doigt.
  */
 export function CampagneStatut() {
   return <VueCampagneStatut campagne={useLigne().campagne} />;
@@ -202,9 +210,9 @@ export function VueCampagneStatut({ campagne: c }: { campagne: CampagneLigne | n
     <Link
       href={`/campagnes/${c.id}`}
       aria-label={`Campagne ${c.entreprise}, ${suspendue ? 'suspendue' : 'en cours'}, ${c.traites} traités sur ${c.total} : ouvrir sa régie`}
-      className="-mx-1.5 flex h-9 max-w-[18rem] min-w-0 items-center gap-1 rounded-[4px] px-1.5 text-sm whitespace-nowrap text-encre-3 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline pointer-coarse:h-11 pointer-coarse:underline pointer-coarse:active:bg-survol"
+      className="-mx-1.5 flex h-9 max-w-[18rem] min-w-0 items-center gap-1 overflow-hidden rounded-[4px] px-1.5 text-sm whitespace-nowrap text-encre-3 decoration-souligne underline-offset-4 hover:text-encre-2 hover:underline pointer-coarse:h-11 pointer-coarse:underline pointer-coarse:active:bg-survol"
     >
-      <span className="shrink-0 sm:hidden">Campagne</span>
+      <span className="shrink-0 sm:hidden max-[25rem]:hidden">Campagne</span>
       <span className="hidden truncate xl:inline">Campagne {c.entreprise}</span>
       <span className="hidden shrink-0 xl:inline">·</span>
       {suspendue ? (
