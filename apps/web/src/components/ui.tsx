@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { cloneElement, isValidElement, type ComponentProps, type CSSProperties } from 'react';
+import { pistesSouples } from './pistes';
 import { duree, hauteurTrait, heure } from './format-appel';
 import { LienTexte } from './lien-texte';
 import { RangeeDefilante } from './rangee-defilante';
@@ -298,7 +299,7 @@ export function Filtre({
  */
 export function TableDense({ libelle, colonnes, children, className = '' }: { libelle: string; colonnes: string; children: React.ReactNode; className?: string }) {
   return (
-    <div role="table" aria-label={libelle} style={{ '--colonnes': colonnes } as CSSProperties} className={`min-w-0 text-md ${className}`}>
+    <div role="table" aria-label={libelle} style={{ '--colonnes': pistesSouples(colonnes) } as CSSProperties} className={`min-w-0 text-md ${className}`}>
       {children}
     </div>
   );
