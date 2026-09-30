@@ -224,7 +224,7 @@ Sur téléphone, la navigation passe dans une barre du bas, les filtres tiennent
 - Accès par l'identité Tailscale seulement, confirmation de l'opérateur pour tout geste qui engage, journal de chaque appel d'outil.
 - Purge nocturne des appels de plus de douze mois : ils gardent leurs chiffres et perdent ce qu'a dit la personne ([ADR 0014](docs/adr/0014-duree-de-conservation.md)). Détail dans [Sécurité et vie privée](#sécurité-et-vie-privée).
 
-### Au doigt
+### Sur téléphone
 
 - Barre de navigation en bas, filtres sur une rangée qui défile, cibles de 44 px, rien qui dépende du survol.
 - Écoute, prise de main et raccrochage accessibles sur téléphone comme au clavier.
@@ -435,7 +435,7 @@ Ouvert dans ce dépôt, sur le serveur, Claude Code trouve le serveur MCP d'Auto
 | Prospects | importer, lister, lire, corriger, archiver, réactiver, révoquer un numéro, effacer une personne, lire les consentements |
 | Campagnes | créer, lancer, suspendre, terminer, supprimer ; sauter, retirer, ajouter dans la file |
 | Appels | lancer, raccrocher, lister, lire, relancer une analyse, analyser les versions, rappels du jour, journée |
-| Agenda, ligne, journal | état de l'agenda, relecture, rendez-vous ; état de la ligne, garde-fous, reconnexion du téléphone ; journal des outils |
+| Agenda, ligne, journal | état de l'agenda, relecture, rendez-vous, recréer un événement ; état de la ligne, garde-fous, reconnexion du téléphone ; journal des outils |
 
 La skill de projet [`.claude/skills/autocalled`](.claude/skills/autocalled/SKILL.md) décrit les parcours (préparer une entreprise, versionner un script, importer des prospects, piloter une campagne, relire les bilans et ajuster, régler l'assistante) et les règles ; sa [référence](.claude/skills/autocalled/REFERENCE.md) liste chaque outil avec ses entrées.
 
