@@ -456,6 +456,8 @@ claude mcp add --scope local autocalled -- sh -c "cd /chemin/vers/autocalled/app
 ln -s /chemin/vers/autocalled/.claude/skills/autocalled .claude/skills/autocalled
 ```
 
+Le lien contient le chemin de ta machine : dans un dépôt partagé, ne le commite pas, ajoute `.claude/skills/autocalled` à `.git/info/exclude`.
+
 `--scope local` n'écrit rien dans ce dépôt : Claude Code retient le serveur pour ce dossier seulement, dans ses propres réglages. Pour un `.mcp.json` commité, écris plutôt `cd ${AUTOCALLED_DIR}/apps/web && …` : Claude Code remplace les variables d'environnement dans `.mcp.json`, et chacun définit `AUTOCALLED_DIR` chez lui. Pour l'avoir dans tous tes dépôts, `--scope user` et la skill reliée dans `~/.claude/skills/`. La session suivante du dépôt charge le serveur.
 
 Les enregistrements, `agent/` et la base restent ceux du clone : rien à changer dans le `.env`. Une modification de l'assistante faite depuis un autre dépôt écrit quand même `agent/` ici : relis-la et commite-la dans ce dépôt.
