@@ -6,15 +6,14 @@ import { db } from '@/db';
 import { appels, campagnes, entreprises, prospects, rendezVous } from '@/db/schema';
 import { creerEvenementDuRendezVous, etatAgenda, synchroniserAgenda } from '@/lib/agenda';
 import { appelerParTelephone, enregistrerAppelSimule, preparerAppel, preparerReanalyse, reanalyser, simulerAppel } from '@/lib/appels';
-import { autorisationsDe } from '@/lib/autorisations';
+import { appelabiliteDe } from '@/lib/appelables';
 import { appelerSuivantTelephone, demarrerCampagne } from '@/lib/campagnes';
 import { trouverEntreprise, trouverProspect } from '@/lib/donnees';
 import { numeroLisible } from '@/lib/format';
-import { ajoutParMcp } from '@/lib/prospects';
 import { commanderPont, type ReglagesLigne, reconnecterTelephone, refusDuPont, reglagesDuPont } from '@/lib/pont';
 import { champEntreprise, champProspect, champVersion, entrepriseInconnue, prospectInconnu, SCRIPT_ARCHIVE, versionDeLEntreprise, vueAppel } from './communs';
 import { champ, confirmer, heureDeParis, refusDeConfirmation } from './confirmation';
-import { attentionMcp, ecrituresDuMcp, jourEtHeure, numerosDuMcp } from './gardes-appel';
+import { attentionMcp, ecrituresDuMcp } from './gardes-appel';
 import { type Declarer, refus, reussite } from './outil';
 import { type Detacher, detacherTache } from './tache';
 
@@ -31,7 +30,7 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
     'lancer_appel',
     {
       description:
-        'Appelle un prospect avec la version d’un script non archivé. Ligne bluetooth : le téléphone passerelle compose le vrai numéro, après confirmation de l’opérateur ; l’outil rend la main dès que ça sonne (suivre avec lire_appel). Ligne simulation : un modèle joue le prospect, sans téléphone ; l’outil attend le bilan (une à trois minutes). Le numéro doit être autorisé. La ligne navigateur (micro de l’opérateur) se lance dans l’interface.',
+        'Appelle un prospect avec la version d’un script non archivé. Ligne bluetooth : le téléphone passerelle compose le vrai numéro, après confirmation de l’opérateur ; l’outil rend la main dès que ça sonne (suivre avec lire_appel). Ligne simulation : un modèle joue le prospect, sans téléphone ; l’outil attend le bilan (une à trois minutes). Le numéro doit être appelable (valide, et pas celui d’une personne effacée). La ligne navigateur (micro de l’opérateur) se lance dans l’interface.',
       entree: z.strictObject({ entreprise: champEntreprise, prospect: champProspect, versionScriptId: champVersion, ligne: z.enum(['bluetooth', 'simulation']) }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
@@ -57,14 +56,13 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
 
       const plafond = await refusDuPont();
       if (plafond) return refus(plafond);
-      const [reglages, parMcp, ecritures] = await Promise.all([reglagesDuPont(), ajoutParMcp(preparation.numero), ecrituresDuMcp(e.id, version.id)]);
-      const origine = parMcp ? ` (numéro ajouté par le MCP le ${jourEtHeure.format(parMcp)})` : '';
-      // Le numéro et son origine d'abord : ce sont eux qui portent la décision, et les noms viennent d'une fiche.
+      const [reglages, ecritures] = await Promise.all([reglagesDuPont(), ecrituresDuMcp(e.id, version.id)]);
+      // Le numéro d'abord : c'est lui qui porte la décision, et les noms viennent d'une fiche.
       const garde = await confirmer(
         serveur,
         ctx,
-        `Appeler maintenant le ${numeroLisible(preparation.numero)}${origine}, depuis le téléphone passerelle : ${champ(p.nom)}${p.societe ? ` (${champ(p.societe)})` : ''}, pour ${champ(e.nom)}, avec le script « ${champ(version.libelle, 90)} ».${attentionMcp(ecritures)} Nous sommes ${heureDeParis()}.${reglages ? ` Garde-fous de la ligne : ${plafonds(reglages)}.` : ''}`,
-        ['lancer_appel', e.id, p.id, version.id, preparation.numero, parMcp?.toISOString() ?? null, ecritures],
+        `Appeler maintenant le ${numeroLisible(preparation.numero)}, depuis le téléphone passerelle : ${champ(p.nom)}${p.societe ? ` (${champ(p.societe)})` : ''}, pour ${champ(e.nom)}, avec le script « ${champ(version.libelle, 90)} ».${attentionMcp(ecritures)} Nous sommes ${heureDeParis()}.${reglages ? ` Garde-fous de la ligne : ${plafonds(reglages)}.` : ''}`,
+        ['lancer_appel', e.id, p.id, version.id, preparation.numero, ecritures],
       );
       if (garde.etat === 'a-demander') return garde.issue;
       if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);
@@ -138,24 +136,19 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
         .where(eq(prospects.entrepriseId, campagne.entrepriseId));
       const fiches = aAppeler.map((x) => telephones.find((p) => p.id === x.prospectId));
       const numeros = fiches.map((p) => p?.telephone ?? '');
-      const autorisations = await autorisationsDe(numeros.filter(Boolean));
-      const autorises = numeros.filter((n) => autorisations.get(n)?.autorise).length;
-      const aComposer = fiches.filter((p): p is NonNullable<typeof p> => Boolean(p && autorisations.get(p.telephone)?.autorise));
-      const [reglages, parMcp, ecritures] = await Promise.all([
-        reglagesDuPont(),
-        Promise.all(aComposer.map((p) => ajoutParMcp(p.telephone))),
-        ecrituresDuMcp(campagne.entrepriseId, campagne.versionScriptId),
-      ]);
-      const ajoutsMcp = aComposer.map((p, i) => ({ nom: p.nom, telephone: p.telephone, ajout: parMcp[i] ?? null }));
+      const verifies = await appelabiliteDe(numeros.filter(Boolean));
+      const appelables = numeros.filter((n) => verifies.get(n)?.appelable).length;
+      const aComposer = fiches.filter((p): p is NonNullable<typeof p> => Boolean(p && verifies.get(p.telephone)?.appelable));
+      const [reglages, ecritures] = await Promise.all([reglagesDuPont(), ecrituresDuMcp(campagne.entrepriseId, campagne.versionScriptId)]);
       const nommes = aComposer.slice(0, 20).map((p) => champ(p.nom, 40));
       const garde = await confirmer(
         serveur,
         ctx,
-        `${campagne.statut === 'prete' ? 'Lancer' : 'Reprendre'} la campagne de ${champ(c.entreprise)} sur le téléphone passerelle : ${aAppeler.length} prospect${aAppeler.length > 1 ? 's' : ''} à appeler l’un après l’autre, dont ${autorises} au numéro autorisé à cet instant (les autres seront sautés), avec le script « ${champ(version?.libelle ?? '?', 90)} ».${
+        `${campagne.statut === 'prete' ? 'Lancer' : 'Reprendre'} la campagne de ${champ(c.entreprise)} sur le téléphone passerelle : ${aAppeler.length} prospect${aAppeler.length > 1 ? 's' : ''} à appeler l’un après l’autre, dont ${appelables} au numéro appelable à cet instant (les autres seront sautés), avec le script « ${champ(version?.libelle ?? '?', 90)} ».${
           nommes.length ? ` À appeler : ${nommes.join(', ')}${aComposer.length > nommes.length ? ` et ${aComposer.length - nommes.length} autres` : ''}.` : ''
-        }${numerosDuMcp(ajoutsMcp)}${attentionMcp(ecritures)} Nous sommes ${heureDeParis()}.${reglages ? ` Garde-fous : ${plafonds(reglages)} ; plafond atteint, la campagne se met en pause.` : ''}`,
+        }${attentionMcp(ecritures)} Nous sommes ${heureDeParis()}.${reglages ? ` Garde-fous : ${plafonds(reglages)} ; plafond atteint, la campagne se met en pause.` : ''}`,
         // Les numéros entrent dans la clé : un numéro changé entre la question et la réponse fait reposer la question.
-        ['lancer_campagne', campagneId, campagne.statut, aAppeler.map((x) => x.prospectId), numeros, autorises, parMcp.filter(Boolean).length, ecritures],
+        ['lancer_campagne', campagneId, campagne.statut, aAppeler.map((x) => x.prospectId), numeros, appelables, ecritures],
       );
       if (garde.etat === 'a-demander') return garde.issue;
       if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/db';
 import { appels, campagnes } from '@/db/schema';
 import { fauxPont } from '../../test/faux-pont';
-import { agendaFrais, entrepriseDeTest, fiche } from '../../test/fixtures';
+import { agendaFrais, entrepriseDeTest, fiche, opposer } from '../../test/fixtures';
 import { avecBaseDeTest } from '../../test/outils';
 import {
   ajouterALaCampagne,
@@ -21,7 +21,7 @@ import {
   terminerCampagne,
 } from './campagnes';
 import { basculerArchiveScript, creerScript } from './entreprises';
-import { importerFiches, revoquerNumero } from './prospects';
+import { importerFiches } from './prospects';
 
 avecBaseDeTest();
 
@@ -155,12 +155,12 @@ describe('Ajouter', () => {
     expect(numerosComposes()).toEqual(['+33639980001', '+33639980004']);
   });
 
-  it('tout ou rien : refuse un numéro non autorisé, un doublon, un prospect inconnu', async () => {
+  it('tout ou rien : refuse un numéro effacé, un doublon, un prospect inconnu', async () => {
     const id = await enregistrerCampagne(entrepriseId, { versionScriptId, ligne: 'bluetooth', prospects: ['julie', 'marc'] });
-    await revoquerNumero('+33639980005');
+    await opposer('+33639980005');
 
-    const nonAutorise = await ajouterALaCampagne(id, ['paul', 'anne']);
-    expect(nonAutorise).toEqual({ ok: false, raison: expect.stringContaining('Anne Fictive') });
+    const efface = await ajouterALaCampagne(id, ['paul', 'anne']);
+    expect(efface).toEqual({ ok: false, raison: expect.stringContaining('Anne Fictive') });
     const doublon = await ajouterALaCampagne(id, ['paul', 'marc']);
     expect(doublon).toEqual({ ok: false, raison: expect.stringContaining('Déjà dans la file : Marc Fictif') });
     expect(await ajouterALaCampagne(id, ['personne'])).toEqual({ ok: false, raison: expect.stringContaining('introuvable') });

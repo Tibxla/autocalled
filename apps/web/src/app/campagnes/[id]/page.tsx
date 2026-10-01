@@ -3,14 +3,14 @@ import { and, desc, eq, gte } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { comptesCampagne, dateCourte, duree, etatAppel, numeroMasque, STATUTS_CAMPAGNE } from '@/components/format-appel';
+import { refusDe } from '@/components/refus-numero';
 import { EnTetePage, GlypheEtape, LienAction, Page, TitreSection } from '@/components/ui';
 import { db } from '@/db';
 import { appels, campagnes, entreprises, issuesPersonnalisees, prospects, versionsScript } from '@/db/schema';
 import { rafraichirSiAncien } from '@/lib/agenda';
-import { autorisationsDe } from '@/lib/autorisations';
+import { appelabiliteDe } from '@/lib/appelables';
 import { numeroLisible } from '@/lib/format';
 import { commanderPont } from '@/lib/pont';
-import { ajoutParMcp } from '@/lib/prospects';
 import { versionsDeLEntreprise } from '@/lib/versions';
 import { SectionFile, type ProspectAjoutable } from './ajout-prospects';
 import { File, type EntreeFile } from './file';
@@ -160,13 +160,10 @@ export default async function PageCampagne({
   const dernierEchec = dernier?.statut === 'echec' && !dernier.conversationId ? (dernier.erreur ?? 'l’appel n’est pas parti.') : null;
 
   // Prête : les numéros relus maintenant, pour le récapitulatif qui sert de confirmation.
-  let recapitulatif: { prospects: ProspectRecapitulatif[]; autorises: number } | null = null;
+  let recapitulatif: { prospects: ProspectRecapitulatif[]; appelables: number } | null = null;
   if (campagne.statut === 'prete') {
     const aAppeler = campagne.entrees.filter((e) => e.etat === 'a-appeler');
-    const autorisations = await autorisationsDe(aAppeler.flatMap((e) => prospectDe.get(e.prospectId)?.telephone ?? []));
-    // Au téléphone, les numéros autorisés entrés par le serveur MCP (ADR 0009) sont signalés avant le lancement.
-    const aVerifier = telephone ? [...autorisations].filter(([, a]) => a.autorise).map(([n]) => n) : [];
-    const datesMcp = new Map(await Promise.all(aVerifier.map(async (n) => [n, await ajoutParMcp(n)] as const)));
+    const verifies = await appelabiliteDe(aAppeler.flatMap((e) => prospectDe.get(e.prospectId)?.telephone ?? []));
     const lignes = aAppeler.map((e, i) => {
       const p = prospectDe.get(e.prospectId);
       return {
@@ -175,11 +172,10 @@ export default async function PageCampagne({
         nom: p?.nom ?? e.prospectId,
         societe: p?.societe ?? null,
         numero: p ? numeroMasque(numeroLisible(p.telephone)) : '',
-        autorisation: p ? autorisations.get(p.telephone) : undefined,
-        ajoutMcp: p ? (datesMcp.get(p.telephone) ?? null) : null,
+        refus: refusDe(p ? verifies.get(p.telephone) : undefined),
       };
     });
-    recapitulatif = { prospects: lignes, autorises: lignes.filter((l) => l.autorisation?.autorise).length };
+    recapitulatif = { prospects: lignes, appelables: lignes.filter((l) => l.refus === null).length };
   }
 
   const entreesFile: EntreeFile[] = campagne.entrees.map((e, i) => {
@@ -212,15 +208,15 @@ export default async function PageCampagne({
     };
   });
 
-  // Ajouter des prospects : ceux de l'entreprise au numéro autorisé et absents de la file, avec leur dernier appel.
+  // Ajouter des prospects : ceux de l'entreprise au numéro appelable et absents de la file, avec leur dernier appel.
   let ajoutables: ProspectAjoutable[] | null = null;
   let blocageAjout: string | null = null;
   if (campagne.statut !== 'terminee') {
     const dansLaFile = new Set(campagne.entrees.map((e) => e.prospectId));
     // Un prospect archivé n'est jamais proposé.
     const candidats = listeProspects.filter((p) => !dansLaFile.has(p.id) && !p.archiveLe).sort((a, b) => a.nom.localeCompare(b.nom, 'fr') || a.id.localeCompare(b.id));
-    const [autorisations, derniers] = await Promise.all([
-      autorisationsDe(candidats.map((p) => p.telephone)),
+    const [verifies, derniers] = await Promise.all([
+      appelabiliteDe(candidats.map((p) => p.telephone)),
       db
         .selectDistinctOn([appels.prospectId], {
           prospectId: appels.prospectId,
@@ -238,7 +234,7 @@ export default async function PageCampagne({
     ]);
     const dernierDe = new Map(derniers.map((d) => [d.prospectId, d]));
     ajoutables = candidats
-      .filter((p) => autorisations.get(p.telephone)?.autorise)
+      .filter((p) => verifies.get(p.telephone)?.appelable)
       .map((p) => {
         const d = dernierDe.get(p.id);
         return {
@@ -390,7 +386,7 @@ function BilanCampagne({
   if (liste.length === 0) {
     phrase =
       sautes > 0
-        ? `Aucun appel passé : ${sautes} prospect${sautes > 1 ? 's' : ''} non appelé${sautes > 1 ? 's' : ''}, numéro non autorisé.`
+        ? `Aucun appel passé : ${sautes} prospect${sautes > 1 ? 's' : ''} non appelé${sautes > 1 ? 's' : ''}, numéro invalide ou effacé.`
         : retires > 0
           ? `Aucun appel passé : ${retires} prospect${retires > 1 ? 's' : ''} retiré${retires > 1 ? 's' : ''} de la file.`
           : 'Aucun appel passé.';
@@ -447,7 +443,7 @@ function BilanCampagne({
         ) : null}
         {sautes > 0 ? (
           <div className="flex items-baseline gap-2">
-            <dt className="text-encre-2">Non autorisés</dt>
+            <dt className="text-encre-2">Non appelables</dt>
             <dd className="font-mono text-encre-3">{sautes}</dd>
           </div>
         ) : null}

@@ -1,11 +1,11 @@
 'use client';
 
-import type { Autorisation } from '@autocalled/domain';
+import type { RaisonRefus } from '@autocalled/domain';
 import { Fragment, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { NavigationListe } from '@/components/clavier';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
 import { numeroMasque } from '@/components/format-appel';
-import { PastilleAutorisation } from '@/components/pastille-autorisation';
+import { REFUS_NUMERO } from '@/components/refus-numero';
 import {
   Action,
   Cellule,
@@ -48,7 +48,8 @@ export interface LigneProspect {
   numero: string;
   /** Chiffres du numéro (national et international), pour la recherche seulement. */
   chiffres: string;
-  autorisation: Autorisation | undefined;
+  /** Pourquoi son numéro ne serait pas composé (invalide, personne effacée) ; null s'il le serait. */
+  refus: RaisonRefus | null;
   /** `vivant` : l'appel que la ligne téléphone porte en ce moment. */
   dernier: { date: string; libelle: string; vivant?: boolean } | null;
   /** Rappel convenu à faire : quand (en clair, null s'il n'est pas daté), ce qu'a dit le prospect, s'il est en retard. */
@@ -57,35 +58,25 @@ export interface LigneProspect {
   archive: boolean;
 }
 
-type CleFiltre = 'autorises' | 'revoques' | 'sans-consentement' | 'invalides' | 'rappels' | 'archives';
+type CleFiltre = 'non-appelables' | 'rappels' | 'archives';
 
 const FILTRES: { cle: CleFiltre; libelle: string }[] = [
-  { cle: 'autorises', libelle: 'Autorisés' },
-  { cle: 'revoques', libelle: 'Révoqués' },
-  { cle: 'sans-consentement', libelle: 'Sans consentement' },
-  { cle: 'invalides', libelle: 'Numéro invalide' },
   { cle: 'rappels', libelle: 'Rappel à faire' },
+  { cle: 'non-appelables', libelle: 'Non appelables' },
   { cle: 'archives', libelle: 'Archivés' },
 ];
 const CLES = new Set<string>(FILTRES.map((f) => f.cle));
 
-/** « Tous » et les filtres d'autorisation ne montrent que les prospects actifs ; « Archivés », les autres. */
+/** « Tous » et les autres filtres ne montrent que les prospects actifs ; « Archivés », les autres. */
 function dansFiltre(p: LigneProspect, cle: CleFiltre | null): boolean {
   if (cle === 'archives') return p.archive;
   if (p.archive) return false;
-  const a = p.autorisation;
   switch (cle) {
     case null:
       return true;
-    case 'autorises':
-      return Boolean(a?.autorise);
-    case 'revoques':
-      // Révoqué ou effacé : la personne a demandé à ne plus être appelée.
-      return a?.autorise === false && (a.raison === 'consentement-revoque' || a.raison === 'numero-efface');
-    case 'sans-consentement':
-      return !a || (a.autorise === false && a.raison === 'aucun-consentement');
-    case 'invalides':
-      return a?.autorise === false && (a.raison === 'numero-invalide' || a.raison === 'opposition-illisible');
+    case 'non-appelables':
+      // Numéro invalide, ou d'une personne effacée (ADR 0013) : il ne sera pas composé.
+      return p.refus !== null;
     case 'rappels':
       return p.rappel !== null;
   }
@@ -105,7 +96,6 @@ function correspond(p: LigneProspect, recherche: string): boolean {
 export function ListeProspects({
   slug,
   entrepriseId,
-  texteConsentement,
   prospects,
   filtreInitial,
   importOuvert = false,
@@ -113,7 +103,6 @@ export function ListeProspects({
 }: {
   slug: string;
   entrepriseId: string;
-  texteConsentement: string | null;
   prospects: LigneProspect[];
   filtreInitial?: string | undefined;
   importOuvert?: boolean;
@@ -317,11 +306,7 @@ export function ListeProspects({
 
       {volet ? (
         <section id="volet-import" aria-label="Importer des fiches prospect" className="border-b border-filet py-6">
-          {texteConsentement ? (
-            <FormulaireImport entrepriseId={entrepriseId} texteConsentement={texteConsentement} focusAuMontage={ouvertParGeste} />
-          ) : (
-            <Message ton="alerte">Aucun texte de consentement en base : lance les migrations.</Message>
-          )}
+          <FormulaireImport entrepriseId={entrepriseId} focusAuMontage={ouvertParGeste} />
         </section>
       ) : null}
 
@@ -365,12 +350,11 @@ export function ListeProspects({
             />
           ) : (
             <NavigationListe memoriser="prospects">
-              <TableDense libelle="Prospects" colonnes="minmax(0,1.6fr) 9rem minmax(0,1fr) 9.5rem 10rem">
+              <TableDense libelle="Prospects" colonnes="minmax(0,1.6fr) 9rem minmax(0,1fr) 10rem">
                 <EnTeteTable>
                   <CelluleEnTete>Prospect</CelluleEnTete>
                   <CelluleEnTete masqueeMobile>Numéro</CelluleEnTete>
                   <CelluleEnTete>Dernier appel</CelluleEnTete>
-                  <CelluleEnTete align="droite">Autorisation</CelluleEnTete>
                   <CelluleEnTete masqueeMobile>
                     <span className="sr-only">Gestes</span>
                   </CelluleEnTete>
@@ -389,8 +373,7 @@ export function ListeProspects({
                       );
                     }
                     const occupee = enCoursPour === p.id;
-                    const autorise = Boolean(p.autorisation?.autorise);
-                    const etat = retour ? 'attenuee' : p.dernier?.vivant ? 'vivante' : autorise && !p.archive ? 'normale' : 'attenuee';
+                    const etat = retour ? 'attenuee' : p.dernier?.vivant ? 'vivante' : p.refus === null && !p.archive ? 'normale' : 'attenuee';
                     return (
                       <Fragment key={p.id}>
                         <LigneTable etat={etat}>
@@ -412,7 +395,7 @@ export function ListeProspects({
                               <span className={retour.alerte ? 'text-alerte' : 'text-encre-2'}>{retour.texte}</span>
                             ) : (
                               <>
-                                <EtatAppel p={p} />
+                                {p.refus ? <span className="text-alerte">Numéro {REFUS_NUMERO[p.refus]}</span> : <EtatAppel p={p} />}
                                 {/* Sous 640 px, le rappel ou le dernier appel sur sa ligne, le détail dessous. */}
                                 {p.detail ? (
                                   <span className="sm:hidden">
@@ -422,10 +405,6 @@ export function ListeProspects({
                                 ) : null}
                               </>
                             )}
-                          </Cellule>
-                          {/* Sous 640 px, seules les exceptions restent : « Autorisé » est le cas normal. */}
-                          <Cellule align="droite" className={`max-sm:order-2 ${autorise ? 'max-sm:hidden' : ''}`}>
-                            <PastilleAutorisation autorisation={p.autorisation} />
                           </Cellule>
                           <Cellule masqueeMobile>
                             <span className="relative z-10 -mx-1.5 flex items-center gap-x-4">

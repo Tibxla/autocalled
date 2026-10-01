@@ -229,7 +229,7 @@ Une palette de neutres chauds très peu chromatiques sur fond graphite, où deux
 - **Rouge antenne** (`antenne`) : ce qui vit, et rien d’autre. Nom « Mina » devant ses répliques, barres de sa voix sur la piste de parole et l’onde, chrono en ligne, cellule d’état d’une ligne de tableau vivante, trait vivant de la frise, trait plein de la ligne « En appel » dans la barre, point du logo pendant un appel.
 
 ### Tertiary
-- **Brique mate** (`alerte`) et **Voile brique** (`alerte-fond`) : texte d’erreur, filet bas d’un champ invalide, message d’alerte, action « Raccrocher » et confirmation de révocation, numéro révoqué ou invalide. En forme seulement (point creux, trait coupé), pour une ligne coupée ou un appel en échec, dont le libellé reste graphite. Chroma OKLCH 0,077 contre 0,188 pour l’antenne : elle ne se lit jamais comme un rouge vivant.
+- **Brique mate** (`alerte`) et **Voile brique** (`alerte-fond`) : texte d’erreur, filet bas d’un champ invalide, message d’alerte, action « Raccrocher » et confirmation d’effacement, numéro effacé ou invalide. En forme seulement (point creux, trait coupé), pour une ligne coupée ou un appel en échec, dont le libellé reste graphite. Chroma OKLCH 0,077 contre 0,188 pour l’antenne : elle ne se lit jamais comme un rouge vivant.
 
 ### Neutral
 - **Graphite chaud** (`fond`) : page, barre du haut, bandeau d’appel collant. Jamais le quasi-noir.
@@ -265,7 +265,7 @@ Une palette de neutres chauds très peu chromatiques sur fond graphite, où deux
 - **Section** (600, 0,9375 rem) : titres de section posés sur un filet.
 - **Lecture** (400, 0,9375 rem, interligne 1,5 rem) : répliques du fil d’appel (68 ch), zones de texte.
 - **Body** (400, 0,875 rem, interligne 1,25 rem) : taille du corps de l’app, des tableaux, des actions, des filtres, de la navigation.
-- **Label** (400, 0,8125 rem, interligne 1,125 rem) : libellés de champ (500), aides, sous-titres de page (60 ch), messages, état de la ligne, pastille d’autorisation. C’est la taille la plus employée.
+- **Label** (400, 0,8125 rem, interligne 1,125 rem) : libellés de champ (500), aides, sous-titres de page (60 ch), messages, état de la ligne, numéro non appelable. C’est la taille la plus employée.
 - **Données** (Chivo Mono 400, 0,75 rem) : heures et durées dans les cellules, compteurs ; les en-têtes de tableau prennent la même taille en Chivo. En ligne dans un texte, la mono prend la taille de son voisin.
 - **Touche** (Chivo Mono 400, 0,6875 rem sur 18 px) : touches de clavier, graduations horaires de la frise.
 
@@ -312,9 +312,9 @@ Des angles à peine adoucis, et de moins en moins à mesure que l’objet rapeti
 Des mots, pas des boutons : au clavier, un libellé précédé de sa touche, sans fond ni contour ; au doigt, la touche disparaît et l’action principale devient la touche.
 - **Shape :** zone de 36 px de haut (44 px au toucher), 6 px de marge horizontale compensée par un retrait négatif pour que le texte s’aligne sur la colonne, rayon 4 px, texte Body, 8 px entre touche et libellé.
 - **Forte :** `encre` en 600, touche au contour `trait`. Une par contexte : soumettre, créer, confirmer, prendre la main.
-- **Normale :** `encre-2` en 500, `encre` au survol. **Discrète :** `encre-3`, `encre-2` au survol (annuler, effacer). **Alerte :** brique en 500 (raccrocher, révoquer).
+- **Normale :** `encre-2` en 500, `encre` au survol. **Discrète :** `encre-3`, `encre-2` au survol (annuler, effacer). **Alerte :** brique en 500 (raccrocher, effacer).
 - **Hover / Focus :** le libellé se souligne d’un pixel en `souligne`, décalé de 4 px ; anneau de focus de 2 px en `focus`, décalé de 2 px. Désactivé à 45 %, sans soulignement. Pendant l’envoi, le libellé d’attente se superpose au libellé pour que la largeur ne bouge pas. Transitions de 150 ms sur la couleur.
-- **Au doigt :** l’action forte d’une zone (soumettre, créer, confirmer, l’action de secours d’un état bloqué) prend le relief de sa touche : 44 px de haut, 16 px de marge, rayon 4 px, libellé centré. Une par zone. Les commandes de ce qui vit (Écouter, Prendre la main, micro, Raccrocher ; Appeler maintenant, Suspendre, Reprendre) forment un pavé de touches, toutes en relief, Raccrocher seul sur sa rangée, sur voile brique. Toute autre action, normale, discrète ou d’alerte (Révoquer, Effacer, Retirer, Archiver, Oublier), reste du texte, soulignée en permanence en `souligne`. Jamais de texte gras nu : un libellé en 600 sans relief ni soulignement ne se lit pas comme une action.
+- **Au doigt :** l’action forte d’une zone (soumettre, créer, confirmer, l’action de secours d’un état bloqué) prend le relief de sa touche : 44 px de haut, 16 px de marge, rayon 4 px, libellé centré. Une par zone. Les commandes de ce qui vit (Écouter, Prendre la main, micro, Raccrocher ; Appeler maintenant, Suspendre, Reprendre) forment un pavé de touches, toutes en relief, Raccrocher seul sur sa rangée, sur voile brique. Toute autre action, normale, discrète ou d’alerte (Effacer, Retirer, Archiver, Oublier), reste du texte, soulignée en permanence en `souligne`. Jamais de texte gras nu : un libellé en 600 sans relief ni soulignement ne se lit pas comme une action.
 
 ### Touche
 Petit cadre en Chivo Mono 11 px, 18 px de haut, 18 px de large au moins, rayon 3 px, fond appuyé d’un pixel. Ordinaire en `encre-3` sur `filet-fort` ; forte en `encre` sur `trait`. Les combinaisons posent une touche par partie (« Ctrl » « Entrée »). Décorative dans une action, masquée au toucher.
@@ -338,14 +338,14 @@ Rôles de tableau sur une grille. En-tête en Données `encre-3` sur un filet `f
 
 ### Blocs posés
 - **Message :** 6 px de rayon, 10 × 14 px de marge, texte Label. Neutre : `surface` et `encre-2`, en `status`. Alerte : voile brique et brique, en `alert`.
-- **Confirmation :** en ligne, juste sous l’action qui l’ouvre, sur `surface` (12 × 14 px, 6 px de rayon) : question en Body 500, conséquences en Label `encre-2` (68 ch), puis « Entrée » + action forte ou alerte et « Échap Annuler ». Le focus va au conteneur, jamais à un bouton. Obligatoire pour tout geste qui fait sonner, prend la main, révoque, desserre un garde-fou, change ce que les prospects entendent (nom et premier message de l’assistante, poussée vers ElevenLabs, sur la différence rédigée par le serveur), réécrit `agent/` (rapatriement, restauration) ou ne se défait pas (retirer un prospect de la file, l’archiver quand il y attend encore, terminer une campagne, archiver un script en usage, oublier le téléphone, effacer une personne, dont la confirmation liste ce qui sera effacé). Jamais pour un frein : Raccrocher, Suspendre et Sauter sont immédiats. Sous 640 px, les deux actions s’empilent : l’action en relief sur toute la largeur, « Annuler » dessous, en texte ; elle s’ouvre au-dessus de la barre du bas, jamais dessous.
+- **Confirmation :** en ligne, juste sous l’action qui l’ouvre, sur `surface` (12 × 14 px, 6 px de rayon) : question en Body 500, conséquences en Label `encre-2` (68 ch), puis « Entrée » + action forte ou alerte et « Échap Annuler ». Le focus va au conteneur, jamais à un bouton. Obligatoire pour tout geste qui fait sonner, prend la main, desserre un garde-fou, change ce que les prospects entendent (nom et premier message de l’assistante, poussée vers ElevenLabs, sur la différence rédigée par le serveur), réécrit `agent/` (rapatriement, restauration) ou ne se défait pas (retirer un prospect de la file, l’archiver quand il y attend encore, terminer une campagne, archiver un script en usage, oublier le téléphone, effacer une personne, dont la confirmation liste ce qui sera effacé). Jamais pour un frein : Raccrocher, Suspendre et Sauter sont immédiats. Sous 640 px, les deux actions s’empilent : l’action en relief sur toute la largeur, « Annuler » dessous, en texte ; elle s’ouvre au-dessus de la barre du bas, jamais dessous.
 - **Différence :** ce qu’une poussée ou une restauration changerait, rédigé par le serveur, posé dans la confirmation qui la précède : bloc `fond` sur la `surface` de la confirmation (6 px de rayon, 10 × 12 px), Chivo Mono 12 px, retours à la ligne gardés et coupure des mots longs, jamais de défilement horizontal ; ajouts « + » en `encre`, retraits « − » en `encre-2`, contexte en `encre-3`. Aucune couleur de statut.
 - **Conflit :** message d’alerte posé dans le formulaire refusé, qui dit qui a modifié et quand (« Fiche modifiée par Claude Code à 14:02 ») puis deux actions normales, « Recharger » et « Écraser » ; la saisie reste en place.
 - **État vide :** pas de bloc ni d’illustration : un titre Body 500, une phrase en `encre-3` (56 ch), l’action suivante ; 40 px de marge et un filet dessous.
 - **Squelette :** lignes de 38 px (52 px sous 640 px) sur filet, barres `survol` de 12 px aux coins de 3 px, statiques, sans reflet.
 
-### Pastille d’autorisation
-Trait de 8 px à 1,5 px suivi du libellé Label. Autorisé : trait plein, `encre-2`. Sans consentement : trait interrompu (3 px, 2 px) en `trait`, libellé `encre-3`. Révoqué, effacé ou numéro invalide : trait interrompu et libellé en brique. Le cas normal ne crie pas.
+### Numéro non appelable
+Libellé Label en brique (« Numéro invalide », « Numéro d’une personne effacée »), à la place du dernier appel dans la liste des prospects, en bout de ligne dans une campagne. Seulement quand le numéro ne serait pas composé : le cas normal ne dit rien.
 
 ### Ligne d’état (signature)
 Toujours dans la barre, à droite : un trait de 56 × 16 px (16 px sur mobile) à 1,5 px, puis le libellé Label, dans un lien vers la page Téléphone. Libre ou relevé : pointillé (2 px, 4 px) en `trait`, libellé `encre-3`. En appel : trait plein et libellé en antenne. Coupée (déconnecté, injoignable) : trait coupé au milieu en brique, libellé `encre-2`. Inconnu : trait coupé en `trait`. Sous 768 px, en appel téléphone, trait et chrono sans libellé : la campagne (sous 640 px) ou la navigation tient à côté. Sous 1024 px, le trait fait 16 px et le libellé est court. Transition de 300 ms sur la couleur. `role="status"`.
@@ -368,7 +368,7 @@ Mot-symbole « autocalled. » en `encre`, 17 px de haut. Le point final est le v
 - **Do** séparer les lignes par des filets d’un pixel en `filet`, sur 38 px de haut dans les tableaux.
 - **Do** dire un état par la forme d’abord (trait plein, pointillé ou coupé, point creux), la couleur ensuite.
 - **Do** garder tout texte utile à `encre-3` ou au-dessus ; `trait` et `trait-2` restent aux traits et aux glyphes.
-- **Do** ouvrir une confirmation en ligne pour tout geste qui fait sonner un téléphone, prend la main, révoque, desserre un garde-fou ou ne se défait pas ; laisser les freins (raccrocher, suspendre, sauter) immédiats.
+- **Do** ouvrir une confirmation en ligne pour tout geste qui fait sonner un téléphone, prend la main, desserre un garde-fou ou ne se défait pas ; laisser les freins (raccrocher, suspendre, sauter) immédiats.
 - **Do** réserver le mouvement à ce qui vit, et le couper sous `prefers-reduced-motion`.
 - **Do** donner au doigt le relief de sa touche à l’action principale d’une zone, et à elle seule ; souligner en permanence toute autre action et tout lien.
 

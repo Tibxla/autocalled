@@ -19,7 +19,6 @@ export function RapportEffacementMessage({ rapport }: { rapport: RapportEffaceme
     n('rendezVous') ? pluriel(n('rendezVous'), 'rendez-vous', 'rendez-vous') : null,
     n('evenements') ? pluriel(n('evenements'), 'événement Google Agenda', 'événements Google Agenda') : null,
     n('entreesCampagne') ? pluriel(n('entreesCampagne'), 'place en file de campagne', 'places en file de campagne') : null,
-    n('consentements') ? 'le consentement de son numéro' : null,
     n('mentionsJournal') ? pluriel(n('mentionsJournal'), 'mention au journal des gestes', 'mentions au journal des gestes') : null,
   ].filter(Boolean);
   const aFaire = rapport.evenementsASupprimer.length + rapport.conversationsElevenLabs.length + rapport.fichiersEnEchec.length;

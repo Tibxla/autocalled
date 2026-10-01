@@ -1,7 +1,7 @@
 import 'server-only';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { autorisationsDe } from './autorisations';
+import { appelabiliteDe } from './appelables';
 import { entreprises, prospects } from '@/db/schema';
 
 export async function listerEntreprises() {
@@ -20,12 +20,12 @@ export async function listerEntreprises() {
 }
 
 /** Nombre de prospects appelables par entreprise, selon la même règle que le contrôle avant composition (archivés exclus). */
-export async function prospectsAutorisesParEntreprise(): Promise<Map<string, number>> {
+export async function prospectsAppelablesParEntreprise(): Promise<Map<string, number>> {
   const lignes = await db.select({ entrepriseId: prospects.entrepriseId, telephone: prospects.telephone }).from(prospects).where(isNull(prospects.archiveLe));
-  const autorisations = await autorisationsDe(lignes.map((l) => l.telephone));
+  const verifies = await appelabiliteDe(lignes.map((l) => l.telephone));
   const comptes = new Map<string, number>();
   for (const l of lignes) {
-    if (autorisations.get(l.telephone)?.autorise) comptes.set(l.entrepriseId, (comptes.get(l.entrepriseId) ?? 0) + 1);
+    if (verifies.get(l.telephone)?.appelable) comptes.set(l.entrepriseId, (comptes.get(l.entrepriseId) ?? 0) + 1);
   }
   return comptes;
 }

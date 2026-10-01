@@ -6,7 +6,6 @@ import { demarrerAppelTelephone, lancerSimulation } from '@/app/appels/actions';
 import { phrasePlafonds } from '@/app/campagnes/[id]/recapitulatif';
 import { ActionReconnecter } from '@/app/telephone/panneau-telephone';
 import { AIDE_RECONNEXION, echecDuTelephone, reconnexionFiche } from '@/app/telephone/reconnexion';
-import { AjoutClaudeCode } from '@/components/ajout-claude-code';
 import { AppelEnDirect } from '@/components/appel-en-direct';
 import { useNomAssistante } from '@/components/assistante';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
@@ -104,9 +103,8 @@ export function PanneauAppel({
   prospectId,
   prospectNom,
   versions,
-  autorise,
+  appelable,
   numero,
-  ajoutMcp = null,
   blocage = null,
   plafonds,
   telephoneBloque,
@@ -115,11 +113,10 @@ export function PanneauAppel({
   prospectId: string;
   prospectNom: string;
   versions: { id: string; libelle: string }[];
-  autorise: boolean;
+  /** Le numéro peut être composé (valide, et pas celui d'une personne effacée). */
+  appelable: boolean;
   /** Numéro lisible (« 06 39 98 00 01 »), déjà formaté par le serveur. */
   numero: string;
-  /** Date d'entrée du numéro par le serveur MCP (ADR 0009), redite dans la confirmation ; null s'il vient de l'interface. */
-  ajoutMcp?: Date | null;
   /** Pourquoi aucun appel n'est possible, avec le lien qui le règle s'il y en a un. */
   blocage?: { texte: string; lien?: { href: string; libelle: string } } | null;
   /** Plafonds de la ligne téléphone, lus sans bloquer la page (le pont peut tarder). */
@@ -136,8 +133,8 @@ export function PanneauAppel({
   const confirmation = useConfirmation();
   const nomAssistante = useNomAssistante();
 
-  if (blocage || !autorise || versions.length === 0) {
-    const texte = blocage?.texte ?? (versions.length === 0 ? 'Aucun script : crées-en un dans Scripts.' : 'Ce numéro n’est pas autorisé : aucun appel possible.');
+  if (blocage || !appelable || versions.length === 0) {
+    const texte = blocage?.texte ?? (versions.length === 0 ? 'Aucun script : crées-en un dans Scripts.' : 'Ce numéro ne peut pas être composé : aucun appel possible.');
     return (
       <section aria-label="Appeler" className="grid gap-2 border-t border-filet pt-4">
         <p className="text-md text-encre-2">{texte}</p>
@@ -273,11 +270,6 @@ export function PanneauAppel({
               <p>
                 Le <span className="font-mono text-encre">{numero}</span> va sonner. Version : {libelleVersion}.
               </p>
-              {ajoutMcp ? (
-                <p className="mt-1">
-                  <AjoutClaudeCode le={ajoutMcp} />
-                </p>
-              ) : null}
               <p className="mt-1">
                 <Suspense fallback="Lecture des plafonds de la ligne…">
                   <Plafonds promesse={plafonds} />

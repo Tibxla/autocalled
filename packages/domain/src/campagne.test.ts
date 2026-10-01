@@ -71,10 +71,10 @@ describe('prochaineAction', () => {
   });
 
   it('passe au suivant quand un prospect est sauté', () => {
-    const campagne = sauter(demarrer(campagneDeTrois()), 'julie', 'numero-non-autorise');
+    const campagne = sauter(demarrer(campagneDeTrois()), 'julie', 'numero-non-appelable');
 
     expect(prochaineAction(campagne)).toEqual({ type: 'appeler', prospectId: 'marc' });
-    expect(campagne.entrees[0]).toMatchObject({ etat: 'sautee', raisonSaut: 'numero-non-autorise' });
+    expect(campagne.entrees[0]).toMatchObject({ etat: 'sautee', raisonSaut: 'numero-non-appelable' });
   });
 });
 
@@ -92,14 +92,14 @@ describe('fin de campagne', () => {
 
   it('se termine quand le dernier prospect est sauté', () => {
     let campagne = demarrer(campagneDeTrois());
-    for (const prospectId of ['julie', 'marc', 'lea']) campagne = sauter(campagne, prospectId, 'numero-non-autorise');
+    for (const prospectId of ['julie', 'marc', 'lea']) campagne = sauter(campagne, prospectId, 'numero-non-appelable');
 
     expect(campagne.statut).toBe('terminee');
   });
 
   it('refuse de redémarrer une campagne terminée', () => {
     let campagne = demarrer(campagneDeTrois());
-    for (const prospectId of ['julie', 'marc', 'lea']) campagne = sauter(campagne, prospectId, 'numero-non-autorise');
+    for (const prospectId of ['julie', 'marc', 'lea']) campagne = sauter(campagne, prospectId, 'numero-non-appelable');
 
     expect(() => demarrer(campagne)).toThrow(TransitionInvalide);
   });
@@ -140,7 +140,7 @@ describe('garde-fous', () => {
 
   it('refuse un second appel simultané', () => {
     let campagne = debuterAppel(demarrer(campagneDeTrois()), 'julie', 'appel-1');
-    campagne = sauter(campagne, 'marc', 'numero-non-autorise');
+    campagne = sauter(campagne, 'marc', 'numero-non-appelable');
 
     expect(() => debuterAppel(campagne, 'lea', 'appel-2')).toThrow(/un seul appel/);
   });
@@ -215,7 +215,7 @@ describe('retirer', () => {
   it('refuse l’appel en cours et un prospect déjà appelé ou sauté', () => {
     let campagne = debuterAppel(demarrer(campagneDeTrois()), 'julie', 'appel-1');
     expect(() => retirer(campagne, 'julie', TRACE)).toThrow(TransitionInvalide);
-    campagne = sauter(campagne, 'marc', 'numero-non-autorise');
+    campagne = sauter(campagne, 'marc', 'numero-non-appelable');
     expect(() => retirer(campagne, 'marc', TRACE)).toThrow(TransitionInvalide);
   });
 

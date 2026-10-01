@@ -1,10 +1,10 @@
 'use client';
 
-import type { Autorisation, IssueSysteme } from '@autocalled/domain';
+import type { IssueSysteme, RaisonRefus } from '@autocalled/domain';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { nouvelleCampagne } from '@/app/campagnes/actions';
 import { useNomAssistante } from '@/components/assistante';
-import { PastilleAutorisation } from '@/components/pastille-autorisation';
+import { REFUS_NUMERO } from '@/components/refus-numero';
 import { useFormulaire } from '@/components/use-formulaire';
 import { BarreActions } from '@/components/barre-actions';
 import { Action, Champ, EtatVide, Filtre, Filtres, LienAction, Message, Recherche, Selection, TitreSection } from '@/components/ui';
@@ -22,21 +22,22 @@ export interface ProspectCampagne {
   id: string;
   nom: string;
   societe: string | null;
-  autorisation: Autorisation | undefined;
+  /** Pourquoi son numéro ne serait pas composé (invalide, personne effacée) ; null s'il le serait. */
+  refus: RaisonRefus | null;
   /** Issue système du dernier appel, et son libellé affiché. */
   derniere: { cle: IssueSysteme | null; libelle: string } | null;
   /** Un rendez-vous a déjà été pris avec ce prospect. */
   rendezVous: boolean;
 }
 
-type CleFiltre = 'jamais' | 'rappel' | 'rendez-vous' | 'refus' | 'non-autorises';
+type CleFiltre = 'jamais' | 'rappel' | 'rendez-vous' | 'refus' | 'non-appelables';
 
 const FILTRES: { cle: CleFiltre; libelle: string }[] = [
   { cle: 'jamais', libelle: 'Jamais appelés' },
   { cle: 'rappel', libelle: 'Rappel convenu' },
   { cle: 'rendez-vous', libelle: 'Déjà un rendez-vous' },
   { cle: 'refus', libelle: 'Refus' },
-  { cle: 'non-autorises', libelle: 'Non autorisés' },
+  { cle: 'non-appelables', libelle: 'Non appelables' },
 ];
 
 function dansFiltre(p: ProspectCampagne, cle: CleFiltre): boolean {
@@ -49,14 +50,14 @@ function dansFiltre(p: ProspectCampagne, cle: CleFiltre): boolean {
       return p.rendezVous;
     case 'refus':
       return p.derniere?.cle === 'refus';
-    case 'non-autorises':
-      return !p.autorisation?.autorise;
+    case 'non-appelables':
+      return p.refus !== null;
   }
 }
 
-/** Cochés d'office : les numéros autorisés dont le dernier appel n'a fini ni en rendez-vous pris ni en refus (pas de rappel par mégarde). */
+/** Cochés d'office : les prospects appelables dont le dernier appel n'a fini ni en rendez-vous pris ni en refus (pas de rappel par mégarde). */
 function cocheParDefaut(p: ProspectCampagne): boolean {
-  return Boolean(p.autorisation?.autorise) && p.derniere?.cle !== 'rendez-vous-pris' && p.derniere?.cle !== 'refus';
+  return p.refus === null && p.derniere?.cle !== 'rendez-vous-pris' && p.derniere?.cle !== 'refus';
 }
 
 function sansAccents(texte: string): string {
@@ -98,8 +99,8 @@ export function FormulaireCampagne({
   const visibles = prospects.filter(visible);
   // Cochés mais masqués par un filtre ou la recherche : ils partent quand même, le bouton le dit.
   const cochesMasques = prospects.filter((p) => coches.has(p.id) && !visible(p)).length;
-  const cochables = visibles.filter((p) => p.autorisation?.autorise);
-  const autorises = prospects.filter((p) => p.autorisation?.autorise).length;
+  const cochables = visibles.filter((p) => p.refus === null);
+  const appelables = prospects.filter((p) => p.refus === null).length;
 
   const basculer = (id: string) =>
     setCoches((c) => {
@@ -177,7 +178,7 @@ export function FormulaireCampagne({
           </Action>
           <span className="px-1.5 text-sm text-encre-3">
             {filtre !== null || recherche ? 'Sur les lignes affichées. ' : ''}
-            <span className="font-mono">{autorises}</span> numéro{autorises > 1 ? 's' : ''} autorisé{autorises > 1 ? 's' : ''} sur{' '}
+            <span className="font-mono">{appelables}</span> appelable{appelables > 1 ? 's' : ''} sur{' '}
             <span className="font-mono">{prospects.length}</span>.
           </span>
         </div>
@@ -187,39 +188,37 @@ export function FormulaireCampagne({
         {/* Un cadre qui défile au bureau seulement : au doigt, jamais de défilement dans le défilement. */}
         <ul className="border-t border-filet sm:max-h-[60vh] sm:overflow-y-auto">
           {prospects.map((p) => {
-            const autorise = Boolean(p.autorisation?.autorise);
+            const appelable = p.refus === null;
             return (
               <li key={p.id} hidden={!visible(p)}>
                 <label
                   className={`flex min-h-[38px] items-center gap-3 border-b border-filet px-1 py-1.5 text-md transition-colors duration-100 hover:bg-survol pointer-coarse:min-h-11 ${
-                    autorise ? 'cursor-pointer' : 'cursor-not-allowed text-encre-3'
+                    appelable ? 'cursor-pointer' : 'cursor-not-allowed text-encre-3'
                   }`}
                 >
                   <input
                     type="checkbox"
                     name="prospects"
                     value={p.id}
-                    checked={autorise && coches.has(p.id)}
-                    disabled={!autorise}
+                    checked={appelable && coches.has(p.id)}
+                    disabled={!appelable}
                     onChange={() => basculer(p.id)}
                     className="size-4 shrink-0 accent-[var(--encre)]"
                   />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">
-                      <span className={autorise ? 'font-medium' : ''}>{p.nom}</span>
+                      <span className={appelable ? 'font-medium' : ''}>{p.nom}</span>
                       {p.societe ? <span className="text-encre-3"> · {p.societe}</span> : null}
                     </span>
                     {/* Sous 640 px, la dernière issue passe sous le nom. */}
-                    {autorise ? (
+                    {appelable ? (
                       <span className="block truncate text-sm text-encre-3 sm:hidden">{p.derniere ? p.derniere.libelle : 'Jamais appelé'}</span>
                     ) : null}
                   </span>
-                  {autorise ? (
+                  {appelable ? (
                     <span className="shrink-0 text-sm text-encre-3 max-sm:hidden">{p.derniere ? p.derniere.libelle : 'Jamais appelé'}</span>
                   ) : (
-                    <span className="shrink-0">
-                      <PastilleAutorisation autorisation={p.autorisation} />
-                    </span>
+                    <span className="shrink-0 text-sm text-alerte">Numéro {p.refus ? REFUS_NUMERO[p.refus] : ''}</span>
                   )}
                 </label>
               </li>

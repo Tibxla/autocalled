@@ -382,7 +382,7 @@
       "name": "Action alerte",
       "kind": "button",
       "refersTo": "action-alerte",
-      "description": "Raccrocher, révoquer : brique en 500, toujours suivie d’une confirmation.",
+      "description": "Raccrocher, effacer : brique en 500, toujours suivie d’une confirmation.",
       "html": "<button class=\"ds-action ds-action-alerte\"><span class=\"ds-libelle\">Raccrocher</span></button>",
       "css": ".ds-action{display:inline-flex;height:36px;align-items:center;gap:8px;border:0;background:none;border-radius:4px;padding:0 6px;font:400 0.875rem/1.25rem 'Chivo',ui-sans-serif,system-ui,sans-serif;cursor:pointer;transition:color 150ms;} .ds-action .ds-libelle{text-decoration-color:var(--souligne);text-decoration-thickness:1px;text-underline-offset:4px;} .ds-action:hover .ds-libelle{text-decoration-line:underline;} .ds-action:focus-visible{outline:2px solid var(--focus);outline-offset:2px;} .ds-action:disabled{opacity:.45;cursor:not-allowed;} .ds-action:disabled .ds-libelle{text-decoration:none;} .ds-action-alerte{font-weight:500;color:var(--alerte);}"
     },
@@ -497,7 +497,7 @@
       "**Do** séparer les lignes par des filets d’un pixel en `filet`, sur 38 px de haut dans les tableaux.",
       "**Do** dire un état par la forme d’abord (trait plein, pointillé ou coupé, point creux), la couleur ensuite.",
       "**Do** garder tout texte utile à `encre-3` ou au-dessus ; `trait` et `trait-2` restent aux traits et aux glyphes.",
-      "**Do** ouvrir une confirmation en ligne pour tout geste qui fait sonner un téléphone, raccroche, révoque ou desserre un garde-fou.",
+      "**Do** ouvrir une confirmation en ligne pour tout geste qui fait sonner un téléphone, raccroche, efface ou desserre un garde-fou.",
       "**Do** réserver le mouvement à ce qui vit, et le couper sous `prefers-reduced-motion`."
     ],
     "donts": [

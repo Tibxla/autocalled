@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { db } from '@/db';
 import { appels, entreprises } from '@/db/schema';
-import { entrepriseDeTest, fiche } from '../../test/fixtures';
+import { entrepriseDeTest, fiche, opposer } from '../../test/fixtures';
 import { avecBaseDeTest } from '../../test/outils';
 import { apercuVariablesAppel } from './apercu';
 import { preparerAppel } from './appels';
 import { creerScript, creerVersion, enregistrerObjection } from './entreprises';
-import { importerFiches, revoquerNumero } from './prospects';
+import { importerFiches } from './prospects';
 
 avecBaseDeTest();
 
@@ -65,14 +65,14 @@ describe('apercuVariablesAppel', () => {
     expect(apercu.nonTransmis).toContain('entreprise_cible');
   });
 
-  it('signale un numéro révoqué sans refuser l’aperçu', async () => {
+  it('signale un numéro effacé sans refuser l’aperçu', async () => {
     const e = await entrepriseDeTest();
     await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01')]);
-    await revoquerNumero('+33639980001');
+    await opposer('+33639980001');
 
     const apercu = await apercuVariablesAppel(e.id, { prospectId: 'julie' });
 
-    expect(apercu).toMatchObject({ ok: true, prospect: { refus: 'consentement-revoque' }, version: null });
+    expect(apercu).toMatchObject({ ok: true, prospect: { refus: 'numero-efface' }, version: null });
   });
 
   it('refuse une version ou un prospect d’une autre entreprise', async () => {

@@ -1,27 +1,23 @@
 import { bilanEntier } from '@autocalled/domain';
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
-import { AjoutClaudeCode } from '@/components/ajout-claude-code';
 import { ListeAppels } from '@/components/liste-appels';
-import { PastilleAutorisation } from '@/components/pastille-autorisation';
 import { dateCourte, etatAppel, quandRappeler, rappelEnRetard } from '@/components/format-appel';
 import { Chevron, EtatVide, LienAction, LienTexte, Page, TitreSection } from '@/components/ui';
 import { db } from '@/db';
-import { appels, consentements, issuesPersonnalisees, prospects, rendezVous, versionsScript } from '@/db/schema';
+import { appels, issuesPersonnalisees, prospects, rendezVous, versionsScript } from '@/db/schema';
 import { ligneBloquee } from '@/app/_accueil/situation';
 import type { EtatLigneServeur } from '@/lib/accueil';
 import { rafraichirSiAncien } from '@/lib/agenda';
 import { preparerAppel } from '@/lib/appels';
-import { autorisationsDe } from '@/lib/autorisations';
+import { appelabiliteDe } from '@/lib/appelables';
 import { inventaireEffacement, phrasesEffacement } from '@/lib/effacement';
 import { numeroLisible } from '@/lib/format';
 import { appelIdVivant, etatLigneBorne } from '@/lib/ligne-vivante';
 import { assistantePourLaPage, entrepriseParSlug, prospectParId } from '@/lib/pages';
-import { ajoutParMcp } from '@/lib/prospects';
 import { rappelEnAttente } from '@/lib/rappels';
 import { reglagesDuPont } from '@/lib/pont';
 import { versionsDeLEntreprise } from '@/lib/versions';
-import { BoutonRevoquer } from './bouton-revoquer';
 import { GestesProspect } from './gestes-prospect';
 import { NumeroMasquable, PanneauAppel, type BlocageTelephone, type PlafondsLigne } from './panneau-appel';
 
@@ -77,8 +73,8 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
   const { nom: nomAssistante } = await assistantePourLaPage();
   // L'agenda se relit dès l'ouverture de la fiche : il sera à jour quand l'assistante proposera des créneaux.
   await rafraichirSiAncien();
-  const [autorisations, partages, toutesVersions, historique, [derniereRevocation], ordre, issuesPerso, ajoutMcp, inventaire] = await Promise.all([
-    autorisationsDe([prospect.telephone]),
+  const [verifies, partages, toutesVersions, historique, ordre, issuesPerso, inventaire] = await Promise.all([
+    appelabiliteDe([prospect.telephone]),
     db.$count(prospects, and(eq(prospects.entrepriseId, entreprise.id), eq(prospects.telephone, prospect.telephone))),
     versionsDeLEntreprise(entreprise.id),
     db
@@ -86,12 +82,6 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
       .from(appels)
       .where(and(eq(appels.entrepriseId, entreprise.id), eq(appels.prospectId, prospect.id)))
       .orderBy(desc(appels.debutLe)),
-    db
-      .select({ le: consentements.revoqueLe })
-      .from(consentements)
-      .where(and(eq(consentements.numero, prospect.telephone), isNotNull(consentements.revoqueLe)))
-      .orderBy(desc(consentements.revoqueLe))
-      .limit(1),
     // L'ordre de la liste : les archivés n'y sont pas, sauf celui qu'on regarde.
     db
       .select({ id: prospects.id })
@@ -102,21 +92,18 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
       .select({ id: issuesPersonnalisees.id, libelle: issuesPersonnalisees.libelle })
       .from(issuesPersonnalisees)
       .where(eq(issuesPersonnalisees.entrepriseId, entreprise.id)),
-    // Consentement entré par le serveur MCP (ADR 0009) : rappelé sur la fiche et dans la confirmation d'appel.
-    ajoutParMcp(prospect.telephone),
     // Ce qu'un effacement supprimerait, pour la confirmation en ligne.
     inventaireEffacement(entreprise.id, prospect.id),
   ]);
   // Les scripts archivés ne sont plus proposés au lancement.
   const versions = toutesVersions.filter((v) => !v.scriptArchive);
-  const autorisation = autorisations.get(prospect.telephone);
-  const autorise = Boolean(autorisation?.autorise);
-  const revocation = autorise ? null : (derniereRevocation?.le ?? null);
+  const verification = verifies.get(prospect.telephone);
+  const appelable = Boolean(verification?.appelable);
   const lisible = numeroLisible(prospect.telephone);
   const base = `/entreprises/${slug}/prospects`;
 
   // Ce que l'assistante recevra au début de l'appel (lecture seule, avec la première version proposée).
-  const preparation = autorise && !prospect.archiveLe && versions[0] ? await preparerAppel(entreprise.id, prospect.id, versions[0].id) : null;
+  const preparation = appelable && !prospect.archiveLe && versions[0] ? await preparerAppel(entreprise.id, prospect.id, versions[0].id) : null;
 
   // Précédent et suivant, dans l'ordre alphabétique de la liste.
   const rang = ordre.findIndex((p) => p.id === prospect.id);
@@ -163,18 +150,14 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
   let blocage: { texte: string; lien?: { href: string; libelle: string } } | null = null;
   if (prospect.archiveLe) {
     blocage = { texte: 'Prospect archivé : il n’est plus appelé. Réactive-le pour l’appeler.' };
-  } else if (!autorise) {
-    const raison = autorisation && !autorisation.autorise ? autorisation.raison : 'aucun-consentement';
+  } else if (!appelable) {
+    const raison = verification && !verification.appelable ? verification.raison : 'numero-invalide';
     blocage =
-      raison === 'consentement-revoque'
-        ? { texte: `Numéro révoqué${revocation ? ` le ${JOUR_MOIS.format(revocation)}` : ''} : il ne sera plus jamais composé.` }
-        : raison === 'numero-efface'
-          ? { texte: 'Numéro d’une personne effacée à sa demande : il ne sera plus jamais composé.' }
-          : raison === 'opposition-illisible'
-            ? { texte: 'La liste d’opposition ne se lit plus (SEL_OPPOSITION manque ou a changé dans le .env) : aucun numéro n’est composé.' }
-            : raison === 'numero-invalide'
-              ? { texte: 'Numéro invalide : corrige-le dans la fiche puis réimporte-la.', lien: { href: `${base}?import=1`, libelle: 'Importer des fiches' } }
-              : { texte: 'Pas de consentement : réimporte la fiche en cochant l’attestation.', lien: { href: `${base}?import=1`, libelle: 'Importer des fiches' } };
+      raison === 'numero-efface'
+        ? { texte: 'Numéro d’une personne effacée à sa demande : il ne sera plus jamais composé.' }
+        : raison === 'opposition-illisible'
+          ? { texte: 'La liste d’opposition ne se lit plus (SEL_OPPOSITION manque ou a changé dans le .env) : aucun numéro n’est composé.' }
+          : { texte: 'Numéro invalide : corrige-le dans la fiche puis réimporte-la.', lien: { href: `${base}?import=1`, libelle: 'Importer des fiches' } };
   } else if (versions.length === 0) {
     blocage = {
       texte: toutesVersions.length > 0 ? 'Tous les scripts sont archivés : réactives-en un ou crées-en un dans Scripts.' : 'Aucun script : crées-en un dans Scripts.',
@@ -183,7 +166,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
   }
 
   // Sous 1024 px, une seule colonne dans l'ordre du geste : l'identité, l'appel, le numéro, l'historique, puis les
-  // gestes qui retirent (Révoquer, Archiver, Effacer). Dès 1024 px, l'encart de droite garde le numéro au-dessus de
+  // gestes qui retirent (Archiver, Effacer). Dès 1024 px, l'encart de droite garde le numéro au-dessus de
   // l'appel et les gestes dessous. Sous 640 px, Précédent et Suivant passent en bas de la fiche.
   return (
     <Page largeur="lecture">
@@ -197,7 +180,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
           {prospect.archiveLe ? (
             <p className="max-w-[68ch] pt-1 text-sm text-encre-2">
               Archivé le <span className="font-mono">{JOUR_MOIS.format(prospect.archiveLe)}</span> : plus proposé pour un appel ni une campagne. Ses appels
-              et son consentement restent.
+              et ses bilans restent.
             </p>
           ) : null}
           {dernier && etatDernier ? (
@@ -308,17 +291,6 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
             <div className="grid gap-2.5 border-t border-filet pt-4 max-lg:order-last">
               <NumeroMasquable lisible={lisible} />
               {prospect.email ? <p className="font-mono text-sm break-all text-encre-2">{prospect.email}</p> : null}
-              <PastilleAutorisation autorisation={autorisation} />
-              {ajoutMcp ? (
-                <p className="text-sm text-encre-3">
-                  <AjoutClaudeCode le={ajoutMcp} />
-                </p>
-              ) : null}
-              {revocation ? (
-                <p className="text-sm text-encre-3">
-                  Révoqué le <span className="font-mono">{JOUR_MOIS.format(revocation)}</span>.
-                </p>
-              ) : null}
               {partages > 1 ? (
                 <p className="text-sm text-encre-3">
                   Numéro partagé par <span className="font-mono">{partages}</span> prospects.
@@ -330,9 +302,8 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
               prospectId={prospect.id}
               prospectNom={prospect.nom}
               versions={versions.map((v) => ({ id: v.id, libelle: v.libelle }))}
-              autorise={autorise}
+              appelable={appelable}
               numero={lisible}
-              ajoutMcp={ajoutMcp}
               blocage={blocage}
               plafonds={lirePlafonds()}
               telephoneBloque={lireBlocageTelephone(lectureLigne)}
@@ -341,7 +312,6 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
 
           {/* Les gestes qui retirent : en dernier sous 1024 px, sous l'encart dès 1024 px. */}
           <div className="grid content-start gap-6 max-lg:order-3 lg:col-start-2 lg:row-start-2">
-            <BoutonRevoquer numero={prospect.telephone} lisible={lisible} partages={partages} autorise={autorise} />
             {inventaire ? (
               <GestesProspect
                 entrepriseId={entreprise.id}

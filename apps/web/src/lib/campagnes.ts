@@ -22,7 +22,7 @@ import { db } from '@/db';
 import { appels, campagnes, prospects, scripts, versionsScript } from '@/db/schema';
 import { rafraichirSiAncien } from './agenda';
 import { preparerAppel, simulerAppel } from './appels';
-import { autorisationsDe } from './autorisations';
+import { appelabiliteDe } from './appelables';
 import { jetonConversation } from './elevenlabs';
 import type { ResultatAction } from './formulaire';
 import { commanderPont, reglagesDuPont, refusDuPont } from './pont';
@@ -35,6 +35,9 @@ export const PROSPECTS_MAX_CAMPAGNE = 200;
 
 /** Début du refus d'une campagne qui contient des prospects archivés (ADR 0013). */
 export const PROSPECTS_ARCHIVES = 'Prospect archivé, jamais appelé en campagne';
+
+/** Refus d'un prospect dont le numéro ne peut pas être composé : invalide, ou d'une personne effacée (ADR 0013). */
+export const NUMERO_NON_APPELABLE = 'Numéro non appelable (invalide ou effacé)';
 
 /** Refus d'une campagne sur un script archivé : l'interface ne le propose plus, un onglet resté ouvert ne passe pas. */
 export const SCRIPT_ARCHIVE_CAMPAGNE = 'Ce script est archivé : il ne se lance plus. Choisis la version d’un autre script, ou réactive-le.';
@@ -95,7 +98,7 @@ export type AppelSuivant =
   | { type: 'attente'; raison?: string };
 
 /**
- * Ligne navigateur : passe au prochain prospect autorisé, en sautant ceux dont le numéro ne l'est
+ * Ligne navigateur : passe au prochain prospect appelable, en sautant ceux dont le numéro ne l'est
  * plus à cet instant, et ouvre la conversation. `attendu` : le prospect que la page affiche ; si la file a
  * changé entre-temps (Sauter, Retirer), rien ne part et la raison le dit.
  */
@@ -109,7 +112,7 @@ export async function appelerSuivantNavigateur(campagneId: string, attendu?: str
       }
       const preparation = await preparerAppel(campagne.entrepriseId, action.prospectId, campagne.versionScriptId);
       if (!preparation.ok) {
-        campagne = sauter(campagne, action.prospectId, 'numero-non-autorise');
+        campagne = sauter(campagne, action.prospectId, 'numero-non-appelable');
         continue;
       }
       const { jeton, conversationId } = await jetonConversation();
@@ -170,7 +173,7 @@ export async function derouleSimulation(campagneId: string): Promise<void> {
         if (action.type !== 'appeler') return { campagne, resultat: null };
         const preparation = await preparerAppel(campagne.entrepriseId, action.prospectId, campagne.versionScriptId);
         if (!preparation.ok) {
-          campagne = sauter(campagne, action.prospectId, 'numero-non-autorise');
+          campagne = sauter(campagne, action.prospectId, 'numero-non-appelable');
           continue;
         }
         const [appel] = await tx
@@ -227,7 +230,7 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
         if (action.type !== 'appeler') return { campagne, resultat: null };
         const preparation = await preparerAppel(campagne.entrepriseId, action.prospectId, campagne.versionScriptId);
         if (!preparation.ok) {
-          campagne = sauter(campagne, action.prospectId, 'numero-non-autorise');
+          campagne = sauter(campagne, action.prospectId, 'numero-non-appelable');
           continue;
         }
         const [appel] = await tx
@@ -373,7 +376,7 @@ export async function retirerProspect(
 
 /**
  * Ajoute des prospects en fin de file d'une campagne non terminée, avec les gardes du lancement : prospects de
- * l'entreprise, numéro autorisé à cet instant, script non archivé, aucun doublon. Tout ou rien : un seul
+ * l'entreprise, numéro appelable à cet instant, script non archivé, aucun doublon. Tout ou rien : un seul
  * prospect refusé et rien n'est ajouté, la raison les nomme.
  */
 export async function ajouterALaCampagne(campagneId: string, prospectIds: readonly string[]): Promise<ResultatAction<{ ajoutes: number }>> {
@@ -398,10 +401,10 @@ export async function ajouterALaCampagne(campagneId: string, prospectIds: readon
   if (inconnus.length) return { ok: false, raison: `Prospect introuvable dans cette entreprise : ${inconnus.join(', ')}. Rien n’a été ajouté.` };
   const archives = trouves.filter((p) => p.archiveLe);
   if (archives.length) return { ok: false, raison: `${PROSPECTS_ARCHIVES} : ${archives.map((p) => p.nom).join(', ')}. Rien n’a été ajouté.` };
-  const autorisations = await autorisationsDe(trouves.map((p) => p.telephone));
-  const nonAutorises = trouves.filter((p) => !autorisations.get(p.telephone)?.autorise);
-  if (nonAutorises.length) {
-    return { ok: false, raison: `Numéro non autorisé : ${nonAutorises.map((p) => p.nom).join(', ')}. Rien n’a été ajouté.` };
+  const verifies = await appelabiliteDe(trouves.map((p) => p.telephone));
+  const refuses = trouves.filter((p) => !verifies.get(p.telephone)?.appelable);
+  if (refuses.length) {
+    return { ok: false, raison: `${NUMERO_NON_APPELABLE} : ${refuses.map((p) => p.nom).join(', ')}. Rien n’a été ajouté.` };
   }
   const nom = new Map(trouves.map((p) => [p.id, p.nom]));
 

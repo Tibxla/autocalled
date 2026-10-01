@@ -63,7 +63,7 @@ describe('lire_assistante', () => {
 });
 
 describe('modifier_assistante', () => {
-  it('demande l’accord avec l’ancien et le nouveau nom et les consentements v1, puis vaut dès l’aperçu suivant', async () => {
+  it('demande l’accord avec l’ancien et le nouveau nom, puis vaut dès l’aperçu suivant', async () => {
     const e = await entrepriseDeTest();
     await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01')]);
     const c = await connecter('accepter');

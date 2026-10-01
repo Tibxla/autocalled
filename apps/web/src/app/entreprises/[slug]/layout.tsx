@@ -3,7 +3,7 @@ import { comptesCampagne } from '@/components/format-appel';
 import { LienTexte } from '@/components/ui';
 import { db } from '@/db';
 import { campagnes, prospects } from '@/db/schema';
-import { autorisationsDe } from '@/lib/autorisations';
+import { appelabiliteDe } from '@/lib/appelables';
 import { listerEntreprises } from '@/lib/donnees';
 import { lireEntreprise } from '@/lib/pages';
 import { ChoixEntreprise } from './choix-entreprise';
@@ -33,8 +33,8 @@ export default async function LayoutEntreprise({ params, children }: { params: P
       .from(prospects)
       .where(and(eq(prospects.entrepriseId, entreprise.id), isNull(prospects.archiveLe)))
       .then(async (lignes) => {
-        const autorisations = await autorisationsDe(lignes.map((l) => l.telephone));
-        return lignes.filter((l) => autorisations.get(l.telephone)?.autorise).length;
+        const verifies = await appelabiliteDe(lignes.map((l) => l.telephone));
+        return lignes.filter((l) => verifies.get(l.telephone)?.appelable).length;
       }),
     db
       .select({ id: campagnes.id, statut: campagnes.statut, entrees: campagnes.entrees })
@@ -74,7 +74,7 @@ export default async function LayoutEntreprise({ params, children }: { params: P
         comptes.nombreProspects === 0 ? (
           manque(`${base}/prospects`, 'Aucun prospect')
         ) : appelables === 0 ? (
-          manque(`${base}/prospects`, 'Aucun numéro autorisé')
+          manque(`${base}/prospects`, 'Aucun prospect à appeler')
         ) : (
           <>
             <span className="font-mono">{appelables}</span> {pluriel(appelables, 'appelable', 'appelables')} sur{' '}

@@ -1,4 +1,4 @@
-export * from './autorisation.ts';
+export * from './appelable.ts';
 export * from './campagne.ts';
 export * from './creneaux.ts';
 export * from './fiche-prospect.ts';

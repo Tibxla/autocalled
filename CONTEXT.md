@@ -4,13 +4,9 @@ Mini-SaaS de démonstration : une assistante vocale IA passe des appels de prosp
 
 ## Language
 
-**Numéro autorisé** :
-Numéro d'une personne qui a accepté d'être appelée par une IA et enregistrée. Tout appel vers un autre numéro est refusé.
+**Numéro appelable** :
+Numéro valide et absent de la liste d'opposition : la seule vérification faite juste avant de composer. L'opérateur n'appelle que des personnes qu'il a prévenues (ADR 0001).
 _Avoid_ : whitelist, numéro de test
-
-**Consentement** :
-L'accord donné par une personne, avant tout appel, sur un texte versionné : être appelée par une IA et enregistrée. Il est attesté à l'import de la fiche et rend le numéro autorisé. La révocation le clôt pour de bon : un numéro révoqué ne se réautorise pas, et ses rappels à faire disparaissent.
-_Avoid_ : opt-in, accord RGPD
 
 **Opérateur** :
 La seule personne qui se connecte au SaaS, configure les entreprises et lance les appels.
@@ -29,19 +25,19 @@ Accès public en lecture seule aux appels déjà passés et à leurs bilans, san
 _Avoid_ : démo publique, mode invité
 
 **Prospect** :
-Personne démarchée pour le compte d'une entreprise, décrite par une fiche durable (nom, société, rôle, contexte) qui accumule l'historique de ses appels. Appartient à une seule entreprise et sonne sur un numéro autorisé, que plusieurs prospects peuvent partager.
+Personne démarchée pour le compte d'une entreprise, décrite par une fiche durable (nom, société, rôle, contexte) qui accumule l'historique de ses appels. Appartient à une seule entreprise et sonne sur un numéro, que plusieurs prospects peuvent partager.
 _Avoid_ : client, contact, lead, cible
 
 **Prospect archivé** :
-Prospect retiré des listes et des choix de campagne, qui n'est plus appelé tant qu'il l'est ; s'il attendait dans une file, il en est retiré, après une confirmation qui nomme les campagnes. Ses appels, ses bilans et le consentement de son numéro restent, et la réactivation le fait revenir (dans aucune file). Un réimport de sa fiche ne le réactive pas.
+Prospect retiré des listes et des choix de campagne, qui n'est plus appelé tant qu'il l'est ; s'il attendait dans une file, il en est retiré, après une confirmation qui nomme les campagnes. C'est ainsi qu'on cesse d'appeler quelqu'un. Ses appels et ses bilans restent, et la réactivation le fait revenir (dans aucune file). Un réimport de sa fiche ne le réactive pas.
 _Avoid_ : supprimé, désactivé, masqué
 
 **Effacement** :
-La suppression, à la demande d'une personne, de tout ce qu'Autocalled garde d'elle : fiche, appels, transcriptions, bilans, enregistrements, rendez-vous, places en file, consentement et mentions au journal des gestes. Irréversible et confirmé. Seule reste l'empreinte de son numéro dans la liste d'opposition. Les autres prospects qui portent le même numéro ne sont pas effacés, mais ne sont plus appelables.
+La suppression, à la demande d'une personne, de tout ce qu'Autocalled garde d'elle : fiche, appels, transcriptions, bilans, enregistrements, rendez-vous, places en file et mentions au journal des gestes. Irréversible et confirmé. Seule reste l'empreinte de son numéro dans la liste d'opposition. Les autres prospects qui portent le même numéro ne sont pas effacés, mais ne sont plus appelables.
 _Avoid_ : suppression, purge, anonymisation
 
 **Liste d'opposition** :
-Les empreintes irréversibles des numéros des personnes effacées : un numéro qui s'y trouve n'est plus jamais importé, autorisé ni composé. Elle ne contient aucun numéro en clair et ne se vide pas.
+Les empreintes irréversibles des numéros des personnes effacées : un numéro qui s'y trouve n'est plus jamais importé ni composé. Elle ne contient aucun numéro en clair et ne se vide pas.
 _Avoid_ : blacklist, liste noire, liste rouge
 
 **Fiche prospect** :
@@ -53,7 +49,7 @@ Une liste de prospects d'une même entreprise, appelés l'un après l'autre avec
 _Avoid_ : batch, séquence, vague, liste d'appels
 
 **File** :
-L'ordre dans lequel une campagne appelle ses prospects. Tant que la campagne n'est pas terminée, l'opérateur la modifie sans couper l'appel en cours : sauter un prospect le renvoie en fin de file, le retirer l'écarte de la campagne en gardant la trace, ajouter des prospects les place à la fin, terminer retire tous ceux qui restent et laisse l'appel en cours aller à son terme. Un prospect dont le numéro n'est plus autorisé au moment de son tour n'est pas appelé : il est « non autorisé ».
+L'ordre dans lequel une campagne appelle ses prospects. Tant que la campagne n'est pas terminée, l'opérateur la modifie sans couper l'appel en cours : sauter un prospect le renvoie en fin de file, le retirer l'écarte de la campagne en gardant la trace, ajouter des prospects les place à la fin, terminer retire tous ceux qui restent et laisse l'appel en cours aller à son terme. Un prospect dont le numéro n'est plus appelable au moment de son tour (personne effacée entre-temps) n'est pas appelé : il est « non appelable ».
 _Avoid_ : queue, liste d'attente, pile
 
 **Appel** :
@@ -135,7 +131,7 @@ Le temps pendant lequel un appel garde ce qu'a dit la personne : douze mois apr�
 _Avoid_ : rétention, archivage
 
 **Bilan purgé** :
-Ce qui reste du bilan d'un appel passé la durée de conservation : l'issue, l'étape atteinte et les objections, levées ou non avec leur temps CRAC. Le résumé, les citations, les points forts et faibles et le rappel tel qu'il a été dit sont effacés, comme l'enregistrement et la transcription. Les chiffres de l'analyse ne changent pas, et l'appel ne se réanalyse plus. Une purge n'est pas un effacement : la fiche, le numéro et le consentement restent.
+Ce qui reste du bilan d'un appel passé la durée de conservation : l'issue, l'étape atteinte et les objections, levées ou non avec leur temps CRAC. Le résumé, les citations, les points forts et faibles et le rappel tel qu'il a été dit sont effacés, comme l'enregistrement et la transcription. Les chiffres de l'analyse ne changent pas, et l'appel ne se réanalyse plus. Une purge n'est pas un effacement : la fiche et le numéro restent.
 _Avoid_ : bilan archivé, bilan anonymisé, bilan effacé
 
 ## Agenda
@@ -181,8 +177,8 @@ _Avoid_ : takeover, transfert, reprise
 ## Pilotage par Claude Code
 
 **Confirmation** :
-L'accord que l'opérateur donne lui-même, sur une question rédigée par le serveur, avant un geste qui fait sonner un téléphone, révoque un numéro, efface une personne, envoie une invitation, desserre un garde-fou ou change ce que l'assistante dit au prospect. Le modèle ne peut pas y répondre à sa place. Les freins (raccrocher, suspendre, retirer de la file, terminer une campagne, resserrer un garde-fou, archiver un prospect) n'en demandent pas, à une exception : archiver un prospect qui attend dans la file d'une campagne non terminée l'en retire pour de bon, et demande l'accord dans Claude Code comme dans l'interface. L'interface demande aussi une confirmation en ligne avant de retirer un prospect ou de terminer une campagne, deux gestes qui ne se défont pas.
-_Avoid_ : validation, approbation, consentement
+L'accord que l'opérateur donne lui-même, sur une question rédigée par le serveur, avant un geste qui fait sonner un téléphone, efface une personne, envoie une invitation, desserre un garde-fou ou change ce que l'assistante dit au prospect. Le modèle ne peut pas y répondre à sa place. Les freins (raccrocher, suspendre, retirer de la file, terminer une campagne, resserrer un garde-fou, archiver un prospect) n'en demandent pas, à une exception : archiver un prospect qui attend dans la file d'une campagne non terminée l'en retire pour de bon, et demande l'accord dans Claude Code comme dans l'interface. L'interface demande aussi une confirmation en ligne avant de retirer un prospect ou de terminer une campagne, deux gestes qui ne se défont pas.
+_Avoid_ : validation, approbation
 
 **Journal des gestes** :
 La trace de chaque appel d'outil du serveur MCP, lectures comprises, et de chaque geste d'écriture de la page Assistante, avec son origine (Claude Code ou interface), la question lue et la réponse de l'opérateur quand une confirmation a été demandée. Il se lit dans Réglages, et par `lire_journal_mcp` ; sa table garde le nom `journal_mcp` (ADR 0016).

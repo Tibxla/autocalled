@@ -17,13 +17,14 @@ export interface ClientOAuth {
   redirectUri: string;
 }
 
-export function urlConsentement(client: ClientOAuth, etat: string): string {
+export function urlAutorisationGoogle(client: ClientOAuth, etat: string): string {
   const params = new URLSearchParams({
     client_id: client.clientId,
     redirect_uri: client.redirectUri,
     response_type: 'code',
     scope: PORTEES.join(' '),
     access_type: 'offline',
+    // Valeur de l'API OAuth de Google : sans elle, le jeton de rafraîchissement ne vient qu'à la première autorisation.
     prompt: 'consent',
     include_granted_scopes: 'true',
     state: etat,

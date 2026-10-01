@@ -8,7 +8,7 @@ import { exigerOperateur } from '@/lib/garde';
 
 const NOM_CALENDRIER = 'Autocalled';
 
-/** Retour du consentement Google : on garde le jeton chiffré et on crée le calendrier dédié s'il manque. */
+/** Retour de l'autorisation Google : on garde le jeton chiffré et on crée le calendrier dédié s'il manque. */
 export async function GET(requete: Request) {
   await exigerOperateur();
   const client = clientGoogle();

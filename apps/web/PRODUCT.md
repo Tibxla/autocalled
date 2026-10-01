@@ -21,17 +21,17 @@ La même assistante représente plusieurs entreprises et change de discours selo
 ## Operating Context
 
 - Interface servie uniquement sur le tailnet de l'opérateur, derrière `tailscale serve` ; aucun écran de connexion.
-- Les prospects arrivent par import de fichiers Markdown (un fichier par prospect, en-tête YAML + contexte libre), avec un consentement collectif enregistré à l'import.
+- Les prospects arrivent par import de fichiers Markdown (un fichier par prospect, en-tête YAML + contexte libre), appelables aussitôt : l'opérateur n'appelle que des personnes prévenues (ADR 0001).
 - Un seul appel à la fois (un seul téléphone passerelle) ; une campagne enchaîne les prospects, jusqu'à une centaine d'appels par jour, sous le plafond horaire et journalier du pont.
 - Langue de l'interface et du domaine : français.
 
 ## Capabilities and Constraints
 
-- Vocabulaire imposé par `CONTEXT.md` à la racine du dépôt (Entreprise, Prospect, Fiche prospect, Objection, CRAC, Script, Étape, Version de script, Issue, Bilan, Campagne, Numéro autorisé…).
+- Vocabulaire imposé par `CONTEXT.md` à la racine du dépôt (Entreprise, Prospect, Fiche prospect, Objection, CRAC, Script, Étape, Version de script, Issue, Bilan, Campagne, Numéro appelable…).
 - Écrans en place : Entreprises (fiche, prospects, objections, scripts, issues, campagnes, analyse), Appels (liste et fiche d'appel avec écoute et prise de main), Campagne en direct, Téléphone, Réglages. Reste à faire : l'accueil, régie de la journée (aujourd'hui la racine redirige vers Entreprises).
 - Toute liste d'appels reste lisible, filtrable et cherchable à 100 appels par jour : une vue qui ne tient qu'avec quelques appels ne convient pas.
 - Une version de script est figée : la modifier crée la version suivante. Une objection s'archive, elle ne se supprime pas.
-- Un numéro sans consentement actif n'est jamais composé.
+- Un numéro invalide ou d'une personne effacée n'est jamais composé.
 
 ## Brand Commitments
 

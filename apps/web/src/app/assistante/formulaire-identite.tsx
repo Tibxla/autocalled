@@ -9,7 +9,7 @@ import { enregistrerIdentiteAction, preparerIdentiteAction } from './actions';
 
 /**
  * Le nom et le premier message de l'assistante, comme modifier_assistante : l'envoi demande d'abord au serveur la
- * question à poser (ancien et nouveau texte, campagne en cours, consentements v1), puis écrit après la confirmation
+ * question à poser (ancien et nouveau texte, campagne en cours), puis écrit après la confirmation
  * en ligne. `connu` (le `modifieLe` affiché) refuse d'écrire par-dessus une modification faite ailleurs entre-temps.
  */
 

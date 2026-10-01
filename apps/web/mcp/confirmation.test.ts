@@ -40,23 +40,23 @@ describe('confirmer', () => {
 
   it('ne sert un accord qu’une fois : rejoué, la question est reposée', async () => {
     const s = serveur({ form: {} });
-    const etat = await premiereQuestion(s, 'Révoquer', ['revoquer_numero']);
+    const etat = await premiereQuestion(s, 'Effacer', ['effacer_personne']);
 
-    expect((await confirmer(s.faux, passage(accord, etat), 'Révoquer', ['revoquer_numero'])).etat).toBe('acceptee');
-    expect((await confirmer(s.faux, passage(accord, etat), 'Révoquer', ['revoquer_numero'])).etat).toBe('a-demander');
+    expect((await confirmer(s.faux, passage(accord, etat), 'Effacer', ['effacer_personne'])).etat).toBe('acceptee');
+    expect((await confirmer(s.faux, passage(accord, etat), 'Effacer', ['effacer_personne'])).etat).toBe('a-demander');
   });
 
   it('ne prend jamais une chaîne brute (état non vérifié) pour un accord', async () => {
     const s = serveur({ form: {} });
-    const etat = await premiereQuestion(s, 'Révoquer', ['revoquer_numero']);
+    const etat = await premiereQuestion(s, 'Effacer', ['effacer_personne']);
 
-    expect((await confirmer(s.faux, passage(accord, JSON.stringify(etat)), 'Révoquer', ['revoquer_numero'])).etat).toBe('a-demander');
+    expect((await confirmer(s.faux, passage(accord, JSON.stringify(etat)), 'Effacer', ['effacer_personne'])).etat).toBe('a-demander');
   });
 
   it('signe l’état : une valeur retouchée ou signée par un autre serveur est rejetée', async () => {
     const s = serveur({ form: {} });
     const autre = serveur({ form: {} });
-    const garde = await confirmer(s.faux, passage(), 'Révoquer', ['revoquer_numero']);
+    const garde = await confirmer(s.faux, passage(), 'Effacer', ['effacer_personne']);
     if (garde.etat !== 'a-demander' || !('demande' in garde.issue)) throw new Error('question attendue');
     const signe = garde.issue.demande.requestState ?? '';
 
@@ -70,14 +70,14 @@ describe('confirmer', () => {
     ['une case non cochée', { action: 'accept', content: { confirme: false } }],
   ])('refuse sur %s', async (_, reponse) => {
     const s = serveur({ form: {} });
-    const etat = await premiereQuestion(s, 'Révoquer', ['revoquer_numero']);
+    const etat = await premiereQuestion(s, 'Effacer', ['effacer_personne']);
 
-    expect(await confirmer(s.faux, passage(reponse, etat), 'Révoquer', ['revoquer_numero'])).toEqual({ etat: 'refusee' });
+    expect(await confirmer(s.faux, passage(reponse, etat), 'Effacer', ['effacer_personne'])).toEqual({ etat: 'refusee' });
   });
 
   it('ne demande rien à un client sans élicitation par formulaire', async () => {
-    expect(await confirmer(serveur(undefined).faux, passage(), 'Révoquer', ['x'])).toEqual({ etat: 'indisponible' });
-    expect(await confirmer(serveur({ url: {} }).faux, passage(), 'Révoquer', ['x'])).toEqual({ etat: 'indisponible' });
-    expect((await confirmer(serveur({}).faux, passage(), 'Révoquer', ['x'])).etat).toBe('a-demander');
+    expect(await confirmer(serveur(undefined).faux, passage(), 'Effacer', ['x'])).toEqual({ etat: 'indisponible' });
+    expect(await confirmer(serveur({ url: {} }).faux, passage(), 'Effacer', ['x'])).toEqual({ etat: 'indisponible' });
+    expect((await confirmer(serveur({}).faux, passage(), 'Effacer', ['x'])).etat).toBe('a-demander');
   });
 });

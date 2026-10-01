@@ -66,7 +66,7 @@ interface ProprietesRegie {
   pont: EtatPont | null;
   passes24h: number | null;
   raison: RaisonSuspension | null;
-  recapitulatif: { prospects: ProspectRecapitulatif[]; autorises: number } | null;
+  recapitulatif: { prospects: ProspectRecapitulatif[]; appelables: number } | null;
   /** Terminée pendant un appel : elle se termine quand cet appel finit. */
   seTermine: boolean;
 }
@@ -289,13 +289,13 @@ function Lancement({ campagneId, ligne, entreprise, version, recapitulatif, pont
   const { erreur, enCours, agir } = useGeste();
   const confirmation = useConfirmation();
   const prospects = recapitulatif?.prospects ?? [];
-  const autorises = recapitulatif?.autorises ?? 0;
+  const appelables = recapitulatif?.appelables ?? 0;
   const blocage = ligne === 'bluetooth' ? blocageLigne(pont) : null;
-  const vide = autorises === 0;
+  const vide = appelables === 0;
 
   let action: React.ReactNode;
   if (ligne === 'bluetooth') {
-    const estime = phraseEstimation(autorises, pont?.reglages ?? null, passes24h);
+    const estime = phraseEstimation(appelables, pont?.reglages ?? null, passes24h);
     action = (
       <div className="grid justify-items-start gap-3">
         {blocage ? <Blocage blocage={blocage} reconnecter={reconnexionRegie(pont, null)} /> : null}
@@ -306,20 +306,20 @@ function Lancement({ campagneId, ligne, entreprise, version, recapitulatif, pont
             aria-expanded={confirmation.ouverte}
             onClick={(e) => confirmation.ouvrir(e.currentTarget)}
           >
-            Lancer {autorises} appel{autorises > 1 ? 's' : ''} sur le téléphone
+            Lancer {appelables} appel{appelables > 1 ? 's' : ''} sur le téléphone
           </Action>
         </Actions>
         <Confirmation
           ouverte={confirmation.ouverte}
           question="Lancer la campagne sur le téléphone passerelle ?"
-          libelleConfirmer={`Lancer ${autorises} appel${autorises > 1 ? 's' : ''}`}
+          libelleConfirmer={`Lancer ${appelables} appel${appelables > 1 ? 's' : ''}`}
           enCours={enCours}
           libelleEnCours="Lancement…"
           onAnnuler={confirmation.fermer}
           onConfirmer={() => agir(() => lancerCampagne(campagneId), { toujours: confirmation.fermer })}
         >
           <p>
-            {autorises} numéro{autorises > 1 ? 's vont' : ' va'} sonner l’un après l’autre ({entreprise.nom} · {version}).{' '}
+            {appelables} numéro{appelables > 1 ? 's vont' : ' va'} sonner l’un après l’autre ({entreprise.nom} · {version}).{' '}
             {phrasePlafonds(pont?.reglages ?? null, passes24h)}
           </p>
           {estime ? <p className="mt-1">{estime}</p> : null}
@@ -330,7 +330,7 @@ function Lancement({ campagneId, ligne, entreprise, version, recapitulatif, pont
     action = (
       <Actions>
         <Action ton="fort" disabled={vide || enCours} enCours={enCours} libelleEnCours="Lancement…" onClick={() => agir(() => lancerCampagne(campagneId))}>
-          Lancer la simulation ({autorises} appel{autorises > 1 ? 's' : ''} simulé{autorises > 1 ? 's' : ''})
+          Lancer la simulation ({appelables} appel{appelables > 1 ? 's' : ''} simulé{appelables > 1 ? 's' : ''})
         </Action>
       </Actions>
     );
@@ -340,9 +340,9 @@ function Lancement({ campagneId, ligne, entreprise, version, recapitulatif, pont
 
   return (
     <>
-      <Recapitulatif ligne={ligne} prospects={prospects} autorises={autorises} reglages={pont?.reglages ?? null} passes24h={passes24h} action={action} />
+      <Recapitulatif ligne={ligne} prospects={prospects} appelables={appelables} reglages={pont?.reglages ?? null} passes24h={passes24h} action={action} />
       {vide && prospects.length > 0 ? (
-        <Message ton="alerte">Aucun numéro de cette campagne n’est autorisé : aucun ne serait appelé, rien ne partirait.</Message>
+        <Message ton="alerte">Aucun prospect à appeler : aucun numéro de cette campagne ne peut être composé, rien ne partirait.</Message>
       ) : null}
       {erreur ? <Message ton="alerte">{erreur}</Message> : null}
     </>
@@ -567,12 +567,12 @@ function RegieNavigateur(props: ProprietesRegie) {
       <Recapitulatif
         ligne="navigateur"
         prospects={recapitulatif?.prospects ?? []}
-        autorises={recapitulatif?.autorises ?? 0}
+        appelables={recapitulatif?.appelables ?? 0}
         action={
           <Actions>
             <Action
               ton="fort"
-              disabled={enCours || (recapitulatif?.autorises ?? 0) === 0}
+              disabled={enCours || (recapitulatif?.appelables ?? 0) === 0}
               enCours={enCours}
               libelleEnCours="Lancement…"
               onClick={() => agir(() => lancerCampagne(campagneId), { succes: () => setGeste(true) })}

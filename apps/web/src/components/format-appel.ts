@@ -240,7 +240,7 @@ export const STATUTS_CAMPAGNE: Record<StatutCampagne, string> = {
   terminee: 'Terminée',
 };
 
-/** Comptes d'une campagne : `traites` = appelés, sautés (numéro non autorisé) et retirés, tout ce qui a quitté la file. */
+/** Comptes d'une campagne : `traites` = appelés, sautés (numéro non appelable) et retirés, tout ce qui a quitté la file. */
 export function comptesCampagne(entrees: readonly EntreeCampagne[]): {
   total: number;
   aAppeler: number;

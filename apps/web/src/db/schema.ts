@@ -111,38 +111,14 @@ export const versionsScript = pgTable(
   (t) => [unique().on(t.scriptId, t.numero)],
 );
 
-/** Le texte accepté par une personne qui autorise son numéro ; versionné, jamais modifié. */
-export const textesConsentement = pgTable('textes_consentement', {
-  version: integer().primaryKey(),
-  texte: text().notNull(),
-  creeLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
-});
-
+/** Un import de fiches prospect : les prospects qu'il a créés ou mis à jour y renvoient. */
 export const imports = pgTable('imports', {
   id: uuid().primaryKey().defaultRandom(),
   entrepriseId: uuid()
     .notNull()
     .references(() => entreprises.id, { onDelete: 'cascade' }),
-  texteConsentementVersion: integer()
-    .notNull()
-    .references(() => textesConsentement.version),
   nombreFiches: integer().notNull(),
-  /** Par où les fiches sont entrées : le formulaire de l'interface ou le serveur MCP (ADR 0009). Traçabilité seule. */
-  canal: text().$type<'interface' | 'mcp'>().notNull().default('interface'),
   importeLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
-});
-
-export const consentements = pgTable('consentements', {
-  id: uuid().primaryKey().defaultRandom(),
-  numero: text().notNull(),
-  texteVersion: integer()
-    .notNull()
-    .references(() => textesConsentement.version),
-  importId: uuid()
-    .notNull()
-    .references(() => imports.id),
-  accordeLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
-  revoqueLe: timestamp({ withTimezone: true }),
 });
 
 /** L'identité d'un prospect est le nom de sa fiche, unique dans son entreprise. */
@@ -163,7 +139,7 @@ export const prospects = pgTable(
     majLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
     /**
      * Archivé (ADR 0013) : hors des listes par défaut et des choix de campagne, jamais appelé ni ajouté à une campagne
-     * tant qu'il l'est ; ses appels, bilans et le consentement de son numéro restent. Null : actif. Un réimport de la
+     * tant qu'il l'est ; ses appels et ses bilans restent. Null : actif. Un réimport de la
      * fiche ne le réactive pas.
      */
     archiveLe: timestamp({ withTimezone: true }),
@@ -206,7 +182,7 @@ export const appels = pgTable('appels', {
     .references(() => versionsScript.id),
   campagneId: uuid().references(() => campagnes.id, { onDelete: 'set null' }),
   ligne: ligne().notNull(),
-  /** Le numéro composé, tel qu'autorisé au moment de l'appel. */
+  /** Le numéro composé, tel que vérifié au moment de l'appel. */
   numero: text().notNull(),
   conversationId: text().unique(),
   /** Version de l'agent ElevenLabs qui a parlé : les bilans comparent aussi cela. */
@@ -347,8 +323,8 @@ export const versionsAssistante = pgTable('versions_assistante', {
 
 /**
  * Liste d'opposition (ADR 0013) : l'empreinte irréversible (HMAC-SHA256, sel `SEL_OPPOSITION` de l'installation) du
- * numéro de chaque personne effacée. Le consentement disparaît avec la personne ; l'interdiction de la rappeler reste :
- * `autorisationsDe` et l'import consultent cette table. Aucune donnée personnelle en clair. La ligne `temoin` porte
+ * numéro de chaque personne effacée. Ses données partent avec elle ; l'interdiction de la rappeler reste :
+ * `appelabiliteDe` et l'import consultent cette table. Aucune donnée personnelle en clair. La ligne `temoin` porte
  * l'empreinte d'une constante : si le sel change ou manque, elle ne se retrouve plus et plus rien n'est composé.
  */
 export const oppositions = pgTable('oppositions', {

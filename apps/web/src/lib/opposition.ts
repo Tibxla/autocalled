@@ -5,13 +5,13 @@ import { db } from '@/db';
 import { type Origine, oppositions } from '@/db/schema';
 
 /**
- * Liste d'opposition (ADR 0013). Effacer une personne supprime son consentement, qui est une donnée personnelle, mais
+ * Liste d'opposition (ADR 0013). Effacer une personne supprime tout ce qu'Autocalled garde d'elle, mais
  * l'interdiction de la rappeler doit survivre : on garde l'empreinte irréversible de son numéro, un HMAC-SHA256 au
  * sel secret de l'installation (`SEL_OPPOSITION`, hors base). Sans le sel, une empreinte ne se retrouve pas à partir
  * d'un numéro, et la table seule ne dit aucun numéro.
  *
  * Le sel ne change jamais : changé ou perdu, les empreintes ne se retrouvent plus. La ligne témoin (empreinte d'une
- * constante) le détecte, et tant qu'elle ne se retrouve pas, aucun numéro n'est autorisé ni importé (`illisible`).
+ * constante) le détecte, et tant qu'elle ne se retrouve pas, aucun numéro n'est appelé ni importé (`illisible`).
  */
 
 const TEMOIN = 'autocalled:temoin-de-la-liste-d-opposition';

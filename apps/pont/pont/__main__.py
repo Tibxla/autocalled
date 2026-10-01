@@ -4,7 +4,7 @@
         le service permanent, piloté par l'application (ADR 0007) ; installé par scripts/installer-pont.sh
 
 Diagnostic, service arrêté (un seul programme peut tenir l'agent audio d'oFono). Le fichier de préparation contient
-le numéro et le contexte du prospect (données personnelles) : il ne vaut que dix minutes, le consentement étant
+le numéro et le contexte du prospect (données personnelles) : il ne vaut que dix minutes, le numéro étant
 vérifié au moment où il est produit, et il est effacé après usage.
 
     cd apps/web && node --env-file=../../.env --conditions=react-server --import ./scripts/resolution.ts \\
@@ -82,7 +82,7 @@ FRAICHEUR_PREPARATION_S = 600
 
 def lire_preparation(fichier: str, maintenant: float | None = None) -> dict[str, Any]:
     """Le fichier produit par scripts/variables-appel.ts, s'il date de moins de dix minutes, puis effacé : le
-    consentement se vérifie juste avant de composer, jamais en avance (un numéro peut avoir été révoqué depuis)."""
+    numéro se vérifie juste avant de composer, jamais en avance (la personne peut avoir été effacée depuis)."""
     chemin = Path(fichier)
     preparation = json.loads(chemin.read_text())
     prepare_le = preparation.get("prepareLe")
@@ -90,7 +90,7 @@ def lire_preparation(fichier: str, maintenant: float | None = None) -> dict[str,
         raise SystemExit("préparation sans date (prepareLe) : la refaire avec scripts/variables-appel.ts")
     age = (maintenant or time.time()) - prepare_le / 1000
     if not 0 <= age <= FRAICHEUR_PREPARATION_S:
-        raise SystemExit("préparation de plus de dix minutes : la refaire, le consentement doit être vérifié juste avant l'appel")
+        raise SystemExit("préparation de plus de dix minutes : la refaire, le numéro doit être vérifié juste avant l'appel")
     if not numero_valide(preparation.get("numero")):
         raise SystemExit("numéro illisible dans la préparation")
     chemin.unlink(missing_ok=True)

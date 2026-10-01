@@ -152,7 +152,7 @@ describe('comptesCampagne', () => {
         { prospectId: 'a', etat: 'a-appeler' },
         { prospectId: 'b', etat: 'en-appel', appelId: 'x' },
         { prospectId: 'c', etat: 'appelee', appelId: 'y' },
-        { prospectId: 'd', etat: 'sautee', raisonSaut: 'numero-non-autorise' },
+        { prospectId: 'd', etat: 'sautee', raisonSaut: 'numero-non-appelable' },
         { prospectId: 'e', etat: 'retiree', motif: 'retrait', le: '2026-09-29T10:00:00.000Z', par: 'interface' },
         { prospectId: 'f', etat: 'a-appeler', sauts: 2 },
       ]),

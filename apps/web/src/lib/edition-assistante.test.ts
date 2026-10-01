@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/db';
-import { appels, assistante, consentements, versionsAssistante } from '@/db/schema';
+import { appels, assistante, versionsAssistante } from '@/db/schema';
 import { dossierAgentDeTest, type FauxClient, fauxClientAgent, PROMPT_DE_TEST } from '../../test/faux-agent';
 import { entrepriseDeTest, fiche } from '../../test/fixtures';
 import { avecBaseDeTest } from '../../test/outils';
@@ -42,11 +42,7 @@ afterEach(() => agent.effacer());
 const config = async () => JSON.parse(await readFile(join(agent.dossier, 'mina.config.json'), 'utf8'));
 
 describe('nom et premier message', () => {
-  it('rédige la question du MCP (ancien et nouveau nom, consentements v1), puis écrit d’origine interface', async () => {
-    const e = await entrepriseDeTest();
-    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01')], 'interface');
-    await db.update(consentements).set({ texteVersion: 1 });
-
+  it('rédige la question du MCP (ancien et nouveau nom), puis écrit d’origine interface', async () => {
     const q = await preparerIdentite({ nom: 'Léa' }, null);
 
     expect(q).toEqual({
@@ -54,7 +50,6 @@ describe('nom et premier message', () => {
       lignes: [
         'Changer le nom de l’assistante : « Mina » → « Léa ».',
         'Les prospects l’entendront dès le prochain appel, sans autre relecture.',
-        '1 numéro a un consentement actif donné sur le texte version 1, qui nomme l’assistante « Mina ».',
       ],
     });
     expect(await db.$count(assistante)).toBe(0);
@@ -148,7 +143,7 @@ describe('poussée', () => {
   it('refuse pendant un appel en cours, et un champ hors de la liste ou une configuration modifiée ailleurs comme le MCP', async () => {
     await modifierTemperature();
     const e = await entrepriseDeTest();
-    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01')], 'interface');
+    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01')]);
     const script = await creerScript(e.id, 'Découverte');
     const [appel] = await db
       .insert(appels)

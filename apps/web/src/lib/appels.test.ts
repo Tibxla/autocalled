@@ -85,7 +85,7 @@ describe('preparerReanalyse', () => {
 });
 
 describe('nom et premier message de l’assistante', () => {
-  async function prospectAutorise() {
+  async function prospectAppelable() {
     await agendaFrais();
     const e = await entrepriseDeTest();
     const { versionScriptId } = await creerScript(e.id, 'Découverte');
@@ -97,7 +97,7 @@ describe('nom et premier message de l’assistante', () => {
     const pont = await fauxPont();
     try {
       await modifierAssistante({ nom: 'Lina', premierMessage: 'Allô, {{prospect_nom}} ?' }, { origine: 'mcp' });
-      const { entrepriseId, versionScriptId } = await prospectAutorise();
+      const { entrepriseId, versionScriptId } = await prospectAppelable();
 
       const r = await appelerParTelephone(entrepriseId, 'julie', versionScriptId);
 
@@ -115,7 +115,7 @@ describe('nom et premier message de l’assistante', () => {
   it('refuse un appel isolé quand la ligne est déjà en appel, sans rien enregistrer ni composer', async () => {
     const pont = await fauxPont({ etat: { appelEnCours: true, appelId: '00000000-0000-4000-8000-000000000001' } });
     try {
-      const { entrepriseId, versionScriptId } = await prospectAutorise();
+      const { entrepriseId, versionScriptId } = await prospectAppelable();
 
       const r = await appelerParTelephone(entrepriseId, 'julie', versionScriptId);
 
@@ -128,7 +128,7 @@ describe('nom et premier message de l’assistante', () => {
   });
 
   it('fige le nom par défaut sur un appel simulé', async () => {
-    const { entrepriseId, versionScriptId } = await prospectAutorise();
+    const { entrepriseId, versionScriptId } = await prospectAppelable();
 
     const r = await enregistrerAppelSimule(entrepriseId, 'julie', versionScriptId);
 

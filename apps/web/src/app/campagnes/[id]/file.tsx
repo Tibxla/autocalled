@@ -77,7 +77,7 @@ const FILTRES: { cle: Categorie; libelle: string; vivante?: boolean; toujours?: 
   { cle: 'en-appel', libelle: 'En appel', vivante: true, toujours: true },
   ...ISSUES_SYSTEME.map((i) => ({ cle: i, libelle: LIBELLES_ISSUES[i], toujours: ISSUES_TOUJOURS.has(i) })),
   { cle: 'autres', libelle: 'Autres' },
-  { cle: 'sautes', libelle: 'Non autorisés', toujours: true },
+  { cle: 'sautes', libelle: 'Non appelables', toujours: true },
   { cle: 'retires', libelle: 'Retirés', toujours: true },
 ];
 
@@ -130,7 +130,7 @@ function Issue({ e }: { e: EntreeFile }) {
     const repasse = e.sauts > 0 ? ` · repassé${e.sauts > 1 ? ` ${e.sauts} fois` : ''} en fin de file` : '';
     return e.suivant ? <span className="text-encre-2">Suivant{repasse}</span> : <span className="text-encre-3">À appeler{repasse}</span>;
   }
-  if (e.etat === 'sautee') return <span className="text-encre-3">Non appelé : numéro non autorisé</span>;
+  if (e.etat === 'sautee') return <span className="text-encre-3">Non appelé : numéro invalide ou effacé</span>;
   if (e.etat === 'retiree') {
     const quand = e.retrait ? dateCourte(e.retrait.le).replace(' ', ' à ') : null;
     const par = e.retrait?.par === 'mcp' ? ' par Claude Code' : '';

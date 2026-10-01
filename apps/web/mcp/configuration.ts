@@ -358,7 +358,7 @@ export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): v
   declarer(
     'importer_fiches',
     {
-      description: `Importe des fiches prospect Markdown dans une entreprise (au plus ${FICHIERS_MAX}, 32 Ko chacune) : en-tête YAML (nom, telephone, societe, role, email) puis le contexte que l’assistante doit connaître. Le nom de fichier identifie le prospect ; réimporter met la fiche à jour. Demander l’import vaut attestation du texte de consentement en vigueur (lire_texte_consentement) : les numéros nouveaux sont enregistrés comme consentants, comme l’import de l’interface case cochée ; un numéro révoqué ne l’est jamais à nouveau, et la fiche d’une personne effacée (effacer_personne) est refusée. Un prospect archivé le reste (liste archives du rapport). Seul un import qui change le numéro ou la fiche (nom, société, rôle, contexte) d’un prospect en file d’une campagne téléphone en cours demande la confirmation de l’opérateur.`,
+      description: `Importe des fiches prospect Markdown dans une entreprise (au plus ${FICHIERS_MAX}, 32 Ko chacune) : en-tête YAML (nom, telephone, societe, role, email) puis le contexte que l’assistante doit connaître. Le nom de fichier identifie le prospect ; réimporter met la fiche à jour. Une fiche importée est appelable aussitôt : l’opérateur n’importe que des personnes qu’il a prévenues. La fiche d’une personne effacée (effacer_personne) est refusée. Un prospect archivé le reste (liste archives du rapport). Seul un import qui change le numéro ou la fiche (nom, société, rôle, contexte) d’un prospect en file d’une campagne téléphone en cours demande la confirmation de l’opérateur.`,
       entree: z.strictObject({
         entreprise: champEntreprise,
         fiches: z
@@ -415,7 +415,7 @@ export function outilsDeConfiguration(declarer: Declarer, serveur: McpServer): v
         if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);
         confirmation = 'acceptee';
       }
-      const rapport = await importerFiches(e.id, fiches, 'mcp');
+      const rapport = await importerFiches(e.id, fiches);
       if (rapport.etat === 'erreur') return refus(rapport.message, confirmation);
       return reussite(rapport, { confirmation });
     },

@@ -10,7 +10,7 @@ import { ajouterDansLaFile } from '../actions';
 /**
  * Titre de la file et volet « Ajouter des prospects » (A). L'ajout n'appelle personne : les prospects choisis
  * passent en fin de file et une campagne en cours les appellera à leur tour. Aucune case n'est cochée d'office :
- * l'opérateur choisit. Seuls sont proposés les prospects de l'entreprise au numéro autorisé et absents de la
+ * l'opérateur choisit. Seuls sont proposés les prospects de l'entreprise au numéro appelable et absents de la
  * file ; le serveur refait ces contrôles au moment d'ajouter.
  *
  * Sous 640 px, la liste ne défile plus dans un cadre : la page défile, et « Ajouter » vit dans une barre
@@ -194,7 +194,7 @@ function FormulaireAjout({
           </Action>
         }
       >
-        Tous les prospects au numéro autorisé sont déjà dans la file. Importe des fiches dans Prospects pour en ajouter d’autres.
+        Tous les prospects appelables sont déjà dans la file. Importe des fiches dans Prospects pour en ajouter d’autres.
       </EtatVide>
     );
   }
@@ -210,7 +210,7 @@ function FormulaireAjout({
       }}
     >
       <p className="text-sm text-encre-3">
-        Prospects de l’entreprise au numéro autorisé, absents de la file. Ils passent en fin de file, dans l’ordre alphabétique ; personne n’est appelé
+        Prospects appelables de l’entreprise, absents de la file. Ils passent en fin de file, dans l’ordre alphabétique ; personne n’est appelé
         maintenant.
       </p>
       {/* Sous 640 px, la recherche en tête, pleine largeur, puis la rangée de filtres qui défile. */}

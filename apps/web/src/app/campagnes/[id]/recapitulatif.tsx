@@ -1,11 +1,11 @@
-import type { Autorisation } from '@autocalled/domain';
-import { AjoutClaudeCode } from '@/components/ajout-claude-code';
+import type { RaisonRefus } from '@autocalled/domain';
 import { estimation, type ReglagesLigne } from '@/components/garde-fous';
-import { PastilleAutorisation } from '@/components/pastille-autorisation';
+import { REFUS_NUMERO } from '@/components/refus-numero';
 
 /**
  * Récapitulatif d'une campagne prête : il sert de confirmation. Il dit ce qui va se passer sur la ligne choisie,
- * montre les premiers prospects avec leur numéro masqué et leur autorisation relue au rendu, et, au téléphone,
+ * montre les premiers prospects avec leur numéro masqué, signale ceux dont le numéro, relu au rendu, ne serait pas
+ * composé, et, au téléphone,
  * les plafonds et le temps qu'il faudra au plus tôt. Vue pure : l'action finale vient de la régie.
  */
 
@@ -16,9 +16,8 @@ export interface ProspectRecapitulatif {
   societe: string | null;
   /** Déjà masqué par la page (« 06 •• •• •• 40 »). */
   numero: string;
-  autorisation: Autorisation | undefined;
-  /** Au téléphone : date d'entrée du numéro par le serveur MCP (ADR 0009), sinon null. */
-  ajoutMcp?: Date | null;
+  /** Pourquoi son numéro ne serait pas composé (invalide, personne effacée) ; null s'il le serait. */
+  refus: RaisonRefus | null;
 }
 
 const PHRASES = {
@@ -55,14 +54,7 @@ function Ligne({ p }: { p: ProspectRecapitulatif }) {
         {p.societe ? <span className="text-encre-3"> · {p.societe}</span> : null}
       </span>
       <span className="font-mono text-xs text-encre-3 max-sm:hidden">{p.numero}</span>
-      <span className="max-sm:ml-auto sm:text-right">
-        <PastilleAutorisation autorisation={p.autorisation} />
-      </span>
-      {p.ajoutMcp ? (
-        <span className="basis-full pb-1.5 text-sm text-encre-3 sm:col-span-3 sm:col-start-2 sm:-mt-1.5">
-          <AjoutClaudeCode le={p.ajoutMcp} />
-        </span>
-      ) : null}
+      <span className="text-sm text-alerte max-sm:ml-auto sm:text-right">{p.refus ? `Numéro ${REFUS_NUMERO[p.refus]}` : null}</span>
     </li>
   );
 }
@@ -70,24 +62,23 @@ function Ligne({ p }: { p: ProspectRecapitulatif }) {
 export function Recapitulatif({
   ligne,
   prospects,
-  autorises,
+  appelables,
   reglages = null,
   passes24h = null,
   action,
 }: {
   ligne: 'navigateur' | 'bluetooth' | 'simulation' | 'twilio';
   prospects: ProspectRecapitulatif[];
-  autorises: number;
+  appelables: number;
   reglages?: ReglagesLigne | null;
   passes24h?: number | null;
   action: React.ReactNode;
 }) {
   const premiers = prospects.slice(0, PREMIERS);
   const suite = prospects.slice(PREMIERS);
-  const sautes = prospects.length - autorises;
+  const sautes = prospects.length - appelables;
   const telephone = ligne === 'bluetooth';
-  const estime = telephone ? phraseEstimation(autorises, reglages, passes24h) : null;
-  const ajoutsMcp = prospects.filter((p) => p.ajoutMcp).length;
+  const estime = telephone ? phraseEstimation(appelables, reglages, passes24h) : null;
 
   return (
     <div className="grid gap-5">
@@ -99,19 +90,7 @@ export function Recapitulatif({
           {sautes > 0 ? (
             <>
               {' '}
-              <span className="font-mono">{sautes}</span> ne ser{sautes > 1 ? 'ont' : 'a'} pas appelé{sautes > 1 ? 's' : ''} : numéro non autorisé.
-            </>
-          ) : null}
-          {ajoutsMcp > 0 ? (
-            <>
-              {' '}
-              {ajoutsMcp > 1 ? (
-                <>
-                  <span className="font-mono">{ajoutsMcp}</span> numéros ajoutés par Claude Code, signalés dans la liste.
-                </>
-              ) : (
-                'Un numéro ajouté par Claude Code, signalé dans la liste.'
-              )}
+              <span className="font-mono">{sautes}</span> ne ser{sautes > 1 ? 'ont' : 'a'} pas appelé{sautes > 1 ? 's' : ''} : numéro invalide ou d’une personne effacée.
             </>
           ) : null}
         </p>

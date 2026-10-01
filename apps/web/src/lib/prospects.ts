@@ -7,14 +7,12 @@ import {
   type NumeroE164,
   fusionnerFiches,
   lireFiches,
-  numerosAAutoriser,
   retirer,
 } from '@autocalled/domain';
-import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { appels, campagnes, consentements, entreprises, imports, type Origine, prospects, scripts, textesConsentement, versionsScript } from '@/db/schema';
+import { appels, campagnes, imports, type Origine, prospects, scripts, versionsScript } from '@/db/schema';
 import type { Conflit, Refus } from './entreprises';
-import { numeroLisible } from './format';
 import { OPPOSITION_ILLISIBLE, numerosOpposes } from './opposition';
 import type { PatchFiche } from './schemas';
 
@@ -30,8 +28,6 @@ export type RapportImport =
       misAJour: string[];
       inchanges: string[];
       refus: { nomFichier: string; erreurs: string[] }[];
-      numerosAutorises: number;
-      numerosRevoques: string[];
       /** Prospects importés qui restent archivés : un réimport ne les réactive pas. */
       archives: string[];
     };
@@ -50,16 +46,13 @@ export class FicheChangee extends Error {
 export const NUMERO_EFFACE = 'numéro d’une personne effacée à sa demande : il ne peut plus être importé ni appelé';
 
 /**
- * Importe des fiches prospect Markdown dans une entreprise et enregistre le consentement de leurs numéros
- * (ADR 0001). L'appelant atteste ce consentement : l'interface par sa case à cocher, le serveur MCP par
- * décision de l'opérateur (ADR 0009) ; `canal` garde la trace de la porte d'entrée. Un numéro révoqué ne l'est
- * jamais à nouveau (`numerosAAutoriser`). Une fiche dont le numéro est dans la liste d'opposition (personne effacée,
- * ADR 0013) est refusée : rien d'elle n'est écrit.
+ * Importe des fiches prospect Markdown dans une entreprise : leurs numéros sont appelables aussitôt, l'opérateur
+ * n'important que des personnes qu'il a prévenues (ADR 0001). Une fiche dont le numéro est dans la liste d'opposition
+ * (personne effacée, ADR 0013) est refusée : rien d'elle n'est écrit.
  */
 export async function importerFiches(
   entrepriseId: string,
   fichiers: readonly FichierImporte[],
-  canal: 'interface' | 'mcp' = 'interface',
   o: { attendu?: { prospectId: string; majLe: Date } } = {},
 ): Promise<RapportImport> {
   if (fichiers.length > FICHIERS_MAX) return { etat: 'erreur', message: `${FICHIERS_MAX} fichiers au plus par import.` };
@@ -74,18 +67,15 @@ export async function importerFiches(
     refus: [...brute.refus, ...brute.fiches.filter((f) => opposes.has(f.telephone)).map((f) => ({ nomFichier: `${f.id}.md`, erreurs: [NUMERO_EFFACE] }))],
   };
   if (lecture.fiches.length === 0) {
-    return { etat: 'fait', crees: [], misAJour: [], inchanges: [], refus: lecture.refus, numerosAutorises: 0, numerosRevoques: [], archives: [] };
+    return { etat: 'fait', crees: [], misAJour: [], inchanges: [], refus: lecture.refus, archives: [] };
   }
-
-  const [texte] = await db.select().from(textesConsentement).orderBy(desc(textesConsentement.version)).limit(1);
-  if (!texte) return { etat: 'erreur', message: 'Aucun texte de consentement en base : lance les migrations.' };
 
   const existantes: (FicheProspect & { archiveLe: Date | null })[] = (
     await db.select().from(prospects).where(eq(prospects.entrepriseId, entrepriseId))
   ).map((p) => ({ ...p, telephone: p.telephone as NumeroE164 }));
   const fusion = fusionnerFiches(existantes, lecture.fiches);
 
-  const tri = await db.transaction(async (tx) => {
+  await db.transaction(async (tx) => {
     if (o.attendu) {
       // Correction d'une fiche : la ligne est relue sous verrou, et la comparaison refaite ici (FicheChangee).
       const { prospectId, majLe } = o.attendu;
@@ -98,7 +88,7 @@ export async function importerFiches(
     }
     const [imp] = await tx
       .insert(imports)
-      .values({ entrepriseId, texteConsentementVersion: texte.version, nombreFiches: lecture.fiches.length, canal })
+      .values({ entrepriseId, nombreFiches: lecture.fiches.length })
       .returning({ id: imports.id });
     if (!imp) throw new Error('import impossible');
 
@@ -106,17 +96,6 @@ export async function importerFiches(
       const valeurs = { ...fiche, entrepriseId, importId: imp.id, majLe: new Date() };
       await tx.insert(prospects).values(valeurs).onConflictDoUpdate({ target: [prospects.entrepriseId, prospects.id], set: valeurs });
     }
-
-    const numeros = lecture.fiches.map((f) => f.telephone);
-    const connus = await tx
-      .select({ numero: consentements.numero, revoqueLe: consentements.revoqueLe })
-      .from(consentements)
-      .where(inArray(consentements.numero, numeros));
-    const tri = numerosAAutoriser(numeros, connus);
-    if (tri.aAutoriser.length > 0) {
-      await tx.insert(consentements).values(tri.aAutoriser.map((numero) => ({ numero, texteVersion: texte.version, importId: imp.id })));
-    }
-    return tri;
   });
 
   const importes = new Set(lecture.fiches.map((f) => f.id));
@@ -126,69 +105,20 @@ export async function importerFiches(
     misAJour: fusion.misAJour.map((f) => f.id),
     inchanges: fusion.inchanges,
     refus: lecture.refus,
-    numerosAutorises: tri.aAutoriser.length,
-    numerosRevoques: tri.revoques.map(numeroLisible),
     archives: existantes.filter((p) => p.archiveLe && importes.has(p.id)).map((p) => p.id),
   };
 }
 
-/** Révoque le numéro pour tous les prospects qui le partagent : il ne sera plus jamais composé. */
-export async function revoquerNumero(numero: string): Promise<number> {
-  const revoques = await db
-    .update(consentements)
-    .set({ revoqueLe: new Date() })
-    .where(and(eq(consentements.numero, numero), isNull(consentements.revoqueLe)))
-    .returning({ id: consentements.id });
-  return revoques.length;
-}
-
-/**
- * Si le consentement actif de ce numéro est entré par le serveur MCP, sa date ; sinon null. Un numéro glissé
- * dans un import par une consigne injectée serait autorisé : la confirmation d'un appel le signale.
- */
-export async function ajoutParMcp(numero: string): Promise<Date | null> {
-  const [ligne] = await db
-    .select({ le: consentements.accordeLe })
-    .from(consentements)
-    .innerJoin(imports, eq(imports.id, consentements.importId))
-    .where(and(eq(consentements.numero, numero), isNull(consentements.revoqueLe), eq(imports.canal, 'mcp')))
-    .orderBy(desc(consentements.accordeLe))
-    .limit(1);
-  return ligne?.le ?? null;
-}
-
-/** Le texte de consentement que tout nouvel import fait accepter : la dernière version en base. */
-export async function texteConsentementEnVigueur(): Promise<{ version: number; texte: string } | null> {
-  const [texte] = await db
-    .select({ version: textesConsentement.version, texte: textesConsentement.texte })
-    .from(textesConsentement)
-    .orderBy(desc(textesConsentement.version))
-    .limit(1);
-  return texte ?? null;
-}
-
-/** Les consentements d'un numéro, du plus récent au plus ancien, avec la porte d'entrée de leur import. */
-export async function consentementsDuNumero(
-  numero: string,
-): Promise<{ accordeLe: Date; revoqueLe: Date | null; texteVersion: number; canal: 'interface' | 'mcp' }[]> {
-  return db
-    .select({ accordeLe: consentements.accordeLe, revoqueLe: consentements.revoqueLe, texteVersion: consentements.texteVersion, canal: imports.canal })
-    .from(consentements)
-    .innerJoin(imports, eq(imports.id, consentements.importId))
-    .where(eq(consentements.numero, numero))
-    .orderBy(desc(consentements.accordeLe));
-}
-
 /**
  * Corrige la fiche d'un prospect par la machinerie de l'import d'une seule fiche : mêmes contrôles (numéro
- * normalisé, adresse, contexte), une ligne `imports` au canal donné, consentement du nouveau numéro sauf s'il est
- * révoqué. Refusé si la fiche a changé depuis `connu` (son `majLe` lu, en ISO). L'identifiant ne change jamais.
+ * normalisé, adresse, contexte, liste d'opposition), une ligne `imports`. Refusé si la fiche a changé depuis `connu`
+ * (son `majLe` lu, en ISO). L'identifiant ne change jamais.
  */
 export async function modifierProspect(
   entrepriseId: string,
   prospectId: string,
   champs: PatchFiche,
-  o: { canal: 'interface' | 'mcp'; connu?: string | null },
+  o: { connu?: string | null } = {},
 ): Promise<{ ok: true; rapport: Extract<RapportImport, { etat: 'fait' }> } | Refus | Conflit> {
   const [actuel] = await db
     .select()
@@ -214,7 +144,7 @@ export async function modifierProspect(
   try {
     // La comparaison ci-dessus sert à répondre vite ; celle-ci, sous verrou dans la transaction de l'import, ferme la
     // fenêtre entre la lecture et l'écriture (un réimport arrivé entre les deux n'est pas écrasé).
-    rapport = await importerFiches(entrepriseId, [ecrireFiche(fiche)], o.canal, { attendu: { prospectId, majLe: actuel.majLe } });
+    rapport = await importerFiches(entrepriseId, [ecrireFiche(fiche)], { attendu: { prospectId, majLe: actuel.majLe } });
   } catch (erreur) {
     if (!(erreur instanceof FicheChangee)) throw erreur;
     return erreur.majLe
@@ -304,10 +234,10 @@ function filesNonConfirmees(files: readonly FileEnAttente[], confirmees: readonl
 
 /**
  * Archive un prospect (ADR 0013) : il sort des listes par défaut et des choix de campagne, et ne peut plus être
- * appelé ni ajouté à une campagne tant qu'il l'est. Ses appels, bilans et le consentement de son numéro restent.
+ * appelé ni ajouté à une campagne tant qu'il l'est. Ses appels et ses bilans restent.
  * Réversible, donc sans confirmation, sauf s'il attend dans la file d'une campagne non terminée : il en est alors
  * retiré (motif « retrait », trace gardée) sous le verrou de la campagne, pour qu'aucun enchaînement ne le compose ni
- * ne le marque « non autorisé » entre-temps, et ce retrait ne se défait pas (le réactiver ne l'y remet pas) : il est
+ * ne le saute entre-temps, et ce retrait ne se défait pas (le réactiver ne l'y remet pas) : il est
  * confirmé. `filesConfirmees` : les campagnes nommées dans cette confirmation (vide sans confirmation). Une file où il
  * attend sans y figurer (sans confirmation, ou ajouté entre la lecture et le geste) refuse tout et rend `aConfirmer`,
  * les files à nommer dans la confirmation. Refusé pendant un appel avec lui.
@@ -404,70 +334,4 @@ export async function filesTelephoneEnCours(entrepriseId: string, prospectIds: r
     }
   }
   return parProspect;
-}
-
-/** Un texte de consentement par sa version, ou null. */
-export async function texteConsentement(version: number): Promise<{ version: number; texte: string } | null> {
-  const [texte] = await db
-    .select({ version: textesConsentement.version, texte: textesConsentement.texte })
-    .from(textesConsentement)
-    .where(eq(textesConsentement.version, version));
-  return texte ?? null;
-}
-
-/** Toutes les versions du texte de consentement, de la plus récente à la plus ancienne, avec leurs consentements actifs. */
-export async function versionsConsentement(): Promise<{ version: number; consentementsActifs: number }[]> {
-  return db
-    .select({
-      version: textesConsentement.version,
-      consentementsActifs: sql<number>`(select count(*) from ${consentements} where ${consentements.texteVersion} = ${textesConsentement.version} and ${consentements.revoqueLe} is null)`.mapWith(Number),
-    })
-    .from(textesConsentement)
-    .orderBy(desc(textesConsentement.version));
-}
-
-/**
- * Les consentements enregistrés, du plus récent au plus ancien, par pages (`avant` : identifiant du dernier lu), avec
- * les prospects qui portent encore le numéro. Le consentement d'une personne effacée n'y est plus : seule l'empreinte
- * de son numéro reste, dans la liste d'opposition (ADR 0013).
- */
-export async function listerConsentements(f: { numero?: string; etat?: 'actif' | 'revoque'; limite: number; avant?: string }) {
-  const conditions = [
-    f.numero ? eq(consentements.numero, f.numero) : undefined,
-    f.etat === 'actif' ? isNull(consentements.revoqueLe) : f.etat === 'revoque' ? sql`${consentements.revoqueLe} is not null` : undefined,
-    f.avant
-      ? sql`(${consentements.accordeLe}, ${consentements.id}) < (select c.accorde_le, c.id from consentements c where c.id = ${f.avant})`
-      : undefined,
-  ];
-  const lignes = await db
-    .select({
-      consentementId: consentements.id,
-      numero: consentements.numero,
-      accordeLe: consentements.accordeLe,
-      revoqueLe: consentements.revoqueLe,
-      texteVersion: consentements.texteVersion,
-      canal: imports.canal,
-    })
-    .from(consentements)
-    .innerJoin(imports, eq(imports.id, consentements.importId))
-    .where(and(...conditions))
-    .orderBy(desc(consentements.accordeLe), desc(consentements.id))
-    .limit(f.limite + 1);
-  const page = lignes.slice(0, f.limite);
-  const numeros = [...new Set(page.map((l) => l.numero))];
-  const porteurs = numeros.length
-    ? await db
-        .select({ numero: prospects.telephone, entreprise: entreprises.slug, prospect: prospects.id })
-        .from(prospects)
-        .innerJoin(entreprises, eq(entreprises.id, prospects.entrepriseId))
-        .where(inArray(prospects.telephone, numeros))
-    : [];
-  return {
-    consentements: page.map((l) => ({
-      ...l,
-      numeroLisible: numeroLisible(l.numero),
-      prospects: porteurs.filter((p) => p.numero === l.numero).map(({ entreprise, prospect }) => ({ entreprise, prospect })),
-    })),
-    suivant: lignes.length > f.limite ? (page.at(-1)?.consentementId ?? null) : null,
-  };
 }

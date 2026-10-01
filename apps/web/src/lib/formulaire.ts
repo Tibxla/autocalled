@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 
-/** Retour d'une action hors formulaire (archiver, révoquer, relire) : ce qui a été fait, ou pourquoi rien. */
+/** Retour d'une action hors formulaire (archiver, effacer, relire) : ce qui a été fait, ou pourquoi rien. */
 export type ResultatAction<T extends object = object> = ({ ok: true } & T) | { ok: false; raison: string };
 
 /**

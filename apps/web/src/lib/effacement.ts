@@ -6,7 +6,7 @@ import type { EntreeCampagne } from '@autocalled/domain';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/db';
-import { appels, campagnes, consentements, entreprises, journalMcp, type Origine, prospects, rendezVous } from '@/db/schema';
+import { appels, campagnes, entreprises, journalMcp, type Origine, prospects, rendezVous } from '@/db/schema';
 import { DUREE_MAX_ANALYSE_S, dossierDonnees } from './appels';
 import type { Refus } from './entreprises';
 import { numeroLisible } from './format';
@@ -16,8 +16,8 @@ import { OPPOSITION_ILLISIBLE, SEL_ABSENT, inscrireOpposition, numerosOpposes, s
 /**
  * Effacement d'une personne (droit à l'effacement, ADR 0013) : sa fiche, ses appels avec transcriptions et bilans,
  * les enregistrements sur disque (application et pont), ses rendez-vous et, quand l'API Google le permet, leurs
- * événements, ses entrées de campagne, ses rappels, le consentement de son numéro et ses mentions dans le journal
- * des gestes, quelle que soit leur origine. Seule reste l'empreinte irréversible de son numéro dans la liste d'opposition : il ne sera plus jamais
+ * événements, ses entrées de campagne, ses rappels et ses mentions dans le journal des gestes, quelle que soit leur
+ * origine. Seule reste l'empreinte irréversible de son numéro dans la liste d'opposition : il ne sera plus jamais
  * composé ni importé. Irréversible.
  *
  * Les autres prospects qui portent le même numéro (même personne dans une autre entreprise, standard partagé) ne
@@ -61,7 +61,6 @@ export interface InventaireEffacement {
   entreesCampagne: number;
   /** Un rappel convenu reste à faire. */
   rappel: boolean;
-  consentements: number;
   mentionsJournal: number;
   /** Conversations chez ElevenLabs : Autocalled ne les supprime pas (voir le résultat). */
   conversations: number;
@@ -80,7 +79,6 @@ export interface ResultatEffacement {
     entreesCampagne: number;
     campagnesSupprimees: number;
     campagnesTerminees: number;
-    consentements: number;
     mentionsJournal: number;
     fichiers: number;
     evenements: number;
@@ -115,7 +113,6 @@ interface Collecte {
   }[];
   rendezVous: { id: string; statut: string; evenementId: string | null; calendrier: string | null; debut: Date; creeLe: Date }[];
   campagnes: { id: string; statut: string; entrees: EntreeCampagne[] }[];
-  consentements: number;
   autresPorteurs: AutrePorteur[];
 }
 
@@ -160,21 +157,17 @@ async function collecter(lecteur: Lecteur | Transaction, entrepriseId: string, p
     )
     .orderBy(campagnes.id);
   const lesCampagnes = await (verrouiller ? requeteCampagnes.for('update') : requeteCampagnes);
-  const [nConsentements, autres] = await Promise.all([
-    lecteur.$count(consentements, eq(consentements.numero, prospect.telephone)),
-    lecteur
-      .select({ entreprise: entreprises.slug, entrepriseNom: entreprises.nom, prospect: prospects.id, nom: prospects.nom })
-      .from(prospects)
-      .innerJoin(entreprises, eq(entreprises.id, prospects.entrepriseId))
-      .where(and(eq(prospects.telephone, prospect.telephone), or(ne(prospects.entrepriseId, entrepriseId), ne(prospects.id, prospectId))))
-      .orderBy(entreprises.nom, prospects.nom),
-  ]);
+  const autres = await lecteur
+    .select({ entreprise: entreprises.slug, entrepriseNom: entreprises.nom, prospect: prospects.id, nom: prospects.nom })
+    .from(prospects)
+    .innerJoin(entreprises, eq(entreprises.id, prospects.entrepriseId))
+    .where(and(eq(prospects.telephone, prospect.telephone), or(ne(prospects.entrepriseId, entrepriseId), ne(prospects.id, prospectId))))
+    .orderBy(entreprises.nom, prospects.nom);
   return {
     prospect,
     appels: lesAppels.map((a) => ({ ...a, transcrit: Boolean(a.transcrit), analyse: Boolean(a.analyse) })),
     rendezVous: lesRendezVous,
     campagnes: lesCampagnes,
-    consentements: nConsentements,
     autresPorteurs: autres,
   };
 }
@@ -298,7 +291,6 @@ export async function inventaireEffacement(entrepriseId: string, prospectId: str
     evenements: evenementsDe(c, clientGoogle() && google ? google.calendrierId : null, maintenant),
     entreesCampagne: c.campagnes.length,
     rappel: rappelAFaire(c),
-    consentements: c.consentements,
     mentionsJournal: mentions.length,
     conversations: c.appels.filter((a) => a.conversationId).length,
     autresPorteurs: c.autresPorteurs,
@@ -366,7 +358,6 @@ export async function effacerPersonne(entrepriseId: string, prospectId: string, 
     // lus : un appel enregistré entre la lecture et ici part aussi.
     await tx.delete(appels).where(and(eq(appels.entrepriseId, entrepriseId), eq(appels.prospectId, prospectId)));
     await tx.delete(prospects).where(and(eq(prospects.entrepriseId, entrepriseId), eq(prospects.id, prospectId)));
-    const nConsentements = (await tx.delete(consentements).where(eq(consentements.numero, c.prospect.telephone)).returning({ id: consentements.id })).length;
 
     const mentions = await mentionsDuJournal(tx, marquesDeLaPersonne(c.prospect, appelIds));
     for (const m of mentions) await tx.update(journalMcp).set({ arguments: m.arguments, message: m.message }).where(eq(journalMcp.id, m.id));
@@ -379,7 +370,6 @@ export async function effacerPersonne(entrepriseId: string, prospectId: string, 
       entreesCampagne: c.campagnes.length,
       campagnesSupprimees,
       campagnesTerminees,
-      consentements: nConsentements,
       mentionsJournal: mentions.length,
     };
     await inscrireOpposition(tx, c.prospect.telephone, sel, par, efface);
@@ -467,7 +457,6 @@ export function phrasesEffacement(
     ...(inv.entreesCampagne
       ? [`sa place dans ${pluriel(inv.entreesCampagne, 'file de campagne', 'files de campagne')} (une campagne qui ne contenait qu’elle est supprimée ; les comptes des autres changent)`]
       : []),
-    ...(inv.consentements ? [`le consentement de son numéro (${pluriel(inv.consentements, 'accord enregistré', 'accords enregistrés')})`] : []),
     ...(inv.mentionsJournal ? [`${pluriel(inv.mentionsJournal, 'mention', 'mentions')} dans le journal des gestes, remplacées par « ${MENTION_NEUTRE} »`] : []),
   ];
   const aLaMain = inv.evenements.filter((e) => !e.supprimable).length;

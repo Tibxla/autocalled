@@ -27,7 +27,6 @@ La liste des gestes soumis à l'élicitation s'allonge : pousser la configuratio
 - Une nouvelle variable dans le prompt ne se pousse qu'après le déploiement de l'application qui l'envoie et le redémarrage du pont ; sinon ElevenLabs refuse d'ouvrir la conversation. Le MCP valide le prompt contre les variables du code de la copie où il tourne, pas contre celles de la production.
 - Le MCP écrit dans l'arbre de travail de la copie où Claude Code est ouvert : `agent/` modifié reste à commiter, et le MCP ne lance jamais git.
 - Le modèle qui lit une transcription a la main sur le prompt. La garde tient à l'élicitation au moment où quelque chose part (poussée, nom, premier message), à la validation (variables du prompt, section Règles, liste blanche), au journal, et à la règle qui fait de tout texte de tiers une donnée.
-- Le texte de consentement v2 ne nomme plus l'assistante ; les consentements v1 gardent leur version.
 - `pnpm agent push` montre le diff et demande confirmation : une écriture glissée dans `agent/` ne part plus à l'aveugle.
 - Une version poussée puis remplacée par la ligne de commande seule n'est consignée que dans git.
 - Une exception dans un outil ne renvoie plus son texte au modèle (ni message Postgres, ni chemin) : le détail va au journal MCP, avec l'accord de l'opérateur s'il avait été donné avant.

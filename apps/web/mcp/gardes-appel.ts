@@ -1,8 +1,6 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { campagnes, entreprises, objections, versionsScript } from '@/db/schema';
-import { numeroLisible } from '@/lib/format';
-import { champ } from './confirmation';
 
 /**
  * Ce que l'assistante dira au prospect vient de la fiche de l'entreprise, de ses objections, de la version du script
@@ -50,12 +48,3 @@ export async function ecrituresDuMcp(entrepriseId: string, versionScriptId: stri
 
 /** « Attention : … » en fin de question, ou rien. */
 export const attentionMcp = (ecritures: readonly string[]) => (ecritures.length ? ` Attention : ${ecritures.join(' ; ')}.` : '');
-
-/** Les prospects dont le numéro a été entré par le MCP, nommés un à un (vingt au plus, puis « et N autres »). */
-export function numerosDuMcp(liste: readonly { nom: string; telephone: string; ajout: Date | null }[], max = 20): string {
-  const parMcp = liste.filter((p): p is { nom: string; telephone: string; ajout: Date } => p.ajout !== null);
-  if (!parMcp.length) return '';
-  const noms = parMcp.slice(0, max).map((p) => `${champ(p.nom, 40)} (${numeroLisible(p.telephone)}), le ${jourEtHeure.format(p.ajout)}`);
-  const reste = parMcp.length - max;
-  return ` Numéro${parMcp.length > 1 ? 's' : ''} ajouté${parMcp.length > 1 ? 's' : ''} par le MCP : ${noms.join(' ; ')}${reste > 0 ? ` ; et ${reste} autre${reste > 1 ? 's' : ''}` : ''}.`;
-}

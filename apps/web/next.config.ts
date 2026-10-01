@@ -6,7 +6,7 @@ loadEnvConfig(`${import.meta.dirname}/../..`, process.env.NODE_ENV !== 'producti
 
 /**
  * L'identité Tailscale suit toute requête partie d'un appareil de l'opérateur (ADR 0006), même lancée par une page
- * tierce : aucune page ne se laisse donc encadrer (clic détourné sur « Lancer » ou « Révoquer »). `same-origin` et
+ * tierce : aucune page ne se laisse donc encadrer (clic détourné sur « Lancer » ou « Effacer »). `same-origin` et
  * non `no-referrer` : ce dernier ferait envoyer `Origin: null` aux actions serveur, que Next refuserait.
  */
 const entetesDeSecurite = [

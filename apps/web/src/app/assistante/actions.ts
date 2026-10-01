@@ -49,7 +49,7 @@ const sansConnu = (e: z.infer<typeof identiteSchema>) => ({
   ...(e.premierMessage !== undefined ? { premierMessage: e.premierMessage } : {}),
 });
 
-/** La question de la confirmation du nom et du premier message (ancien → nouveau, consentements v1). */
+/** La question de la confirmation du nom et du premier message (ancien → nouveau, campagne en cours). */
 export async function preparerIdentiteAction(saisie: unknown): Promise<Resultat<{ lignes: string[] }>> {
   await exigerOperateur();
   const e = lire(identiteSchema, saisie);

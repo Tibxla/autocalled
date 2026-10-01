@@ -2,11 +2,12 @@ import { finDemandee } from '@autocalled/domain';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { comptesCampagne, dateCourte, etatAppel, STATUTS_CAMPAGNE } from '@/components/format-appel';
+import { refusDe } from '@/components/refus-numero';
 import { Cellule, CelluleEnTete, EnTeteTable, LienLigne, LigneTable, Page, TableDense } from '@/components/ui';
 import { NavigationListe } from '@/components/clavier';
 import { db } from '@/db';
 import { appels, campagnes, issuesPersonnalisees, prospects } from '@/db/schema';
-import { autorisationsDe } from '@/lib/autorisations';
+import { appelabiliteDe } from '@/lib/appelables';
 import { entrepriseParSlug } from '@/lib/pages';
 import { versionsDeLEntreprise } from '@/lib/versions';
 import { SectionCampagnes, type ProspectCampagne } from './formulaire-campagne';
@@ -59,8 +60,8 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
       .where(eq(issuesPersonnalisees.entrepriseId, entreprise.id)),
   ]);
   const ids = liste.map((c) => c.id);
-  const [autorisations, appelsCampagnes] = await Promise.all([
-    autorisationsDe(listeProspects.map((p) => p.telephone)),
+  const [verifies, appelsCampagnes] = await Promise.all([
+    appelabiliteDe(listeProspects.map((p) => p.telephone)),
     ids.length > 0
       ? db
           .select({ campagneId: appels.campagneId, issue: appels.issue, issueSysteme: appels.issueSysteme })
@@ -86,7 +87,7 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
       id: p.id,
       nom: p.nom,
       societe: p.societe,
-      autorisation: autorisations.get(p.telephone),
+      refus: refusDe(verifies.get(p.telephone)),
       derniere: d ? { cle: d.issueSysteme, libelle: etatAppel(d, { libellePerso: d.issue ? libellePerso.get(d.issue) : null }).libelle } : null,
       rendezVous: rendezVousDe.has(p.id),
     };
@@ -101,9 +102,9 @@ export default async function PageCampagnes({ params }: { params: Promise<{ slug
         }
       : listeProspects.length === 0
         ? { texte: 'Aucun prospect : importe des fiches dans Prospects.', lien: { href: `${base}/prospects?import=1`, libelle: 'Importer des fiches' } }
-        : prospectsFormulaire.every((p) => !p.autorisation?.autorise)
+        : prospectsFormulaire.every((p) => p.refus !== null)
           ? {
-              texte: 'Aucun numéro autorisé : chaque prospect est révoqué ou sans consentement.',
+              texte: 'Aucun prospect à appeler : chaque numéro est invalide ou celui d’une personne effacée.',
               lien: { href: `${base}/prospects`, libelle: 'Voir les prospects' },
             }
           : null;

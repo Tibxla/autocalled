@@ -16,4 +16,4 @@ Un rappel est fait dès qu'un appel plus récent part vers le même prospect, qu
 - Les bilans antérieurs restent valides, sans date ; la version des consignes d'analyse change, et une analyse relancée date les anciens rappels.
 - L'accueil liste « À rappeler aujourd'hui » et les rappels en retard ; la liste des appels filtre les rappels à faire (`?rappels=1`), et le MCP les lit par `rappels_du_jour` et `lister_appels`.
 - Une date mal comprise ne se corrige qu'en relançant l'analyse, ou en rappelant le prospect.
-- Révoquer un numéro retire ses rappels à faire.
+- Archiver un prospect retire ses rappels à faire (ADR 0013).

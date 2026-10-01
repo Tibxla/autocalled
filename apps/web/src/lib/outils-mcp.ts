@@ -33,7 +33,7 @@ export const OUTILS_MCP: Readonly<Record<string, { libelle: string; lecture: boo
   creer_version_script: { libelle: 'Version de script créée', lecture: false },
   renommer_script: { libelle: 'Script renommé', lecture: false },
   archiver_script: { libelle: 'Script archivé', lecture: false },
-  // Prospects et consentements
+  // Prospects
   lister_prospects: { libelle: 'Prospects listés', lecture: true },
   lire_prospect: { libelle: 'Prospect lu', lecture: true },
   importer_fiches: { libelle: 'Fiches importées', lecture: false },
@@ -41,9 +41,6 @@ export const OUTILS_MCP: Readonly<Record<string, { libelle: string; lecture: boo
   archiver_prospect: { libelle: 'Prospect archivé', lecture: false },
   reactiver_prospect: { libelle: 'Prospect réactivé', lecture: false },
   effacer_personne: { libelle: 'Personne effacée', lecture: false },
-  revoquer_numero: { libelle: 'Numéro révoqué', lecture: false },
-  lire_texte_consentement: { libelle: 'Texte de consentement lu', lecture: true },
-  lire_consentements: { libelle: 'Consentements lus', lecture: true },
   // Campagnes
   lister_campagnes: { libelle: 'Campagnes listées', lecture: true },
   lire_campagne: { libelle: 'Campagne lue', lecture: true },

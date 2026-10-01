@@ -39,7 +39,7 @@ Autocalled est un mini-SaaS de démonstration, construit pour montrer un savoir-
 - **Une assistante, plusieurs entreprises.** La même assistante (Mina par défaut, nom réglable) représente l'entreprise choisie avant l'appel : son offre, ses arguments, ses objections, ses règles de rendez-vous, et l'historique des appels précédents avec ce prospect.
 - **Des bilans qui se justifient.** Après l'appel, Claude Code en mode headless produit le bilan : issue, étape atteinte, objections levées ou non avec le temps CRAC où elles ont coincé, points forts et points faibles. Le domaine refuse un bilan dont une citation n'est pas dans la transcription.
 - **Des chiffres honnêtes.** L'analyse compare les versions de script d'une entreprise, n'affiche aucun taux sous dix appels aboutis et laisse les appels simulés de côté.
-- **Une démo fermée.** L'assistante n'appelle que des personnes qui ont accepté d'être appelées par une IA et enregistrées ([ADR 0001](docs/adr/0001-demo-fermee-numeros-autorises.md)).
+- **Une démo fermée.** L'opérateur ne fait appeler que lui-même et des proches qu'il a prévenus qu'une IA les appellera et que l'appel sera enregistré ([ADR 0001](docs/adr/0001-demo-fermee-personnes-prevenues.md)).
 
 Le vocabulaire du domaine (entreprise, prospect, fiche, script, étape, objection, CRAC, issue, bilan, campagne, ligne, assistante) est fixé dans [CONTEXT.md](CONTEXT.md). Le code, l'interface et cette page emploient ces mots-là et pas d'autres.
 
@@ -58,7 +58,7 @@ La bande d'appel suit la conversation en direct : la réplique du prospect, la p
 Une campagne enchaîne les prospects d'une même entreprise. Sa régie garde la bande d'appel en haut et la file en dessous, modifiable sans couper l'appel en cours.
 
 <p>
-  <img src="docs/captures/regie-campagne.png" width="900" alt="Régie d'une campagne : appel en cours, suspendre, terminer, puis la file de cent prospects filtrée par état">
+  <img src="docs/captures/regie-campagne.png" width="900" alt="Régie d'une campagne : appel en cours, suspendre, terminer, puis la file de cent prospects">
 </p>
 
 ### Après l'appel
@@ -87,11 +87,11 @@ Une campagne enchaîne les prospects d'une même entreprise. Sa régie garde la 
 <table>
   <tr>
     <td width="50%"><img src="docs/captures/entreprise-ce-que-recevra-l-assistante.png" alt="Fiche d'une entreprise : ce que l'assistante recevra, variable par variable, calculé comme au début d'un vrai appel"></td>
-    <td width="50%"><img src="docs/captures/prospects-autorisations.png" alt="Prospects d'une entreprise avec l'état d'autorisation de chaque numéro, archiver et effacer"></td>
+    <td width="50%"><img src="docs/captures/prospects.png" alt="Prospects d'une entreprise avec leur dernier appel, archiver et effacer"></td>
   </tr>
   <tr>
     <td>La fiche de l'entreprise, et « Ce que l'assistante recevra » : chaque variable calculée par le même code qu'un vrai appel.</td>
-    <td>Les prospects importés depuis des fiches Markdown, avec l'autorisation de chaque numéro (autorisé, révoqué, sans consentement).</td>
+    <td>Les prospects importés depuis des fiches Markdown, avec le rappel à faire et le dernier appel de chacun.</td>
   </tr>
   <tr>
     <td><img src="docs/captures/script-versions.png" alt="Un script et ses versions figées, étapes avec leurs formulations d'exemple"></td>
@@ -155,10 +155,10 @@ Sur téléphone, la navigation passe dans une barre du bas, les filtres tiennent
 ### Prospects
 
 - Import de fiches Markdown (en-tête YAML `nom`, `telephone`, `societe`, `role`, `email`, puis un contexte libre ; le nom du fichier identifie le prospect), jusqu'à cent fiches à la fois. Exemples dans [exemples/](exemples/README.md).
-- Consentement attesté à l'import sur un texte versionné : il rend le numéro autorisé. La révocation le clôt pour de bon.
-- État de chaque numéro (autorisé, révoqué, sans consentement, invalide), rappel à faire, dernier appel, recherche par nom, société ou numéro.
-- **Archiver** : le prospect sort des listes et des campagnes et n'est plus appelé ; ses appels restent, et la réactivation le fait revenir.
-- **Effacer une personne** : fiche, appels, transcriptions, bilans, enregistrements, rendez-vous, places en file, consentement et mentions au journal partent. Seule reste l'empreinte de son numéro dans la liste d'opposition, qui empêche de l'importer ou de l'appeler de nouveau ([ADR 0013](docs/adr/0013-archiver-ou-effacer-une-personne.md)).
+- Une fiche importée est appelable aussitôt : l'opérateur n'importe que des personnes qu'il a prévenues ([ADR 0001](docs/adr/0001-demo-fermee-personnes-prevenues.md)).
+- Rappel à faire, dernier appel, recherche par nom, société ou numéro. Un numéro invalide ou d'une personne effacée est signalé, et n'est pas composé.
+- **Archiver** : le prospect sort des listes et des campagnes et n'est plus appelé ; ses appels restent, et la réactivation le fait revenir. C'est ainsi qu'on cesse d'appeler quelqu'un.
+- **Effacer une personne** : fiche, appels, transcriptions, bilans, enregistrements, rendez-vous, places en file et mentions au journal partent. Seule reste l'empreinte de son numéro dans la liste d'opposition, qui empêche de l'importer ou de l'appeler de nouveau ([ADR 0013](docs/adr/0013-archiver-ou-effacer-une-personne.md)).
 - Appel depuis la fiche, sur la ligne de son choix.
 
 ### Scripts, versions, objections, issues
@@ -173,7 +173,7 @@ Sur téléphone, la navigation passe dans une barre du bas, les filtres tiennent
 - Une campagne appelle les prospects d'une entreprise l'un après l'autre, avec une même version de script, un seul appel à la fois.
 - La file se modifie pendant la campagne sans couper l'appel en cours : `S` sauter (le prospect repart en fin de file), retirer, `A` ajouter des prospects, terminer.
 - `P` suspendre et reprendre, pause entre deux appels, plafonds respectés à chaque tour.
-- Un prospect dont le numéro n'est plus autorisé à son tour n'est pas appelé : il est marqué « non autorisé ».
+- Un prospect dont le numéro n'est plus appelable à son tour (personne effacée entre-temps) n'est pas appelé : il est marqué « non appelable ».
 
 ### Appels et lignes
 
@@ -217,7 +217,7 @@ Sur téléphone, la navigation passe dans une barre du bas, les filtres tiennent
 
 ### Serveur MCP et skill Claude Code
 
-- 61 outils, dont 21 de lecture, qui lisent et écrivent tout le produit : voir [Piloter Autocalled depuis Claude Code](#piloter-autocalled-depuis-claude-code).
+- 58 outils, dont 19 de lecture, qui lisent et écrivent tout le produit : voir [Piloter Autocalled depuis Claude Code](#piloter-autocalled-depuis-claude-code).
 - Une skill de projet apprend à Claude Code les parcours et les règles.
 
 ### Sécurité, purge et conservation
@@ -245,7 +245,7 @@ flowchart TB
         Pont["Pont Python<br/>BlueZ, oFono, mSBC"]
         Ana["claude -p isolé<br/>bilans et agenda"]
         CC["Claude Code"]
-        MCP["Serveur MCP<br/>stdio, 61 outils"]
+        MCP["Serveur MCP<br/>stdio, 58 outils"]
     end
 
     Tel["Téléphone passerelle<br/>carte SIM"]
@@ -270,8 +270,8 @@ flowchart TB
     MCP --> Pont
 ```
 
-- **Application** (`apps/web`) : Next.js, maîtresse de l'appel. Elle vérifie le numéro autorisé, prépare les variables de l'assistante, crée l'appel, rapatrie la conversation et produit le bilan. Elle n'écoute que sur 127.0.0.1 ; `tailscale serve` la sert sur le tailnet.
-- **Domaine** (`packages/domain`) : règles pures, écrites en TDD (autorisation des numéros, fiches prospect, cycle de vie d'une campagne, créneaux, validation d'un bilan, variables d'appel).
+- **Application** (`apps/web`) : Next.js, maîtresse de l'appel. Elle vérifie le numéro (valide, hors liste d'opposition), prépare les variables de l'assistante, crée l'appel, rapatrie la conversation et produit le bilan. Elle n'écoute que sur 127.0.0.1 ; `tailscale serve` la sert sur le tailnet.
+- **Domaine** (`packages/domain`) : règles pures, écrites en TDD (numéro appelable, fiches prospect, cycle de vie d'une campagne, créneaux, validation d'un bilan, variables d'appel).
 - **Pont** (`apps/pont`) : service Python permanent, piloté par l'application, qui ne touche jamais la base ([ADR 0007](docs/adr/0007-pont-bluetooth-service-pilote-par-le-web.md)). Il compose par oFono, encode et décode le mSBC par libsbc, relaie le son vers ElevenLabs, fait exécuter les outils de l'agent par l'application et diffuse le fil de l'appel en SSE.
 - **Assistante** : un agent ElevenLabs unique, dont le prompt et la configuration sont versionnés dans [`agent/`](agent/) et synchronisés par `pnpm agent` (`packages/agent`).
 - **Bilans** : `claude -p` sur l'abonnement de l'opérateur plutôt que l'API, sans outils, dans un dossier vide propre à l'appel.
@@ -293,7 +293,7 @@ sequenceDiagram
     participant Ana as claude -p
 
     Op->>Web: Appeler depuis une fiche, une campagne ou Claude Code
-    Web->>DB: numéro autorisé, prospect actif, hors liste d'opposition
+    Web->>DB: numéro valide, prospect actif, hors liste d'opposition
     Web->>Pont: ligne libre et plafonds respectés ?
     Web->>DB: crée l'appel avec le nom de l'assistante et la version du script
     Web->>Pont: POST /appels avec numéro, variables et premier message
@@ -405,7 +405,7 @@ Chaque nuit, `autocalled-purge.timer` purge les appels commencés il y a plus de
 
 L'ordre compte, parce que le prompt de l'assistante attend des variables que l'application et le pont envoient :
 
-1. `pnpm install`, puis `pnpm --filter @autocalled/web db:migrate` (relire d'abord une migration qui ajoute un texte de consentement).
+1. `pnpm install`, puis `pnpm --filter @autocalled/web db:migrate` (la migration 0018 supprime deux tables : sauvegarde la base d'abord).
 2. `scripts/installer-services.sh`, qui reconstruit et relance l'interface et recopie le minuteur de la purge.
 3. Si `apps/pont` a changé : `scripts/installer-pont.sh`, qui ne relance pas le pont pendant un appel.
 4. Seulement ensuite, si `agent/` a changé : `pnpm agent push`, puis `pnpm agent status`. Poussé plus tôt, un prompt qui cite une variable que l'application n'envoie pas encore empêche ElevenLabs d'ouvrir la conversation.
@@ -427,7 +427,7 @@ Les tests de l'application et du serveur MCP tournent sur une base `autocalled_t
 
 ## Piloter Autocalled depuis Claude Code
 
-Ouvert dans ce dépôt, sur le serveur, Claude Code trouve le serveur MCP d'Autocalled dans [`.mcp.json`](.mcp.json) et propose de l'activer. Ses 61 outils appellent les mêmes fonctions que l'interface, validées par les mêmes schémas :
+Ouvert dans ce dépôt, sur le serveur, Claude Code trouve le serveur MCP d'Autocalled dans [`.mcp.json`](.mcp.json) et propose de l'activer. Ses 58 outils appellent les mêmes fonctions que l'interface, validées par les mêmes schémas :
 
 | Domaine | Ce que Claude Code peut faire |
 |---|---|
@@ -435,14 +435,14 @@ Ouvert dans ce dépôt, sur le serveur, Claude Code trouve le serveur MCP d'Auto
 | Entreprises | créer, lire, modifier la fiche, supprimer une entreprise vide |
 | Objections et issues | enregistrer, ordonner, archiver ; ajouter, renommer, archiver une issue personnalisée |
 | Scripts | créer, versionner, renommer, archiver, lire une version |
-| Prospects | importer, lister, lire, corriger, archiver, réactiver, révoquer un numéro, effacer une personne, lire les consentements |
+| Prospects | importer, lister, lire, corriger, archiver, réactiver, effacer une personne |
 | Campagnes | créer, lancer, suspendre, terminer, supprimer ; sauter, retirer, ajouter dans la file |
 | Appels | lancer, raccrocher, lister, lire, relancer une analyse, analyser les versions, rappels du jour, journée |
 | Agenda, ligne, journal | état de l'agenda, relecture, rendez-vous, recréer un événement ; état de la ligne, garde-fous, reconnexion du téléphone ; journal des gestes (outils et page Assistante) |
 
 La skill de projet [`.claude/skills/autocalled`](.claude/skills/autocalled/SKILL.md) décrit les parcours (préparer une entreprise, versionner un script, importer des prospects, piloter une campagne, relire les bilans et ajuster, régler l'assistante) et les règles ; sa [référence](.claude/skills/autocalled/REFERENCE.md) liste chaque outil avec ses entrées.
 
-- **Confirmations.** Ce qui fait sonner un téléphone, révoque un numéro, efface une personne, supprime une entreprise, envoie une invitation, desserre un garde-fou, change le nom ou le premier message de l'assistante, change ce qu'elle dira pendant une campagne téléphone en cours, ou pousse sa configuration, attend une question que le serveur rédige depuis la base (qui, quel numéro, quel script, quelle heure, quelle différence). Le modèle ne peut pas y répondre à la place de l'opérateur, et `claude -p` se voit refuser ces gestes. Les freins (raccrocher, suspendre, retirer, terminer, resserrer) passent sans.
+- **Confirmations.** Ce qui fait sonner un téléphone, efface une personne, supprime une entreprise, envoie une invitation, desserre un garde-fou, change le nom ou le premier message de l'assistante, change ce qu'elle dira pendant une campagne téléphone en cours, ou pousse sa configuration, attend une question que le serveur rédige depuis la base (qui, quel numéro, quel script, quelle heure, quelle différence). Le modèle ne peut pas y répondre à la place de l'opérateur, et `claude -p` se voit refuser ces gestes. Les freins (raccrocher, suspendre, retirer, terminer, resserrer) passent sans.
 - **Données de tiers.** Transcriptions, citations, résumés et contextes de fiches arrivent dans un bloc balisé comme données non fiables : une demande lue dedans n'est jamais une consigne.
 - **Rien d'automatique.** Autocalled ne suggère rien. Claude Code propose dans la conversation, l'opérateur décide ; le serveur ne lance jamais git, et `agent/` modifié se relit puis se commite.
 - **Journal.** Chaque appel d'outil, lectures comprises, laisse une ligne visible dans Réglages.
@@ -467,7 +467,7 @@ Les enregistrements, `agent/` et la base restent ceux du clone : rien à changer
 | Sujet | Mesure |
 |---|---|
 | Accès | L'interface n'écoute que sur 127.0.0.1 et n'est servie que sur le tailnet ; chaque requête porte l'identité Tailscale de l'opérateur. Seul l'hôte de `ORIGINE_APP` est servi (rebinding DNS refusé), aucune page ne se laisse encadrer. Ni mot de passe ni session ([ADR 0006](docs/adr/0006-authentification-par-identite-tailscale.md)). |
-| Consentement | Aucun numéro n'est composé sans consentement actif, vérifié côté serveur avant chaque appel et à chaque tour de campagne. Un numéro révoqué ne se réautorise pas. |
+| Numéros appelés | L'opérateur n'appelle que des personnes prévenues ([ADR 0001](docs/adr/0001-demo-fermee-personnes-prevenues.md)). Avant chaque appel et à chaque tour de campagne, le serveur vérifie que le numéro est valide et hors liste d'opposition. |
 | Liste d'opposition | L'empreinte HMAC du numéro d'une personne effacée, jamais le numéro en clair, empêche tout nouvel import ou appel. |
 | Effacement | Effacer une personne supprime tout ce qu'Autocalled garde d'elle, en base et sur disque, après confirmation. |
 | Conservation | Après douze mois, un appel perd chaque nuit enregistrements, transcription et texte du bilan ; ses chiffres restent. Le journal des gestes perd ses lignes du même âge. |
@@ -482,7 +482,9 @@ Risques acceptés : un processus du compte de l'opérateur peut se faire passer 
 
 ## Cadre légal
 
-Autocalled est une démo fermée : l'assistante n'appelle que des personnes qui ont accepté, au préalable, d'être appelées par une IA et enregistrées. C'est pour cela qu'elle ne s'annonce pas comme IA pendant l'appel. Pour démarcher de vrais prospects, ce ne serait pas permis en l'état : l'AI Act (art. 50, en vigueur depuis le 2 août 2026) impose d'informer la personne qu'elle parle à une IA, le droit français impose de la prévenir de l'enregistrement, et depuis le 11 août 2026 le démarchage téléphonique des particuliers exige leur consentement préalable. Le détail est dans l'[ADR 0001](docs/adr/0001-demo-fermee-numeros-autorises.md).
+Autocalled est une démo fermée : l'opérateur n'appelle que lui-même et des personnes qu'il a prévenues qu'une IA les appellera et que l'appel sera enregistré. Autocalled ne le vérifie pas : c'est l'opérateur qui le garantit. C'est pour cela que l'assistante ne s'annonce pas comme IA pendant l'appel.
+
+Démarcher de vrais prospects ne serait pas permis en l'état : l'AI Act (art. 50, en vigueur depuis le 2 août 2026) impose d'informer la personne qu'elle parle à une IA, et le droit français impose de la prévenir de l'enregistrement. Il faudrait les annoncer dans l'appel, et traiter en plus la réglementation du démarchage téléphonique. Le détail est dans l'[ADR 0001](docs/adr/0001-demo-fermee-personnes-prevenues.md).
 
 ## Limites connues et pistes
 
@@ -503,7 +505,7 @@ Chaque choix qui surprendrait un lecteur est expliqué dans un ADR :
 
 | ADR | Décision |
 |---|---|
-| [0001](docs/adr/0001-demo-fermee-numeros-autorises.md) | Démo fermée : l'assistante n'appelle que des numéros autorisés, informés au préalable |
+| [0001](docs/adr/0001-demo-fermee-personnes-prevenues.md) | Démo fermée : l'assistante n'appelle que des personnes prévenues |
 | [0002](docs/adr/0002-agenda-par-outils-webhook-maison.md) | Agenda par outils client maison, lu par le connecteur Google de Claude, plutôt que l'intégration Cal.com |
 | [0003](docs/adr/0003-ligne-bluetooth-via-telephone-passerelle.md) | Première ligne : un téléphone passerelle en Bluetooth plutôt que Twilio |
 | [0004](docs/adr/0004-heberge-sur-le-homelab.md) | Hébergé sur le homelab, pas dans le cloud |
@@ -518,6 +520,7 @@ Chaque choix qui surprendrait un lecteur est expliqué dans un ADR :
 | [0013](docs/adr/0013-archiver-ou-effacer-une-personne.md) | Retirer un prospect : l'archiver, ou effacer la personne en gardant l'empreinte de son numéro |
 | [0014](docs/adr/0014-duree-de-conservation.md) | Durée de conservation : après douze mois, un appel garde ses chiffres et perd ce qu'a dit la personne |
 | [0015](docs/adr/0015-une-information-vide-n-est-pas-transmise.md) | Une information vide de la fiche d'une entreprise n'est pas transmise à l'assistante |
+| [0016](docs/adr/0016-un-seul-journal-des-gestes.md) | Un seul journal des gestes, avec leur origine |
 
 ## Structure du dépôt
 
@@ -554,8 +557,8 @@ Chaque étape se termine sur quelque chose qui marche de bout en bout ; le plus 
 
 - [x] **0. Spike Bluetooth** : le serveur fait composer le téléphone passerelle, le son passe dans les deux sens, le raccrochage est détecté.
 - [x] **1. Premier appel de l'assistante** : une commande lance un appel ; configuration de l'agent versionnée ; latence mesurée.
-- [x] **2. Cœur du domaine en TDD** : consentements et numéros autorisés, fiches prospect, cycle de vie d'une campagne, calcul des créneaux.
-- [x] **3. Squelette web** : Postgres, authentification Tailscale, entreprises (fiche, objections CRAC, issues, scripts versionnés), import des fiches prospect avec consentement.
+- [x] **2. Cœur du domaine en TDD** : numéro appelable, fiches prospect, cycle de vie d'une campagne, calcul des créneaux.
+- [x] **3. Squelette web** : Postgres, authentification Tailscale, entreprises (fiche, objections CRAC, issues, scripts versionnés), import des fiches prospect.
 - [x] **Ligne navigateur et appels simulés** : conversations réelles depuis le navigateur, et appels où un modèle joue le prospect.
 - [x] **4. Bilan** : audio et transcription rapatriés, analyse, écran d'un appel avec audio synchronisé.
 - [x] **5. Agenda** : disponibilités lues par le connecteur Google Agenda de Claude, créneaux proposés et réservés pendant l'appel, événement créé juste après.

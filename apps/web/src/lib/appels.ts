@@ -5,7 +5,7 @@ import {
   ISSUES_SYSTEME,
   instantDuRappel,
   LIBELLES_ISSUES,
-  type NumeroAutorise,
+  type NumeroAppelable,
   SENS_ISSUES,
   type VariablesDeLAppel,
 } from '@autocalled/domain';
@@ -16,7 +16,7 @@ import { appels, entreprises, issuesPersonnalisees, objections, prospects, rende
 import { variablesPour } from './apercu';
 import { VERSION_ANALYSEUR, analyser } from './analyseur';
 import { lireAssistante } from './assistante';
-import { autorisationsDe } from './autorisations';
+import { appelabiliteDe } from './appelables';
 import { rafraichirSiAncien } from './agenda';
 import { audioConversation, lireConversation, simulerConversation } from './elevenlabs';
 import { commanderPont, refusDuPont } from './pont';
@@ -29,7 +29,7 @@ export function dossierDonnees(): string {
 export type PreparationAppel =
   | {
       ok: true;
-      numero: NumeroAutorise;
+      numero: NumeroAppelable;
       variables: VariablesDeLAppel;
       entrepriseId: string;
       motsCles: string[];
@@ -44,7 +44,7 @@ export const PROSPECT_ARCHIVE = 'Ce prospect est archivé : il n’est plus appe
 
 /**
  * Tout ce qu'il faut pour appeler un prospect, vérifié au dernier moment : le numéro doit être
- * autorisé à l'instant même, quelle que soit la ligne.
+ * appelable à l'instant même (valide, hors de la liste d'opposition), quelle que soit la ligne.
  */
 export async function preparerAppel(entrepriseId: string, prospectId: string, versionScriptId: string): Promise<PreparationAppel> {
   const [entreprise] = await db.select().from(entreprises).where(eq(entreprises.id, entrepriseId));
@@ -63,25 +63,25 @@ export async function preparerAppel(entrepriseId: string, prospectId: string, ve
   // Un prospect archivé n'est plus appelé (ADR 0013) : ni appel isolé, ni campagne.
   if (prospect.archiveLe) return { ok: false, raison: PROSPECT_ARCHIVE };
 
-  const autorisation = (await autorisationsDe([prospect.telephone])).get(prospect.telephone);
-  if (!autorisation?.autorise) {
+  const verification = (await appelabiliteDe([prospect.telephone])).get(prospect.telephone);
+  if (!verification?.appelable) {
     return {
       ok: false,
       raison:
-        autorisation?.raison === 'numero-efface'
+        verification?.raison === 'numero-efface'
           ? 'Ce numéro appartient à une personne effacée à sa demande : il ne sera plus jamais composé.'
-          : autorisation?.raison === 'opposition-illisible'
+          : verification?.raison === 'opposition-illisible'
             ? 'La liste d’opposition ne se lit plus (SEL_OPPOSITION manque ou a changé) : aucun numéro n’est composé.'
-            : 'Ce numéro n’est pas autorisé : aucun consentement actif.',
+            : 'Le numéro de ce prospect n’est pas un numéro de téléphone valide : corrige sa fiche.',
     };
   }
 
   const { variables, motsCles, premierMessage } = await variablesPour(entreprise, prospect, version.etapes, new Date());
-  return { ok: true, numero: autorisation.numero, variables, entrepriseId, motsCles, premierMessage, assistanteNom: variables.assistante_nom };
+  return { ok: true, numero: verification.numero, variables, entrepriseId, motsCles, premierMessage, assistanteNom: variables.assistante_nom };
 }
 
 /**
- * Ligne téléphone (ADR 0007) : vérifie l'autorisation et le plafond, enregistre l'appel, puis demande au pont
+ * Ligne téléphone (ADR 0007) : vérifie le numéro et le plafond, enregistre l'appel, puis demande au pont
  * de composer. La suite arrive par les routes /api/pont/… (conversation, outils d'agenda, fin).
  */
 export async function appelerParTelephone(
@@ -125,7 +125,7 @@ export async function appelerParTelephone(
   return { ok: true, appelId: appel.id };
 }
 
-/** Enregistre un appel simulé après le même contrôle d'autorisation ; la conversation se joue avec `simulerAppel`. */
+/** Enregistre un appel simulé après le même contrôle du numéro ; la conversation se joue avec `simulerAppel`. */
 export async function enregistrerAppelSimule(
   entrepriseId: string,
   prospectId: string,
@@ -330,7 +330,7 @@ function personnage(variables: VariablesDeLAppel): string {
 Tu es un vrai professionnel occupé : tu réponds court, comme au téléphone. Tu n'es pas facile à convaincre, tu soulèves au moins une objection réaliste, et tu ne dis oui à un rendez-vous que si on a vraiment écouté ce que tu dis. Tu peux aussi refuser, demander qu'on te rappelle, ou demander un mail.`;
 }
 
-/** Appel simulé : même contrôle d'autorisation qu'un vrai appel, puis conversation jouée par un modèle. */
+/** Appel simulé : même contrôle du numéro qu'un vrai appel, puis conversation jouée par un modèle. */
 export async function simulerAppel(appelId: string, variables: VariablesDeLAppel): Promise<void> {
   try {
     const transcription = await simulerConversation(variables, personnage(variables));

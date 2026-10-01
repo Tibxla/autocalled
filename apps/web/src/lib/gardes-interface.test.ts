@@ -7,7 +7,7 @@ import { avecBaseDeTest } from '../../test/outils';
 import { preparerAppel } from './appels';
 import { demarrerCampagne, enregistrerCampagne, obstacleNouvelleCampagne } from './campagnes';
 import { basculerArchiveScript, creerScript } from './entreprises';
-import { importerFiches, revoquerNumero } from './prospects';
+import { archiverProspect, importerFiches } from './prospects';
 import { rappelsDuJour } from './rappels';
 
 /** Les contrôles que le MCP applique, tenus aussi pour l'interface par la bibliothèque. */
@@ -17,7 +17,7 @@ avecBaseDeTest();
 async function deuxEntreprises() {
   const e = await entrepriseDeTest();
   const autre = await entrepriseDeTest('Autre fictive', 'autre-fictive');
-  await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '+33639980001')], 'interface');
+  await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '+33639980001')]);
   const script = await creerScript(e.id, 'Découverte');
   const etranger = await creerScript(autre.id, 'Ailleurs');
   return { e, script, etranger };
@@ -55,7 +55,7 @@ describe('preparerAppel', () => {
 });
 
 describe('rappels à faire', () => {
-  it('un numéro révoqué depuis n’a plus de rappel', async () => {
+  it('un prospect archivé depuis n’a plus de rappel', async () => {
     const { e, script } = await deuxEntreprises();
     await db.insert(appels).values({
       entrepriseId: e.id,
@@ -70,7 +70,7 @@ describe('rappels à faire', () => {
       rappelLe: new Date(Date.now() - 3_600_000),
     });
     expect((await rappelsDuJour()).rappels).toHaveLength(1);
-    await revoquerNumero('+33639980001');
+    await archiverProspect(e.id, 'julie', 'interface', []);
     expect((await rappelsDuJour()).rappels).toHaveLength(0);
   });
 });

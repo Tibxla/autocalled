@@ -299,7 +299,7 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
           <TitreSection id="titre-journal">Journal des gestes</TitreSection>
           <p className="max-w-[62ch] text-sm text-encre-2">
             Les outils du serveur MCP d’Autocalled (<span className="font-mono">.mcp.json</span>) appelés par Claude Code, et tes gestes sur la
-            page Assistante. Les gestes qui font sonner le téléphone, révoquent un numéro, invitent un prospect, desserrent un garde-fou ou
+            page Assistante. Les gestes qui font sonner le téléphone, effacent une personne, invitent un prospect, desserrent un garde-fou ou
             changent ce que dit l’assistante attendent ton accord, dans Claude Code ou dans la page ; la question lue reste au journal.
           </p>
           <JournalDesGestes lignes={journal} />

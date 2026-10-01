@@ -1,5 +1,6 @@
 import { db } from '@/db';
 import { disponibilites, entreprises } from '@/db/schema';
+import { inscrireOpposition, selOpposition } from '@/lib/opposition';
 
 /** Données fictives : numéros de la tranche que l'ARCEP réserve à la fiction (06 39 98 00 xx). */
 export function fiche(id: string, nom: string, telephone: string, contexte = 'Contexte fictif.'): { nomFichier: string; contenu: string } {
@@ -21,4 +22,14 @@ export async function agendaFrais() {
   await db
     .insert(disponibilites)
     .values({ id: 1, source: 'mcp', occupations: [], fenetreDebut: maintenant, fenetreFin: new Date(maintenant.getTime() + 21 * 86_400_000) });
+}
+
+/**
+ * Inscrit un numéro (E.164) dans la liste d'opposition, comme un effacement (ADR 0013) : le seul moyen de rendre un
+ * numéro valide non appelable.
+ */
+export async function opposer(numero: string): Promise<void> {
+  const sel = selOpposition();
+  if (!sel) throw new Error('SEL_OPPOSITION manque dans la configuration des tests');
+  await inscrireOpposition(db, numero, sel, 'interface', {});
 }

@@ -1,6 +1,6 @@
 import 'server-only';
 import {
-  type Autorisation,
+  type Appelabilite,
   bilanEntier,
   ISSUES_SYSTEME,
   LIBELLES_ISSUES,
@@ -12,7 +12,7 @@ import { and, asc, desc, eq, isNotNull } from 'drizzle-orm';
 import { db } from '@/db';
 import { appels, entreprises, objections, prospects, scripts, versionsScript, type Etape } from '@/db/schema';
 import { composerPremierMessage, lireAssistante } from './assistante';
-import { autorisationsDe } from './autorisations';
+import { appelabiliteDe } from './appelables';
 import { versionsLancables } from './versions';
 
 /**
@@ -132,9 +132,9 @@ export async function variablesPour(
   };
 }
 
-function refusDe(a: Autorisation | undefined): RaisonRefus | null {
-  if (!a) return 'aucun-consentement';
-  return a.autorise ? null : a.raison;
+function refusDe(a: Appelabilite | undefined): RaisonRefus | null {
+  if (!a) return 'numero-invalide';
+  return a.appelable ? null : a.raison;
 }
 
 export interface ApercuVariables {
@@ -149,16 +149,16 @@ export interface ApercuVariables {
   /** Clés qui dépendent du prospect : vides de sens quand aucun prospect n'est choisi. */
   dependDuProspect: CleVariable[];
   version: { id: string; numero: number; script: string } | null;
-  /** `refus` : pourquoi ce numéro ne serait pas composé (null s'il est autorisé). */
+  /** `refus` : pourquoi ce numéro ne serait pas composé (null s'il est appelable). */
   prospect: { id: string; nom: string; refus: RaisonRefus | null } | null;
 }
 
-type RaisonRefus = Extract<Autorisation, { autorise: false }>['raison'];
+type RaisonRefus = Extract<Appelabilite, { appelable: false }>['raison'];
 
 /**
  * Ce que l'assistante recevrait pour appeler un prospect de cette entreprise (ou n'importe lequel, sans prospect) avec
  * une version de script (par défaut la dernière du premier script lançable). Lecture seule : ni appel, ni
- * journal ; un numéro non autorisé est signalé, pas refusé.
+ * journal ; un numéro qui ne serait pas composé est signalé, pas refusé.
  */
 export async function apercuVariablesAppel(
   entrepriseId: string,
@@ -194,15 +194,15 @@ export async function apercuVariablesAppel(
     prospect = trouve;
   }
 
-  const [calcul, autorisations] = await Promise.all([
+  const [calcul, verifies] = await Promise.all([
     variablesPour(entreprise, prospect, version?.etapes ?? [], choix.maintenant ?? new Date()),
-    prospect ? autorisationsDe([prospect.telephone]) : Promise.resolve(new Map<string, Autorisation>()),
+    prospect ? appelabiliteDe([prospect.telephone]) : Promise.resolve(new Map<string, Appelabilite>()),
   ]);
   return {
     ok: true,
     ...calcul,
     dependDuProspect: [...VARIABLES_DU_PROSPECT],
     version: version ? { id: version.id, numero: version.numero, script: version.script } : null,
-    prospect: prospect ? { id: prospect.id, nom: prospect.nom, refus: refusDe(autorisations.get(prospect.telephone)) } : null,
+    prospect: prospect ? { id: prospect.id, nom: prospect.nom, refus: refusDe(verifies.get(prospect.telephone)) } : null,
   };
 }

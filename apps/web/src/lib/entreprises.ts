@@ -92,7 +92,7 @@ export function obstacleSuppressionEntreprise(contenu: Awaited<ReturnType<typeof
 
 /**
  * Supprime une entreprise créée par erreur, avec sa fiche, ses objections, ses issues personnalisées, ses scripts et
- * leurs versions. Refusée dès qu'elle a un prospect, un import (les consentements y renvoient), un appel ou une
+ * leurs versions. Refusée dès qu'elle a un prospect, un import, un appel ou une
  * campagne : c'est de l'historique. L'appelant obtient l'accord de l'opérateur avant : rien ne se récupère.
  */
 export async function supprimerEntrepriseVide(

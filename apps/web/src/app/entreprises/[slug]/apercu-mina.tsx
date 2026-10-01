@@ -2,19 +2,12 @@
 
 import { useEffect, useId, useRef, useState, useTransition } from 'react';
 import { useNomAssistante } from '@/components/assistante';
+import { REFUS_NUMERO } from '@/components/refus-numero';
 import { Chevron, Message, Selection } from '@/components/ui';
 import type { ResultatAction } from '@/lib/formulaire';
 import type { ApercuVariables } from '@/lib/apercu';
 import { GROUPES_VARIABLES } from '@/lib/vue-assistante';
 import { lireApercu } from './actions';
-
-const REFUS: Record<string, string> = {
-  'aucun-consentement': 'sans consentement',
-  'consentement-revoque': 'révoqué',
-  'numero-invalide': 'invalide',
-  'numero-efface': 'personne effacée',
-  'opposition-illisible': 'liste d’opposition illisible',
-};
 
 /**
  * « Ce que l'assistante recevra » : les variables d'appel calculées par le serveur comme pour un vrai appel
@@ -155,7 +148,7 @@ export function ApercuMina({
               {sansProspect ? 'Sans prospect choisi, les variables du prospect sont calculées sur une fiche vide.' : null}
               {apercu.prospect?.refus ? (
                 <span className="text-encre-2">
-                  Numéro {REFUS[apercu.prospect.refus] ?? 'non autorisé'} : cet appel serait refusé.
+                  Numéro {REFUS_NUMERO[apercu.prospect.refus]} : cet appel serait refusé.
                 </span>
               ) : null}
             </p>

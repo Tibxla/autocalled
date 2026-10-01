@@ -7,7 +7,7 @@ import { Action, Message } from '@/components/ui';
 import { type RapportImport, importerFiches } from './actions';
 
 /**
- * Import de fiches prospect Markdown. Un refus (fichier trop lourd, attestation non cochée) garde les fichiers
+ * Import de fiches prospect Markdown. Un refus (fichier trop lourd, fiche d’une personne effacée) garde les fichiers
  * choisis ; un import réussi vide le formulaire, pour qu'aucun « 3 fiches choisies » ne survive à l'envoi.
  */
 
@@ -74,19 +74,6 @@ function Rapport({ rapport }: { rapport: Extract<RapportImport, { etat: 'fait' }
         <LigneRapport libelle={pluriel(rapport.misAJour.length, 'mise à jour', 'mises à jour')} ids={rapport.misAJour} />
         <LigneRapport libelle={pluriel(rapport.inchanges.length, 'inchangée', 'inchangées')} ids={rapport.inchanges} />
         <LigneRapport libelle={rapport.archives.length > 1 ? 'Restent archivés' : 'Reste archivé'} ids={rapport.archives} />
-        {rapport.numerosAutorises > 0 ? (
-          <li className="border-b border-filet py-2 text-encre-2">
-            {pluriel(rapport.numerosAutorises, 'numéro autorisé', 'numéros autorisés')} par cet import.
-          </li>
-        ) : null}
-        {rapport.numerosRevoques.length > 0 ? (
-          <li className="grid gap-x-4 border-b border-filet py-2 sm:grid-cols-[11rem_minmax(0,1fr)]">
-            <span className="text-encre-2">
-              {rapport.numerosRevoques.length > 1 ? 'Révoqués, non réautorisés' : 'Révoqué, non réautorisé'}
-            </span>
-            <span className="font-mono text-xs leading-5 text-encre-3">{rapport.numerosRevoques.join(', ')}</span>
-          </li>
-        ) : null}
       </ul>
     </div>
   );
@@ -94,11 +81,9 @@ function Rapport({ rapport }: { rapport: Extract<RapportImport, { etat: 'fait' }
 
 export function FormulaireImport({
   entrepriseId,
-  texteConsentement,
   focusAuMontage = false,
 }: {
   entrepriseId: string;
-  texteConsentement: string;
   /** Ouvert par l'opérateur (I, ou le bouton) : le focus va sur le choix des fichiers. */
   focusAuMontage?: boolean;
 }) {
@@ -194,14 +179,6 @@ export function FormulaireImport({
             className="sr-only"
             onChange={(e) => choisir(e.target.files)}
           />
-        </label>
-
-        <label className="flex cursor-pointer items-start gap-3 pointer-coarse:min-h-11 pointer-coarse:py-1">
-          <input type="checkbox" name="consentement" required className="mt-1 size-4 shrink-0 accent-[var(--encre)]" />
-          <span className="grid gap-1">
-            <span className="text-md">Chaque personne de cette liste a accepté ce texte :</span>
-            <span className="text-base text-encre-2">« {texteConsentement} »</span>
-          </span>
         </label>
 
         <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 pointer-coarse:mx-0">

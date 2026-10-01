@@ -36,7 +36,7 @@ async function campagneRecevable(entrepriseId: string, campagneId: string | null
 
 const CAMPAGNE_INVALIDE = { ok: false as const, raison: 'Cette campagne n’est pas en cours dans cette entreprise.' };
 
-/** Ligne navigateur : vérifie l'autorisation, obtient un jeton de conversation et enregistre l'appel. */
+/** Ligne navigateur : vérifie le numéro, obtient un jeton de conversation et enregistre l'appel. */
 export async function demarrerAppelNavigateur(
   entrepriseId: string,
   prospectId: string,

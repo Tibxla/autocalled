@@ -6,7 +6,7 @@
 
 export type StatutCampagne = 'prete' | 'en-cours' | 'en-pause' | 'terminee';
 
-export type RaisonSaut = 'numero-non-autorise';
+export type RaisonSaut = 'numero-non-appelable';
 
 /** Qui a fait un geste sur la file : l'interface ou le serveur MCP (Claude Code). */
 export type OrigineGeste = 'interface' | 'mcp';
@@ -125,7 +125,7 @@ export function terminerAppel(campagne: Campagne, appelId: string): Campagne {
   return remplacerEntree(campagne, entree.prospectId, { prospectId: entree.prospectId, etat: 'appelee', appelId });
 }
 
-/** Écarte un prospect sans l'appeler, par exemple quand son numéro n'est plus autorisé au moment de composer. */
+/** Écarte un prospect sans l'appeler, quand son numéro n'est plus appelable au moment de composer (personne effacée, par exemple). */
 export function sauter(campagne: Campagne, prospectId: string, raisonSaut: RaisonSaut): Campagne {
   const entree = campagne.entrees.find((e) => e.prospectId === prospectId);
   if (entree?.etat !== 'a-appeler') {

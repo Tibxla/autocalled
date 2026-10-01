@@ -5,11 +5,11 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/db';
-import { appels, campagnes, consentements, journalMcp, oppositions, prospects, rendezVous } from '@/db/schema';
+import { appels, campagnes, journalMcp, oppositions, prospects, rendezVous } from '@/db/schema';
 import { agendaFrais, entrepriseDeTest, fiche } from '../../test/fixtures';
 import { avecBaseDeTest } from '../../test/outils';
 import { preparerAppel } from './appels';
-import { autorisationsDe } from './autorisations';
+import { appelabiliteDe } from './appelables';
 import { enregistrerCampagne } from './campagnes';
 import { MENTION_NEUTRE, effacerPersonne, inventaireEffacement, marquesDeLaPersonne, phrasesEffacement } from './effacement';
 import { creerScript } from './entreprises';
@@ -113,7 +113,6 @@ describe('inventaireEffacement', () => {
       rendezVous: 1,
       evenements: [{ debut: debut.toISOString(), aVenir: true, supprimable: false }],
       entreesCampagne: 2,
-      consentements: 1,
       mentionsJournal: 4,
       conversations: 1,
       autresPorteurs: [],
@@ -129,7 +128,7 @@ describe('inventaireEffacement', () => {
 });
 
 describe('effacerPersonne', () => {
-  it('efface fiche, appels, rendez-vous, fichiers, files, consentement et mentions, et garde l’empreinte du numéro', async () => {
+  it('efface fiche, appels, rendez-vous, fichiers, files et mentions, et garde l’empreinte du numéro', async () => {
     const { e, a1, m, seule, partagee } = await monde();
 
     const r = await effacerPersonne(e.id, 'julie', 'interface');
@@ -144,7 +143,6 @@ describe('effacerPersonne', () => {
         entreesCampagne: 2,
         campagnesSupprimees: 1,
         campagnesTerminees: 0,
-        consentements: 1,
         mentionsJournal: 4,
         fichiers: 3,
         evenements: 0,
@@ -157,7 +155,6 @@ describe('effacerPersonne', () => {
     expect((await db.select({ id: prospects.id }).from(prospects)).map((p) => p.id)).toEqual(['marc']);
     expect((await db.select({ id: appels.id }).from(appels)).map((a) => a.id)).toEqual([m.id]);
     expect(await db.$count(rendezVous)).toBe(0);
-    expect(await db.$count(consentements, eq(consentements.numero, '+33639980001'))).toBe(0);
     // Fichiers : ceux de Julie partis, celui de Marc intact.
     expect(existsSync(join(dossier, `enregistrements/${a1.id}.mp3`))).toBe(false);
     expect(existsSync(join(dossier, `pont/${a1.id}.wav`))).toBe(false);
@@ -182,18 +179,17 @@ describe('effacerPersonne', () => {
     expect(liste.find((o) => !o.temoin)).toMatchObject({ par: 'interface', bilan: expect.objectContaining({ appels: 2 }) });
   });
 
-  it('un numéro effacé ne peut plus être importé, ni autorisé, ni appelé', async () => {
+  it('un numéro effacé ne peut plus être importé ni appelé', async () => {
     const { e, versionScriptId } = await monde();
     await effacerPersonne(e.id, 'julie', 'mcp');
 
-    const rapport = await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01'), fiche('lea', 'Léa Fictive', '06 39 98 00 03')], 'mcp');
+    const rapport = await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01'), fiche('lea', 'Léa Fictive', '06 39 98 00 03')]);
 
-    expect(rapport).toMatchObject({ etat: 'fait', crees: ['lea'], numerosAutorises: 1, refus: [{ nomFichier: 'julie.md', erreurs: [NUMERO_EFFACE] }] });
+    expect(rapport).toMatchObject({ etat: 'fait', crees: ['lea'], refus: [{ nomFichier: 'julie.md', erreurs: [NUMERO_EFFACE] }] });
     expect(await db.$count(prospects, eq(prospects.id, 'julie'))).toBe(0);
-    expect(await db.$count(consentements, eq(consentements.numero, '+33639980001'))).toBe(0);
-    expect((await autorisationsDe(['+33639980001'])).get('+33639980001')).toEqual({ autorise: false, raison: 'numero-efface' });
+    expect((await appelabiliteDe(['+33639980001'])).get('+33639980001')).toEqual({ appelable: false, raison: 'numero-efface' });
     // Un autre prospect ne peut pas prendre ce numéro par une correction.
-    expect(await modifierProspect(e.id, 'lea', { telephone: '06 39 98 00 01' }, { canal: 'mcp' })).toMatchObject({ ok: false, raison: expect.stringContaining(NUMERO_EFFACE) });
+    expect(await modifierProspect(e.id, 'lea', { telephone: '06 39 98 00 01' })).toMatchObject({ ok: false, raison: expect.stringContaining(NUMERO_EFFACE) });
     expect(await preparerAppel(e.id, 'lea', versionScriptId)).toMatchObject({ ok: true });
   });
 
@@ -219,7 +215,7 @@ describe('effacerPersonne', () => {
     });
     expect(versionScriptId).not.toBe(versionAutre);
     // L'effacer à son tour : même empreinte, aucune seconde ligne.
-    expect(await effacerPersonne(autre.id, 'julie-f', 'interface')).toMatchObject({ ok: true, efface: { consentements: 0 } });
+    expect(await effacerPersonne(autre.id, 'julie-f', 'interface')).toMatchObject({ ok: true, efface: { appels: 0 } });
     expect(await db.$count(oppositions)).toBe(2);
   });
 
@@ -252,7 +248,7 @@ describe('effacerPersonne', () => {
     for (const sel of [undefined, 'un-autre-sel-de-test-de-trente-deux-caracteres']) {
       if (sel) process.env.SEL_OPPOSITION = sel;
       else delete process.env.SEL_OPPOSITION;
-      expect((await autorisationsDe(['+33639980001', '+33639980002'])).get('+33639980002')).toEqual({ autorise: false, raison: 'opposition-illisible' });
+      expect((await appelabiliteDe(['+33639980001', '+33639980002'])).get('+33639980002')).toEqual({ appelable: false, raison: 'opposition-illisible' });
       expect(await preparerAppel(e.id, 'marc', versionScriptId)).toMatchObject({ ok: false, raison: expect.stringContaining('liste d’opposition') });
       expect(await importerFiches(e.id, [fiche('lea', 'Léa Fictive', '06 39 98 00 03')])).toMatchObject({ etat: 'erreur', message: expect.stringContaining('SEL_OPPOSITION') });
       expect(await effacerPersonne(e.id, 'marc', 'interface')).toMatchObject({ ok: false });
@@ -260,7 +256,7 @@ describe('effacerPersonne', () => {
     // Rien n'a été écrit avec le mauvais sel : remis, tout revient.
     process.env.SEL_OPPOSITION = selDeTest;
     expect(await db.$count(oppositions)).toBe(2);
-    expect((await autorisationsDe(['+33639980002'])).get('+33639980002')?.autorise).toBe(true);
+    expect((await appelabiliteDe(['+33639980002'])).get('+33639980002')?.appelable).toBe(true);
   });
 
   it('supprime l’événement du calendrier d’Autocalled par l’API, en prévenant l’invité d’un rendez-vous à venir', async () => {

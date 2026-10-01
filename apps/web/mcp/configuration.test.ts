@@ -1,11 +1,11 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { db } from '@/db';
-import { campagnes, consentements, entreprises, imports, issuesPersonnalisees, journalMcp, objections, prospects, scripts, versionsScript } from '@/db/schema';
+import { campagnes, entreprises, imports, issuesPersonnalisees, journalMcp, objections, prospects, scripts, versionsScript } from '@/db/schema';
 import { basculerArchiveScript, creerScript } from '@/lib/entreprises';
-import { importerFiches, revoquerNumero } from '@/lib/prospects';
+import { importerFiches, NUMERO_EFFACE } from '@/lib/prospects';
 import { clientDeTest } from '../test/client-mcp';
-import { entrepriseDeTest, fiche } from '../test/fixtures';
+import { entrepriseDeTest, fiche, opposer } from '../test/fixtures';
 import { avecBaseDeTest } from '../test/outils';
 
 avecBaseDeTest();
@@ -102,28 +102,25 @@ describe('configuration d’une entreprise', () => {
 });
 
 describe('importer_fiches', () => {
-  it('enregistre les numéros nouveaux comme consentants, sans confirmation', async () => {
+  it('importe les fiches sans confirmation', async () => {
     const e = await entrepriseDeTest();
 
     const r = await appeler('importer_fiches', { entreprise: 'gite-fictif', fiches: [fiche('julie', 'Julie Fictive', '06 39 98 00 01')] });
 
-    expect(r.json).toMatchObject({ etat: 'fait', crees: ['julie'], numerosAutorises: 1 });
-    expect(await db.$count(consentements, eq(consentements.numero, '+33639980001'))).toBe(1);
+    expect(r.json).toEqual({ etat: 'fait', crees: ['julie'], misAJour: [], inchanges: [], refus: [], archives: [] });
     expect(await db.$count(prospects, eq(prospects.entrepriseId, e.id))).toBe(1);
-    expect(await db.select({ canal: imports.canal }).from(imports)).toEqual([{ canal: 'mcp' }]);
+    expect(await db.$count(imports)).toBe(1);
   });
 
-  it('ne réautorise jamais un numéro révoqué, même en changeant le numéro d’une fiche', async () => {
+  it('refuse la fiche d’une personne effacée, même en changeant le numéro d’une fiche', async () => {
     const e = await entrepriseDeTest();
-    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01'), fiche('marc', 'Marc Fictif', '06 39 98 00 02')]);
-    await revoquerNumero('+33639980001');
+    await importerFiches(e.id, [fiche('marc', 'Marc Fictif', '06 39 98 00 02')]);
+    await opposer('+33639980001');
 
     const r = await appeler('importer_fiches', { entreprise: 'gite-fictif', fiches: [fiche('marc', 'Marc Fictif', '06 39 98 00 01')] });
 
-    expect(r.json).toMatchObject({ misAJour: ['marc'], numerosAutorises: 0, numerosRevoques: ['06 39 98 00 01'] });
-    const lignes = await db.select().from(consentements).where(eq(consentements.numero, '+33639980001'));
-    expect(lignes).toHaveLength(1);
-    expect(lignes[0]?.revoqueLe).not.toBeNull();
+    expect(r.json).toMatchObject({ misAJour: [], refus: [{ nomFichier: 'marc.md', erreurs: [NUMERO_EFFACE] }] });
+    expect((await db.select({ telephone: prospects.telephone }).from(prospects))[0]?.telephone).toBe('+33639980002');
   });
 
   it('ne recopie pas le contenu des fiches dans le journal', async () => {

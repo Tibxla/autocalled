@@ -4,10 +4,10 @@ import { db } from '@/db';
 import { campagnes } from '@/db/schema';
 import { enregistrerCampagne } from '@/lib/campagnes';
 import { creerScript } from '@/lib/entreprises';
-import { importerFiches, revoquerNumero } from '@/lib/prospects';
+import { importerFiches } from '@/lib/prospects';
 import { clientDeTest } from '../test/client-mcp';
 import { fauxPont } from '../test/faux-pont';
-import { agendaFrais, entrepriseDeTest, fiche } from '../test/fixtures';
+import { agendaFrais, entrepriseDeTest, fiche, opposer } from '../test/fixtures';
 import { avecBaseDeTest } from '../test/outils';
 
 avecBaseDeTest();
@@ -55,8 +55,8 @@ describe('gestes sur la file', () => {
     const lue = (await appeler('lire_campagne', { campagneId })).json as { file: object[] };
     expect(lue.file).toEqual([
       expect.objectContaining({ prospect: 'marc', etat: 'retiree', motif: 'retrait', par: 'mcp' }),
-      expect.objectContaining({ prospect: 'lea', etat: 'a-appeler', sauts: 0, numeroAutorise: true }),
-      expect.objectContaining({ prospect: 'julie', etat: 'a-appeler', sauts: 1, numeroAutorise: true }),
+      expect.objectContaining({ prospect: 'lea', etat: 'a-appeler', sauts: 0, numeroAppelable: true }),
+      expect.objectContaining({ prospect: 'julie', etat: 'a-appeler', sauts: 1, numeroAppelable: true }),
     ]);
 
     expect((await appeler('terminer_campagne', { campagneId })).json).toEqual({ campagneId, fin: 'immediate' });
@@ -111,13 +111,13 @@ describe('ajouter_a_la_campagne', () => {
   it('demande l’accord sur une campagne téléphone en cours, avec les noms, numéros et l’heure', async () => {
     const campagneId = await enregistrerCampagne(entrepriseId, { versionScriptId, ligne: 'bluetooth', prospects: ['julie'] });
     await db.update(campagnes).set({ statut: 'en-cours' }).where(eq(campagnes.id, campagneId));
-    await importerFiches(entrepriseId, [fiche('paul', 'Paul Fictif', '06 39 98 00 04')], 'mcp');
+    await importerFiches(entrepriseId, [fiche('paul', 'Paul Fictif', '06 39 98 00 04')]);
 
     const refus = await connecter('refuser');
     expect((await refus.appeler('ajouter_a_la_campagne', { campagneId, prospects: ['marc', 'paul'] })).erreur).toBe(true);
     expect((await lire(campagneId)).entrees).toHaveLength(1);
     expect(refus.messages[0]).toMatch(
-      /^Ajouter à la campagne de Gîte fictif, en cours sur le téléphone passerelle, 2 prospects qui seront appelés à la suite sans autre geste : 06 39 98 00 02 \(Marc Fictif\), 06 39 98 00 04 \(Paul Fictif\)\. Numéro ajouté par le MCP : Paul Fictif \(06 39 98 00 04\), le .+\. Nous sommes /,
+      /^Ajouter à la campagne de Gîte fictif, en cours sur le téléphone passerelle, 2 prospects qui seront appelés à la suite sans autre geste : 06 39 98 00 02 \(Marc Fictif\), 06 39 98 00 04 \(Paul Fictif\)\. Nous sommes /,
     );
     await refus.fermer();
 
@@ -126,13 +126,13 @@ describe('ajouter_a_la_campagne', () => {
     expect(pont.compositions()).toHaveLength(0);
   });
 
-  it('refuse sans rien demander un numéro non autorisé ou un prospect inconnu', async () => {
+  it('refuse sans rien demander un numéro effacé ou un prospect inconnu', async () => {
     const campagneId = await enregistrerCampagne(entrepriseId, { versionScriptId, ligne: 'bluetooth', prospects: ['julie'] });
     await db.update(campagnes).set({ statut: 'en-cours' }).where(eq(campagnes.id, campagneId));
-    await revoquerNumero('+33639980002');
+    await opposer('+33639980002');
     const { appeler, messages } = await connecter('accepter');
 
-    expect(await appeler('ajouter_a_la_campagne', { campagneId, prospects: ['marc'] })).toMatchObject({ erreur: true, texte: 'Numéro non autorisé : Marc Fictif. Rien n’a été ajouté.' });
+    expect(await appeler('ajouter_a_la_campagne', { campagneId, prospects: ['marc'] })).toMatchObject({ erreur: true, texte: 'Numéro non appelable (invalide ou effacé) : Marc Fictif. Rien n’a été ajouté.' });
     expect(await appeler('ajouter_a_la_campagne', { campagneId, prospects: ['personne'] })).toMatchObject({ erreur: true, texte: expect.stringContaining('introuvable') });
     expect(messages).toHaveLength(0);
   });

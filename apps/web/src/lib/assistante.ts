@@ -1,9 +1,9 @@
 import 'server-only';
 import { VARIABLES_DE_L_APPEL, type VariablesDeLAppel } from '@autocalled/domain';
-import { and, countDistinct, desc, eq, isNull } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/db';
-import { assistante, campagnes, consentements, type Origine, type OrigineVersionAssistante, versionsAssistante } from '@/db/schema';
+import { assistante, campagnes, type Origine, type OrigineVersionAssistante, versionsAssistante } from '@/db/schema';
 import { auteurEtMoment, type Conflit, type Ecriture, type Refus } from './entreprises';
 
 /**
@@ -107,15 +107,6 @@ export async function modifierAssistante(
   });
 }
 
-/** Le texte de consentement v1 nomme « Mina » : combien de numéros ont encore un accord actif donné sur ce texte. */
-export async function consentementsActifsV1(): Promise<number> {
-  const [r] = await db
-    .select({ n: countDistinct(consentements.numero) })
-    .from(consentements)
-    .where(and(isNull(consentements.revoqueLe), eq(consentements.texteVersion, 1)));
-  return Number(r?.n ?? 0);
-}
-
 async function campagneEnCours(): Promise<boolean> {
   const [c] = await db.select({ id: campagnes.id }).from(campagnes).where(eq(campagnes.statut, 'en-cours')).limit(1);
   return Boolean(c);
@@ -134,8 +125,7 @@ export interface PreparationAssistante {
 
 /**
  * Valide un changement de nom et/ou de premier message et rédige la question à poser à l'opérateur : ancien et
- * nouveau texte, effet dès l'appel suivant (campagne en cours comprise), consentements v1 encore actifs quand le nom
- * change. Refuse une saisie invalide, une lecture périmée (`connu`, le `modifieLe` lu, en ISO) ou un changement nul.
+ * nouveau texte, effet dès l'appel suivant (campagne en cours comprise). Refuse une saisie invalide, une lecture périmée (`connu`, le `modifieLe` lu, en ISO) ou un changement nul.
  * Partagé par le serveur MCP (modifier_assistante) et la page Assistante ; `relire` dit comment relire, selon l'endroit.
  */
 export async function preparerModificationAssistante(
@@ -155,12 +145,11 @@ export async function preparerModificationAssistante(
   const changeMessage = nouveauMessage?.data !== undefined && nouveauMessage.data !== actuelle.premierMessage;
   if (!changeNom && !changeMessage) return { ok: false, raison: 'Rien ne change : ce sont déjà le nom et le premier message de l’assistante.' };
 
-  const [enCours, v1] = await Promise.all([campagneEnCours(), changeNom ? consentementsActifsV1() : Promise.resolve(0)]);
+  const enCours = await campagneEnCours();
   const lignes = [
     changeNom && `Changer le nom de l’assistante : « ${actuelle.nom} » → « ${nouveauNom?.data} ».`,
     changeMessage && `Changer son premier message, dit quand le prospect se tait au décroché : « ${actuelle.premierMessage} » → « ${nouveauMessage?.data} ».`,
     `Les prospects l’entendront dès le prochain appel${enCours ? ', y compris dans la campagne en cours' : ''}, sans autre relecture.`,
-    changeNom && v1 > 0 && `${v1} numéro${v1 > 1 ? 's ont' : ' a'} un consentement actif donné sur le texte version 1, qui nomme l’assistante « Mina ».`,
   ].filter((l): l is string => Boolean(l));
   return {
     ok: true,

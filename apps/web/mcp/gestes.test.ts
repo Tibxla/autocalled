@@ -2,12 +2,12 @@ import { spawnSync } from 'node:child_process';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/db';
-import { appels, campagnes, consentements, rendezVous } from '@/db/schema';
+import { appels, campagnes, rendezVous } from '@/db/schema';
 import { enregistrerCampagne } from '@/lib/campagnes';
 import { creerScript } from '@/lib/entreprises';
-import { importerFiches, revoquerNumero } from '@/lib/prospects';
+import { importerFiches } from '@/lib/prospects';
 import { clientDeTest } from '../test/client-mcp';
-import { agendaFrais, entrepriseDeTest, fiche } from '../test/fixtures';
+import { agendaFrais, entrepriseDeTest, fiche, opposer } from '../test/fixtures';
 import { avecBaseDeTest } from '../test/outils';
 
 avecBaseDeTest();
@@ -34,42 +34,6 @@ async function connecter(options: Parameters<typeof clientDeTest>[0] = {}) {
   client = await clientDeTest(options);
   return client;
 }
-
-const actifs = () => db.$count(consentements, eq(consentements.numero, '+33639980001'));
-const revoques = async () => (await db.select().from(consentements)).filter((c) => c.revoqueLe !== null).length;
-
-describe('revoquer_numero', () => {
-  it('révoque après confirmation, en annonçant les prospects qui partagent le numéro', async () => {
-    const { appeler, messages } = await connecter({ elicitation: 'accepter' });
-
-    const r = await appeler('revoquer_numero', { entreprise: 'gite-fictif', prospect: 'julie' });
-
-    expect(messages[0]).toBe(
-      'Révoquer définitivement le numéro 06 39 98 00 01 de Julie Fictive (Gîte fictif) : il ne sera plus jamais appelé, pour les 2 prospects qui le partagent, et aucun import ne le réautorisera.',
-    );
-    expect(r.json).toEqual({ numero: '06 39 98 00 01', revoque: true, consentementsClos: 1, prospectsTouches: { entreprise: 2, toutes: 2 } });
-    expect(await revoques()).toBe(1);
-  });
-
-  it.each([['refuser'], ['annuler'], [undefined]] as const)('ne révoque rien sans accord (%s)', async (elicitation) => {
-    const { appeler } = await connecter({ elicitation });
-
-    expect((await appeler('revoquer_numero', { entreprise: 'gite-fictif', prospect: 'julie' })).erreur).toBe(true);
-    expect(await actifs()).toBe(1);
-    expect(await revoques()).toBe(0);
-  });
-
-  it('ne demande rien pour un numéro déjà révoqué', async () => {
-    await revoquerNumero('+33639980001');
-    const { appeler, messages } = await connecter({ elicitation: 'accepter' });
-
-    expect(await appeler('revoquer_numero', { entreprise: 'gite-fictif', prospect: 'julie' })).toMatchObject({
-      erreur: true,
-      texte: 'Ce numéro n’a aucun consentement actif : rien à révoquer.',
-    });
-    expect(messages).toHaveLength(0);
-  });
-});
 
 describe('recreer_evenement', () => {
   async function rendezVousEnEchec(email: string | null) {
@@ -122,8 +86,8 @@ describe('campagne simulée', () => {
     expect(messages).toHaveLength(0);
   });
 
-  it('le processus détaché mène la campagne à son terme (ici : numéros révoqués, tous sautés, rien n’est simulé)', { timeout: 30_000 }, async () => {
-    await revoquerNumero('+33639980001');
+  it('le processus détaché mène la campagne à son terme (ici : numéro effacé, tous sautés, rien n’est simulé)', { timeout: 30_000 }, async () => {
+    await opposer('+33639980001');
     const campagneId = await enregistrerCampagne(entrepriseId, { versionScriptId, ligne: 'simulation', prospects: ['julie', 'julie-bis'] });
     await db.update(campagnes).set({ statut: 'en-cours' }).where(eq(campagnes.id, campagneId));
 

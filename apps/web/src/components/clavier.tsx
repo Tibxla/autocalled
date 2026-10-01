@@ -23,7 +23,7 @@ import { Touche } from './touche';
  * - Globaux : ? aide, / recherche (puis ↓ vers les résultats), g puis h, e, a, t, r (retenus par la garde
  *   de sortie pendant un appel navigateur). g puis t mène à Téléphone, dont « Reconnecter le téléphone » est
  *   la première action : aucune touche ne déclenche la reconnexion elle-même.
- * - Jamais de touche seule pour Raccrocher, Lancer, Reprendre, Suspendre, Révoquer, Oublier, Archiver,
+ * - Jamais de touche seule pour Raccrocher, Lancer, Reprendre, Suspendre, Effacer, Oublier, Archiver,
  *   Réanalyser, Importer, Enregistrer, Appeler, Reconnecter.
  */
 

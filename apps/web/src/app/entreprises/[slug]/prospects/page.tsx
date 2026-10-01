@@ -2,10 +2,11 @@ import type { RappelDate } from '@autocalled/domain';
 import { and, asc, desc, eq, ne, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { dateCourte, etatAppel, quandRappeler, rappelEnRetard } from '@/components/format-appel';
+import { refusDe } from '@/components/refus-numero';
 import { Page } from '@/components/ui';
 import { db } from '@/db';
-import { appels, issuesPersonnalisees, prospects, textesConsentement } from '@/db/schema';
-import { autorisationsDe } from '@/lib/autorisations';
+import { appels, issuesPersonnalisees, prospects } from '@/db/schema';
+import { appelabiliteDe } from '@/lib/appelables';
 import { decoderRapport } from '@/lib/effacement';
 import { numeroLisible } from '@/lib/format';
 import { appelTelephoneVivant } from '@/lib/ligne-vivante';
@@ -28,9 +29,8 @@ export default async function PageProspects({
 }) {
   const [{ slug }, recherche] = await Promise.all([params, searchParams]);
   const entreprise = await entrepriseParSlug(slug);
-  const [liste, [texte], derniers, derniersReels, issuesPerso] = await Promise.all([
+  const [liste, derniers, derniersReels, issuesPerso] = await Promise.all([
     db.select().from(prospects).where(eq(prospects.entrepriseId, entreprise.id)).orderBy(asc(prospects.nom), asc(prospects.id)),
-    db.select().from(textesConsentement).orderBy(desc(textesConsentement.version)).limit(1),
     // Le dernier appel de chaque prospect, en une requête.
     db
       .selectDistinctOn([appels.prospectId], {
@@ -65,8 +65,8 @@ export default async function PageProspects({
       .where(eq(issuesPersonnalisees.entrepriseId, entreprise.id)),
   ]);
   // La ligne n'est interrogée que si un dernier appel téléphone est encore « en cours » en base.
-  const [autorisations, vivantId] = await Promise.all([
-    autorisationsDe(liste.map((p) => p.telephone)),
+  const [verifies, vivantId] = await Promise.all([
+    appelabiliteDe(liste.map((p) => p.telephone)),
     derniers.some((d) => d.statut === 'en-cours' && d.ligne === 'bluetooth') ? appelTelephoneVivant() : Promise.resolve(null),
   ]);
   const dernierDe = new Map(derniers.map((d) => [d.prospectId, d]));
@@ -89,7 +89,7 @@ export default async function PageProspects({
       detail: [p.role, p.societe].filter(Boolean).join(', '),
       numero: lisible,
       chiffres: `${lisible.replace(/\D/g, '')} ${p.telephone.replace(/\D/g, '')}`,
-      autorisation: autorisations.get(p.telephone),
+      refus: refusDe(verifies.get(p.telephone)),
       dernier: d
         ? {
             date: dateCourte(d.debutLe).split(' ')[0] ?? '',
@@ -111,7 +111,6 @@ export default async function PageProspects({
       <ListeProspects
         slug={slug}
         entrepriseId={entreprise.id}
-        texteConsentement={texte?.texte ?? null}
         prospects={lignes}
         filtreInitial={filtre}
         importOuvert={recherche.import === '1'}

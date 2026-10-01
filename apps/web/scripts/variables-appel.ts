@@ -1,6 +1,6 @@
 /**
  * Imprime en JSON ce qu'il faut au pont Bluetooth pour appeler un prospect :
- * { numero, variables, motsCles, prepareLe }, vérifié par `preparerAppel` (numéro autorisé, variables de Mina).
+ * { numero, variables, motsCles, prepareLe }, vérifié par `preparerAppel` (numéro appelable, variables de Mina).
  * La sortie contient des données personnelles (numéro, contexte de la fiche) : le pont ne l'accepte que dix
  * minutes après `prepareLe` et l'efface après usage.
  *

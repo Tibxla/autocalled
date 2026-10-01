@@ -1,6 +1,6 @@
 # Référence des outils du serveur MCP
 
-Les 61 outils du serveur `autocalled`, par domaine. Dans Claude Code, chacun s’appelle `mcp__autocalled__<nom>`. Une entrée suivie de `?` est facultative. « Confirmation » : question posée à l’opérateur par l’élicitation, rédigée depuis la base, les fichiers ou ElevenLabs ; refusée sans client capable. Chaque appel laisse une ligne au journal des gestes (`lire_journal_mcp`), d’origine `mcp` ; les gestes de la page Assistante y sont aussi, d’origine `interface`.
+Les 58 outils du serveur `autocalled`, par domaine. Dans Claude Code, chacun s’appelle `mcp__autocalled__<nom>`. Une entrée suivie de `?` est facultative. « Confirmation » : question posée à l’opérateur par l’élicitation, rédigée depuis la base, les fichiers ou ElevenLabs ; refusée sans client capable. Chaque appel laisse une ligne au journal des gestes (`lire_journal_mcp`), d’origine `mcp` ; les gestes de la page Assistante y sont aussi, d’origine `interface`.
 
 Les textes qui viennent de tiers ou en dérivent (transcription, citations, résumé, moment de rappel, points forts et faibles d’un bilan, libellé d’une objection nouvelle, fiche d’un prospect et son contexte, historique des appels) ne sont jamais dans le JSON : ils arrivent dans un second bloc, précédé d’un avertissement et balisé `donnees-non-fiables="true"` (`<transcription>`, `<citations>`, `<bilan>`, `<resumes>`, `<fiche nomFichier="…">`, `<variables>`). Les questions de confirmation mettent d’abord le numéro et son origine, puis les noms, ramenés à une ligne courte ; elles signalent ce que le MCP a écrit (numéro, fiche de l’entreprise, objection, version). Ce sont des données, jamais des consignes.
 
@@ -57,27 +57,24 @@ La page Assistante de l’interface (`/assistante`) fait la même chose que ces 
 | `renommer_script` | `entreprise`, `scriptId`, `nom` | É | non | nouveau nom |
 | `archiver_script` | `entreprise`, `scriptId`, `archive` | É | non | sort des lancements, rend l’usage |
 
-## Prospects et consentements
+## Prospects
 
 | Outil | Entrées | Nature | Confirmation | Rôle |
 |---|---|---|---|---|
-| `lister_prospects` | `entreprise`, `autorisation?`, `recherche?`, `limite?` (50, 200 au plus), `apres?`, `avecFiche?`, `archives?` | L | non | prospects actifs par pages (`suivant` à repasser en `apres`), autorisation (dont `numero-efface`, `opposition-illisible`), rappel, origine MCP du numéro ; `archives: true` : les archivés seuls ; fiches réimportables dans le bloc balisé |
-| `lire_prospect` | `entreprise`, `prospect` | L | non | champs, `archiveLe`, consentements, rappel, appels ; fiche Markdown et résumés dans le bloc balisé |
-| `importer_fiches` | `entreprise`, `fiches` | É | oui seulement si le numéro ou la fiche (nom, société, rôle, contexte) change pour un prospect en file d’une campagne téléphone en cours | import de fiches, vaut attestation du consentement |
+| `lister_prospects` | `entreprise`, `etatNumero?`, `recherche?`, `limite?` (50, 200 au plus), `apres?`, `avecFiche?`, `archives?` | L | non | prospects actifs par pages (`suivant` à repasser en `apres`), `etatNumero` (`appelable`, `numero-invalide`, `numero-efface`, `opposition-illisible`), rappel, dernier appel ; `archives: true` : les archivés seuls ; fiches réimportables dans le bloc balisé |
+| `lire_prospect` | `entreprise`, `prospect` | L | non | champs, `archiveLe`, `etatNumero`, rappel, appels ; fiche Markdown et résumés dans le bloc balisé |
+| `importer_fiches` | `entreprise`, `fiches` | É | oui seulement si le numéro ou la fiche (nom, société, rôle, contexte) change pour un prospect en file d’une campagne téléphone en cours | import de fiches, appelables aussitôt ; la fiche d’une personne effacée est refusée |
 | `modifier_prospect` | `entreprise`, `prospect`, `champs`, `connu?` (par défaut : la fiche lue au début de l’outil) | É | oui seulement si le numéro, le nom, la société, le rôle ou le contexte change pour un prospect en file d’une campagne téléphone en cours | corrige une fiche champ par champ |
-| `archiver_prospect` | `entreprise`, `prospect` | É | seulement s’il attend dans la file d’une campagne non terminée : la question nomme ces campagnes (non sinon : frein, réversible) | hors des listes et des choix de campagne, plus appelé ; retiré des files des campagnes non terminées, sans y revenir à la réactivation ; appels et consentement gardés ; refusé en appel, ou si une file s’est ajoutée depuis la question |
+| `archiver_prospect` | `entreprise`, `prospect` | É | seulement s’il attend dans la file d’une campagne non terminée : la question nomme ces campagnes (non sinon : frein, réversible) | hors des listes et des choix de campagne, plus appelé ; retiré des files des campagnes non terminées, sans y revenir à la réactivation ; appels et bilans gardés ; refusé en appel, ou si une file s’est ajoutée depuis la question |
 | `reactiver_prospect` | `entreprise`, `prospect` | É | non | de nouveau listé et appelable ; ne revient dans aucune file |
-| `effacer_personne` | `entreprise`, `prospect` | É ! ⇄ | oui : liste de ce qui sera effacé, comptée par le serveur | efface fiche, appels, transcriptions, bilans, enregistrements, rendez-vous et événements Google (si l’API le permet), entrées de campagne, consentement, mentions au journal ; le numéro entre en opposition ; rend ce qui reste à faire à la main ; refusé en appel, pendant un rapatriement ou une inscription d’agenda, sans `SEL_OPPOSITION` |
-| `revoquer_numero` | `entreprise` et `prospect`, ou `numero` seul | É ! | oui | révocation définitive du numéro, y compris sans fiche |
-| `lire_texte_consentement` | `version?` | L | non | texte en vigueur ou ancien, versions et consentements actifs |
-| `lire_consentements` | `numero?`, `etat?` (actif, revoque), `limite?`, `avant?` | L | non | consentements par pages, avec les prospects qui portent le numéro (aucun : fiche partie) ; une personne effacée n’y est plus |
+| `effacer_personne` | `entreprise`, `prospect` | É ! ⇄ | oui : liste de ce qui sera effacé, comptée par le serveur | efface fiche, appels, transcriptions, bilans, enregistrements, rendez-vous et événements Google (si l’API le permet), entrées de campagne, mentions au journal ; le numéro entre en opposition ; rend ce qui reste à faire à la main ; refusé en appel, pendant un rapatriement ou une inscription d’agenda, sans `SEL_OPPOSITION` |
 
 ## Campagnes et file
 
 | Outil | Entrées | Nature | Confirmation | Rôle |
 |---|---|---|---|---|
 | `lister_campagnes` | `entreprise?`, `statut?` | L | non | campagnes et avancement, de toutes les entreprises sans `entreprise` |
-| `lire_campagne` | `campagneId` | L | non | file détaillée |
+| `lire_campagne` | `campagneId` | L | non | file détaillée (numéro appelable ou non à l’instant) |
 | `nouvelle_campagne` | `entreprise`, `versionScriptId`, `ligne`, `prospects` | É | non | campagne prête, rien ne sonne |
 | `supprimer_campagne` | `campagneId` | É | non | campagne prête, jamais lancée |
 | `lancer_campagne` | `campagneId` | É ⇄ | oui sur le téléphone ; non en simulation ; refus en navigateur | lance ou reprend ; une campagne prête d’un script archivé est refusée |
@@ -127,9 +124,9 @@ La page Assistante de l’interface (`/assistante`) fait la même chose que ces 
 ## Ce qui reste hors du MCP
 
 - Appeler par la ligne navigateur, prendre la main : il faut le micro et la voix de l’opérateur (ADR 0008).
-- Appairer ou oublier le téléphone, connecter ou déconnecter Google : gestes physiques ou consentement OAuth, dans l’interface.
+- Appairer ou oublier le téléphone, connecter ou déconnecter Google : gestes physiques ou autorisation OAuth, dans l’interface.
 - Annuler ou déplacer un rendez-vous : l’invitation est déjà partie, cela se fait dans Google Agenda.
-- Réautoriser un numéro révoqué, modifier le texte de consentement (migration seulement).
+- Vérifier qu’une personne a été prévenue : c’est l’opérateur qui le garantit (ADR 0001).
 - Modifier ou supprimer une version de script, supprimer un script ou une objection, changer le rattachement d’une issue personnalisée : on crée une version, on archive.
 - Corriger un bilan, une issue ou un rappel à la main : on relance l’analyse (ADR 0005).
 - Changer l’identifiant d’un prospect, le slug ou le fuseau d’une entreprise ; supprimer une entreprise qui a un historique, une campagne lancée ; supprimer un appel, un enregistrement ou une transcription à l’unité (seul `effacer_personne` les efface, tous ceux d’une personne).

@@ -1,13 +1,13 @@
-import { bilanEntier, ISSUES_SYSTEME, LIBELLES_ISSUES, SEUIL_ECHANTILLON, ecrireFiche, finDemandee, type IssueSysteme, normaliserNumero, type NumeroE164, prochaineAction } from '@autocalled/domain';
-import { and, asc, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
+import { bilanEntier, ISSUES_SYSTEME, LIBELLES_ISSUES, SEUIL_ECHANTILLON, ecrireFiche, finDemandee, type IssueSysteme, type NumeroE164, prochaineAction } from '@autocalled/domain';
+import { and, asc, desc, eq, inArray, ne } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/db';
-import { appels, campagnes, consentements, entreprises, imports, issuesPersonnalisees, objections, prospects, scripts, versionsAssistante, versionsScript } from '@/db/schema';
+import { appels, campagnes, entreprises, issuesPersonnalisees, objections, prospects, scripts, versionsAssistante, versionsScript } from '@/db/schema';
 import { appelsDuJour, appelsTelephoneRecents, campagnesDuJour } from '@/lib/accueil';
 import { calendrierConfigure, etatAgenda } from '@/lib/agenda';
 import { apercuVariablesAppel } from '@/lib/apercu';
-import { autorisationsDe } from '@/lib/autorisations';
-import { listerEntreprises, prospectsAutorisesParEntreprise, trouverEntreprise, trouverProspect } from '@/lib/donnees';
+import { appelabiliteDe } from '@/lib/appelables';
+import { listerEntreprises, prospectsAppelablesParEntreprise, trouverEntreprise, trouverProspect } from '@/lib/donnees';
 import { numeroLisible } from '@/lib/format';
 import { connexion } from '@/lib/google';
 import {
@@ -26,7 +26,6 @@ import {
 } from '@/lib/lecture';
 import { campagneOuverte } from '@/lib/ligne';
 import { commanderPont } from '@/lib/pont';
-import { consentementsDuNumero, listerConsentements, texteConsentement, texteConsentementEnVigueur, versionsConsentement } from '@/lib/prospects';
 import { rappelEnAttente, rappelsDuJour } from '@/lib/rappels';
 import { usageDuScript, versionsDeLEntreprise } from '@/lib/versions';
 import { bloc, champEntreprise, champProspect, champVersion, complementNonFiable, entrepriseInconnue, libellesIssues, type Prospect, prospectInconnu, vueAppel } from './communs';
@@ -37,25 +36,12 @@ const ERREUR_AU_JOURNAL = 'Erreur interne : le détail se lit dans Réglages (jo
 const LECTURE = { readOnlyHint: true, openWorldHint: false } as const;
 const LECTURE_OUVERTE = { readOnlyHint: true, openWorldHint: true } as const;
 
-type Autorisation = Awaited<ReturnType<typeof autorisationsDe>> extends Map<string, infer A> ? A : never;
-const AUTORISATIONS = ['autorise', 'aucun-consentement', 'consentement-revoque', 'numero-invalide', 'numero-efface', 'opposition-illisible'] as const;
-const etatAutorisation = (a: Autorisation | undefined): (typeof AUTORISATIONS)[number] => (a?.autorise ? 'autorise' : (a?.raison ?? 'aucun-consentement'));
+type Appelabilite = Awaited<ReturnType<typeof appelabiliteDe>> extends Map<string, infer A> ? A : never;
+const ETATS_NUMERO = ['appelable', 'numero-invalide', 'numero-efface', 'opposition-illisible'] as const;
+const etatNumero = (a: Appelabilite | undefined): (typeof ETATS_NUMERO)[number] => (a?.appelable ? 'appelable' : (a?.raison ?? 'numero-invalide'));
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
 const nombre = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
-
-/** Pour chaque numéro, la date de son consentement actif entré par le serveur MCP, s'il y en a un (une requête). */
-async function ajoutsParMcp(numeros: string[]): Promise<Map<string, Date>> {
-  if (numeros.length === 0) return new Map();
-  const lignes = await db
-    .select({ numero: consentements.numero, le: consentements.accordeLe })
-    .from(consentements)
-    .innerJoin(imports, eq(imports.id, consentements.importId))
-    .where(and(inArray(consentements.numero, [...new Set(numeros)]), isNull(consentements.revoqueLe), eq(imports.canal, 'mcp')));
-  const parNumero = new Map<string, Date>();
-  for (const l of lignes) if (!parNumero.has(l.numero) || parNumero.get(l.numero)! < l.le) parNumero.set(l.numero, l.le);
-  return parNumero;
-}
 
 /** La fiche Markdown réimportable d'un prospect, dans un bloc de données non fiables (son contexte vient de tiers). */
 function blocFiche(p: Prospect): string | null {
@@ -113,14 +99,14 @@ export function outilsDeLecture(declarer: Declarer): void {
       annotations: LECTURE,
     },
     async () => {
-      const [liste, autorises] = await Promise.all([listerEntreprises(), prospectsAutorisesParEntreprise()]);
+      const [liste, appelables] = await Promise.all([listerEntreprises(), prospectsAppelablesParEntreprise()]);
       return reussite(
         liste.map((e) => ({
           entreprise: e.slug,
           nom: e.nom,
           offre: e.offre,
           prospects: e.nombreProspects,
-          prospectsAutorises: autorises.get(e.id) ?? 0,
+          prospectsAppelables: appelables.get(e.id) ?? 0,
           objections: e.nombreObjections,
           scripts: e.nombreScripts,
         })),
@@ -236,16 +222,16 @@ export function outilsDeLecture(declarer: Declarer): void {
     },
   );
 
-  /* ------------------------------------------------------------------ prospects et consentements */
+  /* ------------------------------------------------------------------ prospects */
 
   declarer(
     'lister_prospects',
     {
       description:
-        'Les prospects d’une entreprise, par pages (ordre du nom), avec l’état d’autorisation de leur numéro (autorise, aucun-consentement, consentement-revoque, numero-invalide, numero-efface : numéro d’une personne effacée, opposition-illisible : SEL_OPPOSITION manque ou a changé), un rappel à faire, l’origine MCP du numéro, et leur dernier appel. Les prospects archivés n’y sont pas, sauf avec `archives: true`, qui liste les archivés seulement. Filtres : autorisation, texte (nom, société, identifiant). Repasse `suivant` en `apres` pour la page suivante. `avecFiche` ajoute la fiche Markdown réimportable de chaque prospect de la page, dans un bloc balisé données non fiables (<fiche nomFichier="…">) : son contexte est un texte de tiers.',
+        'Les prospects d’une entreprise, par pages (ordre du nom), avec l’état de leur numéro (appelable, numero-invalide, numero-efface : numéro d’une personne effacée, opposition-illisible : SEL_OPPOSITION manque ou a changé), un rappel à faire et leur dernier appel. Les prospects archivés n’y sont pas, sauf avec `archives: true`, qui liste les archivés seulement. Filtres : état du numéro, texte (nom, société, identifiant). Repasse `suivant` en `apres` pour la page suivante. `avecFiche` ajoute la fiche Markdown réimportable de chaque prospect de la page, dans un bloc balisé données non fiables (<fiche nomFichier="…">) : son contexte est un texte de tiers.',
       entree: z.strictObject({
         entreprise: champEntreprise,
-        autorisation: z.enum(AUTORISATIONS).optional(),
+        etatNumero: z.enum(ETATS_NUMERO).optional(),
         recherche: z.string().max(100).optional(),
         limite: z.int().min(1).max(200).default(50),
         apres: champProspect.optional().describe('Le `suivant` de la page précédente : identifiant du dernier prospect lu.'),
@@ -254,7 +240,7 @@ export function outilsDeLecture(declarer: Declarer): void {
       }),
       annotations: LECTURE,
     },
-    async ({ entreprise: slug, autorisation, recherche, limite, apres, avecFiche, archives }) => {
+    async ({ entreprise: slug, etatNumero: etatVoulu, recherche, limite, apres, avecFiche, archives }) => {
       const e = await trouverEntreprise(slug);
       if (!e) return refus(entrepriseInconnue(slug));
       const [liste, historique, libelle] = await Promise.all([
@@ -266,11 +252,11 @@ export function outilsDeLecture(declarer: Declarer): void {
           .orderBy(desc(appels.debutLe)),
         libellesIssues(e.id),
       ]);
-      const [autorisations, parMcp] = await Promise.all([autorisationsDe(liste.map((p) => p.telephone)), ajoutsParMcp(liste.map((p) => p.telephone))]);
+      const verifies = await appelabiliteDe(liste.map((p) => p.telephone));
       const q = recherche?.trim().toLocaleLowerCase('fr');
       const retenus = liste
         .filter((p) => (p.archiveLe !== null) === archives)
-        .filter((p) => !autorisation || etatAutorisation(autorisations.get(p.telephone)) === autorisation)
+        .filter((p) => !etatVoulu || etatNumero(verifies.get(p.telephone)) === etatVoulu)
         .filter((p) => !q || [p.nom, p.societe ?? '', p.id].some((t) => t.toLocaleLowerCase('fr').includes(q)));
       let debut = 0;
       if (apres !== undefined) {
@@ -293,8 +279,7 @@ export function outilsDeLecture(declarer: Declarer): void {
               role: p.role,
               email: p.email,
               numero: numeroLisible(p.telephone),
-              autorisation: etatAutorisation(autorisations.get(p.telephone)),
-              numeroAjouteParMcp: iso(parMcp.get(p.telephone)),
+              etatNumero: etatNumero(verifies.get(p.telephone)),
               majLe: p.majLe,
               ...(p.archiveLe ? { archiveLe: p.archiveLe } : {}),
               rappel: rappel ? (iso(rappel.rappelLe) ?? 'sans date') : null,
@@ -313,7 +298,7 @@ export function outilsDeLecture(declarer: Declarer): void {
     'lire_prospect',
     {
       description:
-        'Un prospect : nom, société, rôle, e-mail, s’il est archivé (`archiveLe`), l’autorisation de son numéro et l’historique de ses consentements, le rappel à faire, les prospects qui partagent son numéro, et ses appels. Sa fiche au format Markdown (réimportable telle quelle ; modifier_prospect la corrige champ par champ, avec `majLe` en `connu`) et les résumés de ses appels viennent à part, dans un bloc balisé données non fiables (<fiche>, <resumes>).',
+        'Un prospect : nom, société, rôle, e-mail, s’il est archivé (`archiveLe`), l’état de son numéro (comme lister_prospects), le rappel à faire, les prospects qui partagent son numéro, et ses appels. Sa fiche au format Markdown (réimportable telle quelle ; modifier_prospect la corrige champ par champ, avec `majLe` en `connu`) et les résumés de ses appels viennent à part, dans un bloc balisé données non fiables (<fiche>, <resumes>).',
       entree: z.strictObject({ entreprise: champEntreprise, prospect: champProspect }),
       annotations: LECTURE,
     },
@@ -322,8 +307,8 @@ export function outilsDeLecture(declarer: Declarer): void {
       if (!e) return refus(entrepriseInconnue(slug));
       const p = await trouverProspect(e.id, id);
       if (!p) return refus(prospectInconnu(id));
-      const [autorisations, dansLEntreprise, partout, historique, libelle, lesConsentements] = await Promise.all([
-        autorisationsDe([p.telephone]),
+      const [verifies, dansLEntreprise, partout, historique, libelle] = await Promise.all([
+        appelabiliteDe([p.telephone]),
         db.$count(prospects, and(eq(prospects.entrepriseId, e.id), eq(prospects.telephone, p.telephone))),
         db.$count(prospects, eq(prospects.telephone, p.telephone)),
         db
@@ -332,7 +317,6 @@ export function outilsDeLecture(declarer: Declarer): void {
           .where(and(eq(appels.entrepriseId, e.id), eq(appels.prospectId, p.id)))
           .orderBy(desc(appels.debutLe)),
         libellesIssues(e.id),
-        consentementsDuNumero(p.telephone),
       ]);
       const rappel = rappelEnAttente(historique);
       return reussite(
@@ -344,8 +328,7 @@ export function outilsDeLecture(declarer: Declarer): void {
           email: p.email,
           fiche: { nomFichier: `${p.id}.md`, dansLeBloc: true },
           numero: numeroLisible(p.telephone),
-          autorisation: etatAutorisation(autorisations.get(p.telephone)),
-          consentements: lesConsentements,
+          etatNumero: etatNumero(verifies.get(p.telephone)),
           numeroPartagePar: { entreprise: dansLEntreprise, toutes: partout },
           majLe: p.majLe,
           archiveLe: p.archiveLe,
@@ -365,59 +348,6 @@ export function outilsDeLecture(declarer: Declarer): void {
           ]),
         },
       );
-    },
-  );
-
-  declarer(
-    'lire_texte_consentement',
-    {
-      description:
-        'Un texte de consentement : celui en vigueur par défaut, que tout nouvel import fait accepter (demander un import, importer_fiches ou modifier_prospect avec un nouveau numéro, vaut attestation que les personnes l’ont accepté), ou une version ancienne (`version`, par exemple celle que cite `consentements[].texteVersion` de lire_prospect). Rend aussi toutes les versions avec leur nombre de consentements actifs. Il ne se modifie que par une migration.',
-      entree: z.strictObject({ version: z.int().min(1).optional() }),
-      annotations: LECTURE,
-    },
-    async ({ version }) => {
-      const [enVigueur, versions] = await Promise.all([texteConsentementEnVigueur(), versionsConsentement()]);
-      if (!enVigueur) return refus('Aucun texte de consentement en base : lance les migrations.');
-      const t = version === undefined ? enVigueur : await texteConsentement(version);
-      if (!t) return refus(`Version de consentement inconnue : ${version}. Versions existantes : ${versions.map((v) => v.version).join(', ')}.`);
-      return reussite({ ...t, enVigueur: t.version === enVigueur.version, versions });
-    },
-  );
-
-  declarer(
-    'lire_consentements',
-    {
-      description:
-        'Les consentements enregistrés, du plus récent au plus ancien, par pages : numéro, date d’accord, révocation, version du texte, porte d’entrée (interface ou mcp) et prospects qui portent encore ce numéro (liste vide : aucune fiche ne le porte plus ; le consentement d’une personne effacée n’y est plus). Filtres : `numero` (tout format français), `etat` (actif, revoque). Sert à retrouver un numéro sans fiche pour le révoquer (revoquer_numero avec `numero`). Repasse `suivant` en `avant` pour la page suivante.',
-      entree: z.strictObject({
-        numero: z.string().min(1).max(30).optional(),
-        etat: z.enum(['actif', 'revoque']).optional(),
-        limite: z.int().min(1).max(200).default(50),
-        avant: z.uuid().optional(),
-      }),
-      annotations: LECTURE,
-    },
-    async ({ numero, etat, limite, avant }) => {
-      let normalise: string | undefined;
-      if (numero !== undefined) {
-        const n = normaliserNumero(numero);
-        if (!n) return refus(`Numéro illisible : « ${numero} ». Un numéro français (06…, +33…).`);
-        normalise = n;
-      }
-      const r = await listerConsentements({ numero: normalise, etat, limite, avant });
-      return reussite({
-        consentements: r.consentements.map((c) => ({
-          consentementId: c.consentementId,
-          numero: c.numeroLisible,
-          accordeLe: c.accordeLe,
-          revoqueLe: c.revoqueLe,
-          texteVersion: c.texteVersion,
-          canal: c.canal,
-          prospects: c.prospects,
-        })),
-        suivant: r.suivant,
-      });
     },
   );
 
@@ -567,7 +497,7 @@ export function outilsDeLecture(declarer: Declarer): void {
     'apercu_variables_appel',
     {
       description:
-        'Les variables exactes que l’assistante recevrait (prospect et version facultatifs : la première version lançable par défaut), son premier message composé, les mots-clés de la reconnaissance vocale, les variables restées à leur texte par défaut (`parDefaut`), et les champs de la fiche de l’entreprise laissés vides, non transmis : leur variable part vide et l’assistante n’en parle pas (`nonTransmis`). Rien n’est appelé ; un numéro non autorisé est signalé, pas refusé. Sert à régler le prompt et le script.',
+        'Les variables exactes que l’assistante recevrait (prospect et version facultatifs : la première version lançable par défaut), son premier message composé, les mots-clés de la reconnaissance vocale, les variables restées à leur texte par défaut (`parDefaut`), et les champs de la fiche de l’entreprise laissés vides, non transmis : leur variable part vide et l’assistante n’en parle pas (`nonTransmis`). Rien n’est appelé ; un numéro qui ne serait pas composé (invalide, effacé) est signalé, pas refusé. Sert à régler le prompt et le script.',
       entree: z.strictObject({ entreprise: champEntreprise, prospect: champProspect.optional(), versionScriptId: champVersion.optional() }),
       annotations: LECTURE,
     },
@@ -638,7 +568,7 @@ export function outilsDeLecture(declarer: Declarer): void {
     'lire_campagne',
     {
       description:
-        'Une campagne : statut, ligne, version de script, fin demandée, et chaque prospect de la file avec son état (à appeler : sauts et autorisation du numéro à l’instant ; retiré : motif, heure et origine du geste) et l’issue de son appel.',
+        'Une campagne : statut, ligne, version de script, fin demandée, et chaque prospect de la file avec son état (à appeler : sauts et numéro appelable ou non à l’instant ; retiré : motif, heure et origine du geste) et l’issue de son appel.',
       entree: z.strictObject({ campagneId: z.uuid() }),
       annotations: LECTURE,
     },
@@ -653,7 +583,7 @@ export function outilsDeLecture(declarer: Declarer): void {
         libellesIssues(c.entrepriseId),
       ]);
       const aAppeler = c.entrees.filter((x) => x.etat === 'a-appeler').map((x) => listeProspects.find((p) => p.id === x.prospectId)?.telephone ?? '');
-      const autorisations = await autorisationsDe(aAppeler.filter(Boolean));
+      const verifies = await appelabiliteDe(aAppeler.filter(Boolean));
       const version = versions.find((v) => v.id === c.versionScriptId);
       const action = prochaineAction(c);
       return reussite({
@@ -673,7 +603,7 @@ export function outilsDeLecture(declarer: Declarer): void {
             prospect: x.prospectId,
             nom: fiche?.nom ?? null,
             etat: x.etat,
-            ...(x.etat === 'a-appeler' ? { sauts: x.sauts ?? 0, numeroAutorise: Boolean(fiche && autorisations.get(fiche.telephone)?.autorise) } : {}),
+            ...(x.etat === 'a-appeler' ? { sauts: x.sauts ?? 0, numeroAppelable: Boolean(fiche && verifies.get(fiche.telephone)?.appelable) } : {}),
             ...(x.etat === 'sautee' ? { raison: x.raisonSaut } : {}),
             ...(x.etat === 'retiree' ? { motif: x.motif, le: x.le, par: x.par } : {}),
             ...(appel ? { appelId: appel.id, statut: appel.statut, issue: libelle(appel.issue) } : {}),

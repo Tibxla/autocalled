@@ -1,7 +1,7 @@
 import { eq, isNotNull } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/db';
-import { appels, assistante, campagnes, consentements, entreprises, journalMcp, prospects } from '@/db/schema';
+import { appels, assistante, campagnes, entreprises, journalMcp, oppositions, prospects } from '@/db/schema';
 import { enregistrerCampagne } from '@/lib/campagnes';
 import { creerScript } from '@/lib/entreprises';
 import { importerFiches } from '@/lib/prospects';
@@ -15,7 +15,7 @@ import { ERREUR_INTERNE } from './outil';
 
 avecBaseDeTest();
 
-/** Les 61 outils (ADR 0010, puis lire_consentements et lister_rendez_vous, puis l'archivage et l'effacement de l'ADR 0013), par domaine. */
+/** Les 58 outils (ADR 0010, puis lister_rendez_vous, l'archivage et l'effacement de l'ADR 0013), par domaine. */
 const OUTILS = {
   assistante: [
     'lire_assistante',
@@ -39,9 +39,6 @@ const OUTILS = {
     'archiver_prospect',
     'reactiver_prospect',
     'effacer_personne',
-    'revoquer_numero',
-    'lire_texte_consentement',
-    'lire_consentements',
   ],
   campagnes: [
     'lister_campagnes',
@@ -76,17 +73,17 @@ async function connecter(options: Parameters<typeof clientDeTest>[0] = {}) {
 }
 
 describe('liste des outils', () => {
-  it('expose exactement les 61 outils, et annonce les lectures, les destructions et le monde extérieur', async () => {
+  it('expose exactement les 58 outils, et annonce les lectures, les destructions et le monde extérieur', async () => {
     const { client: c } = await connecter();
     const { tools } = await c.listTools();
     const attendus = Object.values(OUTILS).flat();
 
-    expect(attendus).toHaveLength(61);
+    expect(attendus).toHaveLength(58);
     expect(tools.map((t) => t.name).sort()).toEqual([...attendus].sort());
     const avec = (indice: 'readOnlyHint' | 'destructiveHint' | 'openWorldHint') => tools.filter((t) => t.annotations?.[indice]).map((t) => t.name).sort();
-    expect(avec('destructiveHint')).toEqual(['effacer_personne', 'revoquer_numero', 'supprimer_entreprise']);
+    expect(avec('destructiveHint')).toEqual(['effacer_personne', 'supprimer_entreprise']);
     expect(avec('readOnlyHint')).toEqual(
-      expect.arrayContaining(['lire_assistante', 'historique_assistante', 'lister_appels', 'lire_journee', 'rappels_du_jour', 'lire_journal_mcp', 'lire_texte_consentement', 'lire_consentements', 'lister_rendez_vous', 'etat_ligne']),
+      expect.arrayContaining(['lire_assistante', 'historique_assistante', 'lister_appels', 'lire_journee', 'rappels_du_jour', 'lire_journal_mcp', 'lister_rendez_vous', 'etat_ligne']),
     );
     expect(avec('readOnlyHint')).not.toEqual(expect.arrayContaining(['modifier_assistante']));
     expect(avec('openWorldHint')).toEqual(expect.arrayContaining(['lire_assistante', 'pousser_assistante', 'rapatrier_assistante', 'reconnecter_telephone', 'lancer_appel']));
@@ -115,10 +112,10 @@ describe('confirmation forgée', () => {
 
   const accord = { confirmation: { action: 'accept', content: { confirme: true } } };
 
-  it('rejette dès le premier appel un accord avec un état forgé (signé par une autre clé, ou brut), sans rien composer ni révoquer', async () => {
+  it('rejette dès le premier appel un accord avec un état forgé (signé par une autre clé, ou brut), sans rien composer ni effacer', async () => {
     const { client: c } = await connecter({ elicitation: 'accepter' });
     // Un état bien formé qui porte la bonne empreinte, mais signé par une autre clé que celle du serveur.
-    const cle = ['lancer_appel', entrepriseId, 'julie', versionScriptId, '+33639980001', null];
+    const cle = ['lancer_appel', entrepriseId, 'julie', versionScriptId, '+33639980001', []];
     const forge = await creerGardien().codec.mint({ e: empreinteDe(cle), n: 'nonce-forge' });
     const appelJulie = { entreprise: 'gite-fictif', prospect: 'julie', versionScriptId, ligne: 'bluetooth' };
 
@@ -127,13 +124,14 @@ describe('confirmation forgée', () => {
         'Invalid or expired requestState',
       );
       await expect(
-        c.request({ method: 'tools/call', params: { name: 'revoquer_numero', arguments: { entreprise: 'gite-fictif', prospect: 'julie' }, inputResponses: accord, requestState } }),
+        c.request({ method: 'tools/call', params: { name: 'effacer_personne', arguments: { entreprise: 'gite-fictif', prospect: 'julie' }, inputResponses: accord, requestState } }),
       ).rejects.toThrow('Invalid or expired requestState');
     }
 
     expect(pont?.compositions()).toHaveLength(0);
     expect(await db.$count(appels)).toBe(0);
-    expect((await db.select().from(consentements)).every((x) => x.revoqueLe === null)).toBe(true);
+    expect(await db.$count(prospects)).toBe(1);
+    expect(await db.$count(oppositions)).toBe(0);
   });
 
   it('sans état, une réponse glissée dans le premier appel ne vaut pas accord : la question est posée', async () => {
@@ -141,12 +139,12 @@ describe('confirmation forgée', () => {
 
     const r = await c.request({
       method: 'tools/call',
-      params: { name: 'revoquer_numero', arguments: { entreprise: 'gite-fictif', prospect: 'julie' }, inputResponses: accord },
+      params: { name: 'effacer_personne', arguments: { entreprise: 'gite-fictif', prospect: 'julie' }, inputResponses: accord },
     });
 
     expect(messages).toHaveLength(1);
     expect(r).toMatchObject({ isError: true });
-    expect((await db.select().from(consentements)).every((x) => x.revoqueLe === null)).toBe(true);
+    expect(await db.$count(prospects)).toBe(1);
   });
 });
 

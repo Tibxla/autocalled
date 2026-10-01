@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { chiffrer, dechiffrer } from './chiffrement.ts';
 import { creneauParle } from './libelles.ts';
-import { PORTEES, urlConsentement } from './google.ts';
+import { PORTEES, urlAutorisationGoogle } from './google.ts';
 
 const CLE = 'a'.repeat(64);
 
@@ -26,9 +26,9 @@ describe('creneauParle', () => {
   });
 });
 
-describe('urlConsentement', () => {
+describe('urlAutorisationGoogle', () => {
   it('demande un accès hors ligne avec les seules portées nécessaires', () => {
-    const url = new URL(urlConsentement({ clientId: 'id', clientSecret: 's', redirectUri: 'https://x/retour' }, 'etat'));
+    const url = new URL(urlAutorisationGoogle({ clientId: 'id', clientSecret: 's', redirectUri: 'https://x/retour' }, 'etat'));
     expect(url.searchParams.get('access_type')).toBe('offline');
     expect(url.searchParams.get('scope')?.split(' ')).toEqual(PORTEES);
     expect(PORTEES.join(' ')).not.toMatch(/auth\/calendar(\s|$)/);

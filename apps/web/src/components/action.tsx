@@ -17,7 +17,7 @@ export { classesAction, type FormeAction, type TonAction } from './classes-actio
 /**
  * Actions en texte précédées de leur touche : jamais de fond plein ni de contour (fin de la paire bouton
  * plein + bouton contour). Un raccourci ne fait que le même clic que la souris ; ce clic ouvre une
- * Confirmation quand le geste fait sonner un téléphone, détruit, révoque ou desserre un garde-fou.
+ * Confirmation quand le geste fait sonner un téléphone, détruit ou desserre un garde-fou.
  *
  * Au doigt (`pointer-coarse:`, seul critère tactile), la touche disparaît et l'action devient la touche :
  * la forme « relief » pose le libellé dans le relief de `<kbd>` agrandi à 44 px, sur `surface` ; la forme

@@ -3,13 +3,11 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/db';
 import { campagnes, entreprises, prospects } from '@/db/schema';
-import { autorisationsDe } from '@/lib/autorisations';
-import { PROSPECTS_ARCHIVES, ajouterALaCampagne, retirerProspect, sauterProspect, supprimerCampagnePrete, terminerCampagne } from '@/lib/campagnes';
+import { appelabiliteDe } from '@/lib/appelables';
+import { NUMERO_NON_APPELABLE, PROSPECTS_ARCHIVES, ajouterALaCampagne, retirerProspect, sauterProspect, supprimerCampagnePrete, terminerCampagne } from '@/lib/campagnes';
 import { numeroLisible } from '@/lib/format';
-import { ajoutParMcp } from '@/lib/prospects';
 import { champProspect } from './communs';
 import { champ, confirmer, heureDeParis, refusDeConfirmation } from './confirmation';
-import { numerosDuMcp } from './gardes-appel';
 import { type Declarer, refus, reussite } from './outil';
 
 /**
@@ -89,7 +87,7 @@ export function outilsDeCampagnes(declarer: Declarer, serveur: McpServer): void 
     'ajouter_a_la_campagne',
     {
       description:
-        'Ajoute des prospects de l’entreprise en fin de file d’une campagne non terminée (non archivés, numéro autorisé à cet instant, script non archivé, aucun doublon ; tout ou rien). Sur une campagne téléphone en cours, ils seront appelés à la suite sans autre geste : l’opérateur confirme.',
+        'Ajoute des prospects de l’entreprise en fin de file d’une campagne non terminée (non archivés, numéro appelable à cet instant, script non archivé, aucun doublon ; tout ou rien). Sur une campagne téléphone en cours, ils seront appelés à la suite sans autre geste : l’opérateur confirme.',
       entree: z.strictObject({ campagneId: champCampagne, prospects: z.array(champProspect).min(1, 'Choisis au moins un prospect.').max(200) }),
       annotations: { ...ECRITURE, openWorldHint: true },
     },
@@ -108,18 +106,17 @@ export function outilsDeCampagnes(declarer: Declarer, serveur: McpServer): void 
         if (inconnus.length) return refus(`Prospect introuvable dans cette entreprise : ${inconnus.join(', ')}. Rien n’a été ajouté.`);
         const archives = trouves.filter((p) => p.archiveLe);
         if (archives.length) return refus(`${PROSPECTS_ARCHIVES} : ${archives.map((p) => p.nom).join(', ')}. Rien n’a été ajouté.`);
-        const autorisations = await autorisationsDe(trouves.map((p) => p.telephone));
-        const nonAutorises = trouves.filter((p) => !autorisations.get(p.telephone)?.autorise);
-        if (nonAutorises.length) return refus(`Numéro non autorisé : ${nonAutorises.map((p) => p.nom).join(', ')}. Rien n’a été ajouté.`);
+        const verifies = await appelabiliteDe(trouves.map((p) => p.telephone));
+        const refuses = trouves.filter((p) => !verifies.get(p.telephone)?.appelable);
+        if (refuses.length) return refus(`${NUMERO_NON_APPELABLE} : ${refuses.map((p) => p.nom).join(', ')}. Rien n’a été ajouté.`);
         const ordonnes = ids.map((id) => trouves.find((p) => p.id === id)!);
-        const parMcp = await Promise.all(ordonnes.map((p) => ajoutParMcp(p.telephone)));
         const garde = await confirmer(
           serveur,
           ctx,
           `Ajouter à la campagne de ${champ(c.entreprise)}, en cours sur le téléphone passerelle, ${ordonnes.length} prospect${ordonnes.length > 1 ? 's' : ''} qui ${ordonnes.length > 1 ? 'seront appelés' : 'sera appelé'} à la suite sans autre geste : ${ordonnes
             .map((p) => `${numeroLisible(p.telephone)} (${champ(p.nom, 40)})`)
-            .join(', ')}.${numerosDuMcp(ordonnes.map((p, i) => ({ ...p, ajout: parMcp[i] ?? null })))} Nous sommes ${heureDeParis()}.`,
-          ['ajouter_a_la_campagne', campagneId, c.campagne.statut, ids, ordonnes.map((p) => p.telephone), parMcp.filter(Boolean).length],
+            .join(', ')}. Nous sommes ${heureDeParis()}.`,
+          ['ajouter_a_la_campagne', campagneId, c.campagne.statut, ids, ordonnes.map((p) => p.telephone)],
         );
         if (garde.etat === 'a-demander') return garde.issue;
         if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);

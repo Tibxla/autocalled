@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { NavigationListe } from '@/components/clavier';
 import { Cellule, CelluleEnTete, EnTeteTable, EtatVide, LienLigne, LigneTable, Page, TableDense } from '@/components/ui';
-import { listerEntreprises, prospectsAutorisesParEntreprise } from '@/lib/donnees';
+import { listerEntreprises, prospectsAppelablesParEntreprise } from '@/lib/donnees';
 import { CreationEntreprise } from './formulaire-creation';
 import { assistantePourLaPage } from '@/lib/pages';
 
@@ -14,12 +14,12 @@ function premierManque(e: { offre: string; nombreScripts: number; nombreProspect
   if (!e.offre.trim()) return 'Offre à écrire';
   if (e.nombreScripts === 0) return 'Aucun script';
   if (e.nombreProspects === 0) return 'Aucun prospect';
-  if (appelables === 0) return 'Aucun numéro autorisé';
+  if (appelables === 0) return 'Aucun prospect à appeler';
   return null;
 }
 
 export default async function PageEntreprises() {
-  const [liste, autorises, { nom }] = await Promise.all([listerEntreprises(), prospectsAutorisesParEntreprise(), assistantePourLaPage()]);
+  const [liste, appelablesParEntreprise, { nom }] = await Promise.all([listerEntreprises(), prospectsAppelablesParEntreprise(), assistantePourLaPage()]);
 
   return (
     <Page largeur="lecture">
@@ -42,7 +42,7 @@ export default async function PageEntreprises() {
             </EnTeteTable>
             <div role="rowgroup">
               {liste.map((e) => {
-                const appelables = autorises.get(e.id) ?? 0;
+                const appelables = appelablesParEntreprise.get(e.id) ?? 0;
                 const manque = premierManque(e, appelables);
                 return (
                   <LigneTable key={e.id}>

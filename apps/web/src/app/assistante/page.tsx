@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { heure, jourCourt } from '@/components/format-appel';
+import { REFUS_NUMERO } from '@/components/refus-numero';
 import { EnTetePage, EtatVide, LIEN_TEXTE, LienAction, LigneDefinition, Message, Page, TitreSection } from '@/components/ui';
 import { ceQueVoitLAssistante } from '@/lib/ce-que-voit-l-assistante';
 import { derniersGestesAssistante, lireEditionAssistante } from '@/lib/edition-assistante';
@@ -28,15 +29,6 @@ import { Poussee } from './poussee';
 export const metadata: Metadata = { title: 'Assistante' };
 
 const SECTION = 'grid min-w-0 scroll-mt-[calc(var(--hauteur-barre)+16px)] gap-5';
-
-/** Pourquoi le numéro du prospect choisi ne serait pas composé (lib/apercu.ts). */
-const REFUS: Record<string, string> = {
-  'aucun-consentement': 'sans consentement',
-  'consentement-revoque': 'révoqué',
-  'numero-invalide': 'invalide',
-  'numero-efface': 'personne effacée',
-  'opposition-illisible': 'liste d’opposition illisible',
-};
 
 const NOMBRE = new Intl.NumberFormat('fr-FR');
 
@@ -374,7 +366,7 @@ export default async function PageAssistante({ searchParams }: { searchParams: P
                   ', sans prospect : ses variables dépendront de sa fiche.'
                 )}
                 {apercu.prospect?.refus ? (
-                  <span className="text-encre-2"> Numéro {REFUS[apercu.prospect.refus] ?? 'non autorisé'} : cet appel serait refusé.</span>
+                  <span className="text-encre-2"> Numéro {REFUS_NUMERO[apercu.prospect.refus]} : cet appel serait refusé.</span>
                 ) : null}
               </p>
               <LienTelechargement href={`/assistante/telecharger/vue?${lienVue.toString()}`}>Télécharger ce que voit {nom} (.md)</LienTelechargement>

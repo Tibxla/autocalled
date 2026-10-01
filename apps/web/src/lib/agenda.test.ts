@@ -18,7 +18,7 @@ async function appelAvecCreneau(ligne: 'bluetooth' | 'navigateur', email: string
   const plages = ([1, 2, 3, 4, 5, 6, 7] as const).map((jour) => ({ jour, debut: '00:00', fin: '23:45' }));
   await db.update(entreprises).set({ plagesRendezVous: plages, delaiMinimumHeures: 0 }).where(eq(entreprises.id, e.id));
   await agendaFrais();
-  await importerFiches(e.id, [fiche('p-fictif', 'Prospect Fictif', '+33639980001')], 'interface');
+  await importerFiches(e.id, [fiche('p-fictif', 'Prospect Fictif', '+33639980001')]);
   if (email) await db.update(prospects).set({ email }).where(eq(prospects.id, 'p-fictif'));
   const { versionScriptId } = await creerScript(e.id, 'Découverte');
   const [a] = await db.insert(appels).values({ entrepriseId: e.id, prospectId: 'p-fictif', versionScriptId, ligne, numero: '+33639980001' }).returning();
