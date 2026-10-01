@@ -77,7 +77,11 @@ Réticence type d'un prospect envers une entreprise (« on a déjà un site », 
 _Avoid_ : blocage, frein
 
 **CRAC** :
-La méthode de traitement d'une objection en quatre temps : Creuser, Reformuler, Argumenter, Contrôler. Le bilan indique à quel temps une objection non levée a coincé.
+La méthode de traitement d'une objection en quatre temps, dans cet ordre. Le bilan indique à quel temps une objection non levée a coincé.
+- **Creuser** : une question ouverte pour comprendre ce qu'il y a derrière l'objection ; rien n'est argumenté avant.
+- **Reformuler** : redire avec ses mots ce qui a été compris, pour que le prospect se sente entendu.
+- **Argumenter** : une seule réponse, courte, appuyée sur ce qu'il vient de dire.
+- **Contrôler** : vérifier que la réponse lève sa réserve (« est-ce que ça change un peu les choses ? »).
 _Avoid_ : traitement d'objection, rebond
 
 **Refus ferme** :
