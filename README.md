@@ -381,6 +381,8 @@ sudo tailscale serve --bg --https=8449 http://127.0.0.1:3020
 
 `scripts/installer-services.sh` installe deux unités systemd utilisateur : `autocalled-web` (l'interface, sur 127.0.0.1:3020) et le minuteur `autocalled-purge.timer`.
 
+Une fois Postgres lancé, le `.env` rempli et les migrations passées, ouvre Claude Code à la racine du dépôt et accepte le serveur MCP qu'il propose : voir [Piloter Autocalled depuis Claude Code](#piloter-autocalled-depuis-claude-code). Avant ces étapes, ses outils échouent.
+
 ### Ligne téléphone (facultative)
 
 ```bash
@@ -445,7 +447,18 @@ La skill de projet [`.claude/skills/autocalled`](.claude/skills/autocalled/SKILL
 - **Rien d'automatique.** Autocalled ne suggère rien. Claude Code propose dans la conversation, l'opérateur décide ; le serveur ne lance jamais git, et `agent/` modifié se relit puis se commite.
 - **Journal.** Chaque appel d'outil, lectures comprises, laisse une ligne visible dans Réglages.
 
-Les 21 outils de lecture peuvent aller dans la liste `allow` des réglages de Claude Code, préfixés `mcp__autocalled__` : `lire_assistante`, `historique_assistante`, `lister_entreprises`, `lire_entreprise`, `lire_version_script`, `lister_prospects`, `lire_prospect`, `lire_texte_consentement`, `lire_consentements`, `lister_appels`, `lire_appel`, `analyser_versions`, `rappels_du_jour`, `lire_journee`, `apercu_variables_appel`, `lister_campagnes`, `lire_campagne`, `etat_ligne`, `etat_agenda`, `lister_rendez_vous`, `lire_journal_mcp`.
+### Depuis un autre dépôt
+
+Le `.mcp.json` ne vaut que dans ce dépôt. Pour piloter Autocalled depuis un autre dépôt de la même machine, déclare-y le serveur avec le chemin absolu de ton clone, puis relie la skill. Dans le dépôt en question :
+
+```bash
+claude mcp add --scope local autocalled -- sh -c "cd /chemin/vers/autocalled/apps/web && exec node --env-file=../../.env --conditions=react-server --import ./scripts/resolution.ts mcp/stdio.ts"
+ln -s /chemin/vers/autocalled/.claude/skills/autocalled .claude/skills/autocalled
+```
+
+`--scope local` n'écrit rien dans ce dépôt : Claude Code retient le serveur pour ce dossier seulement, dans ses propres réglages. Pour un `.mcp.json` commité, écris plutôt `cd ${AUTOCALLED_DIR}/apps/web && …` : Claude Code remplace les variables d'environnement dans `.mcp.json`, et chacun définit `AUTOCALLED_DIR` chez lui. Pour l'avoir dans tous tes dépôts, `--scope user` et la skill reliée dans `~/.claude/skills/`. La session suivante du dépôt charge le serveur.
+
+Les enregistrements, `agent/` et la base restent ceux du clone : rien à changer dans le `.env`. Une modification de l'assistante faite depuis un autre dépôt écrit quand même `agent/` ici : relis-la et commite-la dans ce dépôt.
 
 ## Sécurité et vie privée
 
