@@ -32,6 +32,9 @@ export const CHAMPS_GERES: readonly string[] = [
   'conversation_config.tts.stability',
   'conversation_config.tts.similarity_boost',
   'conversation_config.tts.speed',
+  // Mode expressif : le modèle place des balises d'intonation ([warmly]…) que la voix interprète.
+  'conversation_config.tts.expressive_mode',
+  'conversation_config.tts.suggested_audio_tags',
   'conversation_config.turn.turn_eagerness',
   'conversation_config.turn.turn_timeout',
   'conversation_config.turn.speculative_turn',

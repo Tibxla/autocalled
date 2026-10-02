@@ -186,7 +186,26 @@
       "model_id": "eleven_v4_turbo",
       "stability": 0.45,
       "similarity_boost": 0.8,
-      "speed": 1
+      "speed": 1,
+      "expressive_mode": true,
+      "suggested_audio_tags": [
+        {
+          "tag": "chuckles",
+          "description": "Petit rire, seulement quand la personne plaisante."
+        },
+        {
+          "tag": "warmly",
+          "description": "Ouverture, remerciement et salut de fin."
+        },
+        {
+          "tag": "curious",
+          "description": "Question sur la façon dont la personne travaille."
+        },
+        {
+          "tag": "thoughtful",
+          "description": "Quand tu reformules ce qu'elle vient de dire."
+        }
+      ]
     },
     "turn": {
       "turn_eagerness": "normal",
