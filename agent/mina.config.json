@@ -125,44 +125,6 @@
             "execution_mode": "immediate"
           },
           {
-            "type": "client",
-            "name": "etape_script",
-            "description": "Signale en silence l'étape du plan où tu entres, pour l'écran de l'opérateur. Tu n'en parles jamais.",
-            "response_timeout_secs": 20,
-            "disable_interruptions": false,
-            "interruption_mode": "allow",
-            "force_pre_tool_speech": false,
-            "pre_tool_speech": "off",
-            "assignments": [],
-            "tool_call_sound_behavior": "auto",
-            "tool_error_handling_mode": "hide",
-            "parameters": {
-              "description": "",
-              "dynamic_variable": "",
-              "is_omitted": false,
-              "type": "object",
-              "required": [
-                "numero"
-              ],
-              "properties": {
-                "numero": {
-                  "type": "integer",
-                  "description": "Le numéro de l'étape dans le plan : 1, 2, 3…",
-                  "is_system_provided": false,
-                  "dynamic_variable": "",
-                  "allowed_values_dynamic_variable": "",
-                  "constant_value": "",
-                  "is_omitted": false
-                }
-              }
-            },
-            "expects_response": false,
-            "dynamic_variables": {
-              "dynamic_variable_placeholders": {}
-            },
-            "execution_mode": "async"
-          },
-          {
             "type": "system",
             "name": "end_call",
             "description": "Met fin à l'appel après un refus ferme, un rendez-vous convenu ou une fin de conversation naturelle.",

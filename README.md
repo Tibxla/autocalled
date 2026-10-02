@@ -185,7 +185,7 @@ Sur téléphone, la navigation passe dans une barre du bas, les filtres tiennent
 ### Suivi en direct, écoute et prise de main
 
 - Barre du haut : état de la ligne, plafond atteint et heure du prochain appel possible, chrono depuis le décroché, campagne ouverte.
-- Bande d'appel sur l'accueil et dans la régie : répliques, sous-titre, onde des deux voix, étape annoncée par l'assistante (outil `etape_script`, affichage seulement).
+- Bande d'appel sur l'accueil et dans la régie : répliques, sous-titre, onde des deux voix.
 - `E` écouter l'appel en cours, les deux voix mélangées.
 - `Espace` prendre la main : l'assistante se tait, l'opérateur parle au prospect depuis son navigateur, par un WebSocket direct vers le pont ([ADR 0008](docs/adr/0008-prise-de-main-par-websocket-direct.md)).
 
@@ -296,16 +296,16 @@ sequenceDiagram
     Web->>DB: numéro valide, prospect actif, hors liste d'opposition
     Web->>Pont: ligne libre et plafonds respectés ?
     Web->>DB: crée l'appel avec le nom de l'assistante et la version du script
-    Web->>Pont: POST /appels avec numéro, variables et premier message
+    Web->>Pont: POST /appels avec numéro, variables, premier message et ouverture
     Pont->>Tel: Dial par oFono
     Tel->>Pro: sonnerie sur le réseau mobile
     Pro-->>Tel: décroche
-    Pont->>EL: ouvre la conversation, son mSBC 16 kHz
+    Pont->>EL: ouvre la conversation, son mSBC 16 kHz (ouverture du script dite aussitôt après un « bonjour » court)
     Pont-->>Web: conversation_id
     loop Pendant l'appel
         EL-->>Pont: voix de l'assistante et appels d'outils
-        Pont->>Web: proposer_creneaux, reserver_creneau, etape_script
-        Pont-->>Op: fil SSE relayé par l'application avec tours, étape et niveaux
+        Pont->>Web: proposer_creneaux, reserver_creneau
+        Pont-->>Op: fil SSE relayé par l'application avec tours et niveaux
     end
     Pro-->>Tel: raccroche
     Pont->>Web: fin de l'appel

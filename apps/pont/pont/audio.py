@@ -30,6 +30,8 @@ MS_PAR_ENVOI = 100  # blocs envoyés à ElevenLabs : assez courts pour ne pas re
 # Détection de voix du prospect au décroché, avant l'ouverture de la conversation : trames de 20 ms au-dessus
 # du seuil, plusieurs d'affilée (le bruit de fond d'un décroché reste vers 200-300, un « allô » dépasse 1000).
 SEUIL_VOIX, TRAMES_VOIX = 600, 3
+# Fin de l'accueil du prospect (« Hôtel du Parc, bonjour ») : 500 ms sous le seuil après sa voix.
+TRAMES_FIN_ACCUEIL = 25
 ATTENTE_MAX_S = 5  # son du prospect gardé en attendant l'ouverture de la conversation
 # La voix d'ElevenLabs arrive vers −13 dBFS, crêtes à pleine échelle. Le téléphone traite ce qui vient du
 # « micro » mains-libres en l'attendant bien plus faible : à ce niveau, il compresse et la voix sonne saturée.
@@ -172,6 +174,10 @@ class Pont(AudioInterface):
         self._arret = threading.Event()
         self.premier_son_de_mina: float | None = None
         self.prospect_parle = threading.Event()  # une voix a été entendue depuis le décroché
+        self.accueil_fini = threading.Event()  # puis TRAMES_FIN_ACCUEIL trames de silence
+        self.duree_accueil_s: float | None = None  # du début à la fin de la voix, à `accueil_fini`
+        self.fin_accueil: float | None = None  # heure (monotonic) de la fin de la voix, à `accueil_fini`
+        self._jeter_accueil = False
         self._auditeurs: set[queue.Queue] = set()  # écoutes en direct : prospect et Mina mélangés
         # Prise de main (ADR 0008) : la voix de l'opérateur remplace celle de Mina, le prospect seul part vers lui.
         self._mode_operateur = False
@@ -181,6 +187,8 @@ class Pont(AudioInterface):
         self._prospect_seul: set[queue.Queue] = set()
         self._energie_operateur: list[float] = []  # RMS des blocs reçus depuis le dernier relevé
         self._trames_voix = 0
+        self._trames_accueil = 0  # depuis le début de la voix
+        self._trames_silence = 0  # d'affilée, depuis la dernière trame de voix
         self._tampon_voix = bytearray()
         self.niveaux = Niveaux(self._taux_ligne)
         self._niveaux_actifs = True  # une erreur de relevé les coupe pour le reste de l'appel, jamais la boucle
@@ -378,6 +386,10 @@ class Pont(AudioInterface):
         """Après le décroché. Tant que la conversation n'est pas ouverte, le son est gardé (jusqu'à
         ATTENTE_MAX_S) puis envoyé d'un coup : le « allô » dit avant l'ouverture n'est pas perdu."""
         self._detecter_voix(pcm)
+        if self._jeter_accueil and self._envoi is not None:
+            # Ouverture fixe : l'accueil ne part pas à ElevenLabs, il interromprait le premier message.
+            self._tampon_entree.clear()
+            self._jeter_accueil = False
         self._tampon_entree += pcm
         if self._envoi is None:
             del self._tampon_entree[: max(0, len(self._tampon_entree) - self._taux_ligne * 2 * ATTENTE_MAX_S)]
@@ -391,7 +403,8 @@ class Pont(AudioInterface):
             self._envoi(converti)
 
     def _detecter_voix(self, pcm: bytes) -> None:
-        if self.prospect_parle.is_set():
+        """Début de la voix du prospect au décroché (`prospect_parle`), puis fin de son accueil (`accueil_fini`)."""
+        if self.accueil_fini.is_set():
             return
         self._tampon_voix += pcm
         octets = self._taux_ligne // 50 * 2  # trames de 20 ms, quel que soit le découpage des lectures
@@ -399,10 +412,24 @@ class Pont(AudioInterface):
             x = np.frombuffer(bytes(self._tampon_voix[:octets]), dtype="<i2").astype(np.float32)
             del self._tampon_voix[:octets]
             fort = np.sqrt((x**2).mean()) > SEUIL_VOIX
-            self._trames_voix = self._trames_voix + 1 if fort else 0
-            if self._trames_voix >= TRAMES_VOIX:
-                self.prospect_parle.set()
+            if not self.prospect_parle.is_set():
+                self._trames_voix = self._trames_voix + 1 if fort else 0
+                if self._trames_voix >= TRAMES_VOIX:
+                    self._trames_accueil = self._trames_voix
+                    self.prospect_parle.set()
+                continue
+            self._trames_accueil += 1
+            self._trames_silence = 0 if fort else self._trames_silence + 1
+            if self._trames_silence >= TRAMES_FIN_ACCUEIL:
+                self.duree_accueil_s = (self._trames_accueil - self._trames_silence) * 0.02
+                self.fin_accueil = time.monotonic() - self._trames_silence * 0.02
+                self.accueil_fini.set()
+                self._tampon_voix.clear()
                 return
+
+    def oublier_accueil(self) -> None:
+        """Le son gardé avant l'ouverture est jeté au lieu d'être envoyé à ElevenLabs."""
+        self._jeter_accueil = True
 
     def sortie_vide(self) -> bool:
         with self._verrou:

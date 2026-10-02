@@ -35,6 +35,8 @@ export type PreparationAppel =
       motsCles: string[];
       /** Ce que l'assistante dit si le prospect se tait au décroché, déjà composé. */
       premierMessage: string;
+      /** Ce qu'elle dit juste après un « bonjour » court au décroché (ligne téléphone), sinon null : le modèle ouvre. */
+      ouverture: string | null;
       /** Le nom sous lequel l'assistante se présente : figé sur l'appel enregistré. */
       assistanteNom: string;
     }
@@ -76,8 +78,17 @@ export async function preparerAppel(entrepriseId: string, prospectId: string, ve
     };
   }
 
-  const { variables, motsCles, premierMessage } = await variablesPour(entreprise, prospect, version.etapes, new Date());
-  return { ok: true, numero: verification.numero, variables, entrepriseId, motsCles, premierMessage, assistanteNom: variables.assistante_nom };
+  const { variables, motsCles, premierMessage, ouverture } = await variablesPour(entreprise, prospect, version.etapes, new Date());
+  return {
+    ok: true,
+    numero: verification.numero,
+    variables,
+    entrepriseId,
+    motsCles,
+    premierMessage,
+    ouverture,
+    assistanteNom: variables.assistante_nom,
+  };
 }
 
 /**
@@ -117,6 +128,7 @@ export async function appelerParTelephone(
     variables: preparation.variables,
     motsCles: preparation.motsCles,
     premierMessage: preparation.premierMessage,
+    ...(preparation.ouverture ? { ouverture: preparation.ouverture } : {}),
   });
   if (!reponse.ok) {
     await db.update(appels).set({ statut: 'echec', erreur: reponse.raison, finLe: new Date() }).where(eq(appels.id, appel.id));

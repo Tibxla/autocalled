@@ -14,13 +14,18 @@ from elevenlabs.client import ElevenLabs
 from elevenlabs.conversational_ai.conversation import ClientTools, Conversation, ConversationInitiationData
 from gi.repository import GLib
 
-from .audio import Pont, temps_de_reponse
+from .audio import TRAMES_FIN_ACCUEIL, Pont, temps_de_reponse
 from .ofono import Telephone, dans_glib
 from .plafond import Plafond
 
 SILENCE_AU_DECROCHE_S = 2.0  # sans voix du prospect passé ce délai, l'assistante ouvre par son premier message
 PREMIER_MESSAGE_PAR_DEFAUT = "Allô ?"
 PREMIER_MESSAGE_MAX = 300  # au-delà, ce n'est plus une phrase d'ouverture : on reprend « Allô ? »
+# Ouverture fixe (constat du 02/10 : 3,8 s médiane entre le décroché et le premier mot quand le modèle rédige
+# l'ouverture, assez pour que le prospect redise « allô ? » et coupe Mina). Un accueil humain (« Hôtel du Parc,
+# bonjour ») tient en moins de 2,5 s ; au-delà, c'est un standard ou un répondeur : le modèle ouvre, et sait raccrocher
+# sur une messagerie.
+ACCUEIL_COURT_MAX_S = 2.5
 # Le canal son s'ouvre entre 0,5 s (réseau mobile) et 3,5 s (appels Wi-Fi) après la composition : on ne conclut à
 # une panne qu'après 10 s, ou 3 s après le décroché (constat du 28/09).
 DELAI_CANAL_SON_S = 10.0
@@ -35,11 +40,19 @@ def premier_message_valide(valeur: Any) -> str:
 
     Absente, vide, trop longue ou d'un autre type : « Allô ? ». Une application plus ancienne ne l'envoie pas.
     """
+    return ouverture_valide(valeur) or PREMIER_MESSAGE_PAR_DEFAUT
+
+
+def ouverture_valide(valeur: Any) -> str | None:
+    """La phrase dite juste après un accueil court du prospect (étape 1 du script, déjà composée), sur une ligne.
+
+    Absente, vide, trop longue ou d'un autre type : None, et c'est le modèle qui ouvre.
+    """
     if not isinstance(valeur, str):
-        return PREMIER_MESSAGE_PAR_DEFAUT
+        return None
     texte = " ".join(valeur.split())
     if not texte or len(texte) > PREMIER_MESSAGE_MAX:
-        return PREMIER_MESSAGE_PAR_DEFAUT
+        return None
     return texte
 
 
@@ -134,12 +147,15 @@ class Appel:
         rappels: Rappels,
         premier_message: str = PREMIER_MESSAGE_PAR_DEFAUT,
         plafond: Plafond | None = None,
+        ouverture: str | None = None,
     ):
         self._telephone = telephone
         self._plafond = plafond
         self._annule = False
         self._numero = numero
         self._premier_message = premier_message_valide(premier_message)
+        self._ouverture = ouverture_valide(ouverture)
+        self._ouverture_prise: str | None = None  # « fixe », « modèle » ou « premier message », pour le bilan
         self._rappels = rappels
         dossier.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.journal = Journal(dossier / f"{nom}.log")
@@ -361,11 +377,24 @@ class Appel:
         # Le prospect parle d'habitude le premier : on attend sa voix pour ouvrir (son « allô » est gardé et
         # transmis). S'il se tait, c'est à l'assistante de parler, par le premier message de la conversation
         # (« Allô ? » par défaut, réglé dans l'application).
+        # Un accueil court (fin de la voix sous ACCUEIL_COURT_MAX_S) est jeté et l'ouverture du script dite aussitôt,
+        # sans attendre le modèle ; un accueil long lui est transmis, comme avant.
         if self._pont.prospect_parle.wait(SILENCE_AU_DECROCHE_S):
-            self.journal("le prospect parle : ouverture de la conversation")
+            court = self._ouverture is not None and self._pont.accueil_fini.wait(
+                ACCUEIL_COURT_MAX_S + TRAMES_FIN_ACCUEIL * 0.02
+            )
+            if court:
+                self.journal(f"accueil court ({self._pont.duree_accueil_s:.1f} s) : ouverture fixe")
+                self._pont.oublier_accueil()
+                self._conversation.config.conversation_config_override["agent"] = {"first_message": self._ouverture}
+                self._ouverture_prise = "fixe"
+            else:
+                self.journal("le prospect parle : ouverture de la conversation par le modèle")
+                self._ouverture_prise = "modèle"
         else:
             self.journal(f"silence depuis {SILENCE_AU_DECROCHE_S:.0f} s : l'assistante ouvre par « {self._premier_message} »")
             self._conversation.config.conversation_config_override["agent"] = {"first_message": self._premier_message}
+            self._ouverture_prise = "premier message"
         with self._verrou:
             if self._prise_en_main is not None:
                 return  # l'opérateur a pris la main avant que Mina ne parle
@@ -432,6 +461,10 @@ class Appel:
         }
         if self._decroche and self._pont.premier_son_de_mina:
             bilan["decrocheVersPremierSonS"] = round(self._pont.premier_son_de_mina - self._decroche, 2)
+        if self._ouverture_prise:
+            bilan["ouverture"] = self._ouverture_prise
+        if self._pont.fin_accueil and self._pont.premier_son_de_mina:
+            bilan["finAccueilVersPremierSonS"] = round(self._pont.premier_son_de_mina - self._pont.fin_accueil, 2)
         if self._prise_en_main is not None and self._decroche:
             bilan["priseEnMainApresS"] = round(self._prise_en_main - self._decroche, 1)
         if os.path.exists(self._enregistrement):

@@ -89,7 +89,7 @@ describe('configuration ElevenLabs', () => {
     const outils = outilsDe(configuration);
     const noms = outils.map((o) => o.nom);
     expect(new Set(noms).size).toBe(noms.length);
-    expect(noms).toEqual(expect.arrayContaining(['proposer_creneaux', 'reserver_creneau', 'etape_script', 'end_call', 'voicemail_detection']));
+    expect(noms).toEqual(expect.arrayContaining(['proposer_creneaux', 'reserver_creneau', 'end_call', 'voicemail_detection']));
     // Un outil ajouté à agent/ sans son « quand » ferait mentir la page.
     for (const o of outils) expect(QUAND_ELLE_S_EN_SERT[o.nom], o.nom).toBeTruthy();
     expect(outils.find((o) => o.nom === 'proposer_creneaux')?.executePar).toBe('l’application, par le pont');
@@ -157,7 +157,7 @@ describe('téléchargements', () => {
       variables: { assistante_nom: 'Mina', prospect_nom: '', rendez_vous: 'une visio de 30 minutes avec un membre de l’équipe', entreprise_prix_consigne: '' },
       etats: { assistante_nom: 'valeur', prospect_nom: 'selon-la-fiche', rendez_vous: 'par-defaut', entreprise_prix_consigne: 'vide' },
       motsCles: ['Atelier fictif'],
-      outils: outilsDe(configuration).filter((o) => o.nom === 'etape_script'),
+      outils: outilsDe(configuration).filter((o) => o.nom === 'end_call'),
       connaissances: [],
     };
     const md = markdownDeLaVue(vue);
@@ -171,8 +171,8 @@ describe('téléchargements', () => {
     // Un champ vide de la fiche : dit non transmis, sans bloc de valeur.
     expect(md).toContain('#### Consigne sur le prix (`entreprise_prix_consigne`)\n\n*non renseigné, non transmis*\n\n####');
     expect(md).toContain('#### Nom (`prospect_nom`)\n\n*aucun prospect choisi : selon la fiche du prospect*\n\n####');
-    expect(md).toContain('### etape_script');
-    expect(md).toContain('- Quand elle s’en sert : À chaque passage');
+    expect(md).toContain('### end_call');
+    expect(md).toContain('- Quand elle s’en sert : Après un refus ferme');
     expect(md).toContain('Aucun fichier de base de connaissances');
   });
 });

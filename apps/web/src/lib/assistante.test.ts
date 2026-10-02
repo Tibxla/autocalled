@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { db } from '@/db';
 import { assistante, versionsAssistante } from '@/db/schema';
 import { avecBaseDeTest } from '../../test/outils';
-import { composerPremierMessage, derniereVersionAssistante, lireAssistante, modifierAssistante } from './assistante';
+import { composerOuverture, composerPremierMessage, derniereVersionAssistante, lireAssistante, modifierAssistante } from './assistante';
 
 avecBaseDeTest();
 
@@ -65,6 +65,20 @@ describe('composerPremierMessage', () => {
   it('revient à « Allô ? » quand la phrase composée est vide ou trop longue', () => {
     expect(composerPremierMessage('{{prospect_contexte}}', { ...variables, prospect_contexte: '  ' })).toBe('Allô ?');
     expect(composerPremierMessage('{{prospect_contexte}}', { ...variables, prospect_contexte: 'mot '.repeat(100) })).toBe('Allô ?');
+  });
+});
+
+describe('composerOuverture', () => {
+  it('prend la première formulation de l’étape 1, variables remplacées', () => {
+    const etapes = [{ exemples: ['Oui bonjour, je m’appelle {{assistante_nom}}.', 'Autre accroche'] }, { exemples: ['Étape 2'] }];
+    expect(composerOuverture(etapes, variables)).toBe('Oui bonjour, je m’appelle <assistante_nom>.');
+  });
+
+  it('rend null sans étape, sans exemple, ou quand la phrase composée est vide ou trop longue', () => {
+    expect(composerOuverture([], variables)).toBeNull();
+    expect(composerOuverture([{ exemples: [] }], variables)).toBeNull();
+    expect(composerOuverture([{ exemples: ['{{prospect_contexte}}'] }], { ...variables, prospect_contexte: '  ' })).toBeNull();
+    expect(composerOuverture([{ exemples: ['{{prospect_contexte}}'] }], { ...variables, prospect_contexte: 'mot '.repeat(100) })).toBeNull();
   });
 });
 

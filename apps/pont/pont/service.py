@@ -4,8 +4,10 @@ N'écoute que sur 127.0.0.1. Chaque requête porte `Authorization: Bearer $PONT_
 présente le même secret à l'application quand il la rappelle (`$WEB_URL/api/pont/…`).
 
     GET  /etat                        le téléphone passerelle, l'appel en cours (décroché), le plafond
-    POST /appels                      {appelId, numero, variables, motsCles, premierMessage?} : compose ; premierMessage
-                                      est la phrase dite si le prospect se tait au décroché (« Allô ? » sans elle)
+    POST /appels                      {appelId, numero, variables, motsCles, premierMessage?, ouverture?} : compose ;
+                                      premierMessage est la phrase dite si le prospect se tait au décroché (« Allô ? »
+                                      sans elle), ouverture celle dite juste après un accueil court (sans elle, le
+                                      modèle ouvre)
     POST /appels/<id>/raccrocher
     GET  /appels/<id>/evenements      fil de l'appel en SSE (états, tours de parole, étapes du plan), rejoué depuis le début ;
                                       s'y glissent, sans `id:` et sans rejeu, les niveaux des deux voix (voir plus bas)
@@ -54,7 +56,7 @@ from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
 from .appairage import Appairage
-from .appel import Appel, Journal, premier_message_valide
+from .appel import Appel, Journal, ouverture_valide, premier_message_valide
 from .audio import NIVEAU_PAS_MS
 from .ofono import Telephone, dans_glib
 from .plafond import Plafond
@@ -262,6 +264,7 @@ class Service:
                 rappels,
                 premier_message_valide(corps.get("premierMessage")),
                 plafond=self._plafond,  # chaque composition y compte, recomposition comprise
+                ouverture=ouverture_valide(corps.get("ouverture")),
             )
             rappels.journal = appel.journal
             # Suivi avant la composition : si la boucle D-Bus tarde, l'appel reste raccrochable et visible dans /etat.

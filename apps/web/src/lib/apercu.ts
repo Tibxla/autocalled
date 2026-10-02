@@ -11,7 +11,7 @@ import {
 import { and, asc, desc, eq, isNotNull } from 'drizzle-orm';
 import { db } from '@/db';
 import { appels, entreprises, objections, prospects, scripts, versionsScript, type Etape } from '@/db/schema';
-import { composerPremierMessage, lireAssistante } from './assistante';
+import { composerOuverture, composerPremierMessage, lireAssistante } from './assistante';
 import { appelabiliteDe } from './appelables';
 import { versionsLancables } from './versions';
 
@@ -66,7 +66,14 @@ export async function variablesPour(
   prospect: ProspectAppel | null,
   etapes: Etape[],
   maintenant: Date,
-): Promise<{ variables: VariablesDeLAppel; motsCles: string[]; parDefaut: CleVariable[]; nonTransmis: CleVariable[]; premierMessage: string }> {
+): Promise<{
+  variables: VariablesDeLAppel;
+  motsCles: string[];
+  parDefaut: CleVariable[];
+  nonTransmis: CleVariable[];
+  premierMessage: string;
+  ouverture: string | null;
+}> {
   const [assistante, listeObjections, precedents] = await Promise.all([
     lireAssistante(),
     objectionsActives(entreprise.id),
@@ -129,6 +136,7 @@ export async function variablesPour(
     // La variable elle-même dit si le champ est transmis : vide après trim, rien ne part.
     nonTransmis: VARIABLES_DE_LA_FICHE.filter((cle) => !variables[cle]),
     premierMessage: composerPremierMessage(assistante.premierMessage, variables),
+    ouverture: composerOuverture(etapes, variables),
   };
 }
 
@@ -142,6 +150,8 @@ export interface ApercuVariables {
   motsCles: string[];
   /** La phrase que l'assistante dira si le prospect se tait au décroché, variables remplacées. */
   premierMessage: string;
+  /** Ligne téléphone : la phrase dite juste après un « bonjour » court au décroché (étape 1 du script), sinon null. */
+  ouverture: string | null;
   /** Clés dont la valeur est le texte par défaut, faute de contenu (interlocuteur, script, objections, prospect). */
   parDefaut: CleVariable[];
   /** Champs vides de la fiche de l'entreprise : leur variable part vide, l'assistante n'en parle pas. */

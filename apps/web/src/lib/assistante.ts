@@ -172,12 +172,25 @@ export async function preparerModificationAssistante(
  * une fois composé (un contexte de fiche entier, par exemple), il redevient « Allô ? ».
  */
 export function composerPremierMessage(modele: string, variables: VariablesDeLAppel): string {
+  return composer(modele, variables) ?? ASSISTANTE_PAR_DEFAUT.premierMessage;
+}
+
+/**
+ * La phrase d'ouverture que le pont fait dire tout de suite après un « bonjour » court au décroché : la première
+ * formulation d'exemple de l'étape 1 du script, variables remplacées. Sans elle (étape ou exemple absent, phrase trop
+ * longue une fois composée), c'est le modèle qui ouvre, comme avant (environ 2,7 s de plus).
+ */
+export function composerOuverture(etapes: readonly { exemples: readonly string[] }[], variables: VariablesDeLAppel): string | null {
+  const exemple = etapes[0]?.exemples[0];
+  return exemple ? composer(exemple, variables) : null;
+}
+
+function composer(modele: string, variables: VariablesDeLAppel): string | null {
   const compose = modele
     .replace(/\{\{(\w+)\}\}/g, (tout, nom: string) => (VARIABLES_CONNUES.has(nom) ? variables[nom as keyof VariablesDeLAppel] : tout))
     .replace(/\s+/g, ' ')
     .trim();
-  if (!compose || compose.length > LONGUEUR_MAX_PREMIER_MESSAGE_COMPOSE) return ASSISTANTE_PAR_DEFAUT.premierMessage;
-  return compose;
+  return compose && compose.length <= LONGUEUR_MAX_PREMIER_MESSAGE_COMPOSE ? compose : null;
 }
 
 /** La dernière configuration ElevenLabs consignée (poussée ou rapatriée par le MCP), pour la page Réglages. */
