@@ -97,11 +97,19 @@ export default async function PageTelephone() {
       texte: 'État du téléphone illisible',
       detail: 'La ligne a répondu, mais pas dans la forme attendue.',
     };
-  else if (telephone.appelEnCours) {
-    const nom = telephone.appelId ? await nomDuProspect(telephone.appelId) : null;
+  else if (telephone.appelEnCours && !telephone.appelId && telephone.entrantEnCours) {
+    // Un numéro qui sonne sans appel suivi : inconnu de l'application (ou la décision en cours), personne ne décroche.
     verdict = {
       ton: 'antenne',
-      texte: nom ? `Appel en cours avec ${nom}` : 'Appel en cours',
+      texte: 'Appel entrant\u00a0: ça sonne',
+      detail: `${nomAssistante} ne décroche que pour un prospect déjà appelé ; un numéro inconnu sonne jusqu’à la messagerie.`,
+    };
+  } else if (telephone.appelEnCours) {
+    const nom = telephone.appelId ? await nomDuProspect(telephone.appelId) : null;
+    const entrant = telephone.sens === 'entrant';
+    verdict = {
+      ton: 'antenne',
+      texte: entrant ? (nom ? `Appel entrant\u00a0: ${nom} rappelle` : 'Appel entrant en cours') : nom ? `Appel en cours avec ${nom}` : 'Appel en cours',
       ...(telephone.appelId
         ? {
             lien: `/appels/${telephone.appelId}`,

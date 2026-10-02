@@ -33,7 +33,8 @@ describe('ce que voit l’assistante', () => {
     const prompt = texteDesSegments(resoudre(r.vue!.prompt, r.vue!.variables, r.etats));
     expect(prompt).toContain('Atelier fictif');
     expect(prompt).toContain('[{{prospect_nom}} : selon la fiche du prospect]');
-    expect(prompt).not.toMatch(/\{\{(?!prospect_|historique_appels)\w+\}\}/);
+    expect(prompt).not.toMatch(/\{\{(?!prospect_|historique_appels|situation_appel)\w+\}\}/);
+    expect(prompt).toContain('[{{situation_appel}} : selon la fiche du prospect]');
     expect(prompt).not.toContain('non transmis');
   });
 

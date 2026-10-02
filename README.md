@@ -174,6 +174,7 @@ Sur téléphone, la navigation passe dans une barre du bas, les filtres tiennent
 - La file se modifie pendant la campagne sans couper l'appel en cours : `S` sauter (le prospect repart en fin de file), retirer, `A` ajouter des prospects, terminer.
 - `P` suspendre et reprendre, pause entre deux appels, plafonds respectés à chaque tour.
 - Un prospect dont le numéro n'est plus appelable à son tour (personne effacée entre-temps) n'est pas appelé : il est marqué « non appelable ».
+- Un prospect qui ne répond pas (pas de décroché, messagerie, répondeur, filtre d'appel) garde sa place et est rappelé le lendemain, au moment opposé de la journée, trois tentatives au plus ; un minuteur relance la campagne à l'heure prévue ([ADR 0017](docs/adr/0017-un-prospect-sans-reponse-est-rappele-le-lendemain.md)).
 
 ### Appels et lignes
 
@@ -181,6 +182,7 @@ Sur téléphone, la navigation passe dans une barre du bas, les filtres tiennent
 - **Ligne navigateur** : l'opérateur joue le prospect depuis son navigateur, à la voix ou par écrit ; vraie conversation, vrai enregistrement, aucun téléphone ne sonne.
 - **Simulation** : un modèle de langage joue le prospect, pour produire du volume. Toujours signalée et exclue des chiffres par défaut.
 - Détection de messagerie, fin d'appel décidée par l'assistante, durée maximale de cinq minutes.
+- **Appels entrants** : un prospect déjà appelé qui rappelle le téléphone passerelle est décroché par l'assistante, qui sait qui la rappelle et après quel appel. Un numéro inconnu ou masqué sonne jusqu'à la messagerie, et rien n'en est gardé ([ADR 0018](docs/adr/0018-un-prospect-qui-rappelle-est-decroche-par-l-assistante.md)).
 
 ### Suivi en direct, écoute et prise de main
 
@@ -199,7 +201,7 @@ Sur téléphone, la navigation passe dans une barre du bas, les filtres tiennent
 ### Rappels datés
 
 - Quand le prospect demande à être rappelé, l'analyse date le rappel d'après ce qu'il a dit (« jeudi matin ») ([ADR 0011](docs/adr/0011-rappel-date-par-l-analyse.md)).
-- L'accueil liste les rappels du jour et ceux en retard ; un rappel est fait dès qu'un nouvel appel part vers ce prospect.
+- L'accueil liste les rappels du jour et ceux en retard ; un rappel est fait dès qu'un nouvel appel part vers ce prospect, ou qu'il rappelle et parle à l'assistante.
 
 ### Agenda et visio
 
@@ -316,6 +318,8 @@ sequenceDiagram
     Web->>Web: événement Google Agenda créé en tâche de fond
 ```
 
+Un appel entrant part du téléphone : le pont donne le numéro de l'appelant à l'application, qui décroche seulement un prospect déjà appelé et enregistre l'appel avant de répondre ; la suite est la même, sans composition ni plafond.
+
 La ligne navigateur suit le même chemin sans pont ni téléphone : le navigateur ouvre la conversation ElevenLabs et exécute lui-même les outils d'agenda. Une simulation passe par l'API de simulation d'ElevenLabs, sans audio.
 
 ## Pile technique
@@ -379,7 +383,7 @@ scripts/installer-services.sh             # construit et lance l'interface, acti
 sudo tailscale serve --bg --https=8449 http://127.0.0.1:3020
 ```
 
-`scripts/installer-services.sh` installe deux unités systemd utilisateur : `autocalled-web` (l'interface, sur 127.0.0.1:3020) et le minuteur `autocalled-purge.timer`.
+`scripts/installer-services.sh` installe trois unités systemd utilisateur : `autocalled-web` (l'interface, sur 127.0.0.1:3020), le minuteur `autocalled-purge.timer` et le minuteur `autocalled-reveil.timer`, qui relance toutes les 5 minutes les campagnes téléphone dont une nouvelle tentative est due.
 
 Une fois Postgres lancé, le `.env` rempli et les migrations passées, ouvre Claude Code à la racine du dépôt et accepte le serveur MCP qu'il propose : voir [Piloter Autocalled depuis Claude Code](#piloter-autocalled-depuis-claude-code). Avant ces étapes, ses outils échouent.
 
@@ -405,10 +409,12 @@ Chaque nuit, `autocalled-purge.timer` purge les appels commencés il y a plus de
 
 L'ordre compte, parce que le prompt de l'assistante attend des variables que l'application et le pont envoient :
 
-1. `pnpm install`, puis `pnpm --filter @autocalled/web db:migrate` (la migration 0018 supprime deux tables : sauvegarde la base d'abord).
-2. `scripts/installer-services.sh`, qui reconstruit et relance l'interface et recopie le minuteur de la purge.
-3. Si `apps/pont` a changé : `scripts/installer-pont.sh`, qui ne relance pas le pont pendant un appel.
-4. Seulement ensuite, si `agent/` a changé : `pnpm agent push`, puis `pnpm agent status`. Poussé plus tôt, un prompt qui cite une variable que l'application n'envoie pas encore empêche ElevenLabs d'ouvrir la conversation.
+1. `pnpm install`, puis `pnpm --filter @autocalled/web db:migrate` (sauvegarde la base d'abord : la migration 0018 supprime deux tables).
+2. `pnpm reveil --essai` avant la première installation du réveil : toute campagne téléphone en cours qui a quelqu'un à appeler repart dans les 5 minutes, à n'importe quelle heure.
+3. `scripts/installer-services.sh`, qui reconstruit et relance l'interface et recopie les minuteurs de la purge et du réveil.
+4. Si `agent/` a changé : `pnpm agent push`, puis `pnpm agent status`, juste après l'interface. Poussé avant, un prompt qui cite une variable que l'application n'envoie pas encore empêche ElevenLabs d'ouvrir la conversation ; poussé après le pont, il laisserait le nouveau pont parler avec l'ancien prompt (un prospect qui rappelle, par exemple).
+5. Si `apps/pont` a changé : `scripts/installer-pont.sh`, qui ne relance pas le pont pendant un appel, entrant compris.
+6. Reconnecter le serveur MCP dans Claude Code (`/mcp`) : il tourne sur le code chargé à son démarrage.
 
 ## Commandes utiles
 
@@ -421,6 +427,7 @@ L'ordre compte, parce que le prompt de l'assistante attend des variables que l'a
 | `pnpm agent status` | Dit si `agent/` et ElevenLabs divergent, et en quoi |
 | `pnpm agent pull`, `pnpm agent push` | Rapatrie ou pousse la configuration de l'assistante, avec verrou |
 | `pnpm purger --essai` | Compte ce que la purge supprimerait, sans rien toucher |
+| `pnpm reveil --essai` | Dit quels appels le réveil classerait et quelles campagnes il relancerait, sans rien écrire ni composer |
 | `.venv/bin/python -m pont tester-son …` | Diagnostic du pont, service arrêté : joue un son au décroché, sans ElevenLabs |
 
 Les tests de l'application et du serveur MCP tournent sur une base `autocalled_test` du même Postgres, migrée et vidée par les tests eux-mêmes ; ils refusent toute base dont le nom ne finit pas par `_test`. Elle se crée une fois : `docker compose exec postgres createdb -U autocalled autocalled_test`. Aucun test n'appelle ElevenLabs ni `claude -p`, et le pont y est remplacé par un faux.
@@ -486,7 +493,7 @@ L'assistante ne s'annonce pas comme IA et n'annonce pas l'enregistrement. Démar
 
 ## Limites connues et pistes
 
-**À valider sur de vrais appels** ([état du projet](docs/etat.md)) : la prise de main (casque, latence, reconnexion), une campagne entière sur la ligne téléphone (enchaînement, pause, reprise, plafond), l'interruption de l'assistante en pleine phrase, la relecture de l'e-mail dicté.
+**À valider sur de vrais appels** ([état du projet](docs/etat.md)) : la prise de main (casque, latence, reconnexion), une campagne entière sur la ligne téléphone (enchaînement, pause, reprise, plafond, nouvelles tentatives), les appels entrants (décroché, canal son, numéro de l'appelant), l'interruption de l'assistante en pleine phrase, la relecture de l'e-mail dicté.
 
 **Limites assumées** :
 
@@ -519,6 +526,8 @@ Chaque choix qui surprendrait un lecteur est expliqué dans un ADR :
 | [0014](docs/adr/0014-duree-de-conservation.md) | Durée de conservation : après douze mois, un appel garde ses chiffres et perd ce qu'a dit la personne |
 | [0015](docs/adr/0015-une-information-vide-n-est-pas-transmise.md) | Une information vide de la fiche d'une entreprise n'est pas transmise à l'assistante |
 | [0016](docs/adr/0016-un-seul-journal-des-gestes.md) | Un seul journal des gestes, avec leur origine |
+| [0017](docs/adr/0017-un-prospect-sans-reponse-est-rappele-le-lendemain.md) | Un prospect qui ne répond pas est rappelé le lendemain, au moment opposé de la journée, trois fois au plus |
+| [0018](docs/adr/0018-un-prospect-qui-rappelle-est-decroche-par-l-assistante.md) | Un prospect qui rappelle est décroché par l'assistante ; un numéro inconnu sonne jusqu'à la messagerie |
 
 ## Structure du dépôt
 
@@ -532,7 +541,7 @@ Chaque choix qui surprendrait un lecteur est expliqué dans un ADR :
 │   │   ├── src/db/          schéma Drizzle
 │   │   ├── drizzle/         migrations SQL
 │   │   ├── mcp/             serveur MCP en stdio et ses tests
-│   │   ├── scripts/         purge, variables d'un appel, résolution des imports hors Next
+│   │   ├── scripts/         purge, réveil des campagnes, variables d'un appel, résolution des imports hors Next
 │   │   └── test/            préparation de la base de test
 │   └── pont/                pont Bluetooth en Python : service, oFono, audio, mSBC, plafonds, tests
 ├── packages/

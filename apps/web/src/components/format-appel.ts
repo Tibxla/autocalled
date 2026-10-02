@@ -2,6 +2,7 @@ import {
   LIBELLES_ISSUES,
   type EntreeCampagne,
   type IssueSysteme,
+  type OrigineGeste,
   type RappelDate,
   type StatutCampagne,
 } from '@autocalled/domain';
@@ -240,27 +241,87 @@ export const STATUTS_CAMPAGNE: Record<StatutCampagne, string> = {
   terminee: 'Terminée',
 };
 
-/** Comptes d'une campagne : `traites` = appelés, sautés (numéro non appelable) et retirés, tout ce qui a quitté la file. */
+/**
+ * Comptes d'une campagne : `traites` = appelés (bilan en cours compris), sautés (numéro non appelable) et retirés, tout
+ * ce qui a quitté la file. `aRetenter` : parmi les `aAppeler`, les nouvelles tentatives (le prospect n'a pas répondu).
+ * `enAnalyse` : appel fini, bilan pas encore écrit ; il peut encore revenir dans la file.
+ */
 export function comptesCampagne(entrees: readonly EntreeCampagne[]): {
   total: number;
   aAppeler: number;
+  aRetenter: number;
   enAppel: number;
+  enAnalyse: number;
   appelees: number;
   sautees: number;
   retirees: number;
   traites: number;
 } {
   let aAppeler = 0;
+  let aRetenter = 0;
   let enAppel = 0;
+  let enAnalyse = 0;
   let appelees = 0;
   let sautees = 0;
   let retirees = 0;
   for (const e of entrees) {
-    if (e.etat === 'a-appeler') aAppeler += 1;
-    else if (e.etat === 'en-appel') enAppel += 1;
+    if (e.etat === 'a-appeler') {
+      aAppeler += 1;
+      if ((e.tentative ?? 1) > 1) aRetenter += 1;
+    } else if (e.etat === 'en-appel') enAppel += 1;
+    else if (e.etat === 'en-analyse') enAnalyse += 1;
     else if (e.etat === 'appelee') appelees += 1;
     else if (e.etat === 'sautee') sautees += 1;
     else retirees += 1;
   }
-  return { total: entrees.length, aAppeler, enAppel, appelees, sautees, retirees, traites: appelees + sautees + retirees };
+  return {
+    total: entrees.length,
+    aAppeler,
+    aRetenter,
+    enAppel,
+    enAnalyse,
+    appelees,
+    sautees,
+    retirees,
+    traites: appelees + enAnalyse + sautees + retirees,
+  };
+}
+
+/** Une entrée à appeler est due quand elle n'attend pas d'heure (`pasAvant`) ou que cette heure est passée. */
+export function estDue(e: { pasAvant?: string }, maintenant: Date): boolean {
+  return e.pasAvant === undefined || Date.parse(e.pasAvant) <= maintenant.getTime();
+}
+
+/** La prochaine entrée appelée : la première à appeler dont l'heure est venue, dans l'ordre de la file (même règle que le domaine). */
+export function prochaineEntreeDue(entrees: readonly EntreeCampagne[], maintenant: Date): Extract<EntreeCampagne, { etat: 'a-appeler' }> | undefined {
+  return entrees.find((e): e is Extract<EntreeCampagne, { etat: 'a-appeler' }> => e.etat === 'a-appeler' && estDue(e, maintenant));
+}
+
+/** Les nouvelles tentatives qui attendent leur heure : la plus proche (ISO) et combien attendent ; null s'il n'y en a pas. */
+export function prochaineTentative(entrees: readonly EntreeCampagne[], maintenant: Date): { le: string; nombre: number } | null {
+  let le: string | null = null;
+  let nombre = 0;
+  for (const e of entrees) {
+    if (e.etat !== 'a-appeler' || estDue(e, maintenant) || e.pasAvant === undefined) continue;
+    nombre += 1;
+    if (le === null || Date.parse(e.pasAvant) < Date.parse(le)) le = e.pasAvant;
+  }
+  return le === null ? null : { le, nombre };
+}
+
+/** « 2ᵉ tentative ». */
+export function rangTentative(n: number): string {
+  return `${n}${n === 1 ? 're' : 'ᵉ'} tentative`;
+}
+
+/** Quand part une nouvelle tentative : « demain à 14:00 », « aujourd'hui à 09:00 », « sam. 03/10 à 14:00 ». */
+export function quandTentative(pasAvant: Date | string, maintenant: Date = new Date()): string {
+  return quandRappeler(pasAvant, null, maintenant);
+}
+
+/** Qui a fait un geste sur la file, dit après coup (« Retiré le 01/10 à 14:02 par Claude Code ») ; rien pour l'interface. */
+export function parQui(par: OrigineGeste | undefined): string {
+  if (par === 'mcp') return ' par Claude Code';
+  if (par === 'systeme') return ' par l’application';
+  return '';
 }

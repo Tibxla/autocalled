@@ -1,0 +1,12 @@
+# Lance autocalled-reveil.service toutes les 5 minutes : une nouvelle tentative prévue à 9 h ou 14 h part au plus tard
+# 5 minutes après. Un réveil manqué (serveur éteint) n'est pas rattrapé : le suivant suffit.
+# Installation : scripts/installer-services.sh
+[Unit]
+Description=Autocalled, réveil des campagnes téléphone toutes les 5 minutes
+
+[Timer]
+OnCalendar=*:0/5
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

@@ -8,6 +8,7 @@ import { appelFini, appelLance, decompteAttendu, ENCHAINEMENT_INITIAL, type Etat
 import { BandeAppel, type IdentiteAppel } from '@/components/bande-appel';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
 import type { ReglagesLigne } from '@/components/garde-fous';
+import { rangTentative } from '@/components/format-appel';
 import { Action, LienAction, Message } from '@/components/ui';
 import { cloreAppelDeCampagne, lancerCampagne, ouvrirAppelSuivant, suspendreCampagne, terminerAvantLaFin } from '../actions';
 import { useReconnexion } from '@/app/telephone/panneau-telephone';
@@ -24,12 +25,20 @@ import { phraseEstimation, phrasePlafonds, Recapitulatif, type ProspectRecapitul
  * Suspendre est un frein réversible : immédiat, sans confirmation, touche P (S est déjà Sauter dans la file).
  * Terminer ferme la file pour de bon : confirmation en ligne. Il ne coupe aucun appel : l'appel en cours va à
  * son terme et la campagne se termine avec lui.
+ * Un prospect sans réponse est rappelé le lendemain (trois tentatives au plus) : quand plus rien n'est dû, la régie dit
+ * l'heure de la prochaine tentative plutôt que la fin de la campagne, qui reste en cours et repart seule au téléphone.
  */
 
 export interface EtatPont {
   etat: 'joignable' | 'injoignable' | 'deconnecte' | 'inconnu';
   plafond: string | null;
   reglages: ReglagesLigne | null;
+  /** Un appel est sur la ligne (sortant, ou entrant même s'il ne fait que sonner) : rien d'autre ne peut partir. */
+  occupee: boolean;
+  /** L'appel que la ligne suit, s'il y en a un. */
+  appelId: string | null;
+  /** L'appel sur la ligne est entrant : un prospect qui rappelle, ou un numéro inconnu qui sonne sans réponse. */
+  entrant: boolean;
 }
 
 export interface RaisonSuspension {
@@ -39,7 +48,8 @@ export interface RaisonSuspension {
 }
 
 type Ligne = 'navigateur' | 'bluetooth' | 'simulation' | 'twilio';
-type Prochain = { id: string; nom: string; societe: string | null };
+/** `tentative` : 1 pour un premier appel, 2 ou 3 pour une nouvelle tentative. */
+type Prochain = { id: string; nom: string; societe: string | null; tentative?: number };
 
 interface ProprietesRegie {
   campagneId: string;
@@ -52,6 +62,14 @@ interface ProprietesRegie {
   /** Intentions des étapes de la version de la campagne : libellé de l'étape signalée en direct. */
   etapes: readonly string[];
   prochain: Prochain | null;
+  /** Rien n'est dû mais des nouvelles tentatives attendent : quand part la plus proche (« demain à 14:00 ») et combien attendent. */
+  attente: { quand: string; nombre: number } | null;
+  /** Appels finis dont le bilan n'est pas écrit : selon leur issue, le prospect sera rappelé ou non. */
+  enAnalyse: number;
+  /** Parmi les restants, les nouvelles tentatives (dues ou non). */
+  aRetenter: number;
+  /** La ligne téléphone est prise par un autre appel que celui de la campagne (un prospect qui rappelle) : la campagne attend. */
+  ligneOccupee: { entrant: boolean; prospect: string | null; lien: string | null } | null;
   restants: number;
   enAppel: boolean;
   appelOuvertNavigateur: string | null;
@@ -144,6 +162,51 @@ function nomComplet(p: Prochain): string {
   return p.societe ? `${p.nom}, ${p.societe}` : p.nom;
 }
 
+/** « (2ᵉ tentative) » derrière le nom d'un prospect rappelé, rien pour un premier appel. */
+function mentionTentative(p: Prochain): string {
+  return p.tentative && p.tentative > 1 ? ` (${rangTentative(p.tentative)})` : '';
+}
+
+/** Ce que les confirmations disent des nouvelles tentatives : elles partent seules et comptent dans le plafond. */
+const PHRASE_TENTATIVES =
+  'Un prospect qui ne répond pas est rappelé le lendemain, à l’autre moment de la journée, trois tentatives au plus : chacune compte dans le plafond, et l’estimation ne les compte pas.';
+
+/**
+ * Quand plus rien n'est dû : la prochaine tentative, ou le bilan attendu, ou la fin. Jamais « la campagne se termine »
+ * tant qu'un prospect peut encore être rappelé.
+ */
+function RienDeDu({ attente, enAnalyse, telephone }: { attente: ProprietesRegie['attente']; enAnalyse: number; telephone: boolean }) {
+  if (attente) {
+    return (
+      <div className="grid gap-1">
+        <p className="text-lg text-balance">
+          <span className="text-encre-3">Prochaine tentative : </span>
+          <span className="font-medium">{attente.quand}</span>
+          <span className="text-encre-2">
+            {' '}
+            · <span className="font-mono">{attente.nombre}</span> prospect{attente.nombre > 1 ? 's' : ''} à rappeler
+          </span>
+        </p>
+        <p className="text-sm text-encre-3">
+          {telephone
+            ? 'Rien d’autre à appeler d’ici là : la campagne reste en cours et repart seule à cette heure-là.'
+            : 'Rien d’autre à appeler d’ici là : rien ne part tout seul sur cette ligne, reviens à cette heure-là.'}
+          {enAnalyse > 0 ? ` Un bilan est encore en cours : son prospect peut s’y ajouter.` : ''}
+        </p>
+      </div>
+    );
+  }
+  if (enAnalyse > 0) {
+    return (
+      <div className="grid gap-1">
+        <p className="text-lg text-encre-2">Plus personne à appeler pour l’instant : la campagne attend le bilan du dernier appel.</p>
+        <p className="text-sm text-encre-3">S’il n’a pas répondu, son prospect sera rappelé demain ; sinon, la campagne se termine.</p>
+      </div>
+    );
+  }
+  return <p className="text-lg text-encre-2">Plus aucun prospect à appeler : la campagne se termine.</p>;
+}
+
 /**
  * Rangée d'actions de la régie. Sous 640 px, une colonne ; `pave` : les commandes de ce qui vit (Appeler
  * maintenant, Suspendre) forment un pavé de touches sur deux colonnes, toutes en relief au doigt, l'aide sur
@@ -228,13 +291,28 @@ export function Regie(props: ProprietesRegie) {
         </p>
       ) : null}
       {contenu}
-      {!props.seTermine && props.restants > 0 ? <Terminer campagneId={props.campagneId} restants={props.restants} enAppel={enAppel} /> : null}
+      {/* Aussi quand seuls un appel en ligne ou un bilan restent : sans le geste, une issue sans réponse créerait une nouvelle tentative. */}
+      {!props.seTermine && (props.restants > 0 || props.enAnalyse > 0 || enAppel) ? (
+        <Terminer campagneId={props.campagneId} restants={props.restants} aRetenter={props.aRetenter} enAppel={enAppel} enAnalyse={props.enAnalyse} />
+      ) : null}
     </section>
   );
 }
 
 /** Terminer avant la fin : les prospects restants ne seront pas appelés ; l'appel en cours, lui, va à son terme. */
-function Terminer({ campagneId, restants, enAppel }: { campagneId: string; restants: number; enAppel: boolean }) {
+function Terminer({
+  campagneId,
+  restants,
+  aRetenter,
+  enAppel,
+  enAnalyse,
+}: {
+  campagneId: string;
+  restants: number;
+  aRetenter: number;
+  enAppel: boolean;
+  enAnalyse: number;
+}) {
   const confirmation = useConfirmation();
   const [enCours, demarrer] = useTransition();
   const [erreur, setErreur] = useState<string | null>(null);
@@ -273,8 +351,18 @@ function Terminer({ campagneId, restants, enAppel }: { campagneId: string; resta
         }
       >
         <p>
-          {restants} prospect{restants > 1 ? 's' : ''} encore à appeler ne {restants > 1 ? 'le seront' : 'le sera'} pas : {restants > 1 ? 'ils restent' : 'il reste'}{' '}
-          dans la file, marqué{restants > 1 ? 's' : ''} non appelé{restants > 1 ? 's' : ''}.
+          {restants > 0 ? (
+            <>
+              {restants} prospect{restants > 1 ? 's' : ''} encore à appeler ne {restants > 1 ? 'le seront' : 'le sera'} pas : {restants > 1 ? 'ils restent' : 'il reste'}{' '}
+              dans la file, marqué{restants > 1 ? 's' : ''} non appelé{restants > 1 ? 's' : ''}.
+            </>
+          ) : (
+            'Plus personne n’attend dans la file : personne ne sera rappelé, même sans réponse.'
+          )}
+          {enAnalyse > 0 ? ` ${enAnalyse > 1 ? 'Les bilans en cours' : 'Le bilan en cours'} ne ${enAnalyse > 1 ? 'créeront' : 'créera'} pas de nouvelle tentative.` : ''}
+          {aRetenter > 0
+            ? ` Dont ${aRetenter} nouvelle${aRetenter > 1 ? 's' : ''} tentative${aRetenter > 1 ? 's' : ''} : ${aRetenter > 1 ? 'ces prospects ne seront pas rappelés' : 'ce prospect ne sera pas rappelé'}.`
+            : ''}
           {enAppel ? ' L’appel en cours va à son terme ; la campagne se termine avec lui.' : ''}
         </p>
         <p className="mt-1">Une campagne terminée ne se relance pas : pour appeler ces prospects plus tard, crée une nouvelle campagne.</p>
@@ -323,6 +411,7 @@ function Lancement({ campagneId, ligne, entreprise, version, recapitulatif, pont
             {phrasePlafonds(pont?.reglages ?? null, passes24h)}
           </p>
           {estime ? <p className="mt-1">{estime}</p> : null}
+          <p className="mt-1">{PHRASE_TENTATIVES}</p>
         </Confirmation>
       </div>
     );
@@ -358,6 +447,9 @@ function RegieTelephone({
   version,
   etapes,
   prochain,
+  attente,
+  enAnalyse,
+  ligneOccupee,
   restants,
   appelTelephone,
   pont,
@@ -393,16 +485,38 @@ function RegieTelephone({
         />
       ) : statut === 'en-cours' ? (
         <div className="grid gap-2">
-          {prochain ? (
+          {ligneOccupee ? (
+            // Un seul téléphone : un prospect qui rappelle prend la ligne, la campagne attend qu'il raccroche.
+            <div className="grid gap-1">
+              <p className="text-lg text-balance">
+                <span className="text-encre-3">Ligne prise : </span>
+                <span className="font-medium">
+                  {ligneOccupee.entrant
+                    ? ligneOccupee.prospect
+                      ? `${ligneOccupee.prospect} rappelle`
+                      : 'un appel entrant sonne'
+                    : ligneOccupee.prospect
+                      ? `appel en cours avec ${ligneOccupee.prospect}`
+                      : 'un autre appel est en cours'}
+                </span>
+              </p>
+              <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 pointer-coarse:mx-0">
+                <span className="px-1.5 text-sm text-encre-3 pointer-coarse:px-0">
+                  {prochain ? `La campagne attend la fin de cet appel pour appeler ${nomComplet(prochain)}.` : 'La campagne attend la fin de cet appel.'}
+                </span>
+                {ligneOccupee.lien ? <LienAction href={ligneOccupee.lien}>Suivre l’appel</LienAction> : null}
+              </div>
+            </div>
+          ) : prochain ? (
             <p className="text-lg text-balance">
               <span className="text-encre-3">Suivant : </span>
               <span className="font-medium">{nomComplet(prochain)}</span>
               <span className="text-encre-2">
-                , après la pause {pause ? <>de <span className="font-mono">{pause}</span> s </> : null}réglée sur Téléphone.
+                {mentionTentative(prochain)}, après la pause {pause ? <>de <span className="font-mono">{pause}</span> s </> : null}réglée sur Téléphone.
               </span>
             </p>
           ) : (
-            <p className="text-lg text-encre-2">Plus aucun prospect à appeler : la campagne se termine.</p>
+            <RienDeDu attente={attente} enAnalyse={enAnalyse} telephone />
           )}
           {blocage ? <Blocage blocage={blocage} reconnecter={reconnecterBlocage} /> : null}
         </div>
@@ -438,8 +552,14 @@ function RegieTelephone({
             <p>
               {prochain ? (
                 <>
-                  La campagne reprend à {nomComplet(prochain)} : {restants} appel{restants > 1 ? 's' : ''} restant{restants > 1 ? 's' : ''}, sur le
-                  téléphone passerelle ({entreprise.nom} · {version}).{' '}
+                  La campagne reprend à {nomComplet(prochain)}
+                  {mentionTentative(prochain)} : {restants} appel{restants > 1 ? 's' : ''} restant{restants > 1 ? 's' : ''}, sur le téléphone passerelle (
+                  {entreprise.nom} · {version}).{' '}
+                </>
+              ) : attente ? (
+                <>
+                  Rien n’est dû avant la prochaine tentative, {attente.quand} : la campagne reprend et repartira seule à cette heure-là ({entreprise.nom} ·{' '}
+                  {version}).{' '}
                 </>
               ) : null}
               {phrasePlafonds(pont?.reglages ?? null, passes24h)}
@@ -447,6 +567,7 @@ function RegieTelephone({
             {phraseEstimation(restants, pont?.reglages ?? null, passes24h) ? (
               <p className="mt-1">{phraseEstimation(restants, pont?.reglages ?? null, passes24h)}</p>
             ) : null}
+            <p className="mt-1">{PHRASE_TENTATIVES}</p>
           </Confirmation>
         </div>
       )}
@@ -457,11 +578,19 @@ function RegieTelephone({
 
 /* ------------------------------------------------------------------ simulation */
 
-function RegieSimulation({ campagneId, statut, restants, raison }: ProprietesRegie) {
+function RegieSimulation({ campagneId, statut, restants, raison, prochain, attente }: ProprietesRegie) {
   const { erreur, enCours, agir } = useGeste();
   return (
     <>
-      {statut === 'en-cours' ? (
+      {statut === 'en-cours' && !prochain && attente ? (
+        // La simulation s'arrête où rien n'est dû : ses nouvelles tentatives attendent leur heure, sans réveil.
+        <div className="grid gap-1">
+          <p className="text-base text-encre-2">
+            Rien à simuler avant la prochaine tentative, {attente.quand} ({attente.nombre} prospect{attente.nombre > 1 ? 's' : ''}).
+          </p>
+          <p className="text-sm text-encre-3">Une simulation ne repart pas seule : à cette heure-là, suspends-la puis reprends-la.</p>
+        </div>
+      ) : statut === 'en-cours' ? (
         <p className="text-base text-encre-2">Le serveur enchaîne les appels simulés ; la file se met à jour toute seule.</p>
       ) : raison ? (
         <Raison raison={raison} />
@@ -507,7 +636,8 @@ function RegieTwilio({ campagneId, statut, raison }: ProprietesRegie) {
 /* ------------------------------------------------------------------ ligne navigateur */
 
 function RegieNavigateur(props: ProprietesRegie) {
-  const { campagneId, statut, entrepriseId, versionScriptId, etapes, prochain, restants, appelOuvertNavigateur, raison, recapitulatif } = props;
+  const { campagneId, statut, entrepriseId, versionScriptId, etapes, prochain, attente, enAnalyse, restants, appelOuvertNavigateur, raison, recapitulatif } =
+    props;
   const router = useRouter();
   const { erreur, enCours, agir } = useGeste();
   // Premier geste de l'opérateur dans cette page : sans lui, aucun appel ne part (ni au chargement, ni au
@@ -619,7 +749,7 @@ function RegieNavigateur(props: ProprietesRegie) {
       </>
     );
   } else if (!prochain) {
-    corps = <p className="text-base text-encre-2">Plus aucun prospect à appeler.</p>;
+    corps = <RienDeDu attente={attente} enAnalyse={enAnalyse} telephone={false} />;
   } else if (!geste) {
     corps = (
       <>
@@ -632,6 +762,7 @@ function RegieNavigateur(props: ProprietesRegie) {
           <p className="text-lg text-balance">
             <span className="text-encre-3">Prochain : </span>
             <span className="font-medium">{nomComplet(prochain)}</span>
+            {mentionTentative(prochain) ? <span className="text-encre-2">{mentionTentative(prochain)}</span> : null}
           </p>
           <p className="text-sm text-encre-3">Rien ne part tant que tu n’appelles pas ; ensuite, les appels s’enchaînent après un décompte de 5 s.</p>
         </div>

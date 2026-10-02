@@ -1,5 +1,5 @@
 import { ISSUES_SYSTEME } from '@autocalled/domain';
-import { type FiltresAppels, ISSUE_NON_COMPOSE, ISSUE_SANS_BILAN, periodeValide } from '@/lib/lecture';
+import { type FiltresAppels, ISSUE_NON_COMPOSE, ISSUE_SANS_BILAN, periodeValide, SENS } from '@/lib/lecture';
 
 /**
  * Filtres de la liste des appels lus dans l'URL, partagés par la liste et la fiche d'appel (appel précédent
@@ -13,6 +13,12 @@ export const LIGNES_FILTRE = [
   { valeur: 'twilio', libelle: 'Twilio' },
 ] as const;
 
+/** Sens d'un appel : orthogonal aux issues, comme « Rappels à faire ». */
+export const SENS_FILTRE = [
+  { valeur: 'sortant', libelle: 'Sortants' },
+  { valeur: 'entrant', libelle: 'Entrants' },
+] as const;
+
 export type ParametresAppels = {
   q?: string;
   entreprise?: string;
@@ -22,6 +28,8 @@ export type ParametresAppels = {
   periode?: string;
   /** « 1 » : seulement les rappels convenus encore à faire ; exclut le filtre d'issue. */
   rappels?: string;
+  /** `entrant` (le prospect a rappelé) ou `sortant` ; absent : les deux. */
+  sens?: string;
   /** Curseur : l'identifiant du dernier appel de la page d'avant. */
   avant?: string;
 };
@@ -52,6 +60,7 @@ export function lireFiltresAppels(p: Record<string, string | undefined>): { para
     ligne,
     version: p.version && FORME_UUID.test(p.version) ? p.version : undefined,
     periode,
+    sens: (SENS as readonly string[]).includes(p.sens ?? '') ? p.sens : undefined,
     // Les rappels à faire suivent la date de rappel, pas le début d'appel : pas de curseur.
     avant: p.rappels !== '1' && p.avant && FORME_UUID.test(p.avant) ? p.avant : undefined,
   };
@@ -63,5 +72,6 @@ export function lireFiltresAppels(p: Record<string, string | undefined>): { para
   if (parametres.version) filtres.version = parametres.version;
   if (periode) filtres.periode = periode;
   if (parametres.rappels) filtres.rappels = true;
+  if (parametres.sens) filtres.sens = parametres.sens;
   return { parametres, filtres };
 }

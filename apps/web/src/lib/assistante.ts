@@ -15,6 +15,12 @@ import { auteurEtMoment, type Conflit, type Ecriture, type Refus } from './entre
 
 export const ASSISTANTE_PAR_DEFAUT = { nom: 'Mina', premierMessage: 'Allô ?' } as const;
 
+/**
+ * Ce que l'assistante dit en décrochant un appel entrant (ADR 0018), dès que la ligne s'ouvre : c'est elle qui parle la
+ * première. Sans le nom du prospect, qui n'est peut-être pas celui qui appelle (numéro partagé).
+ */
+export const ACCUEIL_ENTRANT = "Allô, oui bonjour, {{assistante_nom}} à l'appareil.";
+
 /** Au-delà, le pont ignore le premier message et dit « Allô ? » (apps/pont/pont/appel.py). */
 export const LONGUEUR_MAX_PREMIER_MESSAGE_COMPOSE = 300;
 

@@ -1,8 +1,21 @@
-import { finDemandee, ISSUES_SYSTEME, LIBELLES_ISSUES, type IssueSysteme } from '@autocalled/domain';
+import { finDemandee, ISSUES_SYSTEME, LIBELLES_ISSUES, type IssueSysteme, type OrigineGeste, traceDeFin } from '@autocalled/domain';
 import { and, desc, eq, gte } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { comptesCampagne, dateCourte, duree, etatAppel, numeroMasque, STATUTS_CAMPAGNE } from '@/components/format-appel';
+import {
+  comptesCampagne,
+  dateCourte,
+  duree,
+  etatAppel,
+  heure,
+  numeroMasque,
+  parQui,
+  prochaineEntreeDue,
+  prochaineTentative,
+  quandRappeler,
+  quandTentative,
+  STATUTS_CAMPAGNE,
+} from '@/components/format-appel';
 import { refusDe } from '@/components/refus-numero';
 import { EnTetePage, GlypheEtape, LienAction, Page, TitreSection } from '@/components/ui';
 import { db } from '@/db';
@@ -35,6 +48,22 @@ function ilYA24Heures(): Date {
   return new Date(Date.now() - 24 * 60 * 60 * 1000);
 }
 
+/** L'instant du rendu, lu hors composant : ce qui est dû dans la file, et « demain » ou « aujourd'hui ». */
+function maintenant(): Date {
+  return new Date();
+}
+
+/** Le prospect de l'appel que porte la ligne quand ce n'est pas celui de la campagne (un prospect qui rappelle). */
+async function appelDeLaLigne(appelId: string): Promise<{ id: string; prospect: string | null; entrant: boolean } | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(appelId)) return null;
+  const [a] = await db
+    .select({ id: appels.id, sens: appels.sens, prospect: prospects.nom })
+    .from(appels)
+    .leftJoin(prospects, and(eq(prospects.entrepriseId, appels.entrepriseId), eq(prospects.id, appels.prospectId)))
+    .where(eq(appels.id, appelId));
+  return a ? { id: a.id, prospect: a.prospect, entrant: a.sens === 'entrant' } : null;
+}
+
 /**
  * L'état du pont pour la régie téléphone. Le pont peut mettre 15 s à ne pas répondre : au-delà de 4 s, la
  * page n'attend plus et dit qu'elle ne sait pas, plutôt que de bloquer le rafraîchissement de la régie.
@@ -46,13 +75,27 @@ async function lirePont(): Promise<EtatPont> {
   });
   const reponse = await Promise.race([commanderPont('/etat'), delai]);
   clearTimeout(minuterie);
-  if (!reponse) return { etat: 'inconnu', plafond: null, reglages: null };
-  if (!reponse.ok) return { etat: 'injoignable', plafond: null, reglages: null };
-  const corps = reponse.corps as { connecte?: boolean; plafond?: unknown; reglages?: EtatPont['reglages'] };
+  const libre = { occupee: false, appelId: null, entrant: false };
+  if (!reponse) return { etat: 'inconnu', plafond: null, reglages: null, ...libre };
+  if (!reponse.ok) return { etat: 'injoignable', plafond: null, reglages: null, ...libre };
+  const corps = reponse.corps as {
+    connecte?: boolean;
+    plafond?: unknown;
+    reglages?: EtatPont['reglages'];
+    appelEnCours?: unknown;
+    appelId?: unknown;
+    entrantEnCours?: unknown;
+    sens?: unknown;
+  };
+  const appelId = typeof corps.appelId === 'string' ? corps.appelId : null;
   return {
     etat: corps.connecte ? 'joignable' : 'deconnecte',
     plafond: typeof corps.plafond === 'string' ? corps.plafond : null,
     reglages: corps.reglages ?? null,
+    occupee: Boolean(corps.appelEnCours) || Boolean(corps.entrantEnCours) || appelId !== null,
+    appelId,
+    // Un numéro inconnu qui sonne (sans appel suivi) est aussi un entrant : la ligne est prise, personne ne décroche.
+    entrant: corps.sens === 'entrant' || (appelId === null && Boolean(corps.entrantEnCours)),
   };
 }
 
@@ -115,7 +158,10 @@ export default async function PageCampagne({
       .from(issuesPersonnalisees)
       .where(eq(issuesPersonnalisees.entrepriseId, campagne.entrepriseId)),
     suivreLePont ? lirePont() : Promise.resolve(null),
-    suivreLePont ? db.$count(appels, and(eq(appels.ligne, 'bluetooth'), gte(appels.debutLe, ilYA24Heures()))) : Promise.resolve(null),
+    // Les compositions seulement, comme le plafond du pont : un prospect qui rappelle n'y compte pas.
+    suivreLePont
+      ? db.$count(appels, and(eq(appels.ligne, 'bluetooth'), eq(appels.sens, 'sortant'), gte(appels.debutLe, ilYA24Heures())))
+      : Promise.resolve(null),
   ]);
   if (!entreprise) notFound();
 
@@ -126,12 +172,21 @@ export default async function PageCampagne({
   const nombreEtapes = version?.etapes.length ?? null;
   const comptes = comptesCampagne(campagne.entrees);
   const seTermine = finDemandee(campagne);
+  const instant = maintenant();
   const ouvert = campagne.entrees.find((e) => e.etat === 'en-appel');
-  const prochaineEntree = campagne.entrees.find((e) => e.etat === 'a-appeler');
+  // Le prochain appelé est le premier DÛ : une nouvelle tentative attend son heure à sa place dans la file.
+  const prochaineEntree = prochaineEntreeDue(campagne.entrees, instant);
   const prochainProspect = prochaineEntree ? prospectDe.get(prochaineEntree.prospectId) : undefined;
   const prochain = prochaineEntree
-    ? { id: prochaineEntree.prospectId, nom: prochainProspect?.nom ?? prochaineEntree.prospectId, societe: prochainProspect?.societe ?? null }
+    ? {
+        id: prochaineEntree.prospectId,
+        nom: prochainProspect?.nom ?? prochaineEntree.prospectId,
+        societe: prochainProspect?.societe ?? null,
+        tentative: prochaineEntree.tentative ?? 1,
+      }
     : null;
+  const tentativeAVenir = prochaineTentative(campagne.entrees, instant);
+  const attente = tentativeAVenir ? { quand: quandTentative(tentativeAVenir.le, instant), nombre: tentativeAVenir.nombre } : null;
 
   // Appel téléphone de la campagne encore ouvert : la bande le suit (en cours, puis rapatriement).
   const appelOuvert = ouvert?.etat === 'en-appel' ? appelDe.get(ouvert.appelId) : undefined;
@@ -154,6 +209,20 @@ export default async function PageCampagne({
           },
         }
       : null;
+
+  // La ligne prise par un autre appel que celui de la file (un prospect qui rappelle, un appel lancé d'une fiche) :
+  // la campagne attend qu'il finisse, rien ne part.
+  // Sans appel suivi (un numéro inconnu qui sonne), la ligne est prise aussi ; jamais par l'appel de la campagne lui-même.
+  const ouvertId = ouvert?.etat === 'en-appel' ? ouvert.appelId : null;
+  const ligneAutreAppel = pont && pont.occupee && !appelTelephone && (pont.appelId === null || pont.appelId !== ouvertId) ? pont : null;
+  const autre = ligneAutreAppel?.appelId ? await appelDeLaLigne(ligneAutreAppel.appelId) : null;
+  const ligneOccupee = ligneAutreAppel
+    ? {
+        entrant: ligneAutreAppel.entrant || Boolean(autre?.entrant),
+        prospect: autre?.prospect ?? null,
+        lien: autre ? `/appels/${autre.id}?depuis=${encodeURIComponent(`/campagnes/${campagne.id}`)}` : null,
+      }
+    : null;
 
   // Dernier appel de la campagne, pour dire pourquoi elle s'est arrêtée s'il n'est pas parti.
   const dernier = [...listeAppels].sort((a, b) => b.debutLe.getTime() - a.debutLe.getTime())[0];
@@ -180,7 +249,11 @@ export default async function PageCampagne({
 
   const entreesFile: EntreeFile[] = campagne.entrees.map((e, i) => {
     const p = prospectDe.get(e.prospectId);
-    const a = 'appelId' in e ? appelDe.get(e.appelId) : undefined;
+    const precedents = (('appelsPrecedents' in e ? e.appelsPrecedents : undefined) ?? []).flatMap((id) => appelDe.get(id) ?? []);
+    // L'appel montré par la ligne : celui de l'entrée, sinon la dernière tentative passée (tentative prévue, retrait).
+    const a = 'appelId' in e ? appelDe.get(e.appelId) : precedents.at(-1);
+    const tentative = e.etat === 'sautee' || e.etat === 'retiree' ? precedents.length : (e.tentative ?? 1);
+    const pasAvant = e.etat === 'a-appeler' && e.pasAvant && Date.parse(e.pasAvant) > instant.getTime() ? e.pasAvant : null;
     return {
       rang: i + 1,
       prospectId: e.prospectId,
@@ -190,6 +263,14 @@ export default async function PageCampagne({
       suivant: e.prospectId === prochain?.id && campagne.statut !== 'terminee',
       sauts: e.etat === 'a-appeler' ? (e.sauts ?? 0) : 0,
       retrait: e.etat === 'retiree' ? { motif: e.motif, le: e.le, par: e.par } : null,
+      tentative,
+      prevue: pasAvant ? { jour: quandRappeler(pasAvant, { heure: null, moment: null }, instant), heure: heure(pasAvant) } : null,
+      // Les appels passés, le dernier compris quand il porte la ligne, dans l'ordre : un lien chacun.
+      tentatives: [...precedents, ...(a && !precedents.includes(a) ? [a] : [])].map((t, rang) => ({
+        id: t.id,
+        rang: rang + 1,
+        libelle: `${dateCourte(t.debutLe).replace(' ', ' à ')} · ${etatAppel(t, { libellePerso: t.issue ? libellePerso.get(t.issue) : null }).libelle}`,
+      })),
       appel: a
         ? {
             id: a.id,
@@ -291,6 +372,10 @@ export default async function PageCampagne({
           version={libelleVersion}
           etapes={version?.etapes.map((e) => e.intention) ?? []}
           prochain={prochain}
+          attente={attente}
+          enAnalyse={comptes.enAnalyse}
+          aRetenter={comptes.aRetenter}
+          ligneOccupee={ligneOccupee}
           restants={comptes.aAppeler}
           enAppel={comptes.enAppel > 0}
           appelOuvertNavigateur={campagne.ligne === 'navigateur' && ouvert?.etat === 'en-appel' ? ouvert.appelId : null}
@@ -309,7 +394,8 @@ export default async function PageCampagne({
             retires={comptes.retirees}
             finAnticipee={finAnticipee(campagne.entrees)}
             nombreEtapes={nombreEtapes}
-            ordre={campagne.entrees.flatMap((e) => ('appelId' in e ? [e.appelId] : []))}
+            // Dans l'ordre d'appel : les nouvelles tentatives d'un prospect tombent à leur heure, pas à sa place dans la file.
+            ordre={[...listeAppels].sort((x, y) => x.debutLe.getTime() - y.debutLe.getTime()).map((x) => x.id)}
             slug={entreprise.slug}
             simulee={campagne.ligne === 'simulation'}
           />
@@ -331,10 +417,9 @@ export default async function PageCampagne({
   );
 }
 
-/** Quand et par où la campagne a été terminée avant la fin, d'après les entrées qu'elle a retirées. */
-function finAnticipee(entrees: typeof campagnes.$inferSelect.entrees): { le: string; par: 'interface' | 'mcp' } | null {
-  const e = entrees.find((x) => x.etat === 'retiree' && x.motif === 'fin-anticipee');
-  return e?.etat === 'retiree' ? { le: e.le, par: e.par } : null;
+/** Quand et par où la campagne a été terminée avant la fin : la trace des entrées retirées, ou celle de l'appel qui était en ligne. */
+function finAnticipee(entrees: typeof campagnes.$inferSelect.entrees): { le: string; par: OrigineGeste } | null {
+  return traceDeFin({ entrees });
 }
 
 /** Ce qu'a donné une campagne terminée, calculé sur la page à partir de ses appels. */
@@ -350,6 +435,7 @@ function BilanCampagne({
 }: {
   appels: {
     id: string;
+    prospectId: string;
     statut: string;
     issue: string | null;
     issueSysteme: IssueSysteme | null;
@@ -358,7 +444,7 @@ function BilanCampagne({
   }[];
   sautes: number;
   retires: number;
-  finAnticipee: { le: string; par: 'interface' | 'mcp' } | null;
+  finAnticipee: { le: string; par: OrigineGeste } | null;
   nombreEtapes: number | null;
   ordre: string[];
   slug: string;
@@ -381,6 +467,9 @@ function BilanCampagne({
   const appelDe = new Map(liste.map((a) => [a.id, a]));
   const piste = ordre.map((id) => appelDe.get(id)).filter((a) => a !== undefined);
   const mot = simulee ? 'appels simulés' : 'appels';
+  // Un prospect sans réponse est rappelé : ses appels de plus sont des nouvelles tentatives, pas d'autres prospects.
+  const retentes = liste.length - new Set(liste.map((a) => a.prospectId)).size;
+  const dontRetentes = retentes > 0 ? `, dont ${retentes} nouvelle${retentes > 1 ? 's' : ''} tentative${retentes > 1 ? 's' : ''}` : '';
 
   let phrase: string;
   if (liste.length === 0) {
@@ -391,7 +480,7 @@ function BilanCampagne({
           ? `Aucun appel passé : ${retires} prospect${retires > 1 ? 's' : ''} retiré${retires > 1 ? 's' : ''} de la file.`
           : 'Aucun appel passé.';
   } else if (aboutis === 0) {
-    phrase = `Aucun appel abouti sur ${liste.length} ${mot}.`;
+    phrase = `Aucun appel abouti sur ${liste.length} ${mot}${dontRetentes}.`;
   } else {
     const taux = aboutis >= 10 ? ` · ${Math.round((rendezVous / aboutis) * 100)}\u00a0%` : '';
     phrase = `${rendezVous} rendez-vous sur ${aboutis} ${mot} aboutis${taux}`;
@@ -415,7 +504,13 @@ function BilanCampagne({
         {fin ? (
           <p className="text-sm text-encre-3">
             Terminée avant la fin le <span className="font-mono">{dateCourte(fin.le).replace(' ', ' à ')}</span>
-            {fin.par === 'mcp' ? ' par Claude Code' : ''} : les prospects restants n’ont pas été appelés.
+            {parQui(fin.par)} : les prospects restants n’ont pas été appelés.
+          </p>
+        ) : null}
+        {retentes > 0 && aboutis > 0 ? (
+          <p className="text-sm text-encre-3">
+            <span className="font-mono">{liste.length}</span> {mot}
+            {dontRetentes} : un prospect sans réponse est rappelé jusqu’à trois fois.
           </p>
         ) : null}
         {aboutis > 0 && aboutis < 10 ? (

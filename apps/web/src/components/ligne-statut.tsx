@@ -45,6 +45,19 @@ export function affichageLigne(e: EtatLigneClient): AffichageLigne {
         lien: { href: '/telephone', aria: `Ligne libre : ${VERS_TELEPHONE}` },
       };
     case 'en-appel':
+      if (e.ligne === 'telephone' && e.entrant) {
+        // Un prospect qui rappelle vit comme un appel sortant (antenne) ; un numéro inconnu sonne aussi sur la ligne prise.
+        return {
+          trait: 'plein',
+          couleurTrait: 'stroke-antenne',
+          couleurTexte: 'text-antenne',
+          libelle: e.appelId ? 'Appel entrant · téléphone' : 'Appel entrant · ça sonne',
+          court: 'Entrant',
+          lien: e.appelId
+            ? { href: `/appels/${e.appelId}`, aria: 'Appel entrant · téléphone : un prospect rappelle, rejoindre l’appel (suivi, écoute, prise de main)' }
+            : { href: '/telephone', aria: `Appel entrant : le téléphone sonne, ${VERS_TELEPHONE}` },
+        };
+      }
       return e.ligne === 'telephone'
         ? {
             trait: 'plein',

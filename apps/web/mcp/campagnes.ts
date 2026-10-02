@@ -45,7 +45,7 @@ export function outilsDeCampagnes(declarer: Declarer, serveur: McpServer): void 
   declarer(
     'sauter_dans_la_file',
     {
-      description: 'Renvoie un prospect encore à appeler en fin de file. N’appelle personne : une campagne en cours enchaîne sur le suivant comme d’habitude.',
+      description: 'Renvoie un prospect encore à appeler en fin de file, nouvelle tentative prévue comprise (elle garde son heure). N’appelle personne : une campagne en cours enchaîne sur le suivant comme d’habitude. Refusé pendant son appel ou le bilan de son appel, et quand il est déjà le dernier à appeler maintenant (seules des tentatives prévues plus tard le suivent : il resterait le prochain appelé).',
       entree: z.strictObject({ campagneId: champCampagne, prospect: champProspect }),
       annotations: ECRITURE,
     },
@@ -59,7 +59,7 @@ export function outilsDeCampagnes(declarer: Declarer, serveur: McpServer): void 
     'retirer_de_la_file',
     {
       description:
-        'Retire un prospect encore à appeler de la file : il ne sera pas appelé dans cette campagne (la trace reste). Retirer le dernier termine la campagne, après l’appel en cours. C’est un frein : il ne demande pas de confirmation.',
+        'Retire un prospect encore à appeler de la file : il ne sera pas appelé (de nouveau) dans cette campagne, la trace reste. Vaut aussi pour une nouvelle tentative prévue : c’est le geste pour qu’un prospect sans réponse ne soit pas rappelé. Retirer le dernier termine la campagne, après l’appel en cours et les bilans en cours. Refusé pendant son appel ou le bilan de son appel. C’est un frein : il ne demande pas de confirmation.',
       entree: z.strictObject({ campagneId: champCampagne, prospect: champProspect }),
       annotations: ECRITURE,
     },
@@ -73,7 +73,7 @@ export function outilsDeCampagnes(declarer: Declarer, serveur: McpServer): void 
     'terminer_campagne',
     {
       description:
-        'Termine une campagne avant la fin : chaque prospect encore à appeler est retiré (trace gardée). Aucun appel n’est coupé : l’appel en cours va à son terme et rien ne s’enchaîne. C’est un frein : il ne demande pas de confirmation.',
+        'Termine une campagne avant la fin : chaque prospect encore à appeler est retiré, nouvelles tentatives prévues comprises (trace gardée). Aucun appel n’est coupé : l’appel en cours va à son terme, rien ne s’enchaîne, et ni lui ni un bilan en cours ne créent plus de tentative. Accepté aussi quand il ne reste que l’appel en ligne (fin: apres-appel). C’est un frein : il ne demande pas de confirmation.',
       entree: z.strictObject({ campagneId: champCampagne }),
       annotations: ECRITURE,
     },

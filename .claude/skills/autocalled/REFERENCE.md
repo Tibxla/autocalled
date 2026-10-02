@@ -73,29 +73,29 @@ La page Assistante de l’interface (`/assistante`) fait la même chose que ces 
 
 | Outil | Entrées | Nature | Confirmation | Rôle |
 |---|---|---|---|---|
-| `lister_campagnes` | `entreprise?`, `statut?` | L | non | campagnes et avancement, de toutes les entreprises sans `entreprise` |
-| `lire_campagne` | `campagneId` | L | non | file détaillée (numéro appelable ou non à l’instant) |
+| `lister_campagnes` | `entreprise?`, `statut?` | L | non | campagnes et avancement (`aAppeler` dont `aRetenter`, `enAppel`, `enAnalyse`, `traites`…), heure de la prochaine tentative prévue, de toutes les entreprises sans `entreprise` |
+| `lire_campagne` | `campagneId` | L | non | file détaillée : numéro appelable ou non à l’instant, `tentative` (sur `tentativesMax`), `pasAvant` et `due` d’une nouvelle tentative, `appelsPrecedents`, état `en-analyse` (bilan en cours) ; prochain prospect dû, `prochaineTentativeLe` |
 | `nouvelle_campagne` | `entreprise`, `versionScriptId`, `ligne`, `prospects` | É | non | campagne prête, rien ne sonne |
 | `supprimer_campagne` | `campagneId` | É | non | campagne prête, jamais lancée |
-| `lancer_campagne` | `campagneId` | É ⇄ | oui sur le téléphone ; non en simulation ; refus en navigateur | lance ou reprend ; une campagne prête d’un script archivé est refusée |
+| `lancer_campagne` | `campagneId` | É ⇄ | oui sur le téléphone (la question distingue les prospects dus des nouvelles tentatives prévues, qui partiront seules) ; non en simulation ; refus en navigateur | lance ou reprend ; une campagne prête d’un script archivé est refusée ; rien de dû ou ligne occupée : la campagne reste en cours, `attente` dit pourquoi |
 | `suspendre_campagne` | `campagneId` | É | non | pause (frein) |
-| `sauter_dans_la_file` | `campagneId`, `prospect` | É | non | renvoie un prospect en fin de file |
-| `retirer_de_la_file` | `campagneId`, `prospect` | É | non | retire un prospect (frein) |
+| `sauter_dans_la_file` | `campagneId`, `prospect` | É | non | renvoie un prospect en fin de file (une tentative prévue garde son heure) |
+| `retirer_de_la_file` | `campagneId`, `prospect` | É | non | retire un prospect, nouvelle tentative prévue comprise (frein) |
 | `ajouter_a_la_campagne` | `campagneId`, `prospects` | É ⇄ | oui sur une campagne téléphone en cours | ajoute des prospects en fin de file |
-| `terminer_campagne` | `campagneId` | É | non | termine avant la fin (frein) |
+| `terminer_campagne` | `campagneId` | É | non | termine avant la fin, tentatives prévues retirées (frein) |
 
 ## Appels, bilans, analyse
 
 | Outil | Entrées | Nature | Confirmation | Rôle |
 |---|---|---|---|---|
-| `lister_appels` | `entreprise?`, `issue?`, `ligne?`, `version?`, `periode?`, `reels?`, `rappels?`, `recherche?`, `avant?`, `limite?`, `comptes?` | L | non | appels filtrés, paginés, comptés ; un filtre inconnu est refusé ; résumés dans le bloc balisé |
-| `lire_appel` | `appelId`, `transcription?` | L | non | appel, bilan, rendez-vous ; texte du bilan, citations et transcription balisés ; un appel purgé (`purgeLe`, `bilan.purge`) n’a plus que issue, étape et objections, sans bloc balisé |
-| `lancer_appel` | `entreprise`, `prospect`, `versionScriptId`, `ligne` | É ⇄ | oui sur le téléphone | appel d’un prospect (téléphone ou simulation) |
-| `raccrocher_appel` | `appelId` | É ⇄ | non | raccroche (frein) |
+| `lister_appels` | `entreprise?`, `issue?`, `ligne?`, `sens?` (`sortant`, `entrant`), `version?`, `periode?`, `reels?`, `rappels?`, `recherche?`, `avant?`, `limite?`, `comptes?` | L | non | appels filtrés, paginés, comptés, chacun avec son `sens` ; un filtre inconnu est refusé ; résumés dans le bloc balisé |
+| `lire_appel` | `appelId`, `transcription?` | L | non | appel, bilan, rendez-vous, `sens` (entrant : `numero` de l’appelant, sans campagne) ; texte du bilan, citations et transcription balisés ; un appel purgé (`purgeLe`, `bilan.purge`) n’a plus que issue, étape et objections, sans bloc balisé |
+| `lancer_appel` | `entreprise`, `prospect`, `versionScriptId`, `ligne` | É ⇄ | oui sur le téléphone | appel d’un prospect (téléphone ou simulation) ; refusé sans question tant qu’un appel, sortant ou entrant, occupe le téléphone |
+| `raccrocher_appel` | `appelId` | É ⇄ | non | raccroche un appel sortant ou un entrant décroché (frein) |
 | `relancer_analyse` | `appelId` | É ⇄ | non | recalcule le bilan ; refusé sur un appel purgé |
 | `analyser_versions` | `entreprise`, `avecSimules?` | L | non | chiffres par version de script, par configuration de l’assistante, par objection |
 | `rappels_du_jour` | aucune | L | non | rappels datés à faire aujourd’hui ou en retard ; moment dit par le prospect dans le bloc balisé |
-| `lire_journee` | aucune | L | non | appels et campagnes du jour ; résumés dans le bloc balisé |
+| `lire_journee` | aucune | L | non | appels du jour avec leur `sens` (les entrants : prospects qui ont rappelé), campagnes et leurs comptes (`aRetenter`, `enAnalyse`), appels composés sur le téléphone (entrants exclus, comme au plafond) ; résumés dans le bloc balisé |
 | `apercu_variables_appel` | `entreprise`, `prospect?`, `versionScriptId?` | L | non | variables et premier message que recevrait l’assistante, textes par défaut (`parDefaut`) et champs vides de la fiche non transmis (`nonTransmis`) ; contexte de la fiche et historique dans le bloc `<variables>` |
 
 ## Agenda
@@ -111,7 +111,7 @@ La page Assistante de l’interface (`/assistante`) fait la même chose que ces 
 
 | Outil | Entrées | Nature | Confirmation | Rôle |
 |---|---|---|---|---|
-| `etat_ligne` | aucune | L ⇄ | non | pont, téléphone, appel en cours, plafond, réglages, campagne ouverte |
+| `etat_ligne` | aucune | L ⇄ | non | pont, téléphone, appel en cours et son `sens`, `entrantEnCours` (un entrant sonne ou est décroché), plafond, réglages, campagne ouverte |
 | `regler_ligne` | `appelsParHeure?`, `appelsParJour?`, `pauseEntreAppelsS?` | É | oui pour desserrer ; non pour resserrer | plafonds et pause |
 | `reconnecter_telephone` | aucune | É ⇄ | non | relance la liaison Bluetooth |
 
@@ -124,6 +124,8 @@ La page Assistante de l’interface (`/assistante`) fait la même chose que ces 
 ## Ce qui reste hors du MCP
 
 - Appeler par la ligne navigateur, prendre la main : il faut le micro et la voix de l’opérateur (ADR 0008).
+- Décrocher un appel entrant : le pont le fait seul pour un prospect connu, et laisse sonner un numéro inconnu sans rien écrire (ADR 0018). Aucun outil ne décroche ni ne rejette un appel qui sonne.
+- Le nombre de tentatives (`TENTATIVES_MAX`, 3) et leurs heures (9 h, 14 h, heure de Paris), en dur dans le domaine (ADR 0017). Le réveil des campagnes (`autocalled-reveil.timer`, toutes les 5 minutes) classe les bilans perdus et relance une campagne téléphone dont une entrée est due ; `pnpm reveil --essai` dans un terminal, pas par le MCP.
 - Appairer ou oublier le téléphone, connecter ou déconnecter Google : gestes physiques ou autorisation OAuth, dans l’interface.
 - Annuler ou déplacer un rendez-vous : l’invitation est déjà partie, cela se fait dans Google Agenda.
 - Modifier ou supprimer une version de script, supprimer un script ou une objection, changer le rattachement d’une issue personnalisée : on crée une version, on archive.

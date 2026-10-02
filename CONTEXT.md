@@ -49,11 +49,23 @@ Une liste de prospects d'une même entreprise, appelés l'un après l'autre avec
 _Avoid_ : batch, séquence, vague, liste d'appels
 
 **File** :
-L'ordre dans lequel une campagne appelle ses prospects. Tant que la campagne n'est pas terminée, l'opérateur la modifie sans couper l'appel en cours : sauter un prospect le renvoie en fin de file, le retirer l'écarte de la campagne en gardant la trace, ajouter des prospects les place à la fin, terminer retire tous ceux qui restent et laisse l'appel en cours aller à son terme. Un prospect dont le numéro n'est plus appelable au moment de son tour (personne effacée entre-temps) n'est pas appelé : il est « non appelable ».
+L'ordre dans lequel une campagne appelle ses prospects. Tant que la campagne n'est pas terminée, l'opérateur la modifie sans couper l'appel en cours : sauter un prospect le renvoie en fin de file, le retirer l'écarte de la campagne en gardant la trace, ajouter des prospects les place à la fin, terminer retire tous ceux qui restent (nouvelles tentatives à venir comprises) et laisse l'appel en cours aller à son terme. Un prospect dont le numéro n'est plus appelable au moment de son tour (personne effacée entre-temps) n'est pas appelé : il est « non appelable ». Un prospect qui n'a pas répondu garde sa place pour sa nouvelle tentative ; la campagne appelle le premier prospect dont l'heure est venue.
 _Avoid_ : queue, liste d'attente, pile
 
+**Tentative** :
+Un appel de campagne vers un prospect. Trois tentatives au plus par prospect et par campagne, la première comprise ; son entrée de file garde le numéro de la tentative et les appels des précédentes.
+_Avoid_ : essai, relance, retry
+
+**Nouvelle tentative** :
+La tentative suivante, prévue quand un appel de campagne finit « Non abouti » : le lendemain, week-end compris, au moment opposé de la journée (appel fini avant 13 h : 14 h ; à partir de 13 h : 9 h, heure de Paris). Le prospect garde sa place dans la file et passe avant ceux qui le suivent dès que l'heure est venue. Elle est retirée si le prospect rappelle et parle à l'assistante (ADR 0017).
+_Avoid_ : relance, rappel (réservé au rappel convenu avec le prospect), retry
+
+**Bilan en cours** :
+L'état d'une entrée de file dont l'appel est fini et dont le bilan n'est pas encore écrit (`en-analyse`). La file continue, mais la campagne ne peut pas se terminer : un bilan « Non abouti » remettrait le prospect en file pour une nouvelle tentative.
+_Avoid_ : en attente, en traitement
+
 **Appel** :
-Une conversation téléphonique entre l'assistante et un prospect, lancée par l'opérateur.
+Une conversation téléphonique entre l'assistante et un prospect, lancée par l'opérateur (directement ou par une campagne), ou par le prospect qui rappelle (appel entrant). Chaque appel garde son sens : sortant ou entrant.
 _Avoid_ : call, conversation, session
 
 **Assistante** :
@@ -61,7 +73,7 @@ L'agent vocal IA unique qui passe tous les appels, sous un nom choisi par l'opé
 _Avoid_ : agent, bot, IA, voicebot
 
 **Premier message** :
-La phrase que l'assistante dit quand le prospect se tait au décroché (« Allô ? » par défaut). Réglé en base avec son nom, il vaut dès l'appel suivant ; quand le prospect parle le premier, c'est le prompt qui décide de la réponse.
+La phrase que l'assistante dit quand le prospect se tait au décroché (« Allô ? » par défaut). Réglé en base avec son nom, il vaut dès l'appel suivant ; quand le prospect parle le premier, c'est le prompt qui décide de la réponse. Un appel entrant a son propre accueil, fixe, dit dès que la ligne s'ouvre : « Allô, oui bonjour, {nom de l'assistante} à l'appareil. »
 _Avoid_ : accroche, message d'accueil, first message
 
 **Configuration de l'assistante** :
@@ -111,11 +123,11 @@ Issue plus précise qu'une entreprise ajoute à sa liste, toujours rattachée à
 _Avoid_ : sous-issue, tag
 
 **Non abouti** :
-Issue système d'un appel où aucune conversation n'a eu lieu (pas de réponse, messagerie, occupé) ; exclue des taux de conversion car elle ne dit rien du script.
+Issue système d'un appel où personne n'a vraiment répondu : pas de décroché, occupé, messagerie, répondeur ou filtre d'appel automatique, même si l'assistante y a dit quelques mots. Exclue des taux de conversion car elle ne dit rien du script ; dans une campagne, elle donne lieu à une nouvelle tentative.
 _Avoid_ : échec, raté
 
 **Rappel convenu** :
-Issue système où le prospect demande à être rappelé à un moment précis ; la fiche du prospect affiche alors ce rappel à faire. Il reste à faire jusqu'au prochain appel vers ce prospect, qu'il décroche ou non ; un appel simulé ne compte pas.
+Issue système où le prospect demande à être rappelé à un moment précis ; la fiche du prospect affiche alors ce rappel à faire. Il reste à faire jusqu'au prochain appel vers ce prospect, qu'il décroche ou non ; un appel simulé ne compte pas, un appel entrant seulement s'il a eu une conversation.
 _Avoid_ : relance, callback
 
 **Rappel daté** :
@@ -166,8 +178,12 @@ _Avoid_ : faux appel, test automatique
 Téléphone dédié, posé à côté du serveur et appairé en Bluetooth, qui compose les appels de l'assistante avec sa propre carte SIM.
 _Avoid_ : modem, gateway, kit mains-libres
 
+**Appel entrant** :
+Appel d'un prospect qui rappelle le téléphone passerelle. L'assistante décroche seulement un prospect connu, déjà appelé pour de vrai ; un numéro inconnu ou masqué sonne jusqu'à la messagerie, et rien n'en est gardé (ADR 0018). Hors campagne et hors plafond.
+_Avoid_ : appel reçu, inbound, rappel (réservé au rappel convenu)
+
 **Garde-fous** :
-Les limites de la ligne téléphone, réglées par l'opérateur : appels par heure, appels par jour, pause entre deux appels. Un appel qui dépasserait un plafond ne part pas ; les desserrer demande une confirmation.
+Les limites de la ligne téléphone, réglées par l'opérateur : appels par heure, appels par jour, pause entre deux appels. Un appel qui dépasserait un plafond ne part pas ; les desserrer demande une confirmation. Seuls les appels sortants comptent aux plafonds.
 _Avoid_ : quota, rate limit, limites
 
 **Prise de main** :

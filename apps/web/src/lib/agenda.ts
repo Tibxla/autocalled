@@ -99,10 +99,15 @@ export async function etatAgenda() {
   return ligne ?? null;
 }
 
-/** Relance une lecture en tâche de fond si la copie a plus de dix minutes. À appeler au début d'un appel. */
-export async function rafraichirSiAncien(): Promise<void> {
+/**
+ * Relance une lecture en tâche de fond si la copie a plus de dix minutes. À appeler au début d'un appel. `attendre` :
+ * la lecture est attendue (hors de Next, un script qui rend la main ensuite la couperait).
+ */
+export async function rafraichirSiAncien({ attendre = false }: { attendre?: boolean } = {}): Promise<void> {
   const etat = await etatAgenda();
-  if (!etat || Date.now() - etat.synchroniseLe.getTime() > FRAICHEUR_MINUTES * 60_000) enFond(() => synchroniserAgenda());
+  if (etat && Date.now() - etat.synchroniseLe.getTime() <= FRAICHEUR_MINUTES * 60_000) return;
+  if (attendre) await synchroniserAgenda();
+  else enFond(() => synchroniserAgenda());
 }
 
 /** Plages occupées : la copie de l'agenda, plus les rendez-vous déjà pris par Mina et pas encore relus. */

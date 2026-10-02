@@ -24,6 +24,8 @@ export type EtatBarre = {
   connecte: boolean;
   appelEnCours: boolean;
   appelId: string | null;
+  /** L'appel sur la ligne est entrant : un prospect qui rappelle (avec `appelId`), ou un numéro inconnu qui sonne (sans). */
+  entrant: boolean;
   /** Heure du décroché de l'appel en cours (ms depuis l'epoch), donnée par le pont ; null avant ou s'il ne la donne pas. */
   decrocheLe: number | null;
   /** Plafond atteint : `jusqua` est l'heure du prochain appel possible (ms), null si le pont ne la donne pas. */
@@ -41,7 +43,7 @@ export async function campagneOuverte(): Promise<CampagneBarre | null> {
       entreprise: entreprises.nom,
       statut: campagnes.statut,
       total: sql<number>`jsonb_array_length(${campagnes.entrees})`.mapWith(Number),
-      traites: sql<number>`(select count(*) from jsonb_array_elements(${campagnes.entrees}) e where e->>'etat' in ('appelee', 'sautee', 'retiree'))`.mapWith(
+      traites: sql<number>`(select count(*) from jsonb_array_elements(${campagnes.entrees}) e where e->>'etat' in ('appelee', 'en-analyse', 'sautee', 'retiree'))`.mapWith(
         Number,
       ),
     })
@@ -56,14 +58,17 @@ export async function campagneOuverte(): Promise<CampagneBarre | null> {
 
 export async function etatPourLaBarre(): Promise<EtatBarre> {
   const [pont, campagne] = await Promise.all([commanderPont('/etat'), campagneOuverte()]);
-  if (!pont.ok) return { pont: false, connecte: false, appelEnCours: false, appelId: null, decrocheLe: null, plafond: null, campagne };
+  if (!pont.ok) return { pont: false, connecte: false, appelEnCours: false, appelId: null, entrant: false, decrocheLe: null, plafond: null, campagne };
   const c = pont.corps;
   const appelEnCours = Boolean(c.appelEnCours);
+  const appelId = typeof c.appelId === 'string' ? c.appelId : null;
   return {
     pont: true,
     connecte: Boolean(c.connecte),
     appelEnCours,
-    appelId: typeof c.appelId === 'string' ? c.appelId : null,
+    appelId,
+    // Un entrant qui sonne pendant un appel sortant reste en attente : la ligne suit le sortant.
+    entrant: c.sens === 'entrant' || (appelId === null && Boolean(c.entrantEnCours)),
     decrocheLe: appelEnCours ? nombre(c.decrocheLe) : null,
     plafond: typeof c.plafond === 'string' ? { jusqua: nombre(c.plafondJusqua) } : null,
     campagne,

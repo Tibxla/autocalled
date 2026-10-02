@@ -15,6 +15,7 @@ export function SuiviTelephone({
   debutLe,
   finLe,
   conversation = false,
+  entrant = false,
   identite,
   libelleProspect,
   etapes,
@@ -27,6 +28,8 @@ export function SuiviTelephone({
   finLe?: string | null;
   /** Un identifiant de conversation existe : le rapatriement est possible si le fil se perd. */
   conversation?: boolean;
+  /** Le prospect a rappelé : ni composition ni sonnerie à dire, l'assistante décroche. */
+  entrant?: boolean;
   identite?: IdentiteAppel;
   /** Prénom affiché dans le fil quand `identite` manque. */
   libelleProspect?: string;
@@ -41,6 +44,7 @@ export function SuiviTelephone({
       condensee
       statut={statut}
       conversation={conversation}
+      entrant={entrant}
       {...(debutLe ? { debutLe } : {})}
       {...(finLe !== undefined ? { finLe } : {})}
       {...(identite ? { identite } : {})}

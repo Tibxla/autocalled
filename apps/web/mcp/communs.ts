@@ -153,6 +153,7 @@ export async function vueAppel(appelId: string, o: { transcription?: boolean } =
       versionScriptId: a.versionScriptId,
       libelleVersion: version ? `${script?.nom ?? 'Script'} · v${version.numero}` : null,
       ligne: a.ligne,
+      sens: a.sens,
       statut: a.statut,
       erreur: a.erreur,
       debutLe: a.debutLe,

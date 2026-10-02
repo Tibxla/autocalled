@@ -33,7 +33,11 @@ export type FiltresAppels = {
   reels?: boolean;
   /** Seulement les rappels convenus encore à faire (aucun appel plus récent vers le prospect). */
   rappels?: boolean;
+  /** `sortant` (l'assistante appelle) ou `entrant` (le prospect a rappelé le téléphone passerelle). */
+  sens?: string;
 };
+
+export const SENS = ['sortant', 'entrant'] as const;
 
 const FORME_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -97,6 +101,7 @@ function conditionsAppels(f: FiltresAppels, { sansIssue = false } = {}): SQL[] {
   const periode = conditionPeriode(f.periode);
   if (periode) conditions.push(periode);
   if (f.rappels) conditions.push(RAPPEL_A_FAIRE);
+  if (f.sens && (SENS as readonly string[]).includes(f.sens)) conditions.push(eq(appels.sens, f.sens as (typeof SENS)[number]));
   const q = f.recherche?.trim();
   if (q) {
     // Cherche dans le nom du prospect, sa société, le résumé du bilan et toute la transcription.
@@ -156,6 +161,7 @@ export async function pageAppels(f: FiltresAppels, { taille, avant, ordre = 'deb
       id: appels.id,
       debutLe: appels.debutLe,
       ligne: appels.ligne,
+      sens: appels.sens,
       statut: appels.statut,
       issueSysteme: appels.issueSysteme,
       issue: appels.issue,
@@ -279,7 +285,8 @@ const VERSION_AGENT_INCONNUE = 'inconnue';
 
 /**
  * Chiffres de l'écran d'analyse : par version de script (dans l'ordre des scripts, la plus récente d'abord)
- * et par objection. Les appels simulés sont exclus sauf demande, et toujours comptés à part.
+ * et par objection, sur les appels sortants seulement (un prospect qui rappelle n'a pas entendu l'accroche). Les
+ * appels simulés sont exclus sauf demande, et toujours comptés à part.
  */
 export async function analyseEntreprise(entrepriseId: string, avecSimules: boolean) {
   const [lignes, versions, listeObjections] = await Promise.all([
@@ -292,7 +299,8 @@ export async function analyseEntreprise(entrepriseId: string, avecSimules: boole
         bilan: appels.bilan,
       })
       .from(appels)
-      .where(and(eq(appels.entrepriseId, entrepriseId), eq(appels.statut, 'termine'), isNotNull(appels.issueSysteme))),
+      // Les appels entrants à part : leur accroche n'est pas celle d'une version de script.
+      .where(and(eq(appels.entrepriseId, entrepriseId), eq(appels.sens, 'sortant'), eq(appels.statut, 'termine'), isNotNull(appels.issueSysteme))),
     versionsDeLEntreprise(entrepriseId),
     db.select().from(objections).where(eq(objections.entrepriseId, entrepriseId)),
   ]);

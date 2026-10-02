@@ -3,11 +3,13 @@
 N'écoute que sur 127.0.0.1. Chaque requête porte `Authorization: Bearer $PONT_SECRET`, et le pont
 présente le même secret à l'application quand il la rappelle (`$WEB_URL/api/pont/…`).
 
-    GET  /etat                        le téléphone passerelle, l'appel en cours (décroché), le plafond
+    GET  /etat                        le téléphone passerelle, l'appel en cours (décroché) et son sens, le plafond ;
+                                      `appelEnCours` et `entrantEnCours` sont vrais dès qu'un appel entrant sonne
     POST /appels                      {appelId, numero, variables, motsCles, premierMessage?, ouverture?} : compose ;
                                       premierMessage est la phrase dite si le prospect se tait au décroché (« Allô ? »
                                       sans elle), ouverture celle dite juste après un accueil court (sans elle, le
                                       modèle ouvre)
+                                      ; 409 tant qu'un appel est en cours, entrant compris (même s'il sonne sans réponse)
     POST /appels/<id>/raccrocher
     GET  /appels/<id>/evenements      fil de l'appel en SSE (états, tours de parole, étapes du plan), rejoué depuis le début ;
                                       s'y glissent, sans `id:` et sans rejeu, les niveaux des deux voix (voir plus bas)
@@ -25,8 +27,18 @@ Prise de main (ADR 0008), WebSocket sur 127.0.0.1:PONT_PORT_WS, joint par `tails
                    accepté seulement si l'en-tête Tailscale-User-Login est celui de l'opérateur (ADR 0006)
                    et si l'en-tête Origin est celui de l'interface (ORIGINE_APP).
 
+Appel entrant (ADR 0018) : à sa sonnerie, ligne libre et numéro reçu, le pont demande à l'application qui appelle,
+    POST $WEB_URL/api/pont/entrants   {numero} brut, tel que le téléphone le donne (l'application le normalise)
+                                      → {decrocher: true, appelId, variables, motsCles, premierMessage} : Mina décroche
+                                        et ouvre aussitôt par premierMessage ; l'appel suit ensuite le chemin d'un
+                                        sortant (fil, écoute, prise de main, rappels `/api/pont/appels/<id>/…`,
+                                        bilan avec "sens": "entrant") ;
+                                      → {decrocher: false}, une erreur ou plus de 3 s : le téléphone sonne, sans réponse.
+    Un entrant ne compte pas au plafond et n'est jamais recomposé. Le pont ne raccroche jamais un entrant qu'il ne
+    prend pas : il sonne jusqu'à la messagerie.
+
 Fil d'un appel (`data:` de chaque message SSE, JSON). `t` : heure du pont, en millisecondes depuis l'epoch.
-    id: n   {"type": "etat", "etat": "composition" | "alerting" | "active" | "prise-en-main" | …, "t": …}
+    id: n   {"type": "etat", "etat": "composition" | "entrant" | "alerting" | "active" | "prise-en-main" | …, "t": …}
     id: n   {"type": "tour", "role": "agent" | "prospect", "texte": "…", "t": …}
             {"type": "niveaux", "t": …, "pasMs": 50, "mina": [0.42, 0.1], "prospect": [0, 0.07]}
 Les niveaux (RMS de chaque fenêtre de `pasMs`, ramenés sur [0, 1], voir `audio.Niveaux`) arrivent par lots d'un
@@ -36,6 +48,7 @@ main. Ils ne portent pas d'`id:` : une reconnexion reprend au dernier état ou t
 """
 import asyncio
 import hmac
+import http.client
 import json
 import os
 import queue
@@ -58,7 +71,7 @@ from websockets.exceptions import ConnectionClosed
 from .appairage import Appairage
 from .appel import Appel, Journal, ouverture_valide, premier_message_valide
 from .audio import NIVEAU_PAS_MS
-from .ofono import Telephone, dans_glib
+from .ofono import LigneOccupee, Telephone, dans_glib, masquer
 from .plafond import Plafond
 from .reglages import Reglages
 
@@ -114,6 +127,50 @@ class RappelsWeb:
             self._poster_avec_relances("fin", bilan)
         except (urllib.error.URLError, TimeoutError) as e:
             self.journal("l'application n'a pas reçu la fin de l'appel :", e)
+
+
+DELAI_ENTRANT_S = 3.0  # l'appelant entend sonner pendant la question : au-delà, on laisse sonner
+APPEL_ID = re.compile(r"[0-9a-f-]{36}")
+
+
+def lire_decision_entrant(corps: Any) -> dict[str, Any] | None:
+    """La réponse de l'application à un appel entrant, si elle dit de décrocher et qu'elle est complète ; sinon None."""
+    if not isinstance(corps, dict) or corps.get("decrocher") is not True:
+        return None
+    appel_id, variables, mots_cles = corps.get("appelId"), corps.get("variables", {}), corps.get("motsCles", [])
+    if not isinstance(appel_id, str) or not APPEL_ID.fullmatch(appel_id):
+        return None
+    if not isinstance(variables, dict) or not isinstance(mots_cles, list):
+        return None
+    return {
+        "appelId": appel_id,
+        "variables": dict(variables),
+        "motsCles": list(mots_cles),
+        "premierMessage": premier_message_valide(corps.get("premierMessage")),
+    }
+
+
+def demander_entrant(web: str, secret: str, numero: str, delai: float = DELAI_ENTRANT_S) -> tuple[dict[str, Any] | None, str]:
+    """Demande à l'application si elle décroche cet appel entrant : (décision, motif pour le journal). La décision
+    est None pour un inconnu, une réponse illisible, une erreur ou un délai dépassé : le téléphone sonne alors."""
+    requete = urllib.request.Request(
+        f"{web.rstrip('/')}/api/pont/entrants",
+        data=json.dumps({"numero": numero}).encode(),
+        headers={"content-type": "application/json", "authorization": f"Bearer {secret}"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(requete, timeout=delai) as r:
+            corps = json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        e.close()
+        return None, f"l'application a répondu {e.code}"
+    except (OSError, ValueError, http.client.HTTPException) as e:  # application absente, délai dépassé, réponse tronquée, JSON illisible
+        return None, f"l'application n'a pas répondu ({e})"
+    decision = lire_decision_entrant(corps)
+    if decision is None:
+        return None, "numéro inconnu de l'application" if isinstance(corps, dict) and corps.get("decrocher") is False else "réponse illisible"
+    return decision, "prospect reconnu"
 
 
 def lot_de_niveaux(releves: list[tuple[int, float, float]]) -> dict[str, Any]:
@@ -189,6 +246,7 @@ class Service:
         self._bus = dbus.SystemBus()
         self._boucle = GLib.MainLoop()
         self._telephone = Telephone(self._bus, self.journal)
+        self._telephone.sur_entrant = self._sur_entrant
         self._appairage = Appairage(self._bus, self.journal)
         self._appels: dict[str, Appel] = {}
         self._verrou = threading.Lock()
@@ -223,9 +281,11 @@ class Service:
 
     def etat(self) -> dict[str, Any]:
         en_cours = next((i for i, a in self._appels.items() if not a.fini()), None)
+        appel = self._appels.get(en_cours) if en_cours else None
         return {
             **dans_glib(self._telephone.etat),
             "appelId": en_cours,
+            "sens": appel.sens if appel else None,
             **etat_du_plafond(self._plafond),
             # .get : l'appel peut être oublié entre les deux lectures (fin d'appel), sans faire tomber /etat.
             "decrocheLe": decroche_le(self._appels.get(en_cours)) if en_cours else None,
@@ -249,6 +309,8 @@ class Service:
             return 400, {"erreur": "numero doit être un numéro au format international (+33…)"}
         with self._verrou:
             if not self._telephone.libre():
+                if self._telephone.entrant_en_cours():
+                    return 409, {"erreur": "Un appel entrant est en cours sur le téléphone."}
                 return 409, {"erreur": "Un appel est déjà en cours sur le téléphone."}
             if raison := self._plafond.refus():
                 return 429, {"erreur": raison}
@@ -271,6 +333,11 @@ class Service:
             self._appels[appel_id] = appel
             try:
                 dans_glib(appel.lancer)
+            except LigneOccupee as e:
+                # Un prospect rappelle depuis la lecture de `libre()` : rien n'est composé ni compté au plafond.
+                self._appels.pop(appel_id, None)
+                appel.journal("composition refusée :", e)
+                return 409, {"erreur": f"Ligne occupée : {e}."}
             except TimeoutError as e:
                 # La composition est programmée et peut encore partir : elle est annulée, ou raccrochée si elle part.
                 appel.annuler()
@@ -283,6 +350,64 @@ class Service:
                 return 503, {"erreur": f"Composition impossible : {e}"}
             threading.Thread(target=self._oublier_a_la_fin, args=(appel_id,), daemon=True).start()
         return 202, {"ok": True}
+
+    def _sur_entrant(self, chemin: str, numero: str, generation: int | None = None) -> None:
+        """Depuis le thread GLib : la question à l'application prend jusqu'à 3 s, elle part dans un thread à part."""
+        threading.Thread(target=self._evaluer_entrant, args=(chemin, numero, generation), daemon=True, name="entrant").start()
+
+    def _evaluer_entrant(self, chemin: str, numero: str, generation: int | None = None) -> None:
+        """Décroche un appel entrant si l'application reconnaît un prospect, sinon le laisse sonner. Sous le verrou des
+        compositions : un `POST /appels` simultané attend la décision (et reçoit 409 tant que l'entrant est là)."""
+        with self._verrou:
+            # Un appel précédent qui n'a pas fini son bilan occupe encore l'application : on ne crée pas de ligne
+            # `appels` qu'on ne pourrait pas tenir.
+            if self._telephone.en_appel() or any(not a.fini() for a in list(self._appels.values())):
+                self.journal("appel entrant du", masquer(numero), "pendant un appel : il sonne sans réponse")
+                self._laisser_sonner(chemin, generation)
+                return
+            decision, motif = demander_entrant(self._web, self._secret, numero)
+            self.journal("appel entrant du", masquer(numero), ":", motif)
+            if decision is None:
+                self._laisser_sonner(chemin, generation)
+                return
+            appel_id = decision["appelId"]
+            rappels = RappelsWeb(self._web, self._secret, appel_id, self.journal)
+            try:
+                appel = Appel(
+                    self._telephone,
+                    numero,
+                    decision["variables"],
+                    decision["motsCles"],
+                    self._cles,
+                    self._dossier,
+                    appel_id,
+                    rappels,
+                    decision["premierMessage"],
+                    entrant=chemin,  # hors plafond : il ne compte que les compositions
+                    generation=generation,
+                )
+            except Exception as e:
+                # La ligne `appels` existe déjà côté application : elle doit recevoir sa fin.
+                self.journal("appel entrant impossible à préparer :", e)
+                self._laisser_sonner(chemin, generation)
+                threading.Thread(
+                    target=rappels.fin, args=({"raison": "décroché impossible", "conversationId": None, "sens": "entrant"},), daemon=True
+                ).start()
+                return
+            rappels.journal = appel.journal
+            self._appels[appel_id] = appel
+            try:
+                dans_glib(appel.decrocher)
+            except TimeoutError as e:
+                appel.journal("décroché impossible :", e)
+                appel.annuler()  # la fin part vers l'application ; raccroché s'il a été pris entre-temps
+            threading.Thread(target=self._oublier_a_la_fin, args=(appel_id,), daemon=True).start()
+
+    def _laisser_sonner(self, chemin: str, generation: int | None = None) -> None:
+        try:
+            dans_glib(lambda: self._telephone.laisser_sonner(chemin, generation))
+        except Exception as e:
+            self.journal("canal son de l'appel entrant non rendu :", e)
 
     def raccrocher(self, appel_id: str) -> tuple[int, dict[str, Any]]:
         appel = self._appels.get(appel_id)

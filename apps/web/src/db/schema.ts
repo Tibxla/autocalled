@@ -156,6 +156,9 @@ export const ligne = pgEnum('ligne', ['navigateur', 'simulation', 'bluetooth', '
  */
 export const statutAppel = pgEnum('statut_appel', ['en-cours', 'traitement', 'termine', 'echec']);
 
+/** Qui a appelé : l'assistante (`sortant`), ou un prospect qui rappelle le téléphone passerelle (`entrant`, ADR 0018). */
+export const sensAppel = pgEnum('sens_appel', ['sortant', 'entrant']);
+
 export const campagnes = pgTable('campagnes', {
   id: uuid().primaryKey().defaultRandom(),
   entrepriseId: uuid()
@@ -182,7 +185,9 @@ export const appels = pgTable('appels', {
     .references(() => versionsScript.id),
   campagneId: uuid().references(() => campagnes.id, { onDelete: 'set null' }),
   ligne: ligne().notNull(),
-  /** Le numéro composé, tel que vérifié au moment de l'appel. */
+  /** Un appel entrant n'a pas de campagne et ne compte pas au plafond du pont. */
+  sens: sensAppel().notNull().default('sortant'),
+  /** Le numéro composé, tel que vérifié au moment de l'appel ; pour un appel entrant, celui de l'appelant. */
   numero: text().notNull(),
   conversationId: text().unique(),
   /** Version de l'agent ElevenLabs qui a parlé : les bilans comparent aussi cela. */

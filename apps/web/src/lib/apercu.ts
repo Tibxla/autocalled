@@ -45,6 +45,7 @@ export const VARIABLES_DU_PROSPECT: readonly CleVariable[] = [
   'prospect_societe',
   'prospect_contexte',
   'prospect_email',
+  'situation_appel',
   'historique_appels',
 ];
 
@@ -66,6 +67,8 @@ export async function variablesPour(
   prospect: ProspectAppel | null,
   etapes: Etape[],
   maintenant: Date,
+  /** `situation` : qui appelle qui, composé pour un appel entrant ; absent, l'assistante a appelé (appel sortant). */
+  { situation }: { situation?: string } = {},
 ): Promise<{
   variables: VariablesDeLAppel;
   motsCles: string[];
@@ -101,6 +104,7 @@ export async function variablesPour(
       // Un bilan purgé (durée de conservation, ADR 0014) n'a plus de résumé : l'issue seule reste.
       resume: bilanEntier(p.bilan)?.resume ?? '',
     })),
+    situation,
     maintenant,
     fuseau: entreprise.fuseau,
   });

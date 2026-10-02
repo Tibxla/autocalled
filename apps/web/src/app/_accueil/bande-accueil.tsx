@@ -78,6 +78,7 @@ export function BandeAccueil({
           identite: s.appel
             ? {
                 prospect: s.appel.prospect,
+                entrant: s.appel.entrant,
                 societe: s.appel.societe,
                 entreprise: s.appel.entreprise,
                 version: s.appel.version,
@@ -96,6 +97,7 @@ export function BandeAccueil({
             statut: 'traitement' as const,
             identite: identiteFin ?? {
               prospect: s.appel.prospect,
+              entrant: s.appel.sens === 'entrant',
               societe: s.appel.societe,
               entreprise: s.appel.entreprise,
               lien: lienAppel(s.appel.id),
@@ -153,6 +155,22 @@ function SansAppel({
 }) {
   switch (s.type) {
     case 'appel':
+      // Un appel entrant sonne sans appel suivi : un numéro que l'application ne connaît pas, ou la décision en cours.
+      if (ligne.joignable && ligne.entrantEnCours && !s.appelId) {
+        return (
+          <Cadre
+            etiquette="Appel entrant"
+            titre="Appel entrant · ça sonne"
+            phrase="Quelqu’un appelle le téléphone passerelle."
+            detail="L’assistante ne décroche que pour un prospect déjà appelé ; un numéro inconnu sonne jusqu’à la messagerie, et rien n’en est gardé."
+            actions={
+              <LienAction ton="fort" href="/telephone" className={GESTE_PLEIN}>
+                Ouvrir Téléphone
+              </LienAction>
+            }
+          />
+        );
+      }
       return (
         <Cadre
           etiquette="Appel en cours"
@@ -391,7 +409,7 @@ function useReconnexionLibre(ligne: EtatLigneServeur, echec: string | null = nul
 /* ------------------------------------------------------------------ fin d'appel */
 
 function FinAppel({ appel: a, bloquee, ligne }: { appel: AppelDuJour; bloquee: boolean; ligne: EtatLigneServeur }) {
-  const qui = `${a.prospect}${a.societe ? `, ${a.societe}` : ''} · ${a.entreprise}${a.ligne === 'simulation' ? ' · simulé' : ''}`;
+  const qui = `${a.prospect}${a.societe ? `, ${a.societe}` : ''} · ${a.entreprise}${a.ligne === 'simulation' ? ' · simulé' : ''}${a.sens === 'entrant' ? ' · a rappelé' : ''}`;
   const reconnexion = useReconnexionLibre(ligne, a.statut === 'echec' ? a.erreur : null);
 
   if (a.statut === 'traitement') {
@@ -542,20 +560,33 @@ function SuspendreEnAppel({ campagne: c }: { campagne: CampagneJour }) {
 function EntreDeux({ campagne: c, ligne }: { campagne: CampagneJour; ligne: EtatLigneServeur }) {
   const { enCours, erreur, suspendre } = useSuspendre(c.id);
   const pause = c.ligne === 'bluetooth' && ligne.joignable && ligne.reglages ? ligne.reglages.pauseEntreAppelsS : null;
+  // Plus rien de dû mais des prospects à rappeler plus tard : la campagne attend, parfois toute une nuit.
+  const attente = !c.prochain ? c.prochaineTentative : null;
   return (
     <Cadre
       etiquette="Campagne en cours"
-      titre="Entre deux appels"
+      titre={attente ? 'En attente de la prochaine tentative' : 'Entre deux appels'}
       contexte={identiteCampagne(c)}
       phrase={
         c.prochain
           ? `Suivant : ${c.prochain.nom}${c.prochain.societe ? `, ${c.prochain.societe}` : ''}`
-          : 'Plus aucun prospect à appeler : la campagne se termine.'
+          : attente
+            ? `Prochaine tentative ${attente.quand}`
+            : c.comptes.enAnalyse > 0
+              ? 'Plus personne à appeler pour l’instant : la campagne attend le bilan du dernier appel.'
+              : 'Plus aucun prospect à appeler : la campagne se termine.'
       }
       detail={
         <>
           <span className="font-mono">{c.comptes.traites}</span> traités sur <span className="font-mono">{c.comptes.total}</span>
-          {pause !== null ? (
+          {attente ? (
+            <>
+              {' '}
+              · <span className="font-mono">{attente.nombre}</span> à rappeler,{' '}
+              {c.ligne === 'bluetooth' ? 'la campagne repart seule à cette heure-là' : 'à relancer à cette heure-là'}
+            </>
+          ) : null}
+          {pause !== null && !attente ? (
             <>
               {' '}
               · pause de <span className="font-mono">{pause}</span> s entre deux appels, réglée sur{' '}

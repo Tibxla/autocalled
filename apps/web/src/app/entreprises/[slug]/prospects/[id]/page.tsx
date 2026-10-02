@@ -38,7 +38,8 @@ async function lirePlafonds(): Promise<PlafondsLigne> {
   try {
     const [reglages, passes24h] = await Promise.all([
       Promise.race([reglagesDuPont(), delai]),
-      db.$count(appels, and(eq(appels.ligne, 'bluetooth'), gte(appels.debutLe, borne))),
+      // Les compositions seulement, comme le plafond du pont : un prospect qui rappelle n'y compte pas.
+      db.$count(appels, and(eq(appels.ligne, 'bluetooth'), eq(appels.sens, 'sortant'), gte(appels.debutLe, borne))),
     ]);
     return { reglages, passes24h };
   } catch {

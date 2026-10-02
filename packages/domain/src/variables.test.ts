@@ -124,6 +124,17 @@ describe('variablesDeLAppel', () => {
     expect(variablesDeLAppel({ ...contexte, prospect: { ...contexte.prospect, email: 'julie@exemple.test' } }).prospect_email).toBe('julie@exemple.test');
   });
 
+  it('dit par défaut que l’assistante appelle un prospect qui ne l’attendait pas', () => {
+    expect(variablesDeLAppel(contexte).situation_appel).toBe('Tu as appelé Julie Martin, qui ne t\'attendait pas.');
+  });
+
+  it('transmet la situation composée par l’application, celle d’un prospect qui rappelle', () => {
+    const situation = 'C’est Julie Martin qui te rappelle sur ton numéro : tu l’avais appelée hier, sans réponse.';
+
+    expect(variablesDeLAppel({ ...contexte, situation }).situation_appel).toBe(situation);
+    expect(variablesDeLAppel({ ...contexte, situation: '  ' }).situation_appel).toBe('Tu as appelé Julie Martin, qui ne t\'attendait pas.');
+  });
+
   it('se contente du nom quand le rôle ou la société manquent', () => {
     const v = variablesDeLAppel({ ...contexte, prospect: { ...contexte.prospect, role: null, societe: null } });
 

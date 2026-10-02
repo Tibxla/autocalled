@@ -31,4 +31,11 @@ describe('filtres de la liste des appels lus dans l’URL', () => {
     expect(filtres).toEqual({ reels: true, rappels: true });
     expect(lireFiltresAppels({ rappels: 'oui' }).filtres).toEqual({ reels: true });
   });
+
+  it('sens : entrant ou sortant, rien par défaut, une valeur inconnue retirée', () => {
+    expect(lireFiltresAppels({ sens: 'entrant' })).toMatchObject({ parametres: { sens: 'entrant' }, filtres: { reels: true, sens: 'entrant' } });
+    expect(lireFiltresAppels({ sens: 'sortant', rappels: '1' }).filtres).toEqual({ reels: true, rappels: true, sens: 'sortant' });
+    expect(lireFiltresAppels({ sens: 'les-deux' }).filtres).toEqual({ reels: true });
+    expect(lireFiltresAppels({}).parametres.sens).toBeUndefined();
+  });
 });

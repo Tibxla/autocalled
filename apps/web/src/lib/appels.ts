@@ -18,6 +18,7 @@ import { VERSION_ANALYSEUR, analyser } from './analyseur';
 import { lireAssistante } from './assistante';
 import { appelabiliteDe } from './appelables';
 import { rafraichirSiAncien } from './agenda';
+import { classerDansSaCampagne, retirerTentativesApresRappel } from './campagnes';
 import { audioConversation, lireConversation, simulerConversation } from './elevenlabs';
 import { commanderPont, refusDuPont } from './pont';
 
@@ -211,8 +212,25 @@ export async function reanalyser(appelId: string): Promise<void> {
   await (appel?.transcription ? analyserAppel(appelId) : traiterAppel(appelId));
 }
 
-/** Rapatrie la conversation terminée (transcription, durée, audio) puis lance l'analyse. */
+/**
+ * Rapatrie la conversation terminée (transcription, durée, audio) puis lance l'analyse. Quel que soit le chemin
+ * (bilan écrit ou échec), l'appel est ensuite classé dans sa campagne.
+ */
 export async function traiterAppel(appelId: string): Promise<void> {
+  await rapatrier(appelId);
+  await apresBilan(appelId);
+}
+
+/**
+ * Ce que le bilan (ou son échec) change aux files : l'appel sortant est classé dans sa campagne ; un prospect qui a
+ * rappelé et parlé à l'assistante n'a plus de nouvelle tentative prévue. Sans effet sur ce qui l'a déjà été.
+ */
+async function apresBilan(appelId: string): Promise<void> {
+  await classerDansSaCampagne(appelId);
+  await retirerTentativesApresRappel(appelId);
+}
+
+async function rapatrier(appelId: string): Promise<void> {
   const [appel] = await db.select().from(appels).where(eq(appels.id, appelId));
   if (!appel || appel.purgeLe) return;
   if (!appel.conversationId) {
@@ -259,11 +277,19 @@ export async function traiterAppel(appelId: string): Promise<void> {
     await db.update(appels).set({ statut: 'echec', erreur: (erreur as Error).message }).where(eq(appels.id, appelId));
     return;
   }
-  await analyserAppel(appelId);
+  await ecrireBilan(appelId);
 }
 
-/** Produit et enregistre le bilan d'un appel dont la transcription est connue. Peut être relancé. */
+/**
+ * Produit et enregistre le bilan d'un appel dont la transcription est connue, puis le classe dans sa campagne (sans
+ * effet s'il l'est déjà) ; pour un appel entrant, retire la nouvelle tentative prévue. Peut être relancé.
+ */
 export async function analyserAppel(appelId: string): Promise<void> {
+  await ecrireBilan(appelId);
+  await apresBilan(appelId);
+}
+
+async function ecrireBilan(appelId: string): Promise<void> {
   const [appel] = await db.select().from(appels).where(eq(appels.id, appelId));
   if (!appel || appel.purgeLe) return;
   if (!appel.transcription) {
@@ -312,6 +338,7 @@ export async function analyserAppel(appelId: string): Promise<void> {
         debutAppel: appel.debutLe,
       },
       entreprise: entreprise.nom,
+      sens: appel.sens,
       // Le nom de l'époque de l'appel : un renommage ne réécrit pas les bilans passés.
       assistante: appel.assistanteNom ?? (await lireAssistante()).nom,
       etapes: version.etapes.map((e) => e.intention),

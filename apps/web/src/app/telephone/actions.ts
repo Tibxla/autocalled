@@ -14,6 +14,10 @@ export type EtatTelephone = {
   appelEnCours: boolean;
   /** L'appel que le pont porte en ce moment ; absent ou nul quand la ligne est libre. */
   appelId?: string | null;
+  /** Un appel entrant est sur la ligne, de la sonnerie au raccroché (décroché par l'assistante ou non). */
+  entrantEnCours?: boolean;
+  /** Le sens de l'appel suivi (`appelId`) ; nul sans appel suivi. */
+  sens?: 'sortant' | 'entrant' | null;
   plafond: string | null;
   reglages: ReglagesLigne;
 };

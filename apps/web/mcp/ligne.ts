@@ -1,7 +1,8 @@
-import { TransitionInvalide } from '@autocalled/domain';
+import { type EntreeCampagne, TransitionInvalide, prochaineAction } from '@autocalled/domain';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
+import { quandRappeler } from '@/components/format-appel';
 import { db } from '@/db';
 import { appels, campagnes, entreprises, prospects, rendezVous } from '@/db/schema';
 import { creerEvenementDuRendezVous, etatAgenda, synchroniserAgenda } from '@/lib/agenda';
@@ -23,6 +24,29 @@ import { type Detacher, detacherTache } from './tache';
  */
 
 
+/**
+ * Pourquoi une campagne en cours n'a rien composé : la ligne est occupée, un bilan est en cours (sans tentative prévue),
+ * ou rien n'est dû avant une nouvelle tentative.
+ */
+function attenteDe(c: Parameters<typeof prochaineAction>[0]) {
+  const action = prochaineAction(c, new Date());
+  if (action.type === 'appeler') {
+    return { motif: 'ligne-occupee', explication: 'Le téléphone est occupé (un appel en ligne, ou un appel entrant) : la campagne reste en cours et reprend d’elle-même dans les cinq minutes.' };
+  }
+  if (!action.jusqua && c.entrees.some((e) => e.etat === 'en-analyse')) {
+    return {
+      motif: 'bilan-en-cours',
+      le: null,
+      explication: 'Plus personne à appeler maintenant : la campagne attend le bilan d’un appel fini. Sans réponse, ce prospect sera rappelé le lendemain ; sinon la campagne se terminera.',
+    };
+  }
+  return {
+    motif: 'prochaine-tentative',
+    le: action.jusqua ?? null,
+    explication: 'Rien n’est dû avant la prochaine tentative : elle partira d’elle-même à son heure, la campagne restant en cours.',
+  };
+}
+
 const plafonds = (r: ReglagesLigne) => `${r.appelsParHeure} appels par heure et ${r.appelsParJour} par jour, ${r.pauseEntreAppelsS} s de pause entre deux appels de campagne`;
 
 export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: Detacher = detacherTache): void {
@@ -30,7 +54,7 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
     'lancer_appel',
     {
       description:
-        'Appelle un prospect avec la version d’un script non archivé. Ligne bluetooth : le téléphone passerelle compose le vrai numéro, après confirmation de l’opérateur ; l’outil rend la main dès que ça sonne (suivre avec lire_appel). Ligne simulation : un modèle joue le prospect, sans téléphone ; l’outil attend le bilan (une à trois minutes). Le numéro doit être appelable (valide, et pas celui d’une personne effacée). La ligne navigateur (micro de l’opérateur) se lance dans l’interface.',
+        'Appelle un prospect avec la version d’un script non archivé. Ligne bluetooth : le téléphone passerelle compose le vrai numéro, après confirmation de l’opérateur ; l’outil rend la main dès que ça sonne (suivre avec lire_appel). Ligne simulation : un modèle joue le prospect, sans téléphone ; l’outil attend le bilan (une à trois minutes). Le numéro doit être appelable (valide, et pas celui d’une personne effacée) ; refusé tant qu’un appel, sortant ou entrant, occupe le téléphone. La ligne navigateur (micro de l’opérateur) se lance dans l’interface.',
       entree: z.strictObject({ entreprise: champEntreprise, prospect: champProspect, versionScriptId: champVersion, ligne: z.enum(['bluetooth', 'simulation']) }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
@@ -54,7 +78,8 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
         return reussite(vue?.donnees ?? { appelId: appel.appelId }, { complement: vue?.complement });
       }
 
-      const plafond = await refusDuPont();
+      // Ligne occupée (appel sortant, ou entrant qui sonne) : refusé ici plutôt qu'après une question posée en vain.
+      const plafond = await refusDuPont({ ligneLibre: true });
       if (plafond) return refus(plafond);
       const [reglages, ecritures] = await Promise.all([reglagesDuPont(), ecrituresDuMcp(e.id, version.id)]);
       // Le numéro d'abord : c'est lui qui porte la décision, et les noms viennent d'une fiche.
@@ -76,7 +101,7 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
   declarer(
     'raccrocher_appel',
     {
-      description: 'Raccroche un appel en cours sur le téléphone passerelle. C’est un frein : il ne demande pas de confirmation.',
+      description: 'Raccroche un appel en cours sur le téléphone passerelle, sortant ou entrant décroché par l’assistante (un appel entrant qui sonne encore n’a pas d’appelId : on le laisse sonner). C’est un frein : il ne demande pas de confirmation.',
       entree: z.strictObject({ appelId: z.uuid() }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
@@ -93,7 +118,7 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
     'lancer_campagne',
     {
       description:
-        'Lance (ou reprend) une campagne prête ou en pause. Une campagne prête dont le script a été archivé ne se lance plus ; une campagne en pause garde sa version et se reprend. Ligne bluetooth : après confirmation de l’opérateur, le premier appel part, puis l’application enchaîne les suivants un à un. Ligne simulation : les appels simulés s’enchaînent dans un processus détaché (dix à trente minutes ; suivre avec lire_campagne). Une campagne sur la ligne navigateur se déroule dans l’interface.',
+        'Lance (ou reprend) une campagne prête ou en pause. Une campagne prête dont le script a été archivé ne se lance plus ; une campagne en pause garde sa version et se reprend. Ligne bluetooth : après confirmation de l’opérateur, le premier appel dû part, puis l’application enchaîne les suivants un à un ; un prospect sans réponse est rappelé de lui-même le lendemain au moment opposé (9 h ou 14 h, trois tentatives au plus, comptées dans les garde-fous), sans autre question, tant que la campagne est en cours. Rien ne compose pendant un autre appel, sortant ou entrant : la campagne reste en cours et reprend d’elle-même dans les cinq minutes. Ligne simulation : les appels simulés s’enchaînent dans un processus détaché (dix à trente minutes ; suivre avec lire_campagne). Une campagne sur la ligne navigateur se déroule dans l’interface.',
       entree: z.strictObject({ campagneId: z.uuid() }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
@@ -129,26 +154,41 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
 
       const plafond = await refusDuPont();
       if (plafond) return refus(plafond);
-      const aAppeler = campagne.entrees.filter((x) => x.etat === 'a-appeler');
+      const maintenant = new Date();
+      const aAppeler = campagne.entrees.filter((x): x is EntreeCampagne & { etat: 'a-appeler' } => x.etat === 'a-appeler');
+      // Une nouvelle tentative attend son heure : elle n'est pas « à appeler » maintenant, mais partira sans autre question.
+      const estDue = (x: (typeof aAppeler)[number]) => x.pasAvant === undefined || Date.parse(x.pasAvant) <= maintenant.getTime();
+      const dues = aAppeler.filter(estDue);
+      const prevues = aAppeler.filter((x) => !estDue(x)).sort((a, b) => Date.parse(a.pasAvant!) - Date.parse(b.pasAvant!));
       const telephones = await db
         .select({ id: prospects.id, nom: prospects.nom, telephone: prospects.telephone })
         .from(prospects)
         .where(eq(prospects.entrepriseId, campagne.entrepriseId));
-      const fiches = aAppeler.map((x) => telephones.find((p) => p.id === x.prospectId));
-      const numeros = fiches.map((p) => p?.telephone ?? '');
+      const numeroDe = (x: (typeof aAppeler)[number]) => telephones.find((p) => p.id === x.prospectId)?.telephone ?? '';
+      const fiches = dues.map((x) => telephones.find((p) => p.id === x.prospectId));
+      const numeros = aAppeler.map(numeroDe);
       const verifies = await appelabiliteDe(numeros.filter(Boolean));
-      const appelables = numeros.filter((n) => verifies.get(n)?.appelable).length;
+      const appelables = dues.map(numeroDe).filter((n) => verifies.get(n)?.appelable).length;
       const aComposer = fiches.filter((p): p is NonNullable<typeof p> => Boolean(p && verifies.get(p.telephone)?.appelable));
       const [reglages, ecritures] = await Promise.all([reglagesDuPont(), ecrituresDuMcp(campagne.entrepriseId, campagne.versionScriptId)]);
       const nommes = aComposer.slice(0, 20).map((p) => champ(p.nom, 40));
       const garde = await confirmer(
         serveur,
         ctx,
-        `${campagne.statut === 'prete' ? 'Lancer' : 'Reprendre'} la campagne de ${champ(c.entreprise)} sur le téléphone passerelle : ${aAppeler.length} prospect${aAppeler.length > 1 ? 's' : ''} à appeler l’un après l’autre, dont ${appelables} au numéro appelable à cet instant (les autres seront sautés), avec le script « ${champ(version?.libelle ?? '?', 90)} ».${
+        `${campagne.statut === 'prete' ? 'Lancer' : 'Reprendre'} la campagne de ${champ(c.entreprise)} sur le téléphone passerelle : ${
+          dues.length
+            ? `${dues.length} prospect${dues.length > 1 ? 's' : ''} à appeler l’un après l’autre, dont ${appelables} au numéro appelable à cet instant (les autres seront sautés)`
+            : 'aucun prospect à appeler maintenant'
+        }, avec le script « ${champ(version?.libelle ?? '?', 90)} ».${
           nommes.length ? ` À appeler : ${nommes.join(', ')}${aComposer.length > nommes.length ? ` et ${aComposer.length - nommes.length} autres` : ''}.` : ''
+        }${
+          prevues.length
+            ? ` Plus tard : ${prevues.length} nouvelle${prevues.length > 1 ? 's' : ''} tentative${prevues.length > 1 ? 's' : ''} (prospect${prevues.length > 1 ? 's' : ''} sans réponse), la première ${quandRappeler(prevues[0]!.pasAvant!, null, maintenant)} ; elles partent d’elles-mêmes à leur heure tant que la campagne est en cours, et comptent dans les garde-fous.`
+            : ''
         }${attentionMcp(ecritures)} Nous sommes ${heureDeParis()}.${reglages ? ` Garde-fous : ${plafonds(reglages)} ; plafond atteint, la campagne se met en pause.` : ''}`,
-        // Les numéros entrent dans la clé : un numéro changé entre la question et la réponse fait reposer la question.
-        ['lancer_campagne', campagneId, campagne.statut, aAppeler.map((x) => x.prospectId), numeros, appelables, ecritures],
+        // Les numéros et les tentatives prévues entrent dans la clé : un numéro ou une heure changés entre la question et
+        // la réponse font reposer la question.
+        ['lancer_campagne', campagneId, campagne.statut, dues.map((x) => x.prospectId), prevues.map((x) => [x.prospectId, x.pasAvant]), numeros, appelables, ecritures],
       );
       if (garde.etat === 'a-demander') return garde.issue;
       if (garde.etat !== 'acceptee') return refusDeConfirmation(garde);
@@ -163,7 +203,12 @@ export function outilsDeLigne(declarer: Declarer, serveur: McpServer, detacher: 
       const [apres] = await db.select().from(campagnes).where(eq(campagnes.id, campagneId));
       const ouvert = apres?.entrees.find((x) => x.etat === 'en-appel');
       return reussite(
-        { campagneId, statut: apres?.statut, appelEnCours: ouvert && 'appelId' in ouvert ? { prospect: ouvert.prospectId, appelId: ouvert.appelId } : null },
+        {
+          campagneId,
+          statut: apres?.statut,
+          appelEnCours: ouvert && 'appelId' in ouvert ? { prospect: ouvert.prospectId, appelId: ouvert.appelId } : null,
+          ...(apres?.statut === 'en-cours' && !ouvert ? { attente: attenteDe(apres) } : {}),
+        },
         { confirmation: 'acceptee' },
       );
     },

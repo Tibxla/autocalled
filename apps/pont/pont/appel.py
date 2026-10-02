@@ -1,4 +1,4 @@
-"""Un appel de Mina sur la ligne Bluetooth, de la composition au bilan de fin.
+"""Un appel de Mina sur la ligne Bluetooth, de la composition (ou du décroché d'un appel entrant) au bilan de fin.
 
 Ce que l'appel doit faire savoir au reste du produit passe par des `Rappels` : l'application web pour le
 service, des bouchons pour la commande de diagnostic.
@@ -15,7 +15,7 @@ from elevenlabs.conversational_ai.conversation import ClientTools, Conversation,
 from gi.repository import GLib
 
 from .audio import TRAMES_FIN_ACCUEIL, Pont, temps_de_reponse
-from .ofono import Telephone, dans_glib
+from .ofono import LigneOccupee, Telephone, dans_glib, masquer
 from .plafond import Plafond
 
 SILENCE_AU_DECROCHE_S = 2.0  # sans voix du prospect passé ce délai, l'assistante ouvre par son premier message
@@ -135,6 +135,15 @@ class ConversationPont(Conversation):
 
 
 class Appel:
+    """Un appel sortant (`lancer`) ou entrant (`decrocher`). L'entrant ne compte pas au plafond, qui ne limite que les
+    compositions, et n'est jamais recomposé : une panne (décroché refusé, canal son absent) termine l'appel."""
+
+    # Valeurs par défaut au niveau de la classe : les tests construisent l'objet sans son constructeur.
+    _chemin_entrant: str | None = None  # l'appel oFono de l'entrant, None pour un sortant
+    _generation_entrant: int | None = None  # celle que le téléphone a annoncée avec l'entrant
+    _fin_lancee = False
+    _VERROU_FIN = threading.Lock()
+
     def __init__(
         self,
         telephone: Telephone,
@@ -148,8 +157,12 @@ class Appel:
         premier_message: str = PREMIER_MESSAGE_PAR_DEFAUT,
         plafond: Plafond | None = None,
         ouverture: str | None = None,
+        entrant: str | None = None,
+        generation: int | None = None,
     ):
         self._telephone = telephone
+        self._chemin_entrant = entrant
+        self._generation_entrant = generation
         self._plafond = plafond
         self._annule = False
         self._numero = numero
@@ -226,17 +239,30 @@ class Appel:
     def pont(self) -> Pont:
         return self._pont
 
+    @property
+    def entrant(self) -> bool:
+        return self._chemin_entrant is not None
+
+    @property
+    def sens(self) -> str:
+        return "entrant" if self.entrant else "sortant"
+
     # --- commandes -------------------------------------------------------------------------------
 
     def lancer(self) -> None:
         """Depuis le thread GLib. Chaque composition compte au plafond, recomposition comprise : une ligne dont le
         canal son manque à chaque appel ne doit pas passer deux fois plus d'appels que le plafond affiché."""
+        if self.entrant:
+            raise RuntimeError("un appel entrant ne se compose pas")  # ce serait rappeler l'appelant
         if self._annule:
             self.journal("composition annulée : le service a déjà répondu que l'appel n'était pas parti")
             with self._nouveau:
                 self._termine.set()
                 self._nouveau.notify_all()
             return
+        # Avant le plafond : un appel refusé parce qu'un prospect rappelle n'a pas été composé et ne compte pas.
+        if not self._telephone.libre():
+            raise LigneOccupee("un appel entrant sonne sur le téléphone")
         if self._plafond is not None:
             if raison := self._plafond.refus():
                 if self._tentatives == 0:
@@ -246,13 +272,37 @@ class Appel:
                 return
             self._plafond.compter()
         self._tentatives += 1
-        self.journal("composition du", self._numero[:4] + "…" + self._numero[-2:])
+        self.journal("composition du", masquer(self._numero))
         self._telephone.composer(self._numero, self, self._composition_echouee)
         self._en_ligne = True
         if self._annule:  # annulé pendant la composition : raccrocher aussitôt
-            self._telephone.raccrocher()
+            self._telephone.raccrocher(self)
         self._conversation.precharger_url()
         self._evenement("etat", {"etat": "composition"})
+        GLib.timeout_add(int(DELAI_CANAL_SON_S * 1000), self._verifier_canal)
+        GLib.timeout_add_seconds(DUREE_MAX_S, self._duree_max)
+
+    def decrocher(self) -> None:
+        """Depuis le thread GLib : Mina décroche l'appel entrant d'un prospect que l'application a reconnu. Ni plafond
+        ni composition ; la fin part vers l'application quoi qu'il arrive, sa ligne `appels` existe déjà."""
+        if self._annule:
+            # Le service a abandonné (boucle D-Bus trop lente) et la fin est déjà partie : l'appel sonne, sans réponse,
+            # et le canal gardé revient au téléphone.
+            self._telephone.laisser_sonner(self._chemin_entrant, self._generation_entrant)
+            return
+        self.journal("appel entrant du", masquer(self._numero), ": on décroche")
+        try:
+            self._telephone.repondre(self._chemin_entrant, self, self._decroche_echoue, self._generation_entrant)
+        except Exception as e:  # l'appelant a raccroché pendant la décision, ou le téléphone n'est plus là
+            self.journal("décroché impossible :", e)
+            self._telephone.laisser_sonner(self._chemin_entrant, self._generation_entrant)  # le canal gardé revient au téléphone
+            self._finir_une_fois("décroché impossible")
+            return
+        self._en_ligne = True
+        if self._annule:
+            self._telephone.raccrocher(self)
+        self._conversation.precharger_url()
+        self._evenement("etat", {"etat": "entrant"})
         GLib.timeout_add(int(DELAI_CANAL_SON_S * 1000), self._verifier_canal)
         GLib.timeout_add_seconds(DUREE_MAX_S, self._duree_max)
 
@@ -275,7 +325,7 @@ class Appel:
     def _duree_max_operateur(self) -> bool:
         if self._en_ligne:
             self.journal("durée maximale atteinte après la prise de main")
-            self._telephone.raccrocher()
+            self._telephone.raccrocher(self)
         return False
 
     @property
@@ -287,11 +337,13 @@ class Appel:
         elle ne doit pas partir, ou doit être raccrochée si elle est partie entre-temps."""
         self._annule = True
         if self._en_ligne:
-            self._telephone.raccrocher()
+            self._telephone.raccrocher(self)
+        elif self.entrant:
+            self._finir_une_fois("décroché impossible")
 
     def raccrocher(self) -> None:
         self.journal("raccrochage demandé")
-        self._telephone.raccrocher()
+        self._telephone.raccrocher(self)
 
     def attendre_fin(self, delai: float | None = None) -> bool:
         return self._termine.wait(delai)
@@ -316,19 +368,43 @@ class Appel:
 
     def termine(self, raison: str) -> None:
         self._en_ligne = False
-        if self._relance:
+        if self._relance and not self.entrant:
             self._relance = False
             threading.Thread(target=self._reconnecter_et_relancer, daemon=True).start()
             return
         qui = {"remote": "le prospect", "local": "nous"}.get(raison, raison)
         self.journal("appel terminé, raccroché par :", qui)
+        if self.entrant:
+            self._finir_une_fois(raison)
+            return
         threading.Thread(target=self._terminer, args=(raison,), daemon=True).start()
 
     # --- déroulé ---------------------------------------------------------------------------------
 
+    def _reserver_fin(self) -> bool:
+        """Vrai pour le premier qui demande la fin d'un entrant : annulation, échec et raccrochage peuvent se croiser."""
+        with self._VERROU_FIN:
+            if self._fin_lancee:
+                return False
+            self._fin_lancee = True
+            return True
+
+    def _finir_une_fois(self, raison: str) -> None:
+        if self._reserver_fin():
+            threading.Thread(target=self._terminer, args=(raison,), daemon=True).start()
+
+    def _decroche_echoue(self, raison: str) -> None:
+        """Le téléphone a refusé de décrocher l'entrant ou n'a pas répondu : l'appel se termine, sans relance."""
+        self._en_ligne = False
+        self.journal("le téléphone n'a pas décroché :", raison)
+        self._finir_une_fois("décroché impossible")
+
     def _composition_echouee(self, raison: str) -> None:
         """Le téléphone a refusé la composition ou n'a pas répondu : liaison figée, le plus souvent. On le
         reconnecte et on recompose une fois, comme pour un canal son absent."""
+        if self.entrant:
+            self._decroche_echoue(raison)
+            return
         self._en_ligne = False
         self.journal("le téléphone n'a pas composé :", raison)
         if self._tentatives < 2:
@@ -339,16 +415,20 @@ class Appel:
 
     def _verifier_canal(self) -> bool:
         if self._en_ligne and not self._canal and not self._relance and not self._canal_absent:
-            if self._tentatives < 2:
+            if self._tentatives < 2 and not self.entrant:
                 self.journal("canal son absent : on raccroche, on reconnecte le téléphone et on recompose")
                 self._relance = True
             else:
                 self.journal("canal son toujours absent : abandon")
                 self._canal_absent = True
-            self._telephone.raccrocher()
+            self._telephone.raccrocher(self)
         return False
 
     def _reconnecter_et_relancer(self) -> None:
+        if self.entrant:  # garde : relancer composerait le numéro de l'appelant
+            if self._reserver_fin():
+                self._terminer("canal son absent")
+            return
         self._evenement("etat", {"etat": "reconnexion"})
         try:
             self._telephone.reconnecter()
@@ -370,7 +450,7 @@ class Appel:
     def _duree_max(self) -> bool:
         if self._en_ligne and self._prise_en_main is None:
             self.journal("durée maximale atteinte")
-            self._telephone.raccrocher()
+            self._telephone.raccrocher(self)
         return False
 
     def _ouvrir_conversation(self) -> None:
@@ -379,7 +459,14 @@ class Appel:
         # (« Allô ? » par défaut, réglé dans l'application).
         # Un accueil court (fin de la voix sous ACCUEIL_COURT_MAX_S) est jeté et l'ouverture du script dite aussitôt,
         # sans attendre le modèle ; un accueil long lui est transmis, comme avant.
-        if self._pont.prospect_parle.wait(SILENCE_AU_DECROCHE_S):
+        if self.entrant:
+            # C'est Mina qui décroche, l'appelant attend qu'elle parle : l'accueil part tout de suite. Un « allô ? » dit
+            # pendant l'ouverture de la session ne part pas à ElevenLabs : il couperait cet accueil.
+            self.journal(f"appel entrant : l'assistante ouvre par « {self._premier_message} »")
+            self._pont.oublier_accueil()
+            self._conversation.config.conversation_config_override["agent"] = {"first_message": self._premier_message}
+            self._ouverture_prise = "premier message"
+        elif self._pont.prospect_parle.wait(SILENCE_AU_DECROCHE_S):
             court = self._ouverture is not None and self._pont.accueil_fini.wait(
                 ACCUEIL_COURT_MAX_S + TRAMES_FIN_ACCUEIL * 0.02
             )
@@ -440,8 +527,10 @@ class Appel:
             while not self._pont.sortie_vide() and time.monotonic() < limite:
                 time.sleep(0.05)
             time.sleep(0.4)
+            if not self._en_ligne:
+                return  # le prospect a raccroché pendant la phrase de fin : rien à raccrocher
             self.journal("Mina a terminé : on raccroche")
-            self._telephone.raccrocher()
+            self._telephone.raccrocher(self)
 
         threading.Thread(target=_raccrocher_apres_vidage, daemon=True).start()
 
@@ -459,6 +548,8 @@ class Appel:
             "conversationId": conversation_id,
             "codec": {1: "CVSD", 2: "mSBC"}.get(self._codec or 0),
         }
+        if self.entrant:
+            bilan["sens"] = "entrant"
         if self._decroche and self._pont.premier_son_de_mina:
             bilan["decrocheVersPremierSonS"] = round(self._pont.premier_son_de_mina - self._decroche, 2)
         if self._ouverture_prise:

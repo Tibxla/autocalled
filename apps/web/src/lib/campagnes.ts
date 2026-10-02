@@ -4,20 +4,24 @@ import {
   type OrigineGeste,
   type VariablesDeLAppel,
   ajouterProspects,
+  annulerDebut,
+  classer,
   creerCampagne,
   debuterAppel,
   demarrer,
+  dernierDu,
   finDemandee,
   mettreEnPause,
   prochaineAction,
   reporter,
   retirer,
+  retirerTentativePrevue,
   sauter,
   terminerAppel,
   terminerAvantLaFin,
   TransitionInvalide,
 } from '@autocalled/domain';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { appels, campagnes, prospects, scripts, versionsScript } from '@/db/schema';
 import { rafraichirSiAncien } from './agenda';
@@ -25,7 +29,7 @@ import { preparerAppel, simulerAppel } from './appels';
 import { appelabiliteDe } from './appelables';
 import { jetonConversation } from './elevenlabs';
 import type { ResultatAction } from './formulaire';
-import { commanderPont, reglagesDuPont, refusDuPont } from './pont';
+import { commanderPont, disponibiliteLigne, reglagesDuPont } from './pont';
 import type { SaisieCampagne } from './schemas';
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -105,7 +109,7 @@ export type AppelSuivant =
 export async function appelerSuivantNavigateur(campagneId: string, attendu?: string): Promise<AppelSuivant> {
   return avecCampagne<AppelSuivant>(campagneId, async (campagne, tx) => {
     for (;;) {
-      const action = prochaineAction(campagne);
+      const action = prochaineAction(campagne, new Date());
       if (action.type !== 'appeler') return { campagne, resultat: { type: 'attente' } };
       if (attendu !== undefined && action.prospectId !== attendu) {
         return { campagne, resultat: { type: 'attente', raison: 'La file a changé : le prochain prospect n’est plus celui affiché. Rien n’est parti.' } };
@@ -131,7 +135,7 @@ export async function appelerSuivantNavigateur(campagneId: string, attendu?: str
         .returning({ id: appels.id });
       if (!appel) throw new Error('appel non enregistré');
       return {
-        campagne: debuterAppel(campagne, action.prospectId, appel.id),
+        campagne: debuterAppel(campagne, action.prospectId, appel.id, new Date()),
         resultat: { type: 'appel', appelId: appel.id, prospectId: action.prospectId, jeton, variables: preparation.variables, motsCles: preparation.motsCles },
       };
     }
@@ -160,8 +164,97 @@ export async function demarrerCampagne(campagneId: string): Promise<'navigateur'
   return ligne?.ligne ?? null;
 }
 
+/**
+ * Clôt l'entrée de l'appel qui vient de finir, d'après l'appel relu sous le verrou : issue déjà connue (pas de
+ * décroché, simulation) ou échec, elle est classée tout de suite (`non-abouti` : nouvelle tentative) ; sinon elle
+ * attend son bilan (`en-analyse`), que `classerDansSaCampagne` classera. Lire l'appel ici, plutôt que recevoir
+ * l'issue, tient aussi le cas où l'analyse finit avant la clôture : son classement n'a rien trouvé, celui-ci classe.
+ */
 export async function clore(campagneId: string, appelId: string): Promise<void> {
-  await avecCampagne(campagneId, async (campagne) => ({ campagne: terminerAppel(campagne, appelId), resultat: null }));
+  await avecCampagne(campagneId, async (campagne, tx) => {
+    const [appel] = await tx
+      .select({ statut: appels.statut, issueSysteme: appels.issueSysteme, finLe: appels.finLe })
+      .from(appels)
+      .where(eq(appels.id, appelId));
+    const fin = appel?.finLe ?? new Date();
+    return {
+      campagne:
+        appel?.statut === 'termine'
+          ? terminerAppel(campagne, appelId, appel.issueSysteme, fin)
+          : appel?.statut === 'echec'
+            ? terminerAppel(campagne, appelId, null, fin)
+            : terminerAppel(campagne, appelId),
+      resultat: null,
+    };
+  });
+}
+
+/**
+ * Classe dans sa campagne un appel dont le bilan vient d'être écrit (ou a échoué : aucune nouvelle tentative). Sans
+ * effet hors campagne, sur un appel encore en cours d'analyse ou déjà classé (une réanalyse ne touche plus la file).
+ * Une campagne téléphone qui a de nouveau quelqu'un à appeler repart (sauf `relancer: false`, pour le réveil qui relance
+ * lui-même, une campagne après l'autre).
+ */
+export async function classerDansSaCampagne(appelId: string, { relancer = true }: { relancer?: boolean } = {}): Promise<void> {
+  const [appel] = await db
+    .select({ campagneId: appels.campagneId, statut: appels.statut, issueSysteme: appels.issueSysteme, finLe: appels.finLe })
+    .from(appels)
+    .where(eq(appels.id, appelId));
+  const campagneId = appel?.campagneId;
+  if (!campagneId || (appel.statut !== 'termine' && appel.statut !== 'echec')) return;
+  const issue = appel.statut === 'termine' ? appel.issueSysteme : null;
+  try {
+    await avecCampagne(campagneId, async (c) => ({ campagne: classer(c, appelId, issue, appel.finLe ?? new Date()), resultat: null }));
+  } catch (erreur) {
+    if (!(erreur instanceof TransitionInvalide)) throw erreur; // campagne supprimée entre-temps
+  }
+  if (relancer) await relancerSiDu(campagneId);
+}
+
+/**
+ * Un prospect qui a rappelé et parlé à l'assistante (appel entrant analysé, issue autre que « non abouti ») n'est pas
+ * rappelé demain par une nouvelle tentative : elle est retirée de toute campagne non terminée de son entreprise, si
+ * l'entrant a suivi le dernier appel de cette tentative (la réanalyse d'un ancien entrant ne retire rien de plus récent).
+ * Sans effet sur un appel sortant, un entrant sans conversation ou dont l'analyse a échoué, et une entrée jamais appelée.
+ */
+export async function retirerTentativesApresRappel(appelId: string, maintenant = new Date()): Promise<void> {
+  const [appel] = await db
+    .select({
+      sens: appels.sens,
+      statut: appels.statut,
+      issueSysteme: appels.issueSysteme,
+      entrepriseId: appels.entrepriseId,
+      prospectId: appels.prospectId,
+      debutLe: appels.debutLe,
+    })
+    .from(appels)
+    .where(eq(appels.id, appelId));
+  if (appel?.sens !== 'entrant' || appel.statut !== 'termine' || !appel.issueSysteme || appel.issueSysteme === 'non-abouti') return;
+  const ouvertes = await db
+    .select({ id: campagnes.id, entrees: campagnes.entrees })
+    .from(campagnes)
+    .where(and(eq(campagnes.entrepriseId, appel.entrepriseId), ne(campagnes.statut, 'terminee')));
+  const derniers = new Map<string, string>();
+  for (const c of ouvertes) {
+    const e = c.entrees.find((x) => x.prospectId === appel.prospectId && x.etat === 'a-appeler' && (x.tentative ?? 1) > 1);
+    const dernier = e?.appelsPrecedents?.at(-1);
+    if (dernier) derniers.set(c.id, dernier);
+  }
+  const debuts = derniers.size
+    ? await db
+        .select({ id: appels.id, debutLe: appels.debutLe })
+        .from(appels)
+        .where(inArray(appels.id, [...derniers.values()]))
+    : [];
+  const debutDe = new Map(debuts.map((a) => [a.id, a.debutLe.getTime()]));
+  const concernees = [...derniers].filter(([, dernier]) => appel.debutLe.getTime() > (debutDe.get(dernier) ?? Infinity)).map(([id]) => ({ id }));
+  for (const { id } of concernees) {
+    try {
+      await avecCampagne(id, async (c) => ({ campagne: retirerTentativePrevue(c, appel.prospectId, maintenant), resultat: null }));
+    } catch (erreur) {
+      if (!(erreur instanceof TransitionInvalide)) throw erreur; // campagne supprimée entre-temps
+    }
+  }
 }
 
 /** Ligne simulation : le serveur enchaîne toute la campagne, en relisant l'état à chaque appel (pause possible). */
@@ -169,7 +262,7 @@ export async function derouleSimulation(campagneId: string): Promise<void> {
   for (;;) {
     const suivant = await avecCampagne<{ appelId: string; variables: Record<string, string> } | null>(campagneId, async (campagne, tx) => {
       for (;;) {
-        const action = prochaineAction(campagne);
+        const action = prochaineAction(campagne, new Date());
         if (action.type !== 'appeler') return { campagne, resultat: null };
         const preparation = await preparerAppel(campagne.entrepriseId, action.prospectId, campagne.versionScriptId);
         if (!preparation.ok) {
@@ -190,7 +283,7 @@ export async function derouleSimulation(campagneId: string): Promise<void> {
           .returning({ id: appels.id });
         if (!appel) throw new Error('appel non enregistré');
         return {
-          campagne: debuterAppel(campagne, action.prospectId, appel.id),
+          campagne: debuterAppel(campagne, action.prospectId, appel.id, new Date()),
           resultat: { appelId: appel.id, variables: preparation.variables },
         };
       }
@@ -208,11 +301,16 @@ export async function pauseEntreAppelsMs(): Promise<number> {
 
 /**
  * Ligne téléphone : le serveur enchaîne, un appel à la fois. Le pont compose ; la fin de l'appel
- * (route /api/pont/…/fin) clôt l'entrée et rappelle cette fonction, qui relit l'état (pause possible).
+ * (route /api/pont/…/fin) clôt l'entrée et rappelle cette fonction, qui relit l'état (pause possible). Rien de dû
+ * (nouvelles tentatives plus tard) : la campagne reste en cours, le réveil (scripts/reveil-campagnes.ts) la relancera.
  */
 export async function appelerSuivantTelephone(campagneId: string): Promise<void> {
+  const ligne = await disponibiliteLigne();
+  // Ligne occupée (un autre appel, ou un prospect qui rappelle) : rien ne part, aucun prospect n'est consommé ; la fin
+  // de cet appel ou le réveil reprendront.
+  if (ligne.type === 'occupee') return;
   // Plafond atteint ou pont absent : pause, sans consommer le prospect suivant.
-  if (await refusDuPont()) {
+  if (ligne.type !== 'libre') {
     await suspendreSiEnCours(campagneId);
     return;
   }
@@ -227,8 +325,11 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
     campagneId,
     async (campagne, tx) => {
       for (;;) {
-        const action = prochaineAction(campagne);
+        const action = prochaineAction(campagne, new Date());
         if (action.type !== 'appeler') return { campagne, resultat: null };
+        // Il vient de rappeler et son appel est encore en analyse : sa nouvelle tentative attend le bilan, qui la
+        // retirera s'il a parlé à l'assistante (la fin de l'entrant relance ensuite la campagne, sinon le réveil).
+        if (await rappelEnAnalyse(tx, campagne, action.prospectId)) return { campagne, resultat: null };
         const preparation = await preparerAppel(campagne.entrepriseId, action.prospectId, campagne.versionScriptId);
         if (!preparation.ok) {
           campagne = sauter(campagne, action.prospectId, 'numero-non-appelable');
@@ -248,7 +349,7 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
           .returning({ id: appels.id });
         if (!appel) throw new Error('appel non enregistré');
         return {
-          campagne: debuterAppel(campagne, action.prospectId, appel.id),
+          campagne: debuterAppel(campagne, action.prospectId, appel.id, new Date()),
           resultat: {
             appelId: appel.id,
             numero: preparation.numero,
@@ -272,11 +373,89 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
     ...(suivant.ouverture ? { ouverture: suivant.ouverture } : {}),
   });
   if (reponse.ok) return;
+  // Ligne prise entre la lecture de son état et la composition (un prospect qui rappelle, une autre campagne) : rien
+  // n'est parti. L'appel s'efface, le prospect garde sa place et sa tentative, la campagne reste en cours ; la fin de
+  // l'autre appel ou le réveil la reprendront.
+  if (reponse.statut === 409 && (await annulerComposition(campagneId, suivant.appelId))) return;
   // Pont injoignable ou téléphone absent : l'appel échoue et la campagne se met en pause, plutôt que de
   // vider toute la file en échecs.
   await db.update(appels).set({ statut: 'echec', erreur: reponse.raison, finLe: new Date() }).where(eq(appels.id, suivant.appelId));
   await clore(campagneId, suivant.appelId);
   await suspendreSiEnCours(campagneId);
+}
+
+/** Défait le début d'un appel que le pont n'a pas composé. Faux si l'entrée a bougé entre-temps (rien n'est alors défait). */
+async function annulerComposition(campagneId: string, appelId: string): Promise<boolean> {
+  try {
+    await avecCampagne(campagneId, async (c, tx) => {
+      const campagne = annulerDebut(c, appelId);
+      await tx.delete(appels).where(eq(appels.id, appelId));
+      return { campagne, resultat: null };
+    });
+    return true;
+  } catch (erreur) {
+    if (!(erreur instanceof TransitionInvalide)) throw erreur;
+    return false;
+  }
+}
+
+/**
+ * Le prospect de cette entrée a-t-il rappelé depuis le dernier appel de sa tentative, avec un appel encore en cours ou
+ * en analyse ? Seulement pour une nouvelle tentative : un premier appel n'a rien à retirer.
+ */
+async function rappelEnAnalyse(tx: Transaction, campagne: Campagne, prospectId: string): Promise<boolean> {
+  const entree = campagne.entrees.find((e) => e.prospectId === prospectId);
+  const dernier = entree?.etat === 'a-appeler' && (entree.tentative ?? 1) > 1 ? entree.appelsPrecedents?.at(-1) : undefined;
+  if (!dernier) return false;
+  const [precedent] = await tx.select({ debutLe: appels.debutLe }).from(appels).where(eq(appels.id, dernier));
+  if (!precedent) return false;
+  const [rappel] = await tx
+    .select({ id: appels.id })
+    .from(appels)
+    .where(
+      and(
+        eq(appels.entrepriseId, campagne.entrepriseId),
+        eq(appels.prospectId, prospectId),
+        eq(appels.sens, 'entrant'),
+        isNotNull(appels.conversationId),
+        inArray(appels.statut, ['en-cours', 'traitement']),
+        gt(appels.debutLe, precedent.debutLe),
+      ),
+    )
+    .limit(1);
+  return rappel !== undefined;
+}
+
+/**
+ * Relance une campagne téléphone en cours qui a quelqu'un à appeler maintenant et aucun appel en ligne : après un
+ * classement, ou au réveil. Jamais une campagne en pause, prête ou terminée, ni une autre ligne, ni pendant la pause
+ * entre deux appels (la chaîne de la route de fin, qui l'attend, reprendra ; sinon le réveil suivant).
+ */
+export async function relancerSiDu(campagneId: string, maintenant = new Date()): Promise<boolean> {
+  if (!(await aRelancer(campagneId, maintenant))) return false;
+  if (await pauseEnCours(maintenant)) return false;
+  await appelerSuivantTelephone(campagneId);
+  return true;
+}
+
+/** Marge sous laquelle la pause est tenue pour écoulée : un minuteur peut se déclencher un rien avant son heure. */
+const MARGE_PAUSE_MS = 1000;
+
+/** Le dernier appel téléphone (sortant ou entrant) a-t-il fini il y a moins que la pause entre deux appels ? */
+async function pauseEnCours(maintenant = new Date()): Promise<boolean> {
+  const [dernier] = await db
+    .select({ finLe: sql<string | null>`max(${appels.finLe})` })
+    .from(appels)
+    .where(eq(appels.ligne, 'bluetooth'));
+  if (!dernier?.finLe) return false;
+  return Date.parse(dernier.finLe) + (await pauseEntreAppelsMs()) - MARGE_PAUSE_MS > maintenant.getTime();
+}
+
+/** La campagne est-elle une campagne téléphone en cours, sans appel en ligne, avec une entrée due ? */
+export async function aRelancer(campagneId: string, maintenant = new Date(), lecteur: Pick<typeof db, 'select'> = db): Promise<boolean> {
+  const [c] = await lecteur.select().from(campagnes).where(eq(campagnes.id, campagneId));
+  if (!c || c.ligne !== 'bluetooth') return false;
+  return prochaineAction(c, maintenant).type === 'appeler';
 }
 
 /** Met la campagne en pause si elle tourne ; sans effet sur une campagne prête, en pause ou terminée. */
@@ -340,6 +519,7 @@ function refusEntree(campagne: Campagne, prospectId: string): string | null {
   const entree = campagne.entrees.find((e) => e.prospectId === prospectId);
   if (!entree) return 'Ce prospect n’est pas dans la file de cette campagne.';
   if (entree.etat === 'en-appel') return 'Ce prospect est en appel : l’appel va à son terme.';
+  if (entree.etat === 'en-analyse') return 'Ce prospect vient d’être appelé : le bilan de son appel est en cours.';
   if (entree.etat !== 'a-appeler') return 'Ce prospect n’est plus à appeler dans cette campagne.';
   return null;
 }
@@ -352,11 +532,12 @@ export async function sauterProspect(campagneId: string, prospectId: string): Pr
   return gesteSurLaFile(campagneId, async (campagne) => {
     const refus = refusEntree(campagne, prospectId);
     if (refus) return { ok: false, raison: refus };
-    const rang = campagne.entrees.findIndex((e) => e.prospectId === prospectId);
-    if (!campagne.entrees.slice(rang + 1).some((e) => e.etat === 'a-appeler')) {
-      return { ok: false, raison: 'C’est déjà le dernier prospect à appeler : il reste à sa place.' };
+    const maintenant = new Date();
+    // Une nouvelle tentative qui attend son heure ne compte pas : derrière elle, il resterait le prochain appelé.
+    if (dernierDu(campagne, prospectId, maintenant)) {
+      return { ok: false, raison: 'C’est déjà le dernier prospect à appeler maintenant : il reste à sa place.' };
     }
-    return { campagne: reporter(campagne, prospectId), resultat: { ok: true } };
+    return { campagne: reporter(campagne, prospectId, maintenant), resultat: { ok: true } };
   });
 }
 
@@ -421,9 +602,10 @@ export async function ajouterALaCampagne(campagneId: string, prospectIds: readon
 }
 
 /**
- * Termine une campagne avant la fin : chaque prospect encore à appeler est retiré (trace gardée). Aucun appel
- * n'est coupé : sans appel en cours, la campagne est terminée tout de suite (`immediate`) ; sinon l'appel va à
- * son terme et la campagne se termine avec lui (`apres-appel`), sans enchaîner.
+ * Termine une campagne avant la fin : chaque prospect encore à appeler est retiré (trace gardée), un appel en analyse
+ * ou en ligne ne crée plus de nouvelle tentative. Aucun appel n'est coupé : sans appel en cours, la campagne est
+ * terminée tout de suite (`immediate`) ; sinon l'appel va à son terme et la campagne se termine avec lui
+ * (`apres-appel`), sans enchaîner.
  */
 export async function terminerCampagne(
   campagneId: string,
@@ -432,9 +614,6 @@ export async function terminerCampagne(
   return gesteSurLaFile<{ fin: 'immediate' | 'apres-appel' }>(campagneId, async (campagne) => {
     if (campagne.statut === 'terminee') return { ok: false, raison: 'La campagne est déjà terminée.' };
     if (finDemandee(campagne)) return { ok: false, raison: 'La campagne se termine déjà à la fin de l’appel en cours.' };
-    if (!campagne.entrees.some((e) => e.etat === 'a-appeler')) {
-      return { ok: false, raison: 'Plus aucun prospect à appeler : la campagne se termine d’elle-même à la fin de l’appel en cours.' };
-    }
     const apres = terminerAvantLaFin(campagne, { le: new Date().toISOString(), par: origine });
     return { campagne: apres, resultat: { ok: true, fin: apres.statut === 'terminee' ? 'immediate' : 'apres-appel' } };
   });

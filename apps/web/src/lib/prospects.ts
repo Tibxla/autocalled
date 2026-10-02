@@ -8,6 +8,7 @@ import {
   fusionnerFiches,
   lireFiches,
   retirer,
+  sansNouvelleTentative,
 } from '@autocalled/domain';
 import { and, eq, ne, sql } from 'drizzle-orm';
 import { db } from '@/db';
@@ -202,7 +203,7 @@ export async function filesEnAttente(entrepriseId: string, prospectId: string, l
   return lignes.map((c) => ({
     id: c.id,
     libelle: libelleCampagne(c),
-    derniere: !c.entrees.some((e) => e.prospectId !== prospectId && (e.etat === 'a-appeler' || e.etat === 'en-appel')),
+    derniere: !c.entrees.some((e) => e.prospectId !== prospectId && (e.etat === 'a-appeler' || e.etat === 'en-appel' || e.etat === 'en-analyse')),
   }));
 }
 
@@ -217,7 +218,7 @@ export async function filesEnAttenteDesProspects(entrepriseId: string): Promise<
     .orderBy(campagnes.id);
   const parProspect = new Map<string, FileEnAttente[]>();
   for (const c of lignes) {
-    const restants = c.entrees.filter((e) => e.etat === 'a-appeler' || e.etat === 'en-appel');
+    const restants = c.entrees.filter((e) => e.etat === 'a-appeler' || e.etat === 'en-appel' || e.etat === 'en-analyse');
     for (const e of c.entrees) {
       if (e.etat !== 'a-appeler') continue;
       const file = { id: c.id, libelle: libelleCampagne(c), derniere: restants.every((r) => r.prospectId === e.prospectId) };
@@ -240,7 +241,8 @@ function filesNonConfirmees(files: readonly FileEnAttente[], confirmees: readonl
  * ne le saute entre-temps, et ce retrait ne se défait pas (le réactiver ne l'y remet pas) : il est
  * confirmé. `filesConfirmees` : les campagnes nommées dans cette confirmation (vide sans confirmation). Une file où il
  * attend sans y figurer (sans confirmation, ou ajouté entre la lecture et le geste) refuse tout et rend `aConfirmer`,
- * les files à nommer dans la confirmation. Refusé pendant un appel avec lui.
+ * les files à nommer dans la confirmation. Refusé pendant un appel avec lui. Un appel avec lui encore en analyse est
+ * tenu pour appelé, sans confirmation : son bilan s'écrira, mais ne le remettra pas en file pour une nouvelle tentative.
  */
 export async function archiverProspect(
   entrepriseId: string,
@@ -266,7 +268,7 @@ export async function archiverProspect(
         and(
           eq(campagnes.entrepriseId, entrepriseId),
           ne(campagnes.statut, 'terminee'),
-          sql`exists (select 1 from jsonb_array_elements(${campagnes.entrees}) e where e->>'prospectId' = ${prospectId} and e->>'etat' in ('a-appeler', 'en-appel'))`,
+          sql`exists (select 1 from jsonb_array_elements(${campagnes.entrees}) e where e->>'prospectId' = ${prospectId} and e->>'etat' in ('a-appeler', 'en-appel', 'en-analyse'))`,
         ),
       )
       .orderBy(campagnes.id)
@@ -285,9 +287,12 @@ export async function archiverProspect(
     }
     const trace = { le: new Date().toISOString(), par };
     const terminees: string[] = [];
+    const retireDe: string[] = [];
     for (const c of files) {
       const campagne: Campagne = { id: c.id, entrepriseId: c.entrepriseId, versionScriptId: c.versionScriptId, statut: c.statut, entrees: c.entrees };
-      const apres = retirer(campagne, prospectId, trace);
+      const enFile = campagne.entrees.find((e) => e.prospectId === prospectId)?.etat === 'a-appeler';
+      const apres = enFile ? retirer(campagne, prospectId, trace) : sansNouvelleTentative(campagne, prospectId);
+      if (enFile) retireDe.push(c.id);
       if (apres.statut === 'terminee') terminees.push(c.id);
       await tx.update(campagnes).set({ statut: apres.statut, entrees: apres.entrees }).where(eq(campagnes.id, c.id));
     }
@@ -295,7 +300,7 @@ export async function archiverProspect(
       .update(prospects)
       .set({ archiveLe: new Date(), archivePar: par })
       .where(and(eq(prospects.entrepriseId, entrepriseId), eq(prospects.id, prospectId)));
-    return { ok: true as const, deja: false, retireDe: files.map((c) => c.id), terminees };
+    return { ok: true as const, deja: false, retireDe, terminees };
   });
 }
 
@@ -315,7 +320,8 @@ export async function reactiverProspect(entrepriseId: string, prospectId: string
 }
 
 /**
- * Les campagnes téléphone en cours où ces prospects attendent (à appeler, ou en appel) : l'application y compose
+ * Les campagnes téléphone en cours où ces prospects attendent (à appeler, en appel, ou en analyse : une nouvelle
+ * tentative peut suivre) : l'application y compose
  * le numéro de la fiche au moment d'appeler, sans autre question. Changer ce numéro revient donc à faire sonner un
  * autre téléphone ; le serveur MCP le fait confirmer. Une campagne prête ou en pause redemande l'accord à son
  * lancement, sur des numéros relus à ce moment-là.
@@ -330,7 +336,7 @@ export async function filesTelephoneEnCours(entrepriseId: string, prospectIds: r
   const voulus = new Set(prospectIds);
   for (const c of lignes) {
     for (const x of c.entrees) {
-      if (voulus.has(x.prospectId) && (x.etat === 'a-appeler' || x.etat === 'en-appel')) parProspect.set(x.prospectId, [...(parProspect.get(x.prospectId) ?? []), c.id]);
+      if (voulus.has(x.prospectId) && (x.etat === 'a-appeler' || x.etat === 'en-appel' || x.etat === 'en-analyse')) parProspect.set(x.prospectId, [...(parProspect.get(x.prospectId) ?? []), c.id]);
     }
   }
   return parProspect;

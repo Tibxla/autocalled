@@ -21,6 +21,7 @@ export const VARIABLES_DE_L_APPEL = [
   'prospect_societe',
   'prospect_contexte',
   'prospect_email',
+  'situation_appel',
   'rendez_vous',
   'historique_appels',
   'script_etapes',
@@ -47,6 +48,11 @@ export interface ContexteAppel {
   rendezVous: { interlocuteur: string; dureeMinutes: number };
   etapes: { intention: string; exemples: string[] }[];
   objections: { libelle: string; creuser: string; reformuler: string; argumenter: string; controler: string }[];
+  /**
+   * Qui appelle qui, en une phrase adressée à l'assistante : l'application la compose pour un appel entrant (le
+   * prospect rappelle). Absente : un appel sortant, « Tu as appelé {prospect}, qui ne t'attendait pas. »
+   */
+  situation?: string;
   /** Appels précédents avec ce prospect, dans n'importe quel ordre. */
   historique: { le: Date; issue: string; resume: string }[];
   maintenant: Date;
@@ -118,6 +124,7 @@ export function variablesDeLAppel(c: ContexteAppel): VariablesDeLAppel {
     entreprise_complements: c.entreprise.complements.trim(),
     prospect_contexte: ou(c.prospect.contexte, 'Rien de plus.'),
     prospect_email: c.prospect.email ?? 'inconnu, à demander',
+    situation_appel: c.situation?.trim() || `Tu as appelé ${c.prospect.nom}, qui ne t'attendait pas.`,
     historique_appels: historique || 'Aucun échange précédent.',
     script_etapes: etapes || '1. Obtenir un premier rendez-vous.',
     objections: objections || 'Aucune objection préparée : applique la méthode CRAC.',

@@ -60,7 +60,7 @@ describe('analyse d’un rappel convenu', () => {
     const consignes = vi.mocked(claudeStructure).mock.calls[0]?.[0].prompt ?? '';
     expect(consignes).toContain('mardi 29 septembre 2026 à 14:32 (2026-09-29)');
     const [lu] = await db.select().from(appels).where(eq(appels.id, appelId));
-    expect(lu).toMatchObject({ statut: 'termine', issueSysteme: 'rappel-convenu', versionAnalyseur: 'claude-sonnet · consignes v2' });
+    expect(lu).toMatchObject({ statut: 'termine', issueSysteme: 'rappel-convenu', versionAnalyseur: 'claude-sonnet · consignes v3' });
     expect(lu?.rappelLe?.toISOString()).toBe('2026-10-01T07:00:00.000Z');
     expect(lu?.bilan).toMatchObject({ rappel: 'jeudi matin', rappelLe: { date: '2026-10-01', moment: 'matin' } });
   });

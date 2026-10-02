@@ -49,6 +49,8 @@ export function useFilAppel(
   niveaux: TamponNiveaux | null;
   /** Dernière étape du plan signalée par l'assistante (outil etape_script) ; null avant la première ou sans l'outil. */
   etape: number | null;
+  /** Le pont a dit « entrant » : l'assistante décroche un prospect qui rappelle (rien n'a été composé). */
+  entrant: boolean;
 } {
   const router = useRouter();
   const [etat, setEtat] = useState('composition');
@@ -58,6 +60,7 @@ export function useFilAppel(
   const [enLigneDepuis, setEnLigneDepuis] = useState<number | null>(null);
   const [niveaux, setNiveaux] = useState<TamponNiveaux | null>(null);
   const [etape, setEtape] = useState<number | null>(null);
+  const [entrant, setEntrant] = useState(false);
   const surTermine = useRef(onTermine);
   useEffect(() => {
     surTermine.current = onTermine;
@@ -92,6 +95,7 @@ export function useFilAppel(
           setEnLigneDepuis(maintenant - affichageDepuis >= 1000 ? maintenant : typeof e.t === 'number' ? e.t : null);
         }
         affichageDepuis = maintenant;
+        if (ETATS_ENTRANT.has(e.etat)) setEntrant(true);
         setEtat(e.etat);
         if (e.etat === 'termine') {
           source.close();
@@ -121,7 +125,7 @@ export function useFilAppel(
     };
   }, [appelId, router, suivre]);
 
-  return { etat, tours, perdu, termineLe, enLigneDepuis, niveaux, etape };
+  return { etat, tours, perdu, termineLe, enLigneDepuis, niveaux, etape, entrant };
 }
 
 /* ------------------------------------------------------------------ écoute */
@@ -269,6 +273,15 @@ const LIBELLES_ETAT: Record<string, string> = {
 };
 
 const SONNE = new Set(['composition', 'dialing', 'alerting']);
+/** Avant la mise en ligne d'un appel entrant : le pont dit « entrant », puis oFono relaie l'état de l'appel qui sonne. */
+const ETATS_ENTRANT = new Set(['entrant', 'incoming', 'waiting']);
+
+/** L'état d'un appel entrant avant sa mise en ligne : ni « Composition… » ni « Ça sonne », l'assistante décroche. */
+function libelleEtat(etat: string, entrant: boolean, nomAssistante: string): string {
+  if (entrant && (SONNE.has(etat) || ETATS_ENTRANT.has(etat))) return `${nomAssistante} décroche…`;
+  if (ETATS_ENTRANT.has(etat)) return 'Appel entrant';
+  return LIBELLES_ETAT[etat] ?? etat;
+}
 const EN_LIGNE = new Set(['active', 'prise-en-main']);
 
 /** La phrase de l'assistante en sous-titre : dernière phrase du dernier tour, jointe à la précédente si elle est courte. */
@@ -399,6 +412,8 @@ export function PisteParole({ tours, niveau, actif, hauteur = 40 }: { tours: Tou
 
 export interface IdentiteAppel {
   prospect: string;
+  /** Le prospect a rappelé : la bande dit « Julie Martin rappelle ». */
+  entrant?: boolean;
   societe?: string | null;
   entreprise?: string | null;
   version?: string | null;
@@ -427,6 +442,8 @@ export interface VueBandeAppelProps {
   /** Statut traitement : fil figé, contrôles retirés. */
   termine?: { le: number } | null;
   conversation?: boolean;
+  /** Appel entrant : le prospect a rappelé, l'assistante décroche (libellés d'état propres, pas de composition). */
+  entrant?: boolean;
   /** Remplace les actions téléphone (ligne navigateur). */
   actions?: React.ReactNode;
   /** Remplace la piste de parole (ligne navigateur : OndeDirect). */
@@ -481,6 +498,7 @@ export function VueBandeAppel({
   raccrochage,
   termine = null,
   conversation = false,
+  entrant: entrantProp = false,
   actions,
   onde,
   libelleProspect,
@@ -504,6 +522,7 @@ export function VueBandeAppel({
   const reduit = useMouvementReduit();
   const nomProspect = libelleProspect ?? (identite ? prenom(identite.prospect) : 'Prospect');
   const nomAssistante = useNomAssistante();
+  const entrant = entrantProp || Boolean(identite?.entrant);
 
   const confirmationPrise = useConfirmation();
   const [ouverteAuDepart, setOuverteAuDepart] = useState(confirmationInitiale);
@@ -579,7 +598,7 @@ export function VueBandeAppel({
           : 'Appel terminé'
         : etat === 'termine' && chrono
           ? 'Appel terminé'
-          : (LIBELLES_ETAT[etat] ?? etat);
+          : libelleEtat(etat, entrant, nomAssistante);
   const couleurEtat = vivant || prise.etat === 'active' ? 'text-antenne' : 'text-encre-3';
   // Indicatif et discret : le bilan dira l'étape atteinte. Rien après une prise de main (l'assistante s'est tue).
   const etapeEnCours = enLigne && prise.etat !== 'active' && etat !== 'prise-en-main' ? etapeAffichee(etape, etapes) : null;
@@ -651,13 +670,17 @@ export function VueBandeAppel({
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
           {identite ? (
             <div className="flex min-w-0 flex-wrap items-baseline gap-x-3.5 gap-y-0.5">
-              {identite.lien ? (
-                <Link href={identite.lien} className={`text-lg font-semibold pointer-coarse:py-3 ${LIEN_TEXTE}`}>
-                  {identite.prospect}
-                </Link>
-              ) : (
-                <span className="text-lg font-semibold">{identite.prospect}</span>
-              )}
+              <span className="min-w-0 text-lg">
+                {identite.lien ? (
+                  <Link href={identite.lien} className={`font-semibold pointer-coarse:py-3 ${LIEN_TEXTE}`}>
+                    {identite.prospect}
+                  </Link>
+                ) : (
+                  <span className="font-semibold">{identite.prospect}</span>
+                )}
+                {/* Le prospect a rappelé : dit en toutes lettres, en graphite, sans badge. */}
+                {entrant ? <span className="text-encre-2"> rappelle</span> : null}
+              </span>
               <span className="min-w-0 text-md text-encre-3">
                 {[identite.societe, identite.entreprise, identite.version].filter(Boolean).join(' · ')}
                 {identite.numeroMasque ? (
@@ -799,6 +822,7 @@ export function VueBandeAppel({
           <span className="min-w-0 truncate font-semibold max-sm:max-w-[40%]">
             <span className="sm:hidden">{identite ? prenom(identite.prospect) : nomProspect}</span>
             <span className="max-sm:hidden">{identite?.prospect ?? nomProspect}</span>
+            {entrant ? <span className="font-normal text-encre-2 max-sm:hidden"> rappelle</span> : null}
           </span>
           <span className={`shrink-0 text-sm max-sm:hidden ${couleurEtat}`}>{texteEtat}</span>
           <span className="max-sm:hidden">
@@ -932,6 +956,7 @@ export function BandeAppel({
   statut = 'en-cours',
   finLe,
   conversation = false,
+  entrant: entrantProp = false,
   raccourcis = true,
   condensee = false,
   onTermine,
@@ -949,6 +974,8 @@ export function BandeAppel({
   statut?: 'en-cours' | 'traitement';
   finLe?: string | null;
   conversation?: boolean;
+  /** Le prospect a rappelé : l'assistante décroche, rien n'est composé ni ne sonne de notre côté. */
+  entrant?: boolean;
   raccourcis?: boolean;
   condensee?: boolean;
   onTermine?: () => void;
@@ -976,14 +1003,15 @@ export function BandeAppel({
   }
   if (prise.etat === 'active' && priseDepuis === null && maintenant > 0) setPriseDepuis(maintenant);
 
+  const entrant = entrantProp || Boolean(identite?.entrant) || fil.entrant;
   const finConnue = finLe ? Date.parse(finLe) : fil.termineLe;
   const termine = statut === 'traitement' || fil.etat === 'termine' ? { le: finConnue ?? 0 } : null;
 
   let chrono: VueBandeAppelProps['chrono'] = null;
   if (termine && finConnue) chrono = { libelle: `à ${heure(new Date(finConnue))} · analyse`, depuis: finConnue };
-  else if (!termine && SONNE.has(fil.etat) && !decrocheLigne && debutLe) chrono = { libelle: 'sonne depuis', depuis: Date.parse(debutLe) };
+  else if (!termine && !entrant && SONNE.has(fil.etat) && !decrocheLigne && debutLe) chrono = { libelle: 'sonne depuis', depuis: Date.parse(debutLe) };
   else if (!termine && enLigneDepuis) chrono = { libelle: 'en ligne', depuis: enLigneDepuis };
-  else if (!termine && debutLe) chrono = { libelle: 'depuis la composition', depuis: Date.parse(debutLe) };
+  else if (!termine && debutLe) chrono = { libelle: entrant ? 'depuis l’appel' : 'depuis la composition', depuis: Date.parse(debutLe) };
 
   return (
     <VueBandeAppel
@@ -1002,6 +1030,7 @@ export function BandeAppel({
       raccrochage={{ enCours: raccrochageEnCours, erreur: erreurRaccrochage }}
       termine={termine}
       conversation={conversation}
+      entrant={entrant}
       raccourcis={raccourcis}
       condensee={condensee}
       raccrochageSiPerdu={statut === 'en-cours'}

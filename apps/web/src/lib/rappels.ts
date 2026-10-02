@@ -8,7 +8,8 @@ import { appels, entreprises, prospects } from '@/db/schema';
  * Rappels convenus (CONTEXT.md). Un rappel est à faire tant qu'aucun appel plus récent vers le même prospect
  * n'existe : dès qu'on le rappelle, qu'il décroche ou non, le rappel est fait. Les appels simulés n'entrent
  * pas dans la règle : un rappel « convenu » avec un modèle n'est pas à faire, et une simulation ne rappelle
- * personne. LECTURE SEULE.
+ * personne. Un appel entrant (le prospect rappelle, ADR 0018) le fait aussi, comme un appel sortant, mais seulement
+ * s'il a eu une conversation : un entrant que le téléphone n'a pas pu décrocher ne compte pas. LECTURE SEULE.
  */
 
 /**
@@ -20,6 +21,7 @@ export const RAPPEL_A_FAIRE = sql`(${appels.issueSysteme} = 'rappel-convenu' and
   where plus_recent.entreprise_id = ${appels.entrepriseId}
     and plus_recent.prospect_id = ${appels.prospectId}
     and plus_recent.ligne <> 'simulation'
+    and (plus_recent.sens = 'sortant' or plus_recent.conversation_id is not null)
     and plus_recent.debut_le > ${appels.debutLe}
 ) and not exists (
   select 1 from prospects archive
@@ -90,16 +92,21 @@ export interface AppelHistorique {
   debutLe: Date;
   issueSysteme: IssueSysteme | null;
   rappelLe: Date | null;
+  /** Absent : un appel sortant. */
+  sens?: 'sortant' | 'entrant';
+  conversationId?: string | null;
   /** Un bilan entier, ou purgé (ADR 0014) : il garde la date du rappel, pas les mots du prospect. */
   bilan: { rappel: string | null; rappelLe?: RappelDate | null } | { purge: true; rappelLe?: RappelDate | null } | null;
 }
 
 /**
  * Le rappel à faire d'un prospect, d'après son historique : son dernier appel hors simulation, s'il a fini en
- * rappel convenu. Tout appel plus récent, même non abouti, le fait.
+ * rappel convenu. Tout appel sortant plus récent, même non abouti, le fait, ainsi qu'un appel entrant avec conversation.
  */
 export function rappelEnAttente(historique: readonly AppelHistorique[]): { appelId: string; rappelLe: Date | null; quand: RappelDate | null; texte: string | null } | null {
-  const dernier = historique.filter((a) => a.ligne !== 'simulation').sort((a, b) => b.debutLe.getTime() - a.debutLe.getTime())[0];
+  const dernier = historique
+    .filter((a) => a.ligne !== 'simulation' && (a.sens !== 'entrant' || a.conversationId))
+    .sort((a, b) => b.debutLe.getTime() - a.debutLe.getTime())[0];
   if (dernier?.issueSysteme !== 'rappel-convenu') return null;
   const texte = dernier.bilan && 'rappel' in dernier.bilan ? dernier.bilan.rappel : null;
   return { appelId: dernier.id, rappelLe: dernier.rappelLe, quand: dernier.bilan?.rappelLe ?? null, texte };

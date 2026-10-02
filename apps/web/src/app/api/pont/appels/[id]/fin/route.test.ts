@@ -1,13 +1,25 @@
 import { readFileSync } from 'node:fs';
 import { eq, sql } from 'drizzle-orm';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { db } from '@/db';
-import { appels } from '@/db/schema';
+import { appels, campagnes } from '@/db/schema';
+import { appelerSuivantTelephone, demarrerCampagne, enregistrerCampagne } from '@/lib/campagnes';
 import { creerScript } from '@/lib/entreprises';
 import { listerAppels } from '@/lib/lecture';
-import { entrepriseDeTest } from '../../../../../../../test/fixtures';
+import { importerFiches } from '@/lib/prospects';
+import { fauxPont } from '../../../../../../../test/faux-pont';
+import { agendaFrais, entrepriseDeTest, fiche } from '../../../../../../../test/fixtures';
 import { avecBaseDeTest } from '../../../../../../../test/outils';
 import { POST } from './route';
+
+// Hors requête Next, `after` lève : les tâches de fond de la route sont gardées pour être attendues par le test.
+const taches: Promise<unknown>[] = [];
+vi.mock('next/server', async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  after: (tache: () => Promise<unknown>) => {
+    taches.push(tache());
+  },
+}));
 
 avecBaseDeTest();
 
@@ -58,6 +70,67 @@ describe('fin d’un appel téléphone', () => {
     expect(reponse.status).toBe(401);
     const [lu] = await db.select().from(appels).where(eq(appels.id, appel.id));
     expect(lu?.statut).toBe('en-cours');
+  });
+});
+
+describe('fin d’un appel de campagne', () => {
+  it('sans conversation : nouvelle tentative prévue pour ce prospect, le suivant est composé après la pause', async () => {
+    const e = await entrepriseDeTest();
+    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01'), fiche('marc', 'Marc Fictif', '06 39 98 00 02')]);
+    const { versionScriptId } = await creerScript(e.id, 'Découverte');
+    await agendaFrais();
+    const pont = await fauxPont({ reglages: { pauseEntreAppelsS: 0 } });
+    try {
+      const id = await enregistrerCampagne(e.id, { versionScriptId, ligne: 'bluetooth', prospects: ['julie', 'marc'] });
+      await demarrerCampagne(id);
+      await appelerSuivantTelephone(id);
+      const [premier] = await db.select({ id: appels.id }).from(appels);
+      if (!premier) throw new Error('appel non composé');
+
+      await fin(premier.id, { raison: 'pas de réponse', conversationId: null });
+      await Promise.all(taches.splice(0));
+
+      const [c] = await db.select().from(campagnes).where(eq(campagnes.id, id));
+      expect(c?.statut).toBe('en-cours');
+      expect(c?.entrees).toEqual([
+        { prospectId: 'julie', etat: 'a-appeler', tentative: 2, appelsPrecedents: [premier.id], pasAvant: expect.any(String) },
+        { prospectId: 'marc', etat: 'en-appel', appelId: expect.any(String) },
+      ]);
+      expect(pont.compositions().map((r) => (r.corps as { numero: string }).numero)).toEqual(['+33639980001', '+33639980002']);
+    } finally {
+      await pont.fermer();
+    }
+  });
+});
+
+describe('fin d’un appel entrant', () => {
+  it('aucune entrée de file close ; la campagne téléphone retenue par la ligne occupée repart après la pause', async () => {
+    const e = await entrepriseDeTest();
+    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01'), fiche('marc', 'Marc Fictif', '06 39 98 00 02')]);
+    const { versionScriptId } = await creerScript(e.id, 'Découverte');
+    await agendaFrais();
+    const pont = await fauxPont({ reglages: { pauseEntreAppelsS: 0 } });
+    try {
+      // Marc rappelait pendant le lancement : la campagne est en cours, rien n'est parti.
+      const id = await enregistrerCampagne(e.id, { versionScriptId, ligne: 'bluetooth', prospects: ['julie'] });
+      await demarrerCampagne(id);
+      const [rappel] = await db
+        .insert(appels)
+        .values({ entrepriseId: e.id, prospectId: 'marc', versionScriptId, ligne: 'bluetooth', sens: 'entrant', numero: '+33639980002' })
+        .returning();
+      if (!rappel) throw new Error('appel entrant non créé');
+
+      await fin(rappel.id, { raison: 'décroché impossible', conversationId: null, sens: 'entrant' });
+      await Promise.all(taches.splice(0));
+
+      const [lu] = await db.select().from(appels).where(eq(appels.id, rappel.id));
+      expect(lu).toMatchObject({ statut: 'termine', issueSysteme: 'non-abouti', campagneId: null, sens: 'entrant' });
+      const [c] = await db.select().from(campagnes).where(eq(campagnes.id, id));
+      expect(c?.entrees).toEqual([{ prospectId: 'julie', etat: 'en-appel', appelId: expect.any(String) }]);
+      expect(pont.compositions().map((r) => (r.corps as { numero: string }).numero)).toEqual(['+33639980001']);
+    } finally {
+      await pont.fermer();
+    }
   });
 });
 

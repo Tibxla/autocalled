@@ -1,4 +1,4 @@
-import { debuterAppel } from '@autocalled/domain';
+import { debuterAppel, type IssueSysteme } from '@autocalled/domain';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/db';
@@ -65,11 +65,14 @@ async function campagneTelephone(prospects = ['julie', 'marc', 'lea']) {
   return id;
 }
 
-/** Ce que fait la route de fin du pont : clôt l'entrée, puis enchaîne. */
-async function finDAppel(campagneId: string) {
+/**
+ * Ce que fait la route de fin du pont quand l'issue est déjà connue : clôt l'entrée, puis enchaîne. Un refus par
+ * défaut : un `non-abouti` donnerait une nouvelle tentative (voir nouvelles-tentatives.test.ts).
+ */
+async function finDAppel(campagneId: string, issue: IssueSysteme = 'refus') {
   const entree = (await lire(campagneId)).entrees.find((e) => e.etat === 'en-appel');
   if (entree?.etat !== 'en-appel') throw new Error('aucun appel en cours');
-  await db.update(appels).set({ statut: 'termine', issue: 'non-abouti', issueSysteme: 'non-abouti', finLe: new Date() }).where(eq(appels.id, entree.appelId));
+  await db.update(appels).set({ statut: 'termine', issue, issueSysteme: issue, finLe: new Date() }).where(eq(appels.id, entree.appelId));
   await clore(campagneId, entree.appelId);
   await appelerSuivantTelephone(campagneId);
 }
@@ -230,11 +233,13 @@ describe('Terminer', () => {
     expect((await lire(id)).statut).toBe('terminee');
   });
 
-  it('refuse une campagne déjà terminée, et une campagne dont l’appel en cours est le dernier', async () => {
+  it('pendant le dernier appel : accepté (sans réponse, il ne sera pas rappelé), puis refusé une fois terminée', async () => {
     const id = await campagneTelephone(['julie']);
 
-    expect(await terminerCampagne(id)).toEqual({ ok: false, raison: expect.stringContaining('Plus aucun prospect') });
-    await finDAppel(id);
+    expect(await terminerCampagne(id)).toEqual({ ok: true, fin: 'apres-appel' });
+    expect(await terminerCampagne(id)).toEqual({ ok: false, raison: 'La campagne se termine déjà à la fin de l’appel en cours.' });
+    await finDAppel(id, 'non-abouti');
+    expect((await lire(id)).entrees).toEqual([{ prospectId: 'julie', etat: 'appelee', appelId: expect.any(String) }]);
     expect(await terminerCampagne(id)).toEqual({ ok: false, raison: 'La campagne est déjà terminée.' });
   });
 });
@@ -269,9 +274,11 @@ describe('campagne simulée (lancée aussi par le MCP en tâche détachée)', ()
       .values({ entrepriseId, prospectId: 'julie', versionScriptId, campagneId: id, ligne: 'simulation', numero: '+33639980001' })
       .returning({ id: appels.id });
     if (!appel) throw new Error('appel non créé');
-    await avecCampagne(id, async (c) => ({ campagne: debuterAppel(c, 'julie', appel.id), resultat: null }));
+    await avecCampagne(id, async (c) => ({ campagne: debuterAppel(c, 'julie', appel.id, new Date()), resultat: null }));
 
     expect(await terminerCampagne(id)).toEqual({ ok: true, fin: 'apres-appel' });
+    // La simulation a échoué (ce que laisse claude -p interdit en test) : l'entrée est classée dès la clôture.
+    await db.update(appels).set({ statut: 'echec', finLe: new Date() }).where(eq(appels.id, appel.id));
     await clore(id, appel.id);
     await derouleSimulation(id);
 

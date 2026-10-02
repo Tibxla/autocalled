@@ -134,6 +134,13 @@
       "when": 1790887879949,
       "tag": "0018_numero-appelable",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790971570640,
+      "tag": "0019_sens-appel",
+      "breakpoints": true
     }
   ]
 }

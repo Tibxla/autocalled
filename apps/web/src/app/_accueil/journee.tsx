@@ -349,6 +349,14 @@ function EnTeteJournee({ appels, campagnes }: { appels: AppelDuJour[]; campagnes
                     {c.comptes.traites}/{c.comptes.total}
                   </span>
                   {'\u00a0'}traités · <span className={statut.classe}>{statut.libelle}</span>
+                  {/* Les prospects sans réponse rappelés plus tard, et quand part le premier d'entre eux. */}
+                  {c.prochaineTentative && c.statut !== 'terminee' ? (
+                    <>
+                      {' · '}
+                      <span className="font-mono">{c.prochaineTentative.nombre}</span>
+                      {'\u00a0'}à retenter {c.prochaineTentative.quand}
+                    </>
+                  ) : null}
                 </LienTexte>
               </li>
             );
@@ -522,6 +530,7 @@ const LigneAppel = memo(function LigneAppel({
         </LienLigne>
         {a.societe ? <span className="text-encre-3"> · {a.societe}</span> : null}
         {a.ligne === 'simulation' ? <span className="text-encre-3"> · simulé</span> : null}
+        {a.sens === 'entrant' ? <span className="text-encre-2"> · a rappelé</span> : null}
       </Cellule>
       <Cellule attenuee tronquee titre={a.entreprise} masqueeMobile>
         {a.entreprise}

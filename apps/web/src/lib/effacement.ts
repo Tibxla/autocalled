@@ -345,7 +345,9 @@ export async function effacerPersonne(entrepriseId: string, prospectId: string, 
         campagnesSupprimees += 1;
         continue;
       }
-      const statut = k.statut !== 'terminee' && !reste.some((e) => e.etat === 'a-appeler' || e.etat === 'en-appel') ? 'terminee' : k.statut;
+      // Même règle que le domaine : un appel en analyse peut encore donner une nouvelle tentative.
+      const statut =
+        k.statut !== 'terminee' && !reste.some((e) => e.etat === 'a-appeler' || e.etat === 'en-appel' || e.etat === 'en-analyse') ? 'terminee' : k.statut;
       if (statut !== k.statut) campagnesTerminees += 1;
       await tx
         .update(campagnes)

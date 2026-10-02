@@ -16,7 +16,8 @@
  * FORME : esquisse G du canevas, choisie par l'opérateur parmi une vingtaine ; pas de tirage concept-seed.
  *
  * RAPPELS : sous la bande, « À rappeler aujourd'hui » liste les rappels convenus datés du jour et en retard ;
- * chaque ligne ouvre la fiche du prospect, d'où l'appel part. Sans rappel, rien ne s'affiche.
+ * chaque ligne ouvre la fiche du prospect, d'où l'appel part. Sans rappel, rien ne s'affiche. Dessous, « Ont rappelé
+ * aujourd'hui » : les prospects qui ont rappelé le téléphone passerelle (appels entrants), tirés des appels du jour.
  *
  * Données : la page lit les appels, les campagnes et les rappels du jour elle-même, HORS de la frontière de la bande :
  * une ligne muette (jusqu'à 15 s) ne bloque jamais la frise ni le tableau.
@@ -39,6 +40,7 @@ import {
 import { rappelsDuJour } from '@/lib/rappels';
 import { BandeAccueil } from './_accueil/bande-accueil';
 import { FrontiereLigne } from './_accueil/frontiere-ligne';
+import { OntRappele } from './_accueil/ont-rappele';
 import { RappelsDuJour } from './_accueil/rappels-du-jour';
 import { Journee } from './_accueil/journee';
 import { campagneTelephoneEnCours, situationAccueil } from './_accueil/situation';
@@ -71,6 +73,7 @@ export default async function Accueil({ searchParams }: { searchParams: Promise<
         </FrontiereLigne>
       </div>
       <RappelsDuJour rappels={rappels.rappels} sansDate={rappels.sansDate} maintenant={journee.maintenant} />
+      <OntRappele appels={journee.appels} maintenant={journee.maintenant} />
       <Journee
         appels={journee.appels}
         campagnes={campagnes}
@@ -104,6 +107,7 @@ async function BandeServeur({ appels, campagnes, maintenant }: { appels: AppelDu
     if (a) {
       identiteFin = {
         prospect: a.prospect,
+        entrant: a.entrant,
         societe: a.societe,
         entreprise: a.entreprise,
         version: a.version,

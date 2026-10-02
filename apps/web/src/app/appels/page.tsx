@@ -12,7 +12,7 @@ import { comptesAppels, comptesParJour, pageAppels, PERIODES } from '@/lib/lectu
 import { assistantePourLaPage } from '@/lib/pages';
 import { appelTelephoneVivant } from '@/lib/ligne-vivante';
 import { versionsDeLEntreprise } from '@/lib/versions';
-import { LIGNES_FILTRE, lireFiltresAppels } from './filtres';
+import { LIGNES_FILTRE, lireFiltresAppels, SENS_FILTRE } from './filtres';
 import { FiltreJour, FiltreSelection } from './filtres-client';
 
 export const metadata: Metadata = { title: 'Appels' };
@@ -78,7 +78,7 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
   const brut = await searchParams;
   const un = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
   const { parametres, filtres } = lireFiltresAppels(Object.fromEntries(Object.entries(brut).map(([k, v]) => [k, un(v)])));
-  const { q = '', issue, ligne, periode, avant } = parametres;
+  const { q = '', issue, ligne, periode, avant, sens } = parametres;
 
   const [entreprise] = parametres.entreprise
     ? await db.select({ id: entreprises.id, nom: entreprises.nom }).from(entreprises).where(eq(entreprises.slug, parametres.entreprise))
@@ -121,6 +121,7 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
       id: a.id,
       debutLe: a.debutLe,
       ligne: a.ligne,
+      sens: a.sens,
       statut: a.statut,
       issueSysteme: a.issueSysteme,
       issue: a.issue,
@@ -148,7 +149,7 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
   };
   const lien = (changements: Record<string, string | null>) => lienAvec('/appels', sansCurseur, changements);
   const ici = lienAvec('/appels', { ...parametres }, {});
-  const filtre = Boolean(q || parametres.entreprise || issue || ligne || parametres.version || periode || rappels);
+  const filtre = Boolean(q || parametres.entreprise || issue || ligne || parametres.version || periode || rappels || sens);
   const lignesProposees = LIGNES_FILTRE.filter((l) => l.valeur !== 'twilio' || twilio || ligne === 'twilio');
   const persosProposees = persos.filter((p) => !p.archivee || (comptes.parPerso[`perso:${p.id}`] ?? 0) > 0 || issue === `perso:${p.id}`);
   const libelleIssue = rappels ? 'Rappels à faire' : issue ? (FILTRES_ISSUE.find((f) => f.cle === issue)?.libelle ?? persos.find((p) => `perso:${p.id}` === issue)?.libelle ?? null) : null;
@@ -166,6 +167,7 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
   // volet « Filtres » ; son résumé dit celles qui sont actives, « Effacer les filtres » ne retire qu'elles.
   const persoChoisie = issue?.startsWith('perso:') ? (persos.find((p) => `perso:${p.id}` === issue)?.libelle ?? null) : null;
   const resumeVolet = [
+    sens ? (SENS_FILTRE.find((x) => x.valeur === sens)?.libelle ?? null) : null,
     ligne ? (LIGNES_FILTRE.find((l) => l.valeur === ligne)?.libelle ?? null) : null,
     jourPrecis
       ? FORMAT_JOUR_COURT.format(new Date(`${jourPrecis}T12:00:00Z`))
@@ -177,7 +179,7 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
     persoChoisie,
   ].filter((x): x is string => Boolean(x));
   const effacerVolet =
-    resumeVolet.length > 0 ? lien({ ligne: null, periode: null, entreprise: null, version: null, ...(persoChoisie ? { issue: null } : {}) }) : null;
+    resumeVolet.length > 0 ? lien({ sens: null, ligne: null, periode: null, entreprise: null, version: null, ...(persoChoisie ? { issue: null } : {}) }) : null;
 
   const filtreLigne = (
     <>
@@ -191,6 +193,13 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
       ))}
     </>
   );
+  // Qui a appelé qui : l'assistante (sortants) ou le prospect, qui a rappelé le téléphone passerelle (entrants). Comme
+  // « Rappels à faire », un second clic sur le filtre actif le retire : sans lui, les deux sens.
+  const filtreSens = SENS_FILTRE.map((x) => (
+    <Filtre key={x.valeur} actif={sens === x.valeur} href={lien({ sens: sens === x.valeur ? null : x.valeur })}>
+      {x.libelle}
+    </Filtre>
+  ));
   const filtrePeriode = PERIODES.map((cle) => (
     <Filtre key={cle} actif={cle === 'tout' ? !periode : periode === cle} href={lien({ periode: cle === 'tout' ? null : cle })}>
       {LIBELLES_PERIODES[cle]}
@@ -253,7 +262,9 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
         sousTitre={
           rappels
             ? 'Rappels convenus encore à faire, du plus ancien au plus tardif ; les rappels sans date à la fin.'
-            : ligne === 'simulation'
+            : sens === 'entrant'
+              ? 'Appels entrants : les prospects qui ont rappelé le téléphone passerelle, du plus récent au plus ancien.'
+              : ligne === 'simulation'
               ? 'Appels simulés, du plus récent au plus ancien ; ils ne comptent dans aucun chiffre.'
               : 'Appels réels, du plus récent au plus ancien ; les simulés sont à part.'
         }
@@ -290,6 +301,9 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
               Rappels à faire
             </Filtre>
           </Filtres>
+          <Filtres libelle="Sens" className="text-sm!">
+            {filtreSens}
+          </Filtres>
           <Filtres libelle="Ligne" className="text-sm!">
             {filtreLigne}
           </Filtres>
@@ -315,6 +329,7 @@ export default async function PageAppels({ searchParams }: { searchParams: Promi
           ))}
         </Filtres>
         <VoletFiltres resume={resumeVolet} effacer={effacerVolet}>
+          <GroupeFiltres libelle="Sens">{filtreSens}</GroupeFiltres>
           <GroupeFiltres libelle="Ligne">{filtreLigne}</GroupeFiltres>
           <GroupeFiltres libelle="Période">
             {filtrePeriode}

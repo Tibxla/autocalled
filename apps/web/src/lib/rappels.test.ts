@@ -108,6 +108,16 @@ describe('rappelsDuJour', () => {
     expect((await rappelsDuJour()).rappels.map((r) => r.prospectId)).toEqual(['julie']);
   });
 
+  it('un appel entrant le fait s’il a eu une conversation, pas s’il n’a pas été décroché', async () => {
+    await rappel('julie', jour(0, '16:30'));
+    await rappel('marc', jour(0, '17:00'));
+    const entrant = { entrepriseId, versionScriptId, ligne: 'bluetooth' as const, sens: 'entrant' as const, numero: '+33639980001', debutLe: new Date(Date.now() - 60_000) };
+    await db.insert(appels).values({ ...entrant, prospectId: 'julie', statut: 'termine', issue: 'refus', issueSysteme: 'refus', conversationId: 'conv-fictive' });
+    await db.insert(appels).values({ ...entrant, prospectId: 'marc', statut: 'termine', issue: 'non-abouti', issueSysteme: 'non-abouti' });
+
+    expect((await rappelsDuJour()).rappels.map((r) => r.prospectId)).toEqual(['marc']);
+  });
+
   it('compte à part les rappels sans date, et un rappel plus récent remplace l’ancien', async () => {
     await rappel('julie', null);
     await rappel('marc', jour(-1, null), { debut: 5 * 86_400_000 });
@@ -152,6 +162,14 @@ describe('rappelEnAttente (fiche prospect)', () => {
         { ...base, id: 'b', debutLe: new Date('2026-09-29T10:00:00Z'), issueSysteme: null, rappelLe: null, bilan: null },
       ]),
     ).toBeNull();
+  });
+
+  it('un appel entrant plus récent le fait seulement avec une conversation', () => {
+    const convenu = { ...base, id: 'a', debutLe: new Date('2026-09-28T10:00:00Z'), issueSysteme: 'rappel-convenu' as const };
+    const entrant = { ...base, id: 'e', sens: 'entrant' as const, debutLe: new Date('2026-09-29T10:00:00Z'), issueSysteme: 'non-abouti' as const, rappelLe: null, bilan: null };
+
+    expect(rappelEnAttente([convenu, { ...entrant, conversationId: null }])).toMatchObject({ appelId: 'a' });
+    expect(rappelEnAttente([convenu, { ...entrant, conversationId: 'conv-fictive' }])).toBeNull();
   });
 
   it('un ancien bilan sans date reste un rappel à faire, sans instant', () => {

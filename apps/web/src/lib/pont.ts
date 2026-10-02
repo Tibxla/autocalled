@@ -11,7 +11,8 @@ function secret(): string {
   return valeur;
 }
 
-export type ReponsePont = { ok: true; corps: Record<string, unknown> } | { ok: false; raison: string };
+/** `statut` : le code HTTP d'un refus du pont (409 : ligne occupée) ; absent s'il n'a pas répondu. */
+export type ReponsePont = { ok: true; corps: Record<string, unknown> } | { ok: false; raison: string; statut?: number };
 
 export async function commanderPont(chemin: string, corps?: unknown): Promise<ReponsePont> {
   const base = process.env.PONT_URL ?? 'http://127.0.0.1:3021';
@@ -24,7 +25,7 @@ export async function commanderPont(chemin: string, corps?: unknown): Promise<Re
       cache: 'no-store',
     });
     const lu = (await r.json().catch(() => ({}))) as Record<string, unknown>;
-    if (!r.ok) return { ok: false, raison: typeof lu.erreur === 'string' ? lu.erreur : `Le pont répond ${r.status}.` };
+    if (!r.ok) return { ok: false, raison: typeof lu.erreur === 'string' ? lu.erreur : `Le pont répond ${r.status}.`, statut: r.status };
     return { ok: true, corps: lu };
   } catch {
     return { ok: false, raison: 'Le pont Bluetooth ne répond pas : le service autocalled-pont tourne-t-il ?' };
@@ -39,13 +40,31 @@ export async function reglagesDuPont(): Promise<ReglagesLigne | null> {
   return etat.ok ? ((etat.corps.reglages as ReglagesLigne | undefined) ?? null) : null;
 }
 
+/**
+ * Ce que la ligne téléphone permet à cet instant, d'après le pont : `absente` (le pont ne répond pas), `occupee` (un
+ * appel en ligne, sortant ou entrant, même s'il sonne encore), `plafond` (plafond d'appels atteint), sinon `libre`.
+ */
+export type DisponibiliteLigne =
+  | { type: 'absente' | 'plafond'; raison: string }
+  /** `plafond` : la raison si le plafond est atteint en plus, sinon null. */
+  | { type: 'occupee'; raison: string; plafond: string | null }
+  | { type: 'libre' };
+
+export async function disponibiliteLigne(): Promise<DisponibiliteLigne> {
+  const etat = await commanderPont('/etat');
+  if (!etat.ok) return { type: 'absente', raison: etat.raison };
+  const c = etat.corps;
+  const plafond = typeof c.plafond === 'string' ? c.plafond : null;
+  if (c.appelEnCours || c.entrantEnCours || typeof c.appelId === 'string') return { type: 'occupee', raison: APPEL_DEJA_EN_LIGNE, plafond };
+  return plafond ? { type: 'plafond', raison: plafond } : { type: 'libre' };
+}
+
 /** La raison si le plafond d'appels du pont est atteint (ou si le pont ne répond pas, ou, avec `ligneLibre`, si un appel est en ligne), sinon null. */
 export async function refusDuPont({ ligneLibre = false }: { ligneLibre?: boolean } = {}): Promise<string | null> {
-  const etat = await commanderPont('/etat');
-  if (!etat.ok) return etat.raison;
+  const ligne = await disponibiliteLigne();
   // Un appel isolé ne part pas sur une ligne occupée : refusé avant d'être enregistré, il ne laisse pas de « Non composé ».
-  if (ligneLibre && (etat.corps.appelEnCours || typeof etat.corps.appelId === 'string')) return APPEL_DEJA_EN_LIGNE;
-  return typeof etat.corps.plafond === 'string' ? etat.corps.plafond : null;
+  if (ligne.type === 'occupee') return ligneLibre ? ligne.raison : ligne.plafond;
+  return ligne.type === 'libre' ? null : ligne.raison;
 }
 
 export const APPEL_DEJA_EN_LIGNE = 'Un appel est déjà en ligne sur le téléphone.';

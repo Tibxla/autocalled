@@ -144,6 +144,7 @@ export const GROUPES_VARIABLES: { titre: string; cles: [(typeof VARIABLES_DE_L_A
     titre: 'Appel',
     cles: [
       ['assistante_nom', 'Nom de l’assistante'],
+      ['situation_appel', 'Qui appelle qui'],
       ['date_du_jour', 'Date du jour'],
     ],
   },

@@ -29,6 +29,7 @@ describe('état de la ligne pour la barre du haut', () => {
       connecte: false,
       appelEnCours: false,
       appelId: null,
+      entrant: false,
       decrocheLe: null,
       plafond: null,
       campagne: { id: c.id, entreprise: 'Gîte fictif en-pause', statut: 'en-pause', traites: 3, total: 10 },
@@ -52,6 +53,22 @@ describe('état de la ligne pour la barre du haut', () => {
       expect(await etatPourLaBarre()).toMatchObject({ plafond: { jusqua: null }, appelEnCours: true, appelId: APPEL, decrocheLe: 1_800_000_000_000 });
     } finally {
       await pont.fermer();
+    }
+  });
+
+  it('appel entrant : un prospect qui rappelle (suivi), un numéro inconnu qui sonne (non suivi), pas un entrant en attente derrière un sortant', async () => {
+    const cas = [
+      { etat: { appelEnCours: true, appelId: APPEL, sens: 'entrant', entrantEnCours: true }, entrant: true },
+      { etat: { appelEnCours: true, appelId: null, sens: null, entrantEnCours: true }, entrant: true },
+      { etat: { appelEnCours: true, appelId: APPEL, sens: 'sortant', entrantEnCours: true }, entrant: false },
+    ];
+    for (const c of cas) {
+      const pont = await fauxPont({ etat: c.etat });
+      try {
+        expect(await etatPourLaBarre()).toMatchObject({ appelEnCours: true, appelId: c.etat.appelId, entrant: c.entrant });
+      } finally {
+        await pont.fermer();
+      }
     }
   });
 

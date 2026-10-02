@@ -1,6 +1,6 @@
 #!/bin/bash
-# Construit l'interface et installe ses unités utilisateur : le service de l'interface et le minuteur de la purge
-# (redémarrent seuls, y compris après un redémarrage du serveur grâce au « linger » systemd).
+# Construit l'interface et installe ses unités utilisateur : le service de l'interface, le minuteur de la purge et celui
+# du réveil des campagnes (redémarrent seuls, y compris après un redémarrage du serveur grâce au « linger » systemd).
 set -euo pipefail
 racine="$(cd "$(dirname "$0")/.." && pwd)"
 (cd "$racine/apps/web" && pnpm exec next build)
@@ -25,3 +25,7 @@ systemctl --user --no-pager status autocalled-web.service | grep -E "●|Active"
 # le service. `pnpm purger --essai` montre d'abord ce qui partirait.
 systemctl --user enable --now autocalled-purge.timer
 systemctl --user --no-pager list-timers autocalled-purge.timer
+# Réveil des campagnes téléphone toutes les 5 minutes (nouvelles tentatives, ADR 0017). `pnpm reveil --essai` montre
+# d'abord ce qu'il classerait et relancerait.
+systemctl --user enable --now autocalled-reveil.timer
+systemctl --user --no-pager list-timers autocalled-reveil.timer

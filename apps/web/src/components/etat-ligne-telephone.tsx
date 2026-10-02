@@ -17,8 +17,11 @@ export type EtatLigneClient =
   | { etat: 'deconnecte' }
   /** `plafond` : aucun appel ne part avant `jusqua` (ms depuis l'epoch, null si le pont ne la donne pas). */
   | { etat: 'libre'; plafond?: { jusqua: number | null } | null }
-  /** `decrocheLe` : heure du décroché donnée par le pont (ms), pour un chrono qui survit au rechargement. */
-  | { etat: 'en-appel'; ligne: 'telephone'; appelId: string | null; decrocheLe?: number | null }
+  /**
+   * `decrocheLe` : heure du décroché donnée par le pont (ms), pour un chrono qui survit au rechargement. `entrant` : un
+   * prospect qui rappelle (avec `appelId`), ou un numéro inconnu qui sonne sans réponse (sans).
+   */
+  | { etat: 'en-appel'; ligne: 'telephone'; appelId: string | null; decrocheLe?: number | null; entrant?: boolean }
   | { etat: 'en-appel'; ligne: 'navigateur' };
 
 /** La campagne qui tourne ou attend, vue de toute page (lib/ligne). */
@@ -36,6 +39,7 @@ type Reponse = {
   connecte?: boolean;
   appelEnCours?: boolean;
   appelId?: string | null;
+  entrant?: boolean;
   decrocheLe?: number | null;
   plafond?: { jusqua: number | null } | null;
   campagne?: CampagneLigne | null;
@@ -55,7 +59,7 @@ const abonnes = new Set<() => void>();
 
 function depuisReponse(r: Reponse): EtatLigneClient {
   if (!r.pont) return { etat: 'injoignable' };
-  if (r.appelEnCours) return { etat: 'en-appel', ligne: 'telephone', appelId: r.appelId ?? null, decrocheLe: r.decrocheLe ?? null };
+  if (r.appelEnCours) return { etat: 'en-appel', ligne: 'telephone', appelId: r.appelId ?? null, decrocheLe: r.decrocheLe ?? null, entrant: r.entrant === true };
   if (!r.connecte) return { etat: 'deconnecte' };
   return { etat: 'libre', plafond: r.plafond ?? null };
 }

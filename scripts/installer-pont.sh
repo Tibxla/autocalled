@@ -36,11 +36,12 @@ if ! grep -q '^PONT_SECRET=.\+' "$racine/.env"; then
   echo "PONT_SECRET=$(openssl rand -hex 32)" >> "$racine/.env"
 fi
 
-# Redémarrer le pont coupe l'appel en cours, dont la fin n'atteindrait jamais l'application.
+# Redémarrer le pont coupe l'appel en cours, dont la fin n'atteindrait jamais l'application. Un appel entrant compte dès
+# sa sonnerie (`appelEnCours`) : pendant la décision, sa ligne `appels` peut déjà exister sans `appelId` côté pont.
 secret="$(grep '^PONT_SECRET=' "$racine/.env" | cut -d= -f2-)"
 # L'en-tête passe par l'entrée standard : en argument, le secret serait visible de tout compte local (ps).
-if printf 'Authorization: Bearer %s\n' "$secret" | curl -s -m 3 -H @- http://127.0.0.1:3021/etat 2>/dev/null | grep -q '"appelId": "'; then
-  echo "✗ Un appel est en cours sur le téléphone passerelle : relance ce script une fois la ligne libre."
+if printf 'Authorization: Bearer %s\n' "$secret" | curl -s -m 3 -H @- http://127.0.0.1:3021/etat 2>/dev/null | grep -qE '"appelId": "|"appelEnCours": true'; then
+  echo "✗ Un appel est en cours sur le téléphone passerelle (sortant, ou entrant qui sonne) : relance ce script une fois la ligne libre."
   exit 1
 fi
 

@@ -1,0 +1,23 @@
+# Réveil des campagnes téléphone (ADR 0017) : classe les appels dont l'entrée attend encore son bilan et relance les
+# campagnes en cours dont une nouvelle tentative est arrivée à son heure. Lancé par autocalled-reveil.timer.
+# Modèle : scripts/installer-services.sh y écrit le dossier du dépôt (marqueur RACINE entre arobases) et le PATH
+# qui mène à node, pnpm et claude (marqueur PATH entre arobases), puis l’installe dans ~/.config/systemd/user/.
+# À la main : systemctl --user start autocalled-reveil.service ; pour voir sans rien faire : pnpm reveil --essai
+[Unit]
+Description=Autocalled, réveil des campagnes téléphone (nouvelles tentatives)
+After=network-online.target autocalled-web.service
+
+[Service]
+Type=oneshot
+# Même copie que l'interface : même .env, même base, même pont.
+WorkingDirectory=@RACINE@/apps/web
+Environment=NODE_ENV=production
+Environment=PATH=@PATH@
+ExecStart=/usr/bin/env node --env-file=../../.env --conditions=react-server --import ./scripts/resolution.ts scripts/reveil-campagnes.ts
+# Écrit des lignes et demande au pont de composer : au seul compte du service, sans élévation (sudo, setuid). Un réveil
+# bloqué ne chevauche pas le suivant : le minuteur ne relance pas un service encore actif.
+UMask=0077
+NoNewPrivileges=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+TimeoutStartSec=4min

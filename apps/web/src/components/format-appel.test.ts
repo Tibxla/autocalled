@@ -1,3 +1,4 @@
+import type { EntreeCampagne } from '@autocalled/domain';
 import { describe, expect, it } from 'vitest';
 import {
   chrono,
@@ -11,8 +12,13 @@ import {
   jourCourt,
   libelleJour,
   numeroMasque,
+  parQui,
   prenom,
+  prochaineEntreeDue,
+  prochaineTentative,
   quandRappeler,
+  quandTentative,
+  rangTentative,
   rappelEnRetard,
 } from './format-appel';
 
@@ -156,7 +162,17 @@ describe('comptesCampagne', () => {
         { prospectId: 'e', etat: 'retiree', motif: 'retrait', le: '2026-09-29T10:00:00.000Z', par: 'interface' },
         { prospectId: 'f', etat: 'a-appeler', sauts: 2 },
       ]),
-    ).toEqual({ total: 6, aAppeler: 2, enAppel: 1, appelees: 1, sautees: 1, retirees: 1, traites: 3 });
+    ).toEqual({ total: 6, aAppeler: 2, aRetenter: 0, enAppel: 1, enAnalyse: 0, appelees: 1, sautees: 1, retirees: 1, traites: 3 });
+  });
+
+  it('compte une nouvelle tentative parmi les prospects à appeler, et un bilan en cours comme traité, jamais comme retiré', () => {
+    expect(
+      comptesCampagne([
+        { prospectId: 'a', etat: 'a-appeler', tentative: 2, appelsPrecedents: ['x'], pasAvant: '2026-10-03T12:00:00.000Z' },
+        { prospectId: 'b', etat: 'en-analyse', appelId: 'y' },
+        { prospectId: 'c', etat: 'a-appeler' },
+      ]),
+    ).toEqual({ total: 3, aAppeler: 2, aRetenter: 1, enAppel: 0, enAnalyse: 1, appelees: 0, sautees: 0, retirees: 0, traites: 1 });
   });
 });
 
@@ -194,5 +210,44 @@ describe('rappelEnRetard', () => {
   });
   it('un rappel daté du jour seul ne l’est qu’au lendemain', () => {
     expect(rappelEnRetard('2026-09-29T07:00:00Z', { heure: null, moment: null }, soir)).toBe(false);
+  });
+});
+
+describe('nouvelles tentatives dans la file', () => {
+  // Jeudi 1er octobre 2026, 16 h à Paris.
+  const maintenant = new Date('2026-10-01T14:00:00Z');
+  const demain14h = '2026-10-02T12:00:00.000Z';
+  const demain9h = '2026-10-02T07:00:00.000Z';
+  const entrees: EntreeCampagne[] = [
+    { prospectId: 'a', etat: 'appelee', appelId: 'x' },
+    { prospectId: 'b', etat: 'a-appeler', tentative: 2, appelsPrecedents: ['y'], pasAvant: demain14h },
+    { prospectId: 'c', etat: 'a-appeler', tentative: 3, appelsPrecedents: ['z', 'w'], pasAvant: '2026-10-01T12:00:00.000Z' },
+    { prospectId: 'd', etat: 'a-appeler', tentative: 2, appelsPrecedents: ['v'], pasAvant: demain9h },
+    { prospectId: 'e', etat: 'a-appeler' },
+  ];
+
+  it('le prochain est le premier dû dans l’ordre de la file : une tentative dont l’heure est passée avant les suivants', () => {
+    expect(prochaineEntreeDue(entrees, maintenant)?.prospectId).toBe('c');
+    expect(prochaineEntreeDue(entrees.slice(0, 2), maintenant)).toBeUndefined();
+    expect(prochaineEntreeDue(entrees, new Date('2026-10-02T12:00:00Z'))?.prospectId).toBe('b');
+  });
+
+  it('la prochaine tentative est la plus proche de celles qui attendent, avec leur nombre', () => {
+    expect(prochaineTentative(entrees, maintenant)).toEqual({ le: demain9h, nombre: 2 });
+    expect(prochaineTentative([{ prospectId: 'e', etat: 'a-appeler' }], maintenant)).toBeNull();
+  });
+
+  it('dit le rang et l’heure de la tentative, en heure de Paris', () => {
+    expect(rangTentative(2)).toBe('2ᵉ tentative');
+    expect(rangTentative(3)).toBe('3ᵉ tentative');
+    expect(quandTentative(demain14h, maintenant)).toBe('demain à 14:00');
+    expect(quandTentative('2026-10-03T07:00:00.000Z', maintenant)).toBe('sam. 03/10 à 09:00');
+    expect(quandTentative('2026-10-01T15:00:00.000Z', maintenant)).toBe('aujourd’hui à 17:00');
+  });
+
+  it('dit qui a fait un geste sur la file', () => {
+    expect(parQui('mcp')).toBe(' par Claude Code');
+    expect(parQui('systeme')).toBe(' par l’application');
+    expect(parQui('interface')).toBe('');
   });
 });

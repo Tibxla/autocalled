@@ -1,4 +1,5 @@
-"""Téléphone passerelle vu par oFono : composer, suivre l'état de l'appel, raccrocher, recevoir le canal son.
+"""Téléphone passerelle vu par oFono : composer, suivre l'état de l'appel, raccrocher, recevoir le canal son,
+repérer un appel entrant et y répondre.
 
 Tout appel D-Bus se fait depuis le thread de la boucle GLib (dbus-python n'est pas thread-safe) :
 les autres threads passent par `dans_glib`.
@@ -15,6 +16,23 @@ from gi.repository import GLib
 
 CVSD, MSBC = 1, 2
 CHEMIN_AGENT = "/autocalled/pont/audio"
+# Le numéro de l'appelant (CLIP) peut suivre la première sonnerie : passé ce délai sans lui, l'appel sonne sans réponse.
+DELAI_NUMERO_ENTRANT_MS = 2000
+
+
+def masquer(numero: str) -> str:
+    """Le numéro tel qu'il paraît au journal : ses quatre premiers et deux derniers caractères, rien d'un numéro court."""
+    numero = str(numero or "")
+    return numero[:4] + "…" + numero[-2:] if len(numero) >= 8 else "…"
+
+
+def numero_masque(numero: str) -> bool:
+    """oFono donne « withheld » pour un numéro masqué et une chaîne vide s'il ne l'a pas reçu."""
+    return str(numero or "").strip().lower() in ("", "withheld")
+
+
+class LigneOccupee(RuntimeError):
+    """Le téléphone a déjà un appel, suivi par le pont ou entrant qui sonne : rien n'est composé."""
 
 
 def dans_glib(fonction: Callable[[], Any], delai: float = 10) -> Any:
@@ -63,7 +81,24 @@ class AgentAudio(dbus.service.Object):
 
 
 class Telephone:
-    """Le téléphone passerelle, un appel sortant à la fois. Un seul objet pour toute la vie du pont."""
+    """Le téléphone passerelle, un appel à la fois, sortant ou entrant. Un seul objet pour toute la vie du pont.
+
+    Un appel entrant est repéré dès sa sonnerie : tant qu'il est là (qu'il sonne, ou que le pont l'ait pris), la
+    ligne n'est pas libre. Arrivé ligne libre et numéro connu, il est annoncé à `sur_entrant(chemin, numero brut,
+    génération)`, depuis le thread GLib ; la réponse vient par `repondre` (décrocher) ou `laisser_sonner`, avec la même
+    génération : oFono réutilise le chemin d'un appel retiré, une décision tardive ne doit pas décrocher l'appelant
+    suivant. Le pont ne raccroche jamais un entrant qu'il ne prend pas : Hangup le rejetterait, l'appelant tomberait sur
+    la messagerie aussitôt.
+    """
+
+    # Valeurs par défaut au niveau de la classe : les tests construisent l'objet sans son constructeur.
+    sur_entrant: Callable[[str, str, int], None] | None = None
+    _entrant: str | None = None  # l'appel entrant présent sur le téléphone, du CallAdded au CallRemoved
+    _entrant_generation = 0  # compte les entrants : distingue deux appels arrivés sur le même chemin
+    _entrant_numero = ""  # LineIdentification brute, telle qu'oFono la donne
+    _entrant_annonce = False
+    _evaluation = False  # l'application décide : le canal son qui arrive est gardé, ni lu ni fermé
+    _canal_en_attente: tuple[int, int] | None = None  # (fd, codec) gardé pendant la décision
 
     def __init__(self, bus: dbus.SystemBus, journal: Callable[..., None]):
         self._bus = bus
@@ -72,6 +107,7 @@ class Telephone:
         self._appel: str | None = None
         self._suivi: Suivi | None = None
         self._raison = "inconnue"
+        self.sur_entrant = None
         bus.add_signal_receiver(
             self._propriete, "PropertyChanged", "org.ofono.VoiceCall", "org.ofono", path_keyword="chemin"
         )
@@ -106,7 +142,8 @@ class Telephone:
                 "connecte": bool(p.get("Online")),
                 "nom": str(p.get("Name", "")),
                 "adresse": str(chemin).rsplit("dev_", 1)[-1].replace("_", ":"),
-                "appelEnCours": self._appel is not None,
+                "appelEnCours": self._appel is not None or self._entrant is not None,
+                "entrantEnCours": self.entrant_en_cours(),
             }
             objet = self._bus.get_object("org.ofono", chemin)
             if "org.ofono.NetworkRegistration" in interfaces:
@@ -116,10 +153,23 @@ class Telephone:
                 h = dbus.Interface(objet, "org.ofono.Handsfree").GetProperties()
                 etat["batterie"] = int(h.get("BatteryChargeLevel", 0)) * 20  # oFono : 0 à 5
             return etat
-        return {"connecte": False, "appelEnCours": self._appel is not None}
+        return {
+            "connecte": False,
+            "appelEnCours": self._appel is not None or self._entrant is not None,
+            "entrantEnCours": self.entrant_en_cours(),
+        }
 
     def libre(self) -> bool:
-        return self._suivi is None
+        """Ni appel suivi ni appel entrant présent : le pont peut composer."""
+        return self._suivi is None and self._entrant is None
+
+    def en_appel(self) -> bool:
+        """Un appel suivi par le pont (composé, ou entrant décroché)."""
+        return self._suivi is not None
+
+    def entrant_en_cours(self) -> bool:
+        """Un appel entrant sonne sur le téléphone, ou le pont l'a pris."""
+        return self._entrant is not None
 
     # --- commandes, depuis le thread GLib ----------------------------------------------------------
 
@@ -135,7 +185,9 @@ class Telephone:
         ne répond pas, et un appel D-Bus bloquant figeait tout le pont (29/09). `echec` est appelé si la demande
         est refusée ou reste sans réponse."""
         if self._suivi is not None:
-            raise RuntimeError("un appel est déjà en cours")
+            raise LigneOccupee("un appel est déjà en cours")
+        if self._entrant is not None:
+            raise LigneOccupee("un appel entrant sonne sur le téléphone")
         self._modem = self.modem()
         self._couper_traitement_du_telephone()
         self._suivi = suivi  # avant Dial : le canal son peut s'ouvrir aussitôt
@@ -154,17 +206,65 @@ class Telephone:
 
         gestionnaire.Dial(numero, "default", reply_handler=reponse, error_handler=erreur, timeout=15)
 
-    def raccrocher(self) -> None:
-        """Depuis n'importe quel thread."""
+    def repondre(self, chemin: str, suivi: Suivi, echec: Callable[[str], None], generation: int | None = None) -> None:
+        """Décroche l'appel entrant `chemin`, sans attendre la réponse du téléphone (comme Dial). Le canal son gardé
+        pendant la décision est branché tout de suite, comme celui d'un sortant à la composition. `echec` est appelé
+        si le téléphone refuse ou ne répond pas. `generation` : celle annoncée avec l'appel ; un autre appel arrivé
+        depuis sur le même chemin n'est pas décroché."""
+        if self._suivi is not None:
+            raise RuntimeError("un appel est déjà en cours")
+        if not self._entrant_present(chemin, generation):
+            raise RuntimeError("l'appel entrant ne sonne plus, ou a été pris sur le téléphone")
+        self._modem = self.modem()
+        self._couper_traitement_du_telephone()  # avant Answer, comme avant Dial
+        self._suivi, self._appel, self._raison = suivi, chemin, "inconnue"
+        self._evaluation = False
+        canal, self._canal_en_attente = self._canal_en_attente, None
+        if canal is not None:
+            self._journal("canal son de l'appel entrant accepté")
+            suivi.nouvelle_connexion(*canal)
+
+        def reponse():
+            pass
+
+        def erreur(e):
+            if self._suivi is suivi:
+                self._suivi, self._appel = None, None
+                echec(e.get_dbus_message() if isinstance(e, dbus.DBusException) else str(e))
+
+        appel = dbus.Interface(self._bus.get_object("org.ofono", chemin), "org.ofono.VoiceCall")
+        appel.Answer(reply_handler=reponse, error_handler=erreur, timeout=15)
+
+    def laisser_sonner(self, chemin: str, generation: int | None = None) -> None:
+        """L'application ne décroche pas (numéro inconnu, pas de réponse) : ni Answer ni Hangup, le téléphone sonne
+        jusqu'à sa messagerie. Le canal son gardé est rendu au téléphone."""
+        if self._entrant_present(chemin, generation):
+            self._journal("appel entrant laissé sans réponse : il sonne sur le téléphone")
+            self._fin_d_evaluation()
+
+    def _entrant_present(self, chemin: str, generation: int | None) -> bool:
+        """L'entrant annoncé sonne encore, en attente de la décision (sans `generation` : sur ce chemin, quel qu'il soit)."""
+        meme = generation is None or generation == self._entrant_generation
+        return chemin == self._entrant and self._evaluation and meme
+
+    def raccrocher(self, suivi: Suivi | None = None) -> None:
+        """Depuis n'importe quel thread. L'appel suivi seulement quand il est connu : HangupAll rejetterait aussi un
+        appel entrant qui sonne en attente. Avant la réponse à Dial, HangupAll reste le seul moyen d'arrêter la
+        composition. `suivi` : l'appel qui demande ; s'il n'est plus celui que suit le téléphone quand la demande
+        s'exécute (fini entre-temps), rien n'est raccroché, sans quoi l'appel suivant, ou un entrant qui sonne, le serait."""
 
         def _faire():
-            if self._modem:
-                try:
+            if suivi is not None and self._suivi is not suivi:
+                return False
+            try:
+                if self._appel:
+                    dbus.Interface(self._bus.get_object("org.ofono", self._appel), "org.ofono.VoiceCall").Hangup()
+                elif self._modem and self._suivi is not None:
                     dbus.Interface(
                         self._bus.get_object("org.ofono", self._modem), "org.ofono.VoiceCallManager"
                     ).HangupAll()
-                except dbus.DBusException:
-                    pass
+            except dbus.DBusException:
+                pass
             return False
 
         GLib.idle_add(_faire)
@@ -208,38 +308,111 @@ class Telephone:
     # --- signaux ---------------------------------------------------------------------------------
 
     def _nouvelle_connexion(self, fd: int, codec: int) -> None:
-        if self._suivi is None:
-            # Appel que le pont n'a pas composé (reçu sur le téléphone, ou passé à la main) : on refuse le
-            # canal pour que le son reste sur le téléphone.
-            self._journal("canal son refusé : appel qui n'est pas celui du pont")
-            os.close(fd)
+        if self._suivi is not None:
+            self._suivi.nouvelle_connexion(fd, codec)
             return
-        self._suivi.nouvelle_connexion(fd, codec)
+        if self._evaluation:
+            # L'iPhone peut ouvrir le canal dès la sonnerie. Fermé maintenant, rien n'assure qu'il serait rouvert
+            # après Answer ; lu, il serait accepté (BT_DEFER_SETUP) et le son quitterait le téléphone. On le garde
+            # jusqu'à la décision. Un second canal remplace le premier, sans doute déjà abandonné par le téléphone.
+            if self._canal_en_attente is not None:
+                os.close(self._canal_en_attente[0])
+            self._canal_en_attente = (fd, codec)
+            self._journal("canal son de l'appel entrant gardé en attente de la décision")
+            return
+        # Appel que le pont ne suit pas (passé ou reçu à la main, entrant laissé sans réponse) : on refuse le
+        # canal pour que le son reste sur le téléphone.
+        self._journal("canal son refusé : appel qui n'est pas celui du pont")
+        os.close(fd)
 
     def _ajoute(self, chemin, proprietes):
-        # L'appel peut être annoncé avant la réponse à Dial : on le rattache dès son apparition.
-        if self._suivi is not None and self._appel is None and str(chemin).startswith(str(self._modem)):
-            self._appel = str(chemin)
-            etat = proprietes.get("State")
-            if etat:
-                self._suivi.etat_change(str(etat))
+        chemin, etat = str(chemin), str(proprietes.get("State", ""))
+        if etat in ("incoming", "waiting"):
+            self._entrant_arrive(chemin, proprietes)
+            return
+        # L'appel peut être annoncé avant la réponse à Dial : on le rattache dès son apparition. Seul un appel en
+        # composition peut être le nôtre ; un entrant arrivé pendant ce temps n'est pas pris pour lui.
+        if (
+            etat in ("dialing", "alerting")
+            and self._suivi is not None
+            and self._appel is None
+            and chemin.startswith(str(self._modem))
+        ):
+            self._appel = chemin
+            self._suivi.etat_change(etat)
+
+    def _entrant_arrive(self, chemin: str, proprietes) -> None:
+        numero = str(proprietes.get("LineIdentification", "") or "")
+        if self._entrant is not None:
+            self._journal("autre appel entrant du", masquer(numero), ": il sonne sans réponse")
+            return
+        self._entrant, self._entrant_numero, self._entrant_annonce = chemin, numero, False
+        self._entrant_generation += 1
+        if self._suivi is not None or self.sur_entrant is None:
+            self._journal("appel entrant du", masquer(numero), "pendant un appel : il sonne sans réponse")
+            return
+        self._evaluation = True
+        if numero:
+            self._annoncer()
+        else:
+            GLib.timeout_add(DELAI_NUMERO_ENTRANT_MS, self._numero_attendu, chemin, self._entrant_generation)
+
+    def _numero_attendu(self, chemin: str, generation: int | None = None) -> bool:
+        if self._entrant_present(chemin, generation) and not self._entrant_annonce:
+            self._annoncer()
+        return False
+
+    def _annoncer(self) -> None:
+        self._entrant_annonce = True
+        if numero_masque(self._entrant_numero):
+            self._journal("appel entrant sans numéro : il sonne sans réponse")
+            self._fin_d_evaluation()
+            return
+        self._journal("appel entrant du", masquer(self._entrant_numero), ": l'application décide")
+        self.sur_entrant(self._entrant, self._entrant_numero, self._entrant_generation)
+
+    def _fin_d_evaluation(self) -> None:
+        self._evaluation = False
+        canal, self._canal_en_attente = self._canal_en_attente, None
+        if canal is not None:
+            os.close(canal[0])
+
+    def _oublier_entrant(self) -> None:
+        self._fin_d_evaluation()
+        self._entrant, self._entrant_numero, self._entrant_annonce = None, "", False
 
     def _propriete(self, nom, valeur, chemin=None):
         if chemin == self._appel and nom == "State" and self._suivi:
             self._suivi.etat_change(str(valeur))
+        elif chemin is not None and chemin == self._entrant and nom == "LineIdentification":
+            self._entrant_numero = str(valeur or "")
+            if self._evaluation and not self._entrant_annonce and self._entrant_numero:
+                self._annoncer()
+        elif chemin is not None and chemin == self._entrant and nom == "State" and self._evaluation:
+            if str(valeur) not in ("incoming", "waiting"):
+                # Décroché à la main sur le téléphone pendant la décision : le son lui revient.
+                self._journal("appel entrant pris sur le téléphone :", str(valeur))
+                self._fin_d_evaluation()
 
     def _raison_fin(self, raison, chemin=None):
         if chemin == self._appel:
             self._raison = str(raison)
 
     def _retire(self, chemin):
-        if str(chemin) == self._appel:
+        chemin = str(chemin)
+        if chemin == self._appel:
             self._terminer(self._raison)
+        if chemin == self._entrant:
+            if self._evaluation:
+                self._journal("l'appel entrant a cessé de sonner pendant la décision")
+            self._oublier_entrant()
 
     def _modem_retire(self, chemin):
         # Téléphone déconnecté en plein appel : oFono n'annoncera pas la fin de l'appel.
         if str(chemin) == self._modem and self._suivi is not None:
             self._terminer("téléphone déconnecté")
+        if self._entrant is not None and self._entrant.startswith(str(chemin) + "/"):
+            self._oublier_entrant()
 
     def _terminer(self, raison: str) -> None:
         suivi, self._suivi, self._appel = self._suivi, None, None

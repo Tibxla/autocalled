@@ -10,7 +10,8 @@
     "test": "pnpm -r test",
     "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r typecheck",
     "agent": "node --env-file=.env scripts/agent.ts",
-    "purger": "cd apps/web && node --env-file=../../.env --conditions=react-server --import ./scripts/resolution.ts scripts/purger.ts"
+    "purger": "cd apps/web && node --env-file=../../.env --conditions=react-server --import ./scripts/resolution.ts scripts/purger.ts",
+    "reveil": "cd apps/web && node --env-file=../../.env --conditions=react-server --import ./scripts/resolution.ts scripts/reveil-campagnes.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",

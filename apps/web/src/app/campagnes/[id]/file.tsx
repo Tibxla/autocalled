@@ -1,10 +1,11 @@
 'use client';
 
 import { ISSUES_SYSTEME, LIBELLES_ISSUES, type IssueSysteme, type MotifRetrait, type OrigineGeste } from '@autocalled/domain';
+import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { NavigationListe, useRaccourcis } from '@/components/clavier';
 import { Confirmation, useConfirmation } from '@/components/confirmation';
-import { dateCourte, etatAppel, type TonEtat } from '@/components/format-appel';
+import { dateCourte, etatAppel, parQui, rangTentative, type TonEtat } from '@/components/format-appel';
 import {
   Cellule,
   CelluleEnTete,
@@ -34,6 +35,10 @@ import { retirerDeLaFile, sauterDansLaFile } from '../actions';
  * définitif pour la campagne : confirmé en ligne sous la ligne, sans touche. Sous 640 px, ces gestes ne restent
  * que sur la ligne « Suivant », et sur toutes les lignes à appeler quand ce filtre est actif.
  *
+ * Un prospect qui n'a pas répondu est rappelé le lendemain (nouvelle tentative, trois au plus) : il garde sa place,
+ * « Non abouti · 2ᵉ tentative demain à 14:00 », et se retire comme les autres ; le sauter n'aurait pas de sens (il
+ * attendrait son heure quand même). La colonne Tentatives mène à chaque appel passé ; la ligne, au dernier.
+ *
  * Le retour d'un geste s'écrit dans sa ligne, jamais au-dessus du tableau, hors de l'écran : un prospect sauté
  * reste à sa place, atténué, « Repasse en fin de file », sans geste, jusqu'à ce que l'opérateur relise la liste
  * (filtre, recherche) ; seule la ligne concernée attend pendant l'envoi. Une région d'état masquée l'annonce
@@ -45,12 +50,19 @@ export interface EntreeFile {
   prospectId: string;
   nom: string;
   societe: string | null;
-  etat: 'a-appeler' | 'en-appel' | 'appelee' | 'sautee' | 'retiree';
+  etat: 'a-appeler' | 'en-appel' | 'en-analyse' | 'appelee' | 'sautee' | 'retiree';
   suivant: boolean;
   /** Combien de fois l'opérateur l'a sauté (repassé en fin de file). */
   sauts: number;
   /** Retiré de la file : pourquoi, quand (ISO), par où. */
   retrait: { motif: MotifRetrait; le: string; par: OrigineGeste } | null;
+  /** Le numéro de la tentative que porte l'entrée (1 : le premier appel ; 0 : retirée ou sautée sans appel). */
+  tentative: number;
+  /** Nouvelle tentative qui attend son heure, en heure de Paris (« demain », « 14:00 ») ; null si elle est due. */
+  prevue: { jour: string; heure: string } | null;
+  /** Les appels passés de l'entrée, dans l'ordre : `libelle` dit leur jour et leur issue. */
+  tentatives: { id: string; rang: number; libelle: string }[];
+  /** Le dernier appel de l'entrée (la tentative passée la plus récente pour une tentative prévue). */
   appel: {
     id: string;
     ligne: string;
@@ -66,7 +78,7 @@ export interface EntreeFile {
   } | null;
 }
 
-type Categorie = 'a-appeler' | 'en-appel' | IssueSysteme | 'autres' | 'sautes' | 'retires';
+type Categorie = 'a-appeler' | 'a-retenter' | 'en-appel' | 'en-analyse' | IssueSysteme | 'autres' | 'sautes' | 'retires';
 
 /** Les issues toujours proposées ; les autres issues système n'apparaissent que si la file en compte. */
 const ISSUES_TOUJOURS = new Set<IssueSysteme>(['rendez-vous-pris', 'rappel-convenu', 'refus', 'non-abouti']);
@@ -74,7 +86,9 @@ const ISSUES_TOUJOURS = new Set<IssueSysteme>(['rendez-vous-pris', 'rappel-conve
 /** `vivante` : filtre sans objet une fois la campagne terminée (toujours à zéro). `toujours` : affiché même vide. */
 const FILTRES: { cle: Categorie; libelle: string; vivante?: boolean; toujours?: boolean }[] = [
   { cle: 'a-appeler', libelle: 'À appeler', vivante: true, toujours: true },
+  { cle: 'a-retenter', libelle: 'À retenter', vivante: true, toujours: true },
   { cle: 'en-appel', libelle: 'En appel', vivante: true, toujours: true },
+  { cle: 'en-analyse', libelle: 'Bilan en cours', vivante: true },
   ...ISSUES_SYSTEME.map((i) => ({ cle: i, libelle: LIBELLES_ISSUES[i], toujours: ISSUES_TOUJOURS.has(i) })),
   { cle: 'autres', libelle: 'Autres' },
   { cle: 'sautes', libelle: 'Non appelables', toujours: true },
@@ -83,9 +97,11 @@ const FILTRES: { cle: Categorie; libelle: string; vivante?: boolean; toujours?: 
 
 const CLES = new Set<string>(FILTRES.map((f) => f.cle));
 
+/** Chaque entrée dans une seule catégorie : « Tous » est leur somme. */
 function categorie(e: EntreeFile): Categorie {
-  if (e.etat === 'a-appeler') return 'a-appeler';
+  if (e.etat === 'a-appeler') return e.tentative > 1 ? 'a-retenter' : 'a-appeler';
   if (e.etat === 'en-appel') return 'en-appel';
+  if (e.etat === 'en-analyse') return 'en-analyse';
   if (e.etat === 'sautee') return 'sautes';
   if (e.etat === 'retiree') return 'retires';
   return e.appel?.issueSysteme ?? 'autres';
@@ -128,26 +144,82 @@ function ordonner(entrees: EntreeFile[], retours: ReadonlyMap<string, Retour>): 
 function Issue({ e }: { e: EntreeFile }) {
   if (e.etat === 'a-appeler') {
     const repasse = e.sauts > 0 ? ` · repassé${e.sauts > 1 ? ` ${e.sauts} fois` : ''} en fin de file` : '';
-    return e.suivant ? <span className="text-encre-2">Suivant{repasse}</span> : <span className="text-encre-3">À appeler{repasse}</span>;
+    if (e.prevue) {
+      // L'appel d'avant n'a pas abouti : le dire d'abord, puis quand part la tentative suivante.
+      return (
+        <span className="text-encre-3">
+          Non abouti · {rangTentative(e.tentative)} {e.prevue.jour} à <span className="font-mono">{e.prevue.heure}</span>
+        </span>
+      );
+    }
+    const rang = e.tentative > 1 ? ` · ${rangTentative(e.tentative)}` : '';
+    return e.suivant ? (
+      <span className="text-encre-2">
+        Suivant{rang}
+        {repasse}
+      </span>
+    ) : (
+      <span className="text-encre-3">
+        À appeler{rang}
+        {repasse}
+      </span>
+    );
   }
   if (e.etat === 'sautee') return <span className="text-encre-3">Non appelé : numéro invalide ou effacé</span>;
   if (e.etat === 'retiree') {
     const quand = e.retrait ? dateCourte(e.retrait.le).replace(' ', ' à ') : null;
-    const par = e.retrait?.par === 'mcp' ? ' par Claude Code' : '';
+    const par = parQui(e.retrait?.par);
     const texte =
       e.retrait?.motif === 'fin-anticipee'
         ? `Non appelé : campagne terminée${quand ? ` le ${quand}` : ''}${par}`
-        : `Retiré${quand ? ` le ${quand}` : ''}${par}`;
+        : e.retrait?.motif === 'rappel-entrant'
+          ? `A rappelé : nouvelle tentative annulée${quand ? ` le ${quand}` : ''}`
+          : `Retiré${quand ? ` le ${quand}` : ''}${par}`;
     return <span className="text-encre-3">{texte}</span>;
   }
   if (e.etat === 'en-appel' && (!e.appel || e.appel.statut === 'en-cours')) return <span>En appel</span>;
+  // Appel fini, issue pas encore connue : selon elle, le prospect sera rappelé demain ou non.
+  if (e.etat === 'en-analyse' && (!e.appel || e.appel.statut === 'en-cours' || e.appel.statut === 'traitement')) {
+    return <span className="text-encre-2">Bilan en cours</span>;
+  }
   if (!e.appel) return <span className="text-encre-3">Sans appel</span>;
   const etat = etatAppel(e.appel, { libellePerso: e.appel.libellePerso });
+  const rang = e.tentative > 1 ? <span className="text-encre-3"> · {rangTentative(e.tentative)}</span> : null;
   // Le détail d'un échec : au survol au pointeur fin, en toutes lettres sous 640 px (rien ne s'y lit au survol).
   return (
     <span className={TONS[etat.ton]} title={etat.detail}>
       {etat.libelle}
+      {rang}
       {etat.detail ? <span className="text-encre-3 sm:hidden"> · {etat.detail}</span> : null}
+    </span>
+  );
+}
+
+/**
+ * Les appels passés d'une entrée, un lien par tentative (« 1 2 ») au-dessus du lien de la ligne : il faut leur
+ * relief propre (z-10) pour qu'ils restent cliquables. Le jour et l'issue de chacun sont dits aux lecteurs d'écran.
+ */
+function Tentatives({ e, depuis }: { e: EntreeFile; depuis: string }) {
+  if (e.tentatives.length === 0 || (e.tentatives.length === 1 && e.tentative <= 1)) return null;
+  return (
+    <span className="relative z-10 -mx-1 flex items-center gap-x-0.5 font-mono text-xs">
+      <span className="sr-only">Tentatives : </span>
+      {e.tentatives.map((t) => (
+        <Link
+          key={t.id}
+          href={`/appels/${t.id}${depuis}`}
+          prefetch={false}
+          aria-label={`Tentative ${t.rang}, ${t.libelle}`}
+          className="flex h-7 min-w-6 items-center justify-center rounded-[4px] px-1 text-encre-2 underline decoration-souligne underline-offset-4 hover:text-encre hover:decoration-encre-3 pointer-coarse:h-11 pointer-coarse:min-w-11"
+        >
+          {t.rang}
+        </Link>
+      ))}
+      {e.prevue ? (
+        <span aria-hidden="true" className="flex h-7 min-w-6 items-center justify-center px-1 text-encre-3">
+          {e.tentative}
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -187,7 +259,8 @@ export function File({
   const [annonce, setAnnonce] = useState('');
   // Les lignes dont un geste est en cours d'envoi : elles seules attendent.
   const [enAttente, setEnAttente] = useState<ReadonlySet<string>>(() => new Set());
-  const derniereAAppeler = entrees.findLast((e) => e.etat === 'a-appeler')?.prospectId ?? null;
+  // Sauter renvoie après le dernier prospect dû : une tentative prévue attend son heure, où qu'elle soit.
+  const derniereAAppeler = entrees.findLast((e) => e.etat === 'a-appeler' && !e.prevue)?.prospectId ?? null;
 
   const ecrire = (id: string, retour: Retour | null) =>
     setRetours((r) => {
@@ -249,11 +322,11 @@ export function File({
     });
   };
 
-  /** La ligne sélectionnée (j, k) ou qui porte le focus, si elle est encore à appeler. */
+  /** La ligne sélectionnée (j, k) ou qui porte le focus, si elle est encore à appeler et due (une tentative prévue ne se saute pas). */
   const entreeSelectionnee = () => {
     const ligne = document.activeElement?.closest<HTMLElement>('[data-ligne]') ?? document.querySelector<HTMLElement>('#file-table [data-selectionnee]');
     const id = ligne?.id.startsWith('file-') ? ligne.id.slice(5) : null;
-    return entrees.find((e) => e.prospectId === id && e.etat === 'a-appeler');
+    return entrees.find((e) => e.prospectId === id && e.etat === 'a-appeler' && !e.prevue);
   };
   useRaccourcis([
     {
@@ -279,6 +352,8 @@ export function File({
     return c;
   }, [entrees]);
 
+  // La colonne Tentatives n'apparaît que si une entrée a été appelée plus d'une fois ou attend une nouvelle tentative.
+  const avecTentatives = entrees.some((e) => e.tentatives.length > 1 || e.tentative > 1);
   const recherche = sansAccents(texte.trim());
   const visibles = ordonner(entrees, retours).filter(
     (e) =>
@@ -369,7 +444,7 @@ export function File({
           <div ref={table} id="file-table">
             <TableDense
               libelle="File de la campagne"
-              colonnes={`2.5rem minmax(0,1fr) 3.5rem 3.5rem 4.5rem minmax(9rem,16rem)${gestes ? ' 10rem' : ''}`}
+              colonnes={`2.5rem minmax(0,1fr) 3.5rem 3.5rem 4.5rem${avecTentatives ? ' 5.5rem' : ''} minmax(9rem,16rem)${gestes ? ' 10rem' : ''}`}
             >
               <EnTeteTable>
                 <CelluleEnTete>Rang</CelluleEnTete>
@@ -379,6 +454,7 @@ export function File({
                   Durée
                 </CelluleEnTete>
                 <CelluleEnTete masqueeMobile>Étape</CelluleEnTete>
+                {avecTentatives ? <CelluleEnTete masqueeMobile>Tentatives</CelluleEnTete> : null}
                 <CelluleEnTete>Issue</CelluleEnTete>
                 {gestes ? (
                   <CelluleEnTete>
@@ -394,8 +470,11 @@ export function File({
                   // Un retour ne vaut que pour l'état qui l'a vu naître : l'appel parti, la ligne reprend sa vie.
                   const visible = retour && e.etat === 'a-appeler' ? retour : null;
                   const avecGestes = e.etat === 'a-appeler' && !saute;
-                  // Sous 640 px, seulement sur la ligne « Suivant », ou partout quand « À appeler » est le filtre.
-                  const gestesMobile = e.suivant || filtre === 'a-appeler';
+                  // Une tentative prévue attend son heure où qu'elle soit dans la file : elle se retire, elle ne se saute pas.
+                  const sautable = avecGestes && !e.prevue;
+                  // Sous 640 px, seulement sur la ligne « Suivant », ou partout quand « À appeler » ou « À retenter » est le filtre.
+                  const gestesMobile = e.suivant || filtre === 'a-appeler' || filtre === 'a-retenter';
+                  const passees = avecTentatives && (e.tentatives.length > 1 || e.tentative > 1);
                   const attend = enAttente.has(e.prospectId);
                   return [
                     <LigneTable
@@ -427,25 +506,35 @@ export function File({
                           </span>
                         ) : null}
                       </Cellule>
+                      {avecTentatives ? (
+                        // Sous 640 px, sous l'issue, seulement quand l'entrée a plus d'un appel.
+                        <Cellule className={`max-sm:order-6 max-sm:basis-full max-sm:pl-10 ${passees ? '' : 'max-sm:hidden'}`}>
+                          <Tentatives e={e} depuis={depuis} />
+                        </Cellule>
+                      ) : null}
                       <Cellule etat tronquee className="max-sm:order-5 max-sm:basis-full max-sm:pl-10 max-sm:text-sm">
                         {visible ? <span className={visible.ton === 'alerte' ? 'text-alerte' : 'text-encre-2'}>{visible.texte}</span> : <Issue e={e} />}
                       </Cellule>
                       {gestes ? (
-                        <Cellule className={`max-sm:order-6 max-sm:basis-full max-sm:pl-10 ${avecGestes && gestesMobile ? '' : 'max-sm:hidden'}`}>
+                        <Cellule className={`max-sm:order-7 max-sm:basis-full max-sm:pl-10 ${avecGestes && gestesMobile ? '' : 'max-sm:hidden'}`}>
                           {avecGestes ? (
                             <span className="relative z-10 -mx-1.5 flex items-center gap-x-4">
-                              <Action
-                                ton="discret"
-                                touche="S"
-                                className="[&_.touche]:hidden in-data-selectionnee:[&_.touche]:inline-flex"
-                                disabled={attend}
-                                aria-label={`Sauter ${e.nom} : repasse en fin de file`}
-                                onClick={() => geste(e, 'sauter')}
-                              >
-                                Sauter
-                              </Action>
-                              {/* Au doigt, un filet entre le geste immédiat et celui qui demande confirmation. */}
-                              <span aria-hidden="true" className="hidden h-5 w-px bg-filet pointer-coarse:block" />
+                              {sautable ? (
+                                <>
+                                  <Action
+                                    ton="discret"
+                                    touche="S"
+                                    className="[&_.touche]:hidden in-data-selectionnee:[&_.touche]:inline-flex"
+                                    disabled={attend}
+                                    aria-label={`Sauter ${e.nom} : repasse en fin de file`}
+                                    onClick={() => geste(e, 'sauter')}
+                                  >
+                                    Sauter
+                                  </Action>
+                                  {/* Au doigt, un filet entre le geste immédiat et celui qui demande confirmation. */}
+                                  <span aria-hidden="true" className="hidden h-5 w-px bg-filet pointer-coarse:block" />
+                                </>
+                              ) : null}
                               <Action
                                 ton="discret"
                                 disabled={attend}
@@ -476,7 +565,9 @@ export function File({
                             onConfirmer={() => geste(e, 'retirer')}
                             onAnnuler={fermerRetrait}
                           >
-                            Il ne sera pas appelé dans cette campagne, et ne pourra plus y revenir.
+                            {e.prevue
+                              ? 'Sa nouvelle tentative n’aura pas lieu : il ne sera plus appelé dans cette campagne, et ne pourra plus y revenir.'
+                              : 'Il ne sera pas appelé dans cette campagne, et ne pourra plus y revenir.'}
                           </Confirmation>
                         </div>
                       </div>

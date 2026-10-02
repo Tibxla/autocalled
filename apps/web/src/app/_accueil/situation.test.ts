@@ -43,8 +43,9 @@ function campagne(p: Partial<CampagneJour> = {}): CampagneJour {
     ligne: 'bluetooth',
     statut: 'prete',
     creeLe: il(60 * 60_000),
-    comptes: { total: 100, aAppeler: 66, enAppel: 0, appelees: 30, sautees: 4, retirees: 0, traites: 34 },
+    comptes: { total: 100, aAppeler: 66, aRetenter: 0, enAppel: 0, enAnalyse: 0, appelees: 30, sautees: 4, retirees: 0, traites: 34 },
     prochain: { nom: 'Marc Dupont', societe: 'Boulangerie Dupont' },
+    prochaineTentative: null,
     dernierAppel: null,
     ...p,
   };
@@ -63,7 +64,7 @@ const base = { appelVivant: null, appels: [] as AppelDuJour[], campagnes: [] as 
 
 describe('situationAccueil : priorités', () => {
   it('un appel vivant passe avant tout, identité comprise quand elle correspond', () => {
-    const vivant = { id: 'x', prospect: 'Julie Martin', societe: null, entreprise: 'Atelier Vitrine', version: null, numeroMasque: '06 •• •• •• 01', debutLe: il(0), conversation: true, campagneId: null, etapes: ['Accroche'] };
+    const vivant = { id: 'x', prospect: 'Julie Martin', societe: null, entreprise: 'Atelier Vitrine', version: null, numeroMasque: '06 •• •• •• 01', debutLe: il(0), conversation: true, campagneId: null, entrant: false, etapes: ['Accroche'] };
     const s = situationAccueil({
       ...base,
       ligne: { ...LIBRE, appelEnCours: true, appelId: 'x', plafond: 'Plafond atteint.' },

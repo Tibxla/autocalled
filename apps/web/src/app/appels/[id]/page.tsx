@@ -114,6 +114,8 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
   const etapes = version?.etapes ?? [];
   const enDirect = appel.statut === 'en-cours';
   const telephone = appel.ligne === 'bluetooth';
+  // Le prospect a rappelé le téléphone passerelle et l'assistante a décroché : ni campagne, ni composition.
+  const entrant = appel.sens === 'entrant';
   const age = ecouleDepuis(appel.debutLe);
   const debutAnalyse = appel.traitementLe ?? appel.finLe ?? appel.debutLe;
   const ageAnalyse = ecouleDepuis(debutAnalyse);
@@ -177,6 +179,7 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
         debutLe={appel.debutLe.toISOString()}
         finLe={appel.finLe?.toISOString() ?? null}
         conversation={Boolean(appel.conversationId)}
+        entrant={entrant}
         {...(prospect?.nom ? { libelleProspect: prenom(prospect.nom) } : {})}
         etapes={etapes.map((e) => e.intention)}
       />
@@ -433,6 +436,11 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
             </LienAction>
           </div>
           <h1 className="text-xl font-semibold tracking-[-0.01em] text-balance">{nomProspect}</h1>
+          {entrant ? (
+            <p className="text-md text-encre-2">
+              Appel entrant · {prenom(nomProspect)} a rappelé, {appel.conversationId ? `${nomAssistante} a décroché` : 'sans conversation'}
+            </p>
+          ) : null}
           {/* Le lien vers la fiche le dit : « Fiche du prospect », pas seulement un nom de société. */}
           <p className="flex flex-wrap gap-x-2 text-md text-encre-3">
             <span className={SEPARE}>
@@ -493,7 +501,13 @@ export default async function PageAppel({ params, searchParams }: { params: Prom
             raccourcis={!enDirect}
           />
         ) : appel.statut === 'termine' ? (
-          <EtatVide titre="Aucune conversation enregistrée : messagerie, pas de réponse ou appel coupé avant le décroché." />
+          <EtatVide
+            titre={
+              entrant
+                ? `Aucune conversation enregistrée : l’appel a été coupé avant que ${nomAssistante} ne décroche.`
+                : 'Aucune conversation enregistrée : messagerie, pas de réponse ou appel coupé avant le décroché.'
+            }
+          />
         ) : null)}
       </div>
 

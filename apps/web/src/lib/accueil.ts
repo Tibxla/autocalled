@@ -1,7 +1,7 @@
 import 'server-only';
 import type { EntreeCampagne, IssueSysteme, StatutCampagne } from '@autocalled/domain';
 import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
-import { comptesCampagne, numeroMasque } from '@/components/format-appel';
+import { comptesCampagne, numeroMasque, prochaineEntreeDue, prochaineTentative, quandTentative } from '@/components/format-appel';
 import { db } from '@/db';
 import { appels, campagnes, entreprises, issuesPersonnalisees, prospects, rendezVous, scripts, versionsScript } from '@/db/schema';
 import { numeroLisible } from './format';
@@ -26,6 +26,8 @@ export interface AppelDuJour {
   finLe: string | null;
   dureeSecondes: number | null;
   ligne: LigneAppel;
+  /** `entrant` : le prospect a rappelé le téléphone passerelle (facultatif pour les fixtures : absent vaut sortant). */
+  sens?: 'sortant' | 'entrant';
   statut: StatutAppel;
   issue: string | null;
   issueSysteme: IssueSysteme | null;
@@ -58,6 +60,8 @@ export interface CampagneJour {
   creeLe: string;
   comptes: ReturnType<typeof comptesCampagne>;
   prochain: { nom: string; societe: string | null } | null;
+  /** Les nouvelles tentatives qui attendent leur heure : la plus proche (ISO, et « demain à 14:00 ») et combien ; null s'il n'y en a pas. */
+  prochaineTentative: { le: string; quand: string; nombre: number } | null;
   dernierAppel: { id: string; statut: StatutAppel; erreur: string | null; finLe: string | null; conversation: boolean; prospect: string } | null;
 }
 
@@ -70,6 +74,10 @@ export type EtatLigneServeur =
       connecte: boolean;
       appelEnCours: boolean;
       appelId: string | null;
+      /** Un appel entrant est sur la ligne, de la sonnerie au raccroché, décroché ou non (un numéro inconnu sonne sans réponse). */
+      entrantEnCours?: boolean;
+      /** Le sens de l'appel suivi par la ligne (`appelId`), null sans appel suivi. */
+      sens?: 'sortant' | 'entrant' | null;
       /** Phrase du pont quand un appel de plus dépasserait le plafond, sinon null. */
       plafond: string | null;
       /** Heure du prochain appel possible sous plafond (ms depuis l'epoch), quand le pont la donne. */
@@ -88,6 +96,8 @@ export interface AppelVivant {
   debutLe: string;
   conversation: boolean;
   campagneId: string | null;
+  /** Le prospect a rappelé : l'assistante a décroché. */
+  entrant: boolean;
   /** Intentions des étapes de la version de l'appel : la bande nomme l'étape signalée en direct. */
   etapes: string[];
 }
@@ -104,6 +114,7 @@ export async function appelsDuJour(): Promise<{ appels: AppelDuJour[]; maintenan
       finLe: appels.finLe,
       dureeSecondes: appels.dureeSecondes,
       ligne: appels.ligne,
+      sens: appels.sens,
       statut: appels.statut,
       issue: appels.issue,
       issueSysteme: appels.issueSysteme,
@@ -151,6 +162,7 @@ export async function appelsDuJour(): Promise<{ appels: AppelDuJour[]; maintenan
         finLe: iso(l.finLe),
         dureeSecondes: l.dureeSecondes,
         ligne: l.ligne,
+        sens: l.sens,
         statut: l.statut,
         issue: l.issue,
         issueSysteme: l.issueSysteme,
@@ -225,8 +237,19 @@ export async function rechercherDansLaJournee(q: string): Promise<ResultatRecher
   });
 }
 
+/** Le prochain prospect de la file : le premier à appeler dont l'heure est venue (une nouvelle tentative attend la sienne). */
+function prochainDu(entrees: readonly EntreeCampagne[], maintenant: Date): string | undefined {
+  return prochaineEntreeDue(entrees, maintenant)?.prospectId;
+}
+
+function tentativeAVenir(entrees: readonly EntreeCampagne[], maintenant: Date): CampagneJour['prochaineTentative'] {
+  const t = prochaineTentative(entrees, maintenant);
+  return t ? { ...t, quand: quandTentative(t.le, maintenant) } : null;
+}
+
 /** Campagnes prêtes, en cours ou suspendues, et celles qui ont appelé aujourd'hui ; la plus récente d'abord. */
 export async function campagnesDuJour(): Promise<CampagneJour[]> {
+  const maintenant = new Date();
   const lignes = await db
     .select({
       id: campagnes.id,
@@ -255,7 +278,7 @@ export async function campagnesDuJour(): Promise<CampagneJour[]> {
   if (lignes.length === 0) return [];
 
   const suivants = lignes
-    .map((l) => ({ entrepriseId: l.entrepriseId, prospectId: (l.entrees as EntreeCampagne[]).find((e) => e.etat === 'a-appeler')?.prospectId }))
+    .map((l) => ({ entrepriseId: l.entrepriseId, prospectId: prochainDu(l.entrees as EntreeCampagne[], maintenant) }))
     .filter((s): s is { entrepriseId: string; prospectId: string } => Boolean(s.prospectId));
   const [fiches, derniers] = await Promise.all([
     suivants.length
@@ -288,7 +311,7 @@ export async function campagnesDuJour(): Promise<CampagneJour[]> {
 
   return lignes.map((l) => {
     const entrees = l.entrees as EntreeCampagne[];
-    const idSuivant = entrees.find((e) => e.etat === 'a-appeler')?.prospectId;
+    const idSuivant = prochainDu(entrees, maintenant);
     const fiche = idSuivant ? fiches.find((f) => f.entrepriseId === l.entrepriseId && f.id === idSuivant) : undefined;
     const dernier = derniers.find((d) => d.campagneId === l.id);
     return {
@@ -301,6 +324,7 @@ export async function campagnesDuJour(): Promise<CampagneJour[]> {
       creeLe: l.creeLe.toISOString(),
       comptes: comptesCampagne(entrees),
       prochain: idSuivant ? { nom: fiche?.nom ?? idSuivant, societe: fiche?.societe ?? null } : null,
+      prochaineTentative: tentativeAVenir(entrees, maintenant),
       dernierAppel: dernier
         ? {
             id: dernier.id,
@@ -319,13 +343,24 @@ export async function campagnesDuJour(): Promise<CampagneJour[]> {
 export async function etatLigneServeur(): Promise<EtatLigneServeur> {
   const r = await commanderPont('/etat');
   if (!r.ok) return { joignable: false };
-  const c = r.corps as { connecte?: unknown; appelEnCours?: unknown; appelId?: unknown; plafond?: unknown; plafondJusqua?: unknown; reglages?: unknown };
+  const c = r.corps as {
+    connecte?: unknown;
+    appelEnCours?: unknown;
+    appelId?: unknown;
+    entrantEnCours?: unknown;
+    sens?: unknown;
+    plafond?: unknown;
+    plafondJusqua?: unknown;
+    reglages?: unknown;
+  };
   const reglages = c.reglages as Partial<ReglagesLigne> | undefined;
   return {
     joignable: true,
     connecte: Boolean(c.connecte),
     appelEnCours: Boolean(c.appelEnCours),
     appelId: typeof c.appelId === 'string' ? c.appelId : null,
+    entrantEnCours: Boolean(c.entrantEnCours),
+    sens: c.sens === 'entrant' || c.sens === 'sortant' ? c.sens : null,
     plafond: typeof c.plafond === 'string' ? c.plafond : null,
     plafondJusqua: typeof c.plafond === 'string' && typeof c.plafondJusqua === 'number' ? c.plafondJusqua : null,
     reglages:
@@ -342,6 +377,7 @@ export async function appelVivant(appelId: string): Promise<AppelVivant | null> 
     .select({
       id: appels.id,
       numero: appels.numero,
+      sens: appels.sens,
       debutLe: appels.debutLe,
       conversationId: appels.conversationId,
       campagneId: appels.campagneId,
@@ -370,11 +406,15 @@ export async function appelVivant(appelId: string): Promise<AppelVivant | null> 
     debutLe: l.debutLe.toISOString(),
     conversation: Boolean(l.conversationId),
     campagneId: l.campagneId,
+    entrant: l.sens === 'entrant',
     etapes: (l.etapes ?? []).map((e) => e.intention),
   };
 }
 
-/** Appels téléphone des dernières 24 h et de la dernière heure, d'après la base (le pont ne publie pas ses compteurs). */
+/**
+ * Appels téléphone des dernières 24 h et de la dernière heure, d'après la base (le pont ne publie pas ses compteurs) :
+ * les compositions seulement, comme le plafond du pont. Un appel entrant n'y compte pas.
+ */
 export async function appelsTelephoneRecents(): Promise<{ derniereHeure: number; dernieres24h: number }> {
   const [r] = await db
     .select({
@@ -382,7 +422,7 @@ export async function appelsTelephoneRecents(): Promise<{ derniereHeure: number;
       dernieres24h: sql<number>`count(*)::int`,
     })
     .from(appels)
-    .where(and(eq(appels.ligne, 'bluetooth'), sql`${appels.debutLe} > now() - interval '24 hours'`));
+    .where(and(eq(appels.ligne, 'bluetooth'), eq(appels.sens, 'sortant'), sql`${appels.debutLe} > now() - interval '24 hours'`));
   return { derniereHeure: r?.derniereHeure ?? 0, dernieres24h: r?.dernieres24h ?? 0 };
 }
 

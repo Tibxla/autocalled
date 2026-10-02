@@ -21,6 +21,8 @@ export interface LigneAppel {
   id: string;
   debutLe: Date;
   ligne: string;
+  /** `entrant` : le prospect a rappelé le téléphone passerelle (absent : sortant). */
+  sens?: 'sortant' | 'entrant';
   statut: string;
   issueSysteme: IssueSysteme | null;
   dureeSecondes: number | null;
@@ -140,8 +142,13 @@ function Issue({ a, vivant, maintenant, lien }: { a: LigneAppel; vivant: boolean
  * d'une analyse en échec) : rien d'utile ne se cache dans une info-bulle, qui ne s'affiche jamais au doigt.
  */
 function Resume({ a, avecLigne, detail }: { a: LigneAppel; avecLigne: boolean; detail?: string | undefined }) {
-  // Sans colonne Ligne (liste complète), un appel simulé le dit devant son résumé.
-  const simule = !avecLigne && a.ligne === 'simulation' ? <span className="text-encre-3">simulé · </span> : null;
+  // Sans colonne Ligne (liste complète), un appel simulé ou entrant le dit devant son résumé, en graphite : pas de badge.
+  const simule =
+    !avecLigne && a.ligne === 'simulation' ? (
+      <span className="text-encre-3">simulé · </span>
+    ) : !avecLigne && a.sens === 'entrant' ? (
+      <span className="text-encre-2">a rappelé · </span>
+    ) : null;
   if (a.extrait) {
     const { qui, avant, terme, apres } = a.extrait;
     return (
@@ -228,7 +235,7 @@ function Ligne({
         <Resume a={a} avecLigne detail={detail} />
       </Cellule>
       <Cellule attenuee masqueeMobile>
-        {LIGNES_COURTES[a.ligne] ?? a.ligne}
+        {a.sens === 'entrant' ? 'entrant' : (LIGNES_COURTES[a.ligne] ?? a.ligne)}
       </Cellule>
       <Cellule mono align="droite" className="max-sm:order-3">
         <Duree secondes={a.dureeSecondes} />
