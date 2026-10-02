@@ -466,9 +466,10 @@ class Pont(AudioInterface):
 
 
 def temps_de_reponse(enregistrement: str, seuil_prospect: float = 300, seuil_mina: float = 50, trame_ms: int = 20) -> list[float]:
-    """Pour chaque reprise de parole de Mina (après 400 ms de silence de sa part), l'écart depuis la
-    dernière voix du prospect, lu dans l'enregistrement stéréo. Mesuré côté serveur : le réseau
-    mobile ajoute sa propre latence dans chaque sens."""
+    """Pour chaque reprise de parole de Mina (après 400 ms de silence de sa part) qui répond au prospect, l'écart
+    depuis la dernière voix du prospect, lu dans l'enregistrement stéréo. Une pause de Mina au milieu de sa réplique,
+    sans le prospect entre-temps, n'est pas une réponse : jusqu'au 02/10 elle comptait, et gonflait la médiane
+    (1,8 s au lieu de 1,4 s). Mesuré côté serveur : le réseau mobile ajoute sa propre latence dans chaque sens."""
     with wave.open(enregistrement) as w:
         taux = w.getframerate()
         a = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").reshape(-1, 2).astype(float)
@@ -479,11 +480,12 @@ def temps_de_reponse(enregistrement: str, seuil_prospect: float = 300, seuil_min
     prospect, mina = energie[:, 0] > seuil_prospect, energie[:, 1] > seuil_mina
     pause = 400 // trame_ms
     ecarts = []
-    for i in range(pause, n):
-        if mina[i] and not mina[i - pause : i].any():
-            j = i - 1
-            while j > 0 and not prospect[j]:
-                j -= 1
-            if j > 0:
-                ecarts.append((i - j) * trame_ms / 1000)
+    derniere_mina = derniere_voix = -1
+    for i in range(n):
+        if mina[i] and i >= pause and not mina[i - pause : i].any() and derniere_voix > derniere_mina:
+            ecarts.append((i - derniere_voix) * trame_ms / 1000)
+        if mina[i]:
+            derniere_mina = i
+        elif prospect[i]:
+            derniere_voix = i
     return ecarts

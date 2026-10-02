@@ -1,12 +1,13 @@
 """Début et fin de l'accueil du prospect au décroché, lus dans le son de la ligne. Sans téléphone ni D-Bus."""
 import tempfile
 import unittest
+import wave
 from pathlib import Path
 
 import numpy as np
 
 from pont.appel import ouverture_valide
-from pont.audio import Pont
+from pont.audio import Pont, temps_de_reponse
 
 TAUX = 16000
 BLOC = 120  # une trame mSBC : 7,5 ms
@@ -69,6 +70,24 @@ class Accueil(unittest.TestCase):
         self.entendre(son(("silence", 0.2)))
         # Seuls les 200 ms arrivés après l'ouverture partent (au rééchantillonnage près), pas l'accueil.
         self.assertLess(sum(len(b) for b in envoye), TAUX * 2 * 0.25)
+
+
+class TempsDeReponse(unittest.TestCase):
+    def test_une_pause_de_mina_dans_sa_replique_n_est_pas_une_reponse(self):
+        # Prospect 1 s, silence 1,2 s, Mina 1 s, pause 0,8 s, Mina 1 s : une seule réponse, après 1,2 s.
+        prospect = son(("voix", 1.0), ("silence", 4.0))
+        mina = np.concatenate([np.zeros(int(TAUX * 2.2)), son(("voix", 1.0)), np.zeros(int(TAUX * 0.8)), son(("voix", 1.0))])
+        stereo = np.stack([prospect, mina.astype("<i2")], axis=1)
+        with tempfile.TemporaryDirectory() as d:
+            chemin = str(Path(d) / "r.wav")
+            with wave.open(chemin, "wb") as w:
+                w.setnchannels(2)
+                w.setsampwidth(2)
+                w.setframerate(TAUX)
+                w.writeframes(stereo.tobytes())
+            ecarts = temps_de_reponse(chemin)
+        self.assertEqual(len(ecarts), 1)
+        self.assertAlmostEqual(ecarts[0], 1.2, delta=0.05)
 
 
 class Ouverture(unittest.TestCase):
