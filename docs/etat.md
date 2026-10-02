@@ -52,7 +52,7 @@ La branche `livraison/mcp-securite` (worktree `autocalled-livraison`) n'est ni f
    Diagnostic hors application, service arrêté : `apps/pont`, `python -m pont appeler | tester-son`.
 2. **E-mail dicté** : depuis le 28/09, c'est `reserver_creneau` qui impose la relecture (il renvoie l'adresse épelée, et ne réserve qu'avec `adresse_confirmee`), et une correction après réservation est notée sur le rendez-vous (Réglages) au lieu d'être ignorée. À revérifier sur un appel : Mina relit bien l'épellation renvoyée avant de réserver.
 3. **Invitation réelle** : tester l'envoi avec sa propre adresse, puis supprimer l'événement.
-4. **Serveur MCP en vrai**, après la mise en production : approuver le serveur `autocalled` au démarrage de Claude Code, vérifier que la question de confirmation s'affiche bien (d'abord `regler_ligne` à la hausse, sans effet sur un appel), puis un `lancer_appel` sur la ligne téléphone vers une personne prévenue, et une campagne simulée courte (processus détaché).
+4. **Serveur MCP en vrai**, après la mise en production : approuver le serveur `autocalled` au démarrage de Claude Code, vérifier que la question de confirmation s'affiche bien (d'abord `regler_ligne` à la hausse, sans effet sur un appel), puis un `lancer_appel` sur la ligne téléphone vers son propre numéro, et une campagne simulée courte (processus détaché).
 5. Voir aussi `docs/future-improvements.md`.
 
 ## Pièges connus

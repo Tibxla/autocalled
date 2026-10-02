@@ -5,7 +5,7 @@ Mini-SaaS de démonstration : une assistante vocale IA passe des appels de prosp
 ## Language
 
 **Numéro appelable** :
-Numéro valide et absent de la liste d'opposition : la seule vérification faite juste avant de composer. L'opérateur n'appelle que des personnes qu'il a prévenues (ADR 0001).
+Numéro valide et absent de la liste d'opposition : la seule vérification faite juste avant de composer (ADR 0001).
 _Avoid_ : whitelist, numéro de test
 
 **Opérateur** :

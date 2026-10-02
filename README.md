@@ -39,7 +39,7 @@ Autocalled est un mini-SaaS de démonstration, construit pour montrer un savoir-
 - **Une assistante, plusieurs entreprises.** La même assistante (Mina par défaut, nom réglable) représente l'entreprise choisie avant l'appel : son offre, ses arguments, ses objections, ses règles de rendez-vous, et l'historique des appels précédents avec ce prospect.
 - **Des bilans qui se justifient.** Après l'appel, Claude Code en mode headless produit le bilan : issue, étape atteinte, objections levées ou non avec le temps CRAC où elles ont coincé, points forts et points faibles. Le domaine refuse un bilan dont une citation n'est pas dans la transcription.
 - **Des chiffres honnêtes.** L'analyse compare les versions de script d'une entreprise, n'affiche aucun taux sous dix appels aboutis et laisse les appels simulés de côté.
-- **Une démo fermée.** L'opérateur ne fait appeler que lui-même et des proches qu'il a prévenus qu'une IA les appellera et que l'appel sera enregistré ([ADR 0001](docs/adr/0001-demo-fermee-personnes-prevenues.md)).
+- **Un seul opérateur.** Un numéro valide et hors liste d'opposition est appelable, sans autre vérification ([ADR 0001](docs/adr/0001-numero-appelable.md)).
 
 Le vocabulaire du domaine (entreprise, prospect, fiche, script, étape, objection, CRAC, issue, bilan, campagne, ligne, assistante) est fixé dans [CONTEXT.md](CONTEXT.md). Le code, l'interface et cette page emploient ces mots-là et pas d'autres.
 
@@ -155,7 +155,7 @@ Sur téléphone, la navigation passe dans une barre du bas, les filtres tiennent
 ### Prospects
 
 - Import de fiches Markdown (en-tête YAML `nom`, `telephone`, `societe`, `role`, `email`, puis un contexte libre ; le nom du fichier identifie le prospect), jusqu'à cent fiches à la fois. Exemples dans [exemples/](exemples/README.md).
-- Une fiche importée est appelable aussitôt : l'opérateur n'importe que des personnes qu'il a prévenues ([ADR 0001](docs/adr/0001-demo-fermee-personnes-prevenues.md)).
+- Une fiche importée est appelable aussitôt ([ADR 0001](docs/adr/0001-numero-appelable.md)).
 - Rappel à faire, dernier appel, recherche par nom, société ou numéro. Un numéro invalide ou d'une personne effacée est signalé, et n'est pas composé.
 - **Archiver** : le prospect sort des listes et des campagnes et n'est plus appelé ; ses appels restent, et la réactivation le fait revenir. C'est ainsi qu'on cesse d'appeler quelqu'un.
 - **Effacer une personne** : fiche, appels, transcriptions, bilans, enregistrements, rendez-vous, places en file et mentions au journal partent. Seule reste l'empreinte de son numéro dans la liste d'opposition, qui empêche de l'importer ou de l'appeler de nouveau ([ADR 0013](docs/adr/0013-archiver-ou-effacer-une-personne.md)).
@@ -467,7 +467,7 @@ Les enregistrements, `agent/` et la base restent ceux du clone : rien à changer
 | Sujet | Mesure |
 |---|---|
 | Accès | L'interface n'écoute que sur 127.0.0.1 et n'est servie que sur le tailnet ; chaque requête porte l'identité Tailscale de l'opérateur. Seul l'hôte de `ORIGINE_APP` est servi (rebinding DNS refusé), aucune page ne se laisse encadrer. Ni mot de passe ni session ([ADR 0006](docs/adr/0006-authentification-par-identite-tailscale.md)). |
-| Numéros appelés | L'opérateur n'appelle que des personnes prévenues ([ADR 0001](docs/adr/0001-demo-fermee-personnes-prevenues.md)). Avant chaque appel et à chaque tour de campagne, le serveur vérifie que le numéro est valide et hors liste d'opposition. |
+| Numéros appelés | Avant chaque appel et à chaque tour de campagne, le serveur vérifie que le numéro est valide et hors liste d'opposition. |
 | Liste d'opposition | L'empreinte HMAC du numéro d'une personne effacée, jamais le numéro en clair, empêche tout nouvel import ou appel. |
 | Effacement | Effacer une personne supprime tout ce qu'Autocalled garde d'elle, en base et sur disque, après confirmation. |
 | Conservation | Après douze mois, un appel perd chaque nuit enregistrements, transcription et texte du bilan ; ses chiffres restent. Le journal des gestes perd ses lignes du même âge. |
@@ -482,9 +482,7 @@ Risques acceptés : un processus du compte de l'opérateur peut se faire passer 
 
 ## Cadre légal
 
-Autocalled est une démo fermée : l'opérateur n'appelle que lui-même et des personnes qu'il a prévenues qu'une IA les appellera et que l'appel sera enregistré. Autocalled ne le vérifie pas : c'est l'opérateur qui le garantit. C'est pour cela que l'assistante ne s'annonce pas comme IA pendant l'appel.
-
-Démarcher de vrais prospects ne serait pas permis en l'état : l'AI Act (art. 50, en vigueur depuis le 2 août 2026) impose d'informer la personne qu'elle parle à une IA, et le droit français impose de la prévenir de l'enregistrement. Il faudrait les annoncer dans l'appel, et traiter en plus la réglementation du démarchage téléphonique. Le détail est dans l'[ADR 0001](docs/adr/0001-demo-fermee-personnes-prevenues.md).
+L'assistante ne s'annonce pas comme IA et n'annonce pas l'enregistrement. Démarcher de vrais prospects ne serait pas permis en l'état : l'AI Act (art. 50, en vigueur depuis le 2 août 2026) impose d'informer la personne qu'elle parle à une IA, et le droit français impose de la prévenir de l'enregistrement. Il faudrait les annoncer dans l'appel, et traiter en plus la réglementation du démarchage téléphonique. Le détail est dans l'[ADR 0001](docs/adr/0001-numero-appelable.md).
 
 ## Limites connues et pistes
 
@@ -505,7 +503,7 @@ Chaque choix qui surprendrait un lecteur est expliqué dans un ADR :
 
 | ADR | Décision |
 |---|---|
-| [0001](docs/adr/0001-demo-fermee-personnes-prevenues.md) | Démo fermée : l'assistante n'appelle que des personnes prévenues |
+| [0001](docs/adr/0001-numero-appelable.md) | Un numéro valide et hors liste d'opposition est appelable |
 | [0002](docs/adr/0002-agenda-par-outils-webhook-maison.md) | Agenda par outils client maison, lu par le connecteur Google de Claude, plutôt que l'intégration Cal.com |
 | [0003](docs/adr/0003-ligne-bluetooth-via-telephone-passerelle.md) | Première ligne : un téléphone passerelle en Bluetooth plutôt que Twilio |
 | [0004](docs/adr/0004-heberge-sur-le-homelab.md) | Hébergé sur le homelab, pas dans le cloud |

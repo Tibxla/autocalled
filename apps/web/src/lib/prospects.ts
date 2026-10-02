@@ -46,8 +46,8 @@ export class FicheChangee extends Error {
 export const NUMERO_EFFACE = 'numéro d’une personne effacée à sa demande : il ne peut plus être importé ni appelé';
 
 /**
- * Importe des fiches prospect Markdown dans une entreprise : leurs numéros sont appelables aussitôt, l'opérateur
- * n'important que des personnes qu'il a prévenues (ADR 0001). Une fiche dont le numéro est dans la liste d'opposition
+ * Importe des fiches prospect Markdown dans une entreprise : leurs numéros sont appelables aussitôt (ADR 0001).
+ * Une fiche dont le numéro est dans la liste d'opposition
  * (personne effacée, ADR 0013) est refusée : rien d'elle n'est écrit.
  */
 export async function importerFiches(

@@ -21,7 +21,7 @@ La même assistante représente plusieurs entreprises et change de discours selo
 ## Operating Context
 
 - Interface servie uniquement sur le tailnet de l'opérateur, derrière `tailscale serve` ; aucun écran de connexion.
-- Les prospects arrivent par import de fichiers Markdown (un fichier par prospect, en-tête YAML + contexte libre), appelables aussitôt : l'opérateur n'appelle que des personnes prévenues (ADR 0001).
+- Les prospects arrivent par import de fichiers Markdown (un fichier par prospect, en-tête YAML + contexte libre), appelables aussitôt (ADR 0001).
 - Un seul appel à la fois (un seul téléphone passerelle) ; une campagne enchaîne les prospects, jusqu'à une centaine d'appels par jour, sous le plafond horaire et journalier du pont.
 - Langue de l'interface et du domaine : français.
 

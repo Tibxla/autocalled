@@ -6,14 +6,14 @@ Autocalled expose un serveur MCP (`apps/web/mcp/`), déclaré dans `.mcp.json` �
 
 Le modèle qui lit une transcription d'appel lit la parole d'un tiers (ADR 0005), et il a aussi les outils qui appellent. Tout ce qui fait sonner le téléphone (appel, campagne), efface une personne, envoie une invitation à un prospect ou desserre les plafonds de la ligne demande donc une confirmation par élicitation : Claude Code pose la question à l'opérateur, le serveur la rédige depuis la base (prospect, numéro, script, heure, plafonds), et le modèle ne peut pas y répondre à sa place. Un client sans élicitation, comme `claude -p`, se voit refuser ces gestes. Les freins (raccrocher, suspendre une campagne, resserrer un plafond) passent sans confirmation.
 
-Un import de fiches par le MCP vaut un import de l'interface : l'opérateur n'importe que des personnes qu'il a prévenues (ADR 0001), et leurs numéros sont appelables sans autre question, sauf celui d'une personne effacée (ADR 0013). Un numéro glissé dans un import par une consigne injectée serait donc appelable : la confirmation d'un appel ou d'une campagne, qui donne le numéro avant le nom, est le moment où l'opérateur le voit. Le prompt et la configuration de Mina restent hors du MCP : ils se modifient dans `agent/`, se relisent dans git et se poussent par `pnpm agent push`.
+Un import de fiches par le MCP vaut un import de l'interface : leurs numéros sont appelables sans autre question (ADR 0001), sauf celui d'une personne effacée (ADR 0013). Un numéro glissé dans un import par une consigne injectée serait donc appelable : la confirmation d'un appel ou d'une campagne, qui donne le numéro avant le nom, est le moment où l'opérateur le voit. Le prompt et la configuration de Mina restent hors du MCP : ils se modifient dans `agent/`, se relisent dans git et se poussent par `pnpm agent push`.
 
 ## Considered Options
 
 - Une route `/mcp` dans Next : un second secret à la manière du pont, et un `next build` suivi d'un redémarrage de l'interface à chaque changement d'outil.
 - Un connecteur claude.ai : le serveur exposé sur Internet, et un OAuth à écrire, pour un opérateur unique.
 - Les permissions de Claude Code comme seule garde : le mode sans permissions ou l'acceptation automatique les contournent. Elles restent une seconde couche utile (outils de lecture en `allow`).
-- Une confirmation pour chaque numéro nouveau d'un import : écartée par l'opérateur, qui n'importe que des personnes prévenues ; la confirmation de l'appel montre de toute façon le numéro.
+- Une confirmation pour chaque numéro nouveau d'un import : écartée par l'opérateur ; la confirmation de l'appel montre de toute façon le numéro.
 
 ## Consequences
 

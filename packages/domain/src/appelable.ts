@@ -18,7 +18,7 @@ export type Appelabilite = { appelable: true; numero: NumeroAppelable } | { appe
 /**
  * À appeler juste avant de composer, jamais en avance : une personne peut être effacée entre-temps. `opposes` : les
  * numéros (E.164) de la liste d'opposition parmi ceux qu'on vérifie, ou `illisible` si elle ne se lit plus. Rien
- * d'autre ne se vérifie : l'opérateur garantit n'appeler que des personnes prévenues (ADR 0001).
+ * d'autre ne se vérifie (ADR 0001).
  */
 export function verifierNumero(numeroBrut: string, opposes: ReadonlySet<string> | 'illisible'): Appelabilite {
   if (opposes === 'illisible') return { appelable: false, raison: 'opposition-illisible' };

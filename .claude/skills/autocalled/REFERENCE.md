@@ -126,7 +126,6 @@ La page Assistante de l’interface (`/assistante`) fait la même chose que ces 
 - Appeler par la ligne navigateur, prendre la main : il faut le micro et la voix de l’opérateur (ADR 0008).
 - Appairer ou oublier le téléphone, connecter ou déconnecter Google : gestes physiques ou autorisation OAuth, dans l’interface.
 - Annuler ou déplacer un rendez-vous : l’invitation est déjà partie, cela se fait dans Google Agenda.
-- Vérifier qu’une personne a été prévenue : c’est l’opérateur qui le garantit (ADR 0001).
 - Modifier ou supprimer une version de script, supprimer un script ou une objection, changer le rattachement d’une issue personnalisée : on crée une version, on archive.
 - Corriger un bilan, une issue ou un rappel à la main : on relance l’analyse (ADR 0005).
 - Changer l’identifiant d’un prospect, le slug ou le fuseau d’une entreprise ; supprimer une entreprise qui a un historique, une campagne lancée ; supprimer un appel, un enregistrement ou une transcription à l’unité (seul `effacer_personne` les efface, tous ceux d’une personne).
