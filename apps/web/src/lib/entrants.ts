@@ -50,7 +50,7 @@ export function situationEntrant(params: {
         ? "d'hier"
         : `du ${new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', timeZone: params.fuseau }).format(params.dernierAppel.le)}`;
   const sansReponse = params.dernierAppel.issueSysteme === 'non-abouti' ? ', resté sans réponse' : '';
-  return `C'est ${params.nom} qui te rappelle, après ton appel ${quand}${sansReponse}. Tu viens de décrocher en te présentant : remercie pour ce rappel, puis reprends ton plan là où il en est.`;
+  return `C'est ${params.nom} qui te rappelle, après ton appel ${quand}${sansReponse}. Tu viens de décrocher en te présentant : remercie pour ce rappel, puis reprends ton plan là où il en est. C'est lui qui appelle : ne demande pas de minutes ni la permission de parler, donne directement la raison de ton appel.`;
 }
 
 /**

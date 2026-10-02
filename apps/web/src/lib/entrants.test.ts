@@ -26,7 +26,7 @@ describe('situationEntrant', () => {
 
   it('le jour même, dans le fuseau de l’entreprise', () => {
     expect(situationEntrant({ ...base, maintenant, dernierAppel: { le: new Date('2026-09-30T22:10:00Z'), issueSysteme: 'non-abouti' } })).toBe(
-      "C'est Julie Fictive qui te rappelle, après ton appel d'aujourd'hui, resté sans réponse. Tu viens de décrocher en te présentant : remercie pour ce rappel, puis reprends ton plan là où il en est.",
+      "C'est Julie Fictive qui te rappelle, après ton appel d'aujourd'hui, resté sans réponse. Tu viens de décrocher en te présentant : remercie pour ce rappel, puis reprends ton plan là où il en est. C'est lui qui appelle : ne demande pas de minutes ni la permission de parler, donne directement la raison de ton appel.",
     );
   });
 

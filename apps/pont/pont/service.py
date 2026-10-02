@@ -130,6 +130,9 @@ class RappelsWeb:
 
 
 DELAI_ENTRANT_S = 3.0  # l'appelant entend sonner pendant la question : au-delà, on laisse sonner
+# Décroché à la première sonnerie, ça sonne comme une machine (essai du 03/10) : on laisse sonner environ 5 s, comptées
+# depuis l'arrivée de l'appel, question à l'application comprise.
+SONNERIE_AVANT_DECROCHE_S = 5.0
 APPEL_ID = re.compile(r"[0-9a-f-]{36}")
 
 
@@ -353,9 +356,10 @@ class Service:
 
     def _sur_entrant(self, chemin: str, numero: str, generation: int | None = None) -> None:
         """Depuis le thread GLib : la question à l'application prend jusqu'à 3 s, elle part dans un thread à part."""
-        threading.Thread(target=self._evaluer_entrant, args=(chemin, numero, generation), daemon=True, name="entrant").start()
+        debut = time.monotonic()
+        threading.Thread(target=self._evaluer_entrant, args=(chemin, numero, generation, debut), daemon=True, name="entrant").start()
 
-    def _evaluer_entrant(self, chemin: str, numero: str, generation: int | None = None) -> None:
+    def _evaluer_entrant(self, chemin: str, numero: str, generation: int | None = None, debut: float | None = None) -> None:
         """Décroche un appel entrant si l'application reconnaît un prospect, sinon le laisse sonner. Sous le verrou des
         compositions : un `POST /appels` simultané attend la décision (et reçoit 409 tant que l'entrant est là)."""
         with self._verrou:
@@ -396,6 +400,9 @@ class Service:
                 return
             rappels.journal = appel.journal
             self._appels[appel_id] = appel
+            if debut is not None:
+                # Si l'appelant raccroche pendant ce temps, Answer échoue et la fin part comme pour un décroché raté.
+                time.sleep(max(0.0, debut + SONNERIE_AVANT_DECROCHE_S - time.monotonic()))
             try:
                 dans_glib(appel.decrocher)
             except TimeoutError as e:
