@@ -73,6 +73,7 @@ Ni la migration 0019, ni le réveil, ni le nouveau pont, ni le prompt ne sont en
 ## Pièges connus
 
 - Les imports du domaine sont en `.ts` : Turbopack ne remappe pas `.js`.
+- `next build` qui plante en « TurbopackInternalError … parse was canceled » sur `/page` alors que `next build --webpack` passe : cache Turbopack corrompu. `rm -rf apps/web/.next/cache/turbopack`, puis relancer `scripts/installer-services.sh` (constat du 02/10).
 - En simulation, ElevenLabs invente la réponse des outils client ; les transcriptions simulées en voix v3 contiennent des mots coupés. Ce n'est pas le comportement des vrais appels.
 - `playwright-cli` dans une boucle shell avale l'entrée standard : passer par un script ou `</dev/null`.
 - Chaque redémarrage du pont reconnecte le téléphone (pour annoncer le mSBC) et coupe l'appel en cours, dont la fin n'atteint jamais l'application : vérifier `appelEnCours` (GET /etat) avant, comme le fait `scripts/installer-pont.sh`.
