@@ -222,6 +222,7 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
     variables: VariablesDeLAppel;
     motsCles: string[];
     premierMessage: string;
+    ouverture: string | null;
   } | null>(
     campagneId,
     async (campagne, tx) => {
@@ -254,6 +255,7 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
             variables: preparation.variables,
             motsCles: preparation.motsCles,
             premierMessage: preparation.premierMessage,
+            ouverture: preparation.ouverture,
           },
         };
       }
@@ -267,6 +269,7 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
     variables: suivant.variables,
     motsCles: suivant.motsCles,
     premierMessage: suivant.premierMessage,
+    ...(suivant.ouverture ? { ouverture: suivant.ouverture } : {}),
   });
   if (reponse.ok) return;
   // Pont injoignable ou téléphone absent : l'appel échoue et la campagne se met en pause, plutôt que de

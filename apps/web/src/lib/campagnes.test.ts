@@ -76,6 +76,23 @@ async function finDAppel(campagneId: string) {
 
 const numerosComposes = () => pont.compositions().map((r) => (r.corps as { numero: string }).numero);
 
+describe('Ouverture', () => {
+  it('campagne téléphone : chaque composition porte l’ouverture du script, sinon rien', async () => {
+    const etapes = [
+      { intention: 'Accroche', exemples: ['Oui bonjour, je m’appelle {{assistante_nom}}.'] },
+      { intention: 'Qualification', exemples: [] },
+    ];
+    const avecExemple = (await creerScript(entrepriseId, 'Avec accroche', etapes)).versionScriptId;
+    const id = await enregistrerCampagne(entrepriseId, { versionScriptId: avecExemple, ligne: 'bluetooth', prospects: ['julie'] });
+    await demarrerCampagne(id);
+    await appelerSuivantTelephone(id);
+    expect(pont.compositions().map((r) => (r.corps as { ouverture?: string }).ouverture)).toEqual(['Oui bonjour, je m’appelle Mina.']);
+
+    await campagneTelephone(['marc']);
+    expect((pont.compositions()[1]?.corps as { ouverture?: string }).ouverture).toBeUndefined();
+  });
+});
+
 describe('Sauter', () => {
   it('campagne téléphone : le prospect sauté repasse en fin de file, l’enchaînement prend le suivant', async () => {
     const id = await campagneTelephone();
