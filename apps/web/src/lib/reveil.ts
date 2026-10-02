@@ -19,6 +19,19 @@ import { classerDansSaCampagne, relancerSiDu } from './campagnes';
  */
 const ENTRANT_ORPHELIN_MS = 10 * 60_000;
 
+/**
+ * Le minuteur ne relance une campagne qu'entre 9 h et 19 h, heure de Paris, tous les jours : une campagne laissée en
+ * cours le soir avec quelqu'un de dû ne fait pas sonner un téléphone la nuit. Classement et orphelins, eux, tournent à
+ * toute heure. Les nouvelles tentatives tombent à 9 h ou 14 h, donc dans la plage.
+ */
+export const HEURES_D_APPEL = { debut: 9, fin: 19 } as const;
+
+export function dansLesHeuresDAppel(maintenant: Date): boolean {
+  const parties = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: 'numeric', hourCycle: 'h23' }).formatToParts(maintenant);
+  const heure = Number(parties.find((p) => p.type === 'hour')?.value);
+  return heure >= HEURES_D_APPEL.debut && heure < HEURES_D_APPEL.fin;
+}
+
 const ERREUR_ORPHELIN = 'Le pont n’a jamais pris cet appel entrant (réponse de l’application arrivée trop tard) : le téléphone a sonné sans réponse.';
 
 type Lecteur = Pick<typeof db, 'select'>;
@@ -86,7 +99,10 @@ export async function planReveil(maintenant: Date, lecteur: Lecteur = db): Promi
  * Classe ce qui doit l'être, puis relance les campagnes dues, une après l'autre : il n'y a qu'une ligne, la première
  * qui compose l'occupe et les suivantes attendent le prochain réveil (ou la fin de cet appel). Renvoie ce qui a été fait.
  */
-export async function reveiller(maintenant = new Date()): Promise<{ classes: number; relancees: string[]; orphelins: number }> {
+export async function reveiller(
+  maintenant = new Date(),
+  { relancer = true }: { relancer?: boolean } = {},
+): Promise<{ classes: number; relancees: string[]; orphelins: number }> {
   const { aClasser, orphelins } = await planReveil(maintenant);
   // Sans fin : la ligne refuserait l'archivage et l'effacement de ce prospect pour toujours. Seulement si elle n'a pas bougé.
   if (orphelins.length) {
@@ -96,6 +112,7 @@ export async function reveiller(maintenant = new Date()): Promise<{ classes: num
       .where(and(inArray(appels.id, orphelins), eq(appels.statut, 'en-cours'), isNull(appels.conversationId)));
   }
   for (const { appelId } of aClasser) await classerDansSaCampagne(appelId, { relancer: false });
+  if (!relancer) return { classes: aClasser.length, relancees: [], orphelins: orphelins.length };
   // Relu après les classements : un appel ancien enfin classé peut avoir une nouvelle tentative déjà due.
   const { aRelancer } = await planReveil(maintenant);
   // Souvent le premier appel de la journée : les créneaux proposés viennent d'une copie de l'agenda relue juste avant.

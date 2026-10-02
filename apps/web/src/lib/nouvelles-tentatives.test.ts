@@ -11,7 +11,7 @@ import { appelerSuivantTelephone, clore, demarrerCampagne, derouleSimulation, en
 import { claudeStructure } from './claude';
 import { creerScript } from './entreprises';
 import { archiverProspect, filesTelephoneEnCours, importerFiches } from './prospects';
-import { planReveil, reveiller } from './reveil';
+import { dansLesHeuresDAppel, planReveil, reveiller } from './reveil';
 
 // À la place du refus de test/garde-fous.ts : une analyse factice, sans claude -p.
 vi.mock('@/lib/claude', () => ({ claudeStructure: vi.fn() }));
@@ -458,5 +458,20 @@ describe('réveil', () => {
 
     expect(await reveiller()).toEqual({ classes: 0, relancees: [], orphelins: 0 });
     expect(await entree(id, 'julie')).toEqual({ prospectId: 'julie', etat: 'en-analyse', appelId });
+  });
+});
+
+describe('Heures d’appel du réveil', () => {
+  it('relance de 9 h à 19 h, heure de Paris, été comme hiver', () => {
+    expect(dansLesHeuresDAppel(new Date('2026-10-02T06:59:00Z'))).toBe(false); // 8 h 59 à Paris (heure d'été)
+    expect(dansLesHeuresDAppel(new Date('2026-10-02T07:00:00Z'))).toBe(true); // 9 h
+    expect(dansLesHeuresDAppel(new Date('2026-10-02T16:59:00Z'))).toBe(true); // 18 h 59
+    expect(dansLesHeuresDAppel(new Date('2026-10-02T17:00:00Z'))).toBe(false); // 19 h
+    expect(dansLesHeuresDAppel(new Date('2026-12-15T08:00:00Z'))).toBe(true); // 9 h (heure d'hiver)
+    expect(dansLesHeuresDAppel(new Date('2026-12-15T01:00:00Z'))).toBe(false); // 2 h
+  });
+
+  it('hors des heures, classe sans relancer', async () => {
+    expect(await reveiller(new Date(), { relancer: false })).toEqual({ classes: 0, relancees: [], orphelins: 0 });
   });
 });
