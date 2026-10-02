@@ -87,6 +87,41 @@ class _Conversion:
         return self._flux.resample_chunk(echantillons)
 
 
+# Égalisation de la voix de Mina pour la ligne (02/10) : tous les appels mesurés passent en bande étroite
+# (300-3 400 Hz), et 60 % de l'énergie de la voix de synthèse était sous 300 Hz, coupée ou étouffée par le réseau.
+# On baisse les graves et on remonte la présence (+5 dB vers 3 kHz) ; les crêtes habituelles baissent de 1,2 dB, donc
+# rien ne rapproche du niveau qui sature (voir GAIN_SORTIE). False la retire.
+EGALISATION_TELEPHONE = True
+COURBE_EGALISATION = ((0, -16), (150, -16), (350, 0), (1500, 0), (2500, 5), (3600, 5), (4000, 0))
+
+
+def filtre_egalisation(taux: int, coefficients: int = 129) -> np.ndarray:
+    """Filtre à phase linéaire (retard de 4 ms à 16 kHz) qui suit COURBE_EGALISATION, en dB par fréquence."""
+    frequences = np.fft.rfftfreq(1024, 1 / taux)
+    points_f, points_db = zip(*COURBE_EGALISATION, strict=True)
+    gain = 10 ** (np.interp(frequences, points_f, points_db) / 20)
+    reponse = np.roll(np.fft.irfft(gain, 1024), coefficients // 2)[:coefficients]
+    return reponse * np.hanning(coefficients)
+
+
+class _Egaliseur:
+    """Le filtre appliqué en flux : la fin de chaque morceau prolonge le suivant."""
+
+    def __init__(self, taux: int):
+        self._filtre = filtre_egalisation(taux)
+        self._reste = np.zeros(len(self._filtre) - 1, dtype=np.float32)
+
+    def __call__(self, echantillons: np.ndarray) -> np.ndarray:
+        if not len(echantillons):
+            return echantillons
+        suite = np.concatenate([self._reste, echantillons])
+        self._reste = suite[-(len(self._filtre) - 1) :]
+        return np.convolve(suite, self._filtre, mode="valid").astype(np.float32)
+
+    def oublier(self) -> None:
+        self._reste[:] = 0
+
+
 def _vers_pcm(echantillons: np.ndarray) -> bytes:
     return np.clip(echantillons, -32768, 32767).astype("<i2").tobytes()
 
@@ -197,6 +232,7 @@ class Pont(AudioInterface):
     def _preparer_conversions(self) -> None:
         self._vers_elevenlabs = _Conversion(self._taux_ligne, self._taux_entree)
         self._vers_telephone = _Conversion(self._taux_sortie, self._taux_ligne)
+        self._egaliseur = _Egaliseur(self._taux_sortie) if EGALISATION_TELEPHONE else None
 
     def regler_formats(self, entree: str | None, sortie: str | None) -> None:
         self._taux_entree, self._taux_sortie = taux_de(entree), taux_de(sortie)
@@ -456,6 +492,8 @@ class Pont(AudioInterface):
         if self._mode_operateur:
             return
         echantillons = np.frombuffer(audio, dtype="<i2").astype(np.float32) * GAIN_SORTIE
+        if self._egaliseur is not None:
+            echantillons = self._egaliseur(echantillons)
         converti = _vers_pcm(self._vers_telephone(echantillons))
         with self._verrou:
             self._sortie += converti
@@ -463,6 +501,8 @@ class Pont(AudioInterface):
     def interrupt(self) -> None:
         with self._verrou:
             self._sortie.clear()
+        if self._egaliseur is not None:
+            self._egaliseur.oublier()
 
 
 def temps_de_reponse(enregistrement: str, seuil_prospect: float = 300, seuil_mina: float = 50, trame_ms: int = 20) -> list[float]:
