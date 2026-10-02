@@ -191,7 +191,7 @@
     "turn": {
       "turn_eagerness": "normal",
       "turn_timeout": 7,
-      "speculative_turn": false,
+      "speculative_turn": true,
       "interruption_ignore_terms": [
         "oui",
         "ouais",
