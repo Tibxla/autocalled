@@ -182,7 +182,7 @@
       }
     },
     "tts": {
-      "voice_id": "YxrwjAKoUKULGd0g8K9Y",
+      "voice_id": "Qrl71rx6Yg8RvyPYRGCQ",
       "model_id": "eleven_v4_turbo",
       "stability": 0.35,
       "similarity_boost": 0.8,
