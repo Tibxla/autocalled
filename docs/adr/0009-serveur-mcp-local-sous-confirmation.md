@@ -22,3 +22,7 @@ Un import de fiches par le MCP vaut un import de l'interface : leurs numéros so
 - Un appel d'outil aux arguments invalides est refusé par le SDK avant l'outil : rien n'est fait, rien n'est journalisé.
 - Une campagne simulée lancée par le MCP dure plus qu'une session : elle tourne dans un processus détaché (`mcp/tache.ts`). Une campagne téléphone n'en a pas besoin : l'application enchaîne les appels à chaque fin d'appel.
 - Depuis un autre poste du tailnet, un `.mcp.json` local (non commité) lance la même commande par `ssh`.
+
+## Amendement du 03/10 : confirmations coupées par défaut
+
+À la demande de l'opérateur, les questions de confirmation ne sont plus posées : `confirmer` rend un accord tout de suite et le journal note `sans-question`. Le mécanisme reste entier et se rétablit par `MCP_CONFIRMATIONS=1` dans l'.env ; les tests le gardent actif. Le risque assumé est celui que la garde couvrait : un modèle trompé par une transcription ou une fiche peut maintenant faire sonner un téléphone, pousser la configuration, effacer une personne ou supprimer une entreprise sans que personne ne le voie avant.

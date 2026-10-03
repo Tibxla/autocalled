@@ -1,5 +1,5 @@
 import type { McpServer, ServerContext } from '@modelcontextprotocol/server';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { associerGardien, confirmer, creerGardien, type EtatConfirmation } from './confirmation';
 
 /** Un serveur dont le client déclare (ou non) l'élicitation, lié à un gardien (clé et nonces) comme par creerServeur. */
@@ -79,5 +79,15 @@ describe('confirmer', () => {
     expect(await confirmer(serveur(undefined).faux, passage(), 'Effacer', ['x'])).toEqual({ etat: 'indisponible' });
     expect(await confirmer(serveur({ url: {} }).faux, passage(), 'Effacer', ['x'])).toEqual({ etat: 'indisponible' });
     expect((await confirmer(serveur({}).faux, passage(), 'Effacer', ['x'])).etat).toBe('a-demander');
+  });
+});
+
+describe('confirmations coupées (défaut en production)', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('le geste part sans question, même sans élicitation chez le client', async () => {
+    vi.stubEnv('MCP_CONFIRMATIONS', '');
+    const s = serveur(undefined);
+    expect(await confirmer(s.faux, passage(), 'Effacer', ['effacer_personne'])).toEqual({ etat: 'acceptee' });
   });
 });

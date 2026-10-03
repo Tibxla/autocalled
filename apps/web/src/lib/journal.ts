@@ -8,7 +8,7 @@ import { journalMcp, type Origine } from '@/db/schema';
  */
 
 export type ResultatJournal = 'ok' | 'refus' | 'erreur' | 'confirmation-demandee';
-export type ConfirmationJournal = 'acceptee' | 'refusee' | 'indisponible';
+export type ConfirmationJournal = 'acceptee' | 'refusee' | 'indisponible' | 'sans-question';
 
 export interface LigneAEcrire {
   origine: Origine;

@@ -284,7 +284,7 @@ export const journalMcp = pgTable('journal_mcp', {
   resultat: text().$type<'ok' | 'refus' | 'erreur' | 'confirmation-demandee'>().notNull(),
   message: text(),
   /** Pour les gestes confirmés par l'opérateur : ce qu'il a répondu, ou `indisponible` sans élicitation. */
-  confirmation: text().$type<'acceptee' | 'refusee' | 'indisponible'>(),
+  confirmation: text().$type<'acceptee' | 'refusee' | 'indisponible' | 'sans-question'>(),
 });
 
 /**

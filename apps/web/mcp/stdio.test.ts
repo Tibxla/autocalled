@@ -31,7 +31,7 @@ describe('serveur MCP en stdio', () => {
       command,
       args,
       cwd: racine,
-      env: { PATH: process.env.PATH ?? '', DATABASE_URL: process.env.DATABASE_URL ?? '', PONT_URL: pont.url, PONT_SECRET: 'secret-de-test' },
+      env: { PATH: process.env.PATH ?? '', DATABASE_URL: process.env.DATABASE_URL ?? '', PONT_URL: pont.url, PONT_SECRET: 'secret-de-test', MCP_CONFIRMATIONS: '1' },
       stderr: 'pipe',
     });
     const client = new Client({ name: 'fumee', version: '0' });

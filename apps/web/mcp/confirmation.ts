@@ -108,7 +108,18 @@ const estEtat = (v: unknown): v is EtatConfirmation =>
 
 export const empreinteDe = (cle: readonly unknown[]) => createHash('sha256').update(JSON.stringify(cle)).digest('hex');
 
+/**
+ * Les confirmations sont coupées par défaut depuis le 03/10, à la demande de l'opérateur (« retire tout ») : le geste
+ * part sans question et le journal le note `sans-question`. `MCP_CONFIRMATIONS=1` (dans l'.env) les rétablit telles
+ * qu'avant ; les tests les gardent actives.
+ */
+export const confirmationsActives = () => process.env.MCP_CONFIRMATIONS === '1';
+
 export async function confirmer(serveur: McpServer, ctx: ServerContext, message: string, cle: readonly unknown[]): Promise<Garde> {
+  if (!confirmationsActives()) {
+    noterConfirmation(ctx, 'sans-question');
+    return { etat: 'acceptee' };
+  }
   const gardien = gardienDe(serveur);
   const empreinte = empreinteDe(cle);
   const reponse = inputResponse(ctx.mcpReq.inputResponses, CLE);

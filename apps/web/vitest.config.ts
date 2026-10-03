@@ -18,6 +18,8 @@ export default defineConfig({
       DATABASE_URL: urlBaseDeTest(),
       PONT_SECRET: 'secret-de-test',
       PONT_URL: 'http://127.0.0.1:9',
+      // Les confirmations du MCP sont coupées en production ; les tests vérifient qu'elles marchent quand on les rétablit.
+      MCP_CONFIRMATIONS: '1',
       // Sel de la liste d'opposition (ADR 0013), propre aux tests.
       SEL_OPPOSITION: 'sel-de-test-de-la-liste-d-opposition-0123456789',
     },

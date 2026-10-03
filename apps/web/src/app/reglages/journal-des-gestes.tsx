@@ -22,7 +22,7 @@ export type LigneJournal = {
   arguments: Record<string, unknown>;
   resultat: 'ok' | 'refus' | 'erreur' | 'confirmation-demandee';
   message: string | null;
-  confirmation: 'acceptee' | 'refusee' | 'indisponible' | null;
+  confirmation: 'acceptee' | 'refusee' | 'indisponible' | 'sans-question' | null;
   /** Noms lus en base pour les identifiants des arguments (slug d'entreprise, identifiant de prospect). */
   noms?: { entreprise?: string; prospect?: string };
 };
@@ -98,6 +98,7 @@ const CONFIRMATIONS: Record<NonNullable<LigneJournal['confirmation']>, string> =
   acceptee: 'accord de l’opérateur',
   refusee: 'refus de l’opérateur',
   indisponible: 'confirmation impossible',
+  'sans-question': 'sans confirmation (désactivée)',
 };
 
 /** Le résultat en texte, avec son ton : jamais l'antenne, réservée à ce qui vit. */

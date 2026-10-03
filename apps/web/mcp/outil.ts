@@ -85,7 +85,9 @@ export function declarateur(serveur: McpServer): Declarer {
         }
         return issue.demande;
       }
-      const confirmation = issue.confirmation ?? confirmations.get(ctx) ?? null;
+      const notee = confirmations.get(ctx);
+      // Confirmations coupées : le journal le dit, même quand l'outil annonce un accord.
+      const confirmation = notee === 'sans-question' ? notee : (issue.confirmation ?? notee ?? null);
       if (!issue.ok) {
         await noter(nom, journal, 'refus', issue.raison, confirmation);
         return { isError: true, content: [texte(issue.raison)] };
