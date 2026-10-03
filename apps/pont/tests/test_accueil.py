@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from pont.appel import ouverture_valide
+from pont.appel import PREMIER_MESSAGE_MAX, ouverture_valide
 from pont.audio import Pont, temps_de_reponse
 
 TAUX = 16000
@@ -95,7 +95,7 @@ class Ouverture(unittest.TestCase):
         self.assertEqual(ouverture_valide("  Oui bonjour,\n je m'appelle Mina. "), "Oui bonjour, je m'appelle Mina.")
 
     def test_absente_ou_invalide(self):
-        for valeur in (None, "", "   ", 42, ["Bonjour"], "a" * 301):
+        for valeur in (None, "", "   ", 42, ["Bonjour"], "a" * (PREMIER_MESSAGE_MAX + 1)):
             with self.subTest(valeur=valeur):
                 self.assertIsNone(ouverture_valide(valeur))
 

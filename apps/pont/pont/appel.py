@@ -22,7 +22,9 @@ from .plafond import Plafond
 
 SILENCE_AU_DECROCHE_S = 2.0  # sans voix du prospect passé ce délai, l'assistante ouvre par son premier message
 PREMIER_MESSAGE_PAR_DEFAUT = "Allô ?"
-PREMIER_MESSAGE_MAX = 300  # au-delà, ce n'est plus une phrase d'ouverture : on reprend « Allô ? »
+# Au-delà, ce n'est plus une phrase d'ouverture : on reprend « Allô ? ». Un service qui emprunte la ligne (ADR 0019)
+# peut ouvrir en lisant toute sa demande, d'où la marge (03/10).
+PREMIER_MESSAGE_MAX = 1200
 # Ouverture fixe (constat du 02/10 : 3,8 s médiane entre le décroché et le premier mot quand le modèle rédige
 # l'ouverture, assez pour que le prospect redise « allô ? » et coupe Mina). Un accueil humain (« Hôtel du Parc,
 # bonjour ») tient en moins de 2,5 s ; au-delà, c'est un standard ou un répondeur : le modèle ouvre, et sait raccrocher
