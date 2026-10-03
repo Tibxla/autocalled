@@ -10,6 +10,17 @@ présente le même secret à l'application quand il la rappelle (`$WEB_URL/api/p
                                       sans elle), ouverture celle dite juste après un accueil court (sans elle, le
                                       modèle ouvre)
                                       ; 409 tant qu'un appel est en cours, entrant compris (même s'il sonne sans réponse)
+                                      Ligne prêtée à un autre service local, champs facultatifs (absents : Mina,
+                                      rappels à l'application, plafond compté) :
+                                        agentId     l'agent ElevenLabs de cet appel, à la place d'ELEVENLABS_AGENT_ID ;
+                                        rappels     http://127.0.0.1:<port>/… ou http://localhost:<port>/… seulement
+                                                    (sinon 400) : le pont y rappelle `<rappels>/<appelId>/conversation|
+                                                    outils|fin`, mêmes corps et même secret que vers l'application ;
+                                                    le son de l'appel n'est pas gardé (son .wav est effacé une fois
+                                                    la fin envoyée, le bilan n'en donne pas le chemin) ;
+                                        horsPlafond true : l'appel n'est ni refusé ni compté par le plafond.
+                                      Tout outil client que l'agent appelle, hors etape_script, part à `…/outils`
+                                      ({outil, parametres} → {resultat}), qu'il soit d'agenda ou non.
     POST /appels/<id>/raccrocher
     GET  /appels/<id>/evenements      fil de l'appel en SSE (états, tours de parole, étapes du plan), rejoué depuis le début ;
                                       s'y glissent, sans `id:` et sans rejeu, les niveaux des deux voix (voir plus bas)
@@ -36,6 +47,10 @@ Appel entrant (ADR 0018) : à sa sonnerie, ligne libre et numéro reçu, le pont
                                       → {decrocher: false}, une erreur ou plus de 3 s : le téléphone sonne, sans réponse.
     Un entrant ne compte pas au plafond et n'est jamais recomposé. Le pont ne raccroche jamais un entrant qu'il ne
     prend pas : il sonne jusqu'à la messagerie.
+    RELAIS_ENTRANTS=+33…,+33…=http://127.0.0.1:<port>/… (.env, facultative) : pour un appelant de cette liste, la
+    question part d'abord à cette adresse locale, avec le numéro en E.164 et le même contrat ; sa réponse peut porter
+    agentId et rappels comme un POST /appels. `decrocher: false`, une erreur ou 1,5 s sans réponse : l'application
+    décide comme pour tout autre numéro, dans les mêmes 3 s en tout.
 
 Fil d'un appel (`data:` de chaque message SSE, JSON). `t` : heure du pont, en millisecondes depuis l'epoch.
     id: n   {"type": "etat", "etat": "composition" | "entrant" | "alerting" | "active" | "prise-en-main" | …, "t": …}
@@ -76,11 +91,15 @@ from .plafond import Plafond
 from .reglages import Reglages
 
 
-class RappelsWeb:
-    """Ce que l'appel fait savoir à l'application, par ses routes `/api/pont/appels/<id>/…`."""
+OUTILS_D_AGENDA = ("proposer_creneaux", "reserver_creneau")
 
-    def __init__(self, web: str, secret: str, appel_id: str, journal: Journal):
-        self._base = f"{web.rstrip('/')}/api/pont/appels/{appel_id}"
+
+class RappelsWeb:
+    """Ce que l'appel fait savoir à l'application, par ses routes `/api/pont/appels/<id>/…`, ou au service local qui
+    a demandé l'appel (`base` : `<base>/<id>/conversation|outils|fin`, mêmes corps, même secret)."""
+
+    def __init__(self, web: str, secret: str, appel_id: str, journal: Journal, base: str | None = None):
+        self._base = f"{base}/{appel_id}" if base else f"{web.rstrip('/')}/api/pont/appels/{appel_id}"
         self._secret = secret
         self.journal = journal
 
@@ -117,7 +136,9 @@ class RappelsWeb:
             return str(self._poster("outils", {"outil": nom, "parametres": parametres}, delai=20)["resultat"])
         except (urllib.error.URLError, TimeoutError, KeyError) as e:
             self.journal("outil", nom, "en échec :", e)
-            return "L'agenda ne répond pas. Propose au prospect qu'on le recontacte pour fixer un moment."
+            if nom in OUTILS_D_AGENDA:
+                return "L'agenda ne répond pas. Propose au prospect qu'on le recontacte pour fixer un moment."
+            return "Cet outil ne répond pas pour l'instant."
 
     def evenement(self, type_: str, donnees: dict[str, Any]) -> None:
         pass  # le suivi en direct viendra avec la page d'appel en direct
@@ -130,10 +151,67 @@ class RappelsWeb:
 
 
 DELAI_ENTRANT_S = 3.0  # l'appelant entend sonner pendant la question : au-delà, on laisse sonner
+DELAI_RELAIS_S = 1.5  # part du service local de RELAIS_ENTRANTS dans ce délai : l'application garde le reste
 # Décroché à la première sonnerie, ça sonne comme une machine (essai du 03/10) : on laisse sonner environ 5 s, comptées
 # depuis l'arrivée de l'appel, question à l'application comprise.
 SONNERIE_AVANT_DECROCHE_S = 5.0
 APPEL_ID = re.compile(r"[0-9a-f-]{36}")
+AGENT_ID = re.compile(r"[A-Za-z0-9_-]{1,100}")
+ADRESSE_LOCALE = re.compile(r"http://(?:127\.0\.0\.1|localhost):([0-9]{1,5})(/[A-Za-z0-9._~/-]*)?")
+
+
+def adresse_locale(valeur: Any) -> str | None:
+    """Une adresse de cette machine, `http://127.0.0.1:<port>/…` ou `http://localhost:<port>/…`, sans barre finale ;
+    None pour toute autre. Le pont n'envoie son secret ni la parole d'un appel à rien d'autre qu'un service local."""
+    if not isinstance(valeur, str) or len(valeur) > 200:
+        return None
+    m = ADRESSE_LOCALE.fullmatch(valeur)
+    if not m or not 1 <= int(m.group(1)) <= 65535:
+        return None
+    return valeur.rstrip("/")
+
+
+def options_de_l_appel(corps: dict[str, Any]) -> dict[str, Any]:
+    """Les champs facultatifs d'un appel prêté à un autre service local (`POST /appels`, réponse d'un relais d'entrants) :
+    `agentId` (son agent ElevenLabs), `rappels` (son adresse de base), `horsPlafond`. Absents : Mina, rappels à
+    l'application, plafond compté. ValueError si l'un est présent et invalide."""
+    agent_id, rappels, hors_plafond = corps.get("agentId"), corps.get("rappels"), corps.get("horsPlafond")
+    if agent_id is not None and not (isinstance(agent_id, str) and AGENT_ID.fullmatch(agent_id)):
+        raise ValueError("agentId doit être un identifiant d'agent ElevenLabs")
+    if rappels is not None and adresse_locale(rappels) is None:
+        raise ValueError("rappels doit être une adresse locale : http://127.0.0.1:<port>/… ou http://localhost:<port>/…")
+    if hors_plafond is not None and not isinstance(hors_plafond, bool):
+        raise ValueError("horsPlafond doit être un booléen")
+    return {"agentId": agent_id, "rappels": adresse_locale(rappels), "horsPlafond": hors_plafond is True}
+
+
+def forme_e164(brut: Any) -> str | None:
+    """Le numéro d'un appel entrant tel que le téléphone le donne (`+33…`, `0033…`, `06…`, séparateurs compris) en
+    E.164, None sinon. Une forme nationale est lue comme française : c'est la ligne du téléphone passerelle."""
+    numero = re.sub(r"[\s.()-]", "", str(brut or ""))
+    if numero.startswith("00"):
+        numero = "+" + numero[2:]
+    elif re.fullmatch(r"0[1-9][0-9]{8}", numero):
+        numero = "+33" + numero[1:]
+    return numero if numero_valide(numero) else None
+
+
+def lire_relais_entrants(valeur: str | None) -> tuple[frozenset[str], str] | None:
+    """`RELAIS_ENTRANTS` : `+33…,+33…=http://127.0.0.1:<port>/…`, les numéros (E.164) dont un service local décide
+    avant l'application, et l'adresse où le lui demander. None si elle est absente ; ValueError si elle est mal écrite
+    (le message ne cite aucun numéro : il va au journal)."""
+    valeur = (valeur or "").strip()
+    if not valeur:
+        return None
+    numeros, signe, adresse = valeur.partition("=")
+    if not signe:
+        raise ValueError("forme attendue : +33…,+33…=http://127.0.0.1:<port>/…")
+    liste = {n.strip() for n in numeros.split(",") if n.strip()}
+    if not liste or not all(numero_valide(n) for n in liste):
+        raise ValueError("les numéros doivent être au format international (+33…), séparés par des virgules")
+    if (adresse := adresse_locale(adresse.strip())) is None:
+        raise ValueError("l'adresse doit être locale : http://127.0.0.1:<port>/… ou http://localhost:<port>/…")
+    return frozenset(liste), adresse
 
 
 def lire_decision_entrant(corps: Any) -> dict[str, Any] | None:
@@ -145,19 +223,28 @@ def lire_decision_entrant(corps: Any) -> dict[str, Any] | None:
         return None
     if not isinstance(variables, dict) or not isinstance(mots_cles, list):
         return None
+    try:
+        options = options_de_l_appel(corps)  # un relais local peut prêter son agent ; l'application n'en envoie pas
+    except ValueError:
+        return None
     return {
         "appelId": appel_id,
         "variables": dict(variables),
         "motsCles": list(mots_cles),
         "premierMessage": premier_message_valide(corps.get("premierMessage")),
+        **options,
     }
 
 
-def demander_entrant(web: str, secret: str, numero: str, delai: float = DELAI_ENTRANT_S) -> tuple[dict[str, Any] | None, str]:
-    """Demande à l'application si elle décroche cet appel entrant : (décision, motif pour le journal). La décision
-    est None pour un inconnu, une réponse illisible, une erreur ou un délai dépassé : le téléphone sonne alors."""
+def demander_entrant(
+    web: str, secret: str, numero: str, delai: float = DELAI_ENTRANT_S, adresse: str | None = None
+) -> tuple[dict[str, Any] | None, str]:
+    """Demande à l'application (ou au service local d'`adresse`, même contrat) si elle décroche cet appel entrant :
+    (décision, motif pour le journal). La décision est None pour un inconnu, une réponse illisible, une erreur ou un
+    délai dépassé : le téléphone sonne alors."""
+    qui = "le service local" if adresse else "l'application"
     requete = urllib.request.Request(
-        f"{web.rstrip('/')}/api/pont/entrants",
+        adresse or f"{web.rstrip('/')}/api/pont/entrants",
         data=json.dumps({"numero": numero}).encode(),
         headers={"content-type": "application/json", "authorization": f"Bearer {secret}"},
         method="POST",
@@ -167,13 +254,15 @@ def demander_entrant(web: str, secret: str, numero: str, delai: float = DELAI_EN
             corps = json.loads(r.read() or b"{}")
     except urllib.error.HTTPError as e:
         e.close()
-        return None, f"l'application a répondu {e.code}"
+        return None, f"{qui} a répondu {e.code}"
     except (OSError, ValueError, http.client.HTTPException) as e:  # application absente, délai dépassé, réponse tronquée, JSON illisible
-        return None, f"l'application n'a pas répondu ({e})"
+        return None, f"{qui} n'a pas répondu ({e})"
     decision = lire_decision_entrant(corps)
     if decision is None:
-        return None, "numéro inconnu de l'application" if isinstance(corps, dict) and corps.get("decrocher") is False else "réponse illisible"
-    return decision, "prospect reconnu"
+        if isinstance(corps, dict) and corps.get("decrocher") is False:
+            return None, "le service local ne le prend pas" if adresse else "numéro inconnu de l'application"
+        return None, "réponse illisible"
+    return decision, "pris par le service local" if adresse else "prospect reconnu"
 
 
 def lot_de_niveaux(releves: list[tuple[int, float, float]]) -> dict[str, Any]:
@@ -232,6 +321,9 @@ def preparer_dossier(dossier: Path) -> None:
 
 
 class Service:
+    # Valeur par défaut au niveau de la classe : les tests construisent l'objet sans son constructeur.
+    _relais: tuple[frozenset[str], str] | None = None  # RELAIS_ENTRANTS lue : (numéros E.164, adresse locale)
+
     def __init__(self, cles: dict[str, str], racine: Path):
         self._cles = cles
         self._secret = cles["PONT_SECRET"]
@@ -245,6 +337,12 @@ class Service:
             self._reglages.valeurs["appelsParJour"],
         )
         self.journal = Journal()
+        try:
+            self._relais = lire_relais_entrants(cles.get("RELAIS_ENTRANTS"))
+        except ValueError as e:  # un .env mal écrit ne coupe pas la ligne : les entrants vont tous à l'application
+            self.journal("RELAIS_ENTRANTS ignorée :", e)
+        if self._relais:
+            self.journal(f"appels entrants de {len(self._relais[0])} numéro(s) demandés d'abord à un service local")
         dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
         self._bus = dbus.SystemBus()
         self._boucle = GLib.MainLoop()
@@ -310,14 +408,18 @@ class Service:
             return 400, {"erreur": "appelId et numero sont requis"}
         if not numero_valide(corps["numero"]):
             return 400, {"erreur": "numero doit être un numéro au format international (+33…)"}
+        try:
+            options = options_de_l_appel(corps)
+        except ValueError as e:
+            return 400, {"erreur": str(e)}
         with self._verrou:
             if not self._telephone.libre():
                 if self._telephone.entrant_en_cours():
                     return 409, {"erreur": "Un appel entrant est en cours sur le téléphone."}
                 return 409, {"erreur": "Un appel est déjà en cours sur le téléphone."}
-            if raison := self._plafond.refus():
+            if not options["horsPlafond"] and (raison := self._plafond.refus()):
                 return 429, {"erreur": raison}
-            rappels = RappelsWeb(self._web, self._secret, appel_id, self.journal)
+            rappels = RappelsWeb(self._web, self._secret, appel_id, self.journal, base=options["rappels"])
             appel = Appel(
                 self._telephone,
                 str(corps["numero"]),
@@ -328,8 +430,11 @@ class Service:
                 appel_id,
                 rappels,
                 premier_message_valide(corps.get("premierMessage")),
-                plafond=self._plafond,  # chaque composition y compte, recomposition comprise
+                # Chaque composition y compte, recomposition comprise ; un appel `horsPlafond` n'y entre pas.
+                plafond=None if options["horsPlafond"] else self._plafond,
                 ouverture=ouverture_valide(corps.get("ouverture")),
+                agent_id=options["agentId"],
+                garder_enregistrement=options["rappels"] is None,  # ligne prêtée : son effacé après la fin
             )
             rappels.journal = appel.journal
             # Suivi avant la composition : si la boucle D-Bus tarde, l'appel reste raccrochable et visible dans /etat.
@@ -369,13 +474,13 @@ class Service:
                 self.journal("appel entrant du", masquer(numero), "pendant un appel : il sonne sans réponse")
                 self._laisser_sonner(chemin, generation)
                 return
-            decision, motif = demander_entrant(self._web, self._secret, numero)
+            decision, motif = self._demander_entrant(numero)
             self.journal("appel entrant du", masquer(numero), ":", motif)
             if decision is None:
                 self._laisser_sonner(chemin, generation)
                 return
             appel_id = decision["appelId"]
-            rappels = RappelsWeb(self._web, self._secret, appel_id, self.journal)
+            rappels = RappelsWeb(self._web, self._secret, appel_id, self.journal, base=decision["rappels"])
             try:
                 appel = Appel(
                     self._telephone,
@@ -389,6 +494,8 @@ class Service:
                     decision["premierMessage"],
                     entrant=chemin,  # hors plafond : il ne compte que les compositions
                     generation=generation,
+                    agent_id=decision["agentId"],
+                    garder_enregistrement=decision["rappels"] is None,
                 )
             except Exception as e:
                 # La ligne `appels` existe déjà côté application : elle doit recevoir sa fin.
@@ -409,6 +516,17 @@ class Service:
                 appel.journal("décroché impossible :", e)
                 appel.annuler()  # la fin part vers l'application ; raccroché s'il a été pris entre-temps
             threading.Thread(target=self._oublier_a_la_fin, args=(appel_id,), daemon=True).start()
+
+    def _demander_entrant(self, numero: str) -> tuple[dict[str, Any] | None, str]:
+        """Un numéro de RELAIS_ENTRANTS est d'abord demandé au service local, en E.164 (la forme qu'il a listée) ;
+        sans décision de sa part, à l'application, avec le numéro brut. DELAI_ENTRANT_S en tout."""
+        limite = time.monotonic() + DELAI_ENTRANT_S
+        if self._relais is not None and (e164 := forme_e164(numero)) in self._relais[0]:
+            decision, motif = demander_entrant(self._web, self._secret, e164, delai=DELAI_RELAIS_S, adresse=self._relais[1])
+            if decision is not None:
+                return decision, motif
+            self.journal("appel entrant du", masquer(numero), ":", motif, "; l'application décide")
+        return demander_entrant(self._web, self._secret, numero, delai=max(0.1, limite - time.monotonic()))
 
     def _laisser_sonner(self, chemin: str, generation: int | None = None) -> None:
         try:

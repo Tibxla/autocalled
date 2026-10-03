@@ -1,6 +1,6 @@
 # Le pont Bluetooth est un service permanent, piloté par l'application web
 
-Statut : amendée par l'ADR 0018 (appels entrants).
+Statut : amendée par l'ADR 0018 (appels entrants), puis par l'ADR 0019 (ligne prêtée à un service local).
 
 Le pont (`apps/pont`, Python) tourne en service systemd à côté de l'application web et n'écoute que sur 127.0.0.1. Il ne touche jamais la base : l'application reste maîtresse de l'appel. Elle vérifie le numéro, prépare les variables de Mina (`preparerAppel`), crée l'appel (`ligne: 'bluetooth'`), puis demande au pont de composer. En retour, le pont lui transmet le `conversation_id` dès l'ouverture de la conversation (sans lui, le bilan ne peut pas être rapatrié), fait exécuter les outils d'agenda par les fonctions existantes, et signale la fin de l'appel, qui déclenche le bilan comme pour la ligne navigateur.
 
@@ -22,6 +22,7 @@ Le téléphone passerelle se gère depuis l'application : état (connecté, opé
 
 - Le pont refuse tout canal son qui ne vient pas d'un appel qu'il a composé ou d'un appel entrant qu'il décroche. Sans ça, les appels reçus sur le téléphone passerelle arriveraient au serveur et plus personne ne les entendrait sur le téléphone. Un téléphone dédié reste la bonne configuration.
 - Amendement (ADR 0018) : l'assistante décroche un prospect connu qui rappelle. Le téléphone peut ouvrir le canal son dès la sonnerie ; pendant que l'application décide, le pont le garde sans le lire ni le fermer. Il le branche s'il décroche, et le ferme s'il laisse sonner, si l'appelant raccroche ou si quelqu'un décroche à la main sur le téléphone : le son reste alors sur le téléphone. Pour raccrocher, le pont vise l'appel qu'il suit dès qu'il le connaît, plutôt que tous les appels du téléphone (`HangupAll`), qui rejetterait un appel entrant en attente.
+- Amendement du 03/10 : le pont prête la ligne à un autre service de la machine (agent, adresse de rappel locale, hors plafond, relais des appels entrants de certains numéros), sans cesser d'être le seul à la tenir : voir l'ADR 0019.
 - Si le canal son ne s'ouvre pas dans les secondes qui suivent la composition (vu une fois après un appel passé à la main sur le téléphone), le pont raccroche, reconnecte le téléphone et recommence une fois, puis signale la panne à l'application.
 - Le pont plafonne les appels sortants (15 par heure et 50 par jour par défaut ; un appel entrant n'y compte pas), avec une pause réglable entre deux appels de campagne. Ces garde-fous se règlent sur la page Téléphone ; le pont les garde et les applique lui-même, `.env` ne donne que les valeurs par défaut. Ce qui fait signaler un numéro comme démarchage, ce sont des rafales d'appels courts ou sans réponse, qu'une campagne où personne ne décroche ou un bug produiraient. Plafond atteint, la campagne se met en pause sans consommer le prospect suivant.
 - La ligne Bluetooth demande du matériel : un serveur Linux, une clé Bluetooth reconnue, un téléphone avec sa carte SIM. Sans ce matériel, le produit reste utilisable par la ligne navigateur, et plus tard par Twilio.

@@ -3,7 +3,9 @@
 Ce que l'appel doit faire savoir au reste du produit passe par des `Rappels` : l'application web pour le
 service, des bouchons pour la commande de diagnostic.
 """
+import asyncio
 import os
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -78,6 +80,27 @@ def numero_d_etape(valeur: Any) -> int | None:
     return valeur
 
 
+NOM_D_OUTIL = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+class OutilsClient(ClientTools):
+    """Les outils client de l'agent. Ceux enregistrés sont traités par le pont ; tout autre nom part aux rappels de
+    l'appel (`relayer(nom)`), qui en décident : l'agenda pour Mina, `repondre_par_ecrit` pour un autre service local.
+    Le SDK refuse un nom non enregistré : un agent prêté par un autre service aurait vu ses outils échouer."""
+
+    def __init__(self, relayer: Callable[[str], Callable[[dict[str, Any]], str]]):
+        super().__init__()
+        self._relayer = relayer
+
+    async def handle(self, tool_name: str, parameters: dict) -> Any:
+        with self.lock:
+            connu = tool_name in self.tools
+        if connu or not isinstance(tool_name, str) or not NOM_D_OUTIL.fullmatch(tool_name):
+            return await super().handle(tool_name, parameters)  # nom illisible : refusé comme le fait le SDK
+        # Hors de la boucle du SDK : le rappel attend jusqu'à 20 s.
+        return await asyncio.get_running_loop().run_in_executor(self.thread_pool, self._relayer(tool_name), parameters)
+
+
 class Rappels(Protocol):
     def conversation_ouverte(self, conversation_id: str) -> None: ...
     def outil(self, nom: str, parametres: dict[str, Any]) -> str: ...
@@ -143,6 +166,7 @@ class Appel:
     _generation_entrant: int | None = None  # celle que le téléphone a annoncée avec l'entrant
     _fin_lancee = False
     _VERROU_FIN = threading.Lock()
+    _garder_enregistrement = True  # False pour un appel prêté (ADR 0007) : son .wav est effacé une fois la fin envoyée
 
     def __init__(
         self,
@@ -159,8 +183,11 @@ class Appel:
         ouverture: str | None = None,
         entrant: str | None = None,
         generation: int | None = None,
+        agent_id: str | None = None,
+        garder_enregistrement: bool = True,
     ):
         self._telephone = telephone
+        self._garder_enregistrement = garder_enregistrement
         self._chemin_entrant = entrant
         self._generation_entrant = generation
         self._plafond = plafond
@@ -193,14 +220,15 @@ class Appel:
         self.evenements: list[dict[str, Any]] = []
         self._nouveau = threading.Condition()
 
-        outils = ClientTools()
+        # L'agenda de Mina, et tout autre outil client que l'agent appelle (OutilsClient) : relayés aux rappels.
+        outils = OutilsClient(self._outil)
         for nom_outil in ("proposer_creneaux", "reserver_creneau"):
             outils.register(nom_outil, self._outil(nom_outil))
         # Affichage seulement (« Étape 2 » dans la bande d'appel) : traité ici, sans aller-retour vers l'application.
         outils.register("etape_script", self._etape)
         self._conversation = ConversationPont(
             ElevenLabs(api_key=cles["ELEVENLABS_API_KEY"]),
-            cles["ELEVENLABS_AGENT_ID"],
+            agent_id or cles["ELEVENLABS_AGENT_ID"],  # un autre service local peut prêter son agent pour cet appel
             requires_auth=True,
             audio_interface=self._pont,
             config=ConversationInitiationData(
@@ -559,7 +587,8 @@ class Appel:
         if self._prise_en_main is not None and self._decroche:
             bilan["priseEnMainApresS"] = round(self._prise_en_main - self._decroche, 1)
         if os.path.exists(self._enregistrement):
-            bilan["enregistrement"] = self._enregistrement
+            if self._garder_enregistrement:
+                bilan["enregistrement"] = self._enregistrement
             bilan["tempsDeReponseS"] = [round(x, 2) for x in temps_de_reponse(self._enregistrement)]
         if self._pings:
             bilan["pingMedianMs"] = sorted(self._pings)[len(self._pings) // 2]
@@ -568,6 +597,13 @@ class Appel:
         try:
             self._rappels.fin(bilan)
         finally:
+            if not self._garder_enregistrement:
+                # Ligne prêtée : le service qui l'a demandée a la conversation ; aucune purge d'Autocalled ne connaît
+                # cet appel, son son ne resterait pas sans limite dans data/pont. Le journal (.log, sans parole) reste.
+                try:
+                    os.remove(self._enregistrement)
+                except OSError:
+                    pass
             with self._nouveau:
                 self._termine.set()
                 self._nouveau.notify_all()

@@ -46,7 +46,7 @@ def lire_cles() -> dict[str, str]:
             if "=" in ligne and not ligne.lstrip().startswith("#"):
                 cle, valeur = ligne.split("=", 1)
                 cles[cle.strip()] = valeur.strip().strip('"').strip("'")
-    cles.update({k: v for k, v in os.environ.items() if k.startswith(("ELEVENLABS_", "PONT_", "WEB_"))})
+    cles.update({k: v for k, v in os.environ.items() if k.startswith(("ELEVENLABS_", "PONT_", "WEB_", "RELAIS_"))})
     return cles
 
 
