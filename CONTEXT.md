@@ -131,7 +131,7 @@ Issue système où le prospect demande à être rappelé à un moment précis ; 
 _Avoid_ : relance, callback
 
 **Rappel daté** :
-Rappel convenu dont le bilan donne le jour, et l'heure ou le moment de la journée (matin, après-midi), tels que le prospect les a dits. Seule l'analyse le date, et on ne le corrige qu'en la relançant. L'accueil liste les rappels datés du jour et ceux en retard ; un rappel sans date reste « sans date ».
+Rappel convenu dont le bilan donne le jour, et l'heure ou le moment de la journée (matin, après-midi), tels que le prospect les a dits. Seule l'analyse le date, et on ne le corrige qu'en la relançant. L'accueil liste les rappels datés du jour et ceux en retard. Après activation, le réveil compose les rappels issus d'un appel téléphone à partir de leur échéance, entre 9 h et 19 h, avec la version de script d'origine ; un rappel sans date reste manuel (ADR 0020).
 _Avoid_ : rappel programmé, tâche, échéance
 
 **Bilan** :

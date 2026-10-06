@@ -202,6 +202,7 @@ Sur téléphone, la navigation passe dans une barre du bas, les filtres tiennent
 
 - Quand le prospect demande à être rappelé, l'analyse date le rappel d'après ce qu'il a dit (« jeudi matin ») ([ADR 0011](docs/adr/0011-rappel-date-par-l-analyse.md)).
 - L'accueil liste les rappels du jour et ceux en retard ; un rappel est fait dès qu'un nouvel appel part vers ce prospect, ou qu'il rappelle et parle à l'assistante.
+- Les rappels convenus et datés d'un appel téléphone partent automatiquement au réveil suivant leur échéance, entre 9 h et 19 h, avec la version du script d'origine ([ADR 0020](docs/adr/0020-les-rappels-convenus-partent-automatiquement.md)). La ligne occupée ou un plafond les fait attendre ; les rappels sans date restent manuels. Poser `RAPPELS_AUTOMATIQUES_DEPUIS` à l'instant ISO de l'activation : les anciennes échéances restent manuelles. `pnpm reveil --essai` montre les rappels dus sans composer.
 
 ### Agenda et visio
 
@@ -363,9 +364,11 @@ Le dépôt se clone où tu veux : les installateurs écrivent son chemin, et cel
 | `CLE_CHIFFREMENT` | 32 octets en hexadécimal (`openssl rand -hex 32`), chiffre le jeton Google en base |
 | `SEL_OPPOSITION` | Sel secret des empreintes de la liste d'opposition, obligatoire pour effacer une personne. À ne jamais changer ni perdre |
 | `DUREE_CONSERVATION_MOIS` | Durée de conservation des appels, 12 mois par défaut |
+| `RAPPELS_AUTOMATIQUES_DEPUIS` | Instant ISO d'activation des rappels téléphoniques convenus ; les échéances antérieures restent manuelles |
 | `PONT_SECRET` | Secret partagé entre l'application et le pont, généré par `scripts/installer-pont.sh` |
 | `PONT_URL`, `PONT_PORT`, `PONT_PORT_WS` | Adresse et ports du pont sur 127.0.0.1 (HTTP 3021, WebSocket de prise de main 3022) |
 | `PONT_APPELS_PAR_HEURE`, `PONT_APPELS_PAR_JOUR`, `PONT_PAUSE_ENTRE_APPELS_S` | Valeurs initiales des garde-fous, ensuite réglées depuis la page Téléphone |
+| `PONT_EGALISATION` | `historique` par défaut, `douce` pour conserver les graves réduits sans renforcer les aigus, `aucune` pour désactiver le filtre ; gain anti-saturation inchangé |
 | `WEB_URL` | Adresse locale de l'application, que le pont rappelle |
 | `OPERATEUR_DEV_LOGIN` | Développement seulement : identité simulée pour une requête locale directe, vide en production |
 | `DOSSIER_DONNEES`, `DOSSIER_AGENT`, `DATABASE_URL_TEST` | Facultatifs : dossier des enregistrements, dossier `agent/` lu par le MCP, base des tests |
@@ -396,6 +399,8 @@ scripts/installer-services.sh  # relance l'interface, qui lit le secret du pont 
 ```
 
 Puis, dans l'interface, page **Téléphone** : saisir l'adresse Bluetooth du téléphone, ouvrir l'appairage, comparer le code, accepter sur le téléphone. Si PipeWire tourne sur le serveur, son module mains-libres doit laisser le profil à oFono (le script prévient). L'installateur refuse de relancer le pont pendant un appel.
+
+Pour comparer le timbre d'une nouvelle voix, `PONT_EGALISATION=douce` retire la remontée des aigus de l'égalisation historique tout en conservant le traitement des graves. Après un changement, redémarrer le pont hors appel ; son journal indique le profil et le gain appliqués. Revenir à `historique` rétablit le filtre initial. Le mSBC à 16 kHz reste utilisé, mais la largeur de bande de l'appel dépend aussi du réseau téléphonique.
 
 ### Assistante chez ElevenLabs
 
@@ -528,6 +533,7 @@ Chaque choix qui surprendrait un lecteur est expliqué dans un ADR :
 | [0016](docs/adr/0016-un-seul-journal-des-gestes.md) | Un seul journal des gestes, avec leur origine |
 | [0017](docs/adr/0017-un-prospect-sans-reponse-est-rappele-le-lendemain.md) | Un prospect qui ne répond pas est rappelé le lendemain, au moment opposé de la journée, trois fois au plus |
 | [0018](docs/adr/0018-un-prospect-qui-rappelle-est-decroche-par-l-assistante.md) | Un prospect qui rappelle est décroché par l'assistante ; un numéro inconnu sonne jusqu'à la messagerie |
+| [0020](docs/adr/0020-les-rappels-convenus-partent-automatiquement.md) | Un rappel téléphonique convenu et daté part automatiquement |
 
 ## Structure du dépôt
 

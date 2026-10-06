@@ -5,6 +5,10 @@ import { db } from '@/db';
 import { appels, campagnes } from '@/db/schema';
 import { rafraichirSiAncien } from './agenda';
 import { classerDansSaCampagne, relancerSiDu } from './campagnes';
+import { dansLesHeuresDAppel } from './heures-appel';
+import { rappelerSiDu, rappelsAutomatiquesDus } from './rappels-automatiques';
+
+export { dansLesHeuresDAppel, HEURES_D_APPEL } from './heures-appel';
 
 /**
  * Réveil des campagnes (scripts/reveil-campagnes.ts, toutes les 5 minutes) : rien d'autre ne relance une campagne
@@ -24,14 +28,6 @@ const ENTRANT_ORPHELIN_MS = 10 * 60_000;
  * cours le soir avec quelqu'un de dû ne fait pas sonner un téléphone la nuit. Classement et orphelins, eux, tournent à
  * toute heure. Les nouvelles tentatives tombent à 9 h ou 14 h, donc dans la plage.
  */
-export const HEURES_D_APPEL = { debut: 9, fin: 19 } as const;
-
-export function dansLesHeuresDAppel(maintenant: Date): boolean {
-  const parties = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: 'numeric', hourCycle: 'h23' }).formatToParts(maintenant);
-  const heure = Number(parties.find((p) => p.type === 'hour')?.value);
-  return heure >= HEURES_D_APPEL.debut && heure < HEURES_D_APPEL.fin;
-}
-
 const ERREUR_ORPHELIN = 'Le pont n’a jamais pris cet appel entrant (réponse de l’application arrivée trop tard) : le téléphone a sonné sans réponse.';
 
 type Lecteur = Pick<typeof db, 'select'>;
@@ -43,6 +39,8 @@ export interface PlanReveil {
   aRelancer: string[];
   /** Les appels entrants restés en cours sans conversation depuis plus de 10 minutes, à passer en échec. */
   orphelins: string[];
+  /** Les appels source de rappels convenus datés encore à faire et dus depuis l'activation explicite. */
+  aRappeler: string[];
 }
 
 /** Ce que le réveil ferait à cet instant ; ne lit que la base (pas le pont), n'écrit rien. */
@@ -92,17 +90,18 @@ export async function planReveil(maintenant: Date, lecteur: Lecteur = db): Promi
     aClasser: enAnalyse.filter((e) => fini.has(e.appelId)),
     aRelancer: ouvertes.filter((c) => c.ligne === 'bluetooth' && prochaineAction(c, maintenant).type === 'appeler').map((c) => c.id),
     orphelins: orphelins.map((a) => a.id),
+    aRappeler: (await rappelsAutomatiquesDus(maintenant, lecteur)).map((a) => a.appelId),
   };
 }
 
 /**
- * Classe ce qui doit l'être, puis relance les campagnes dues, une après l'autre : il n'y a qu'une ligne, la première
+ * Classe ce qui doit l'être, appelle d'abord les rappels convenus dus, puis relance les campagnes dues : il n'y a qu'une ligne, la première
  * qui compose l'occupe et les suivantes attendent le prochain réveil (ou la fin de cet appel). Renvoie ce qui a été fait.
  */
 export async function reveiller(
   maintenant = new Date(),
   { relancer = true }: { relancer?: boolean } = {},
-): Promise<{ classes: number; relancees: string[]; orphelins: number }> {
+): Promise<{ classes: number; relancees: string[]; orphelins: number; rappeles: string[] }> {
   const { aClasser, orphelins } = await planReveil(maintenant);
   // Sans fin : la ligne refuserait l'archivage et l'effacement de ce prospect pour toujours. Seulement si elle n'a pas bougé.
   if (orphelins.length) {
@@ -112,18 +111,21 @@ export async function reveiller(
       .where(and(inArray(appels.id, orphelins), eq(appels.statut, 'en-cours'), isNull(appels.conversationId)));
   }
   for (const { appelId } of aClasser) await classerDansSaCampagne(appelId, { relancer: false });
-  if (!relancer) return { classes: aClasser.length, relancees: [], orphelins: orphelins.length };
+  if (!relancer) return { classes: aClasser.length, relancees: [], orphelins: orphelins.length, rappeles: [] };
   // Relu après les classements : un appel ancien enfin classé peut avoir une nouvelle tentative déjà due.
-  const { aRelancer } = await planReveil(maintenant);
+  const { aRelancer, aRappeler } = await planReveil(maintenant);
   // Souvent le premier appel de la journée : les créneaux proposés viennent d'une copie de l'agenda relue juste avant.
-  if (aRelancer.length) await rafraichirSiAncien({ attendre: true });
+  const rappels = dansLesHeuresDAppel(maintenant) ? aRappeler : [];
+  if (aRelancer.length || rappels.length) await rafraichirSiAncien({ attendre: true });
+  const rappeles: string[] = [];
+  for (const id of rappels) if (await rappelerSiDu(id, maintenant)) rappeles.push(id);
   const relancees: string[] = [];
   for (const id of aRelancer) if (await relancerSiDu(id, maintenant)) relancees.push(id);
-  return { classes: aClasser.length, relancees, orphelins: orphelins.length };
+  return { classes: aClasser.length, relancees, orphelins: orphelins.length, rappeles };
 }
 
 /** Le compte rendu du réveil, sans nom ni numéro : des comptes et des identifiants de campagnes. */
-export function compteRenduReveil(fait: { classes: number; relancees: readonly string[]; orphelins: number }, essai: boolean): string {
+export function compteRenduReveil(fait: { classes: number; relancees: readonly string[]; orphelins: number; rappeles: readonly string[] }, essai: boolean): string {
   const verbe = essai
     ? { classe: 'à classer', relance: 'à relancer', orphelin: 'à passer en échec' }
     : { classe: 'classé(s)', relance: 'relancée(s)', orphelin: 'passé(s) en échec' };
@@ -131,6 +133,7 @@ export function compteRenduReveil(fait: { classes: number; relancees: readonly s
     `${essai ? 'Essai, rien n’est écrit ni composé. ' : ''}Appels ${verbe.classe} : ${fait.classes}.`,
     `Campagnes ${verbe.relance} : ${fait.relancees.length}${fait.relancees.length ? ` (${fait.relancees.join(', ')})` : ''}.`,
     `Appels entrants sans fin ${verbe.orphelin} : ${fait.orphelins}.`,
+    `Rappels convenus ${essai ? 'à appeler' : 'lancés'} : ${fait.rappeles.length}.`,
   ];
   return lignes.join('\n');
 }

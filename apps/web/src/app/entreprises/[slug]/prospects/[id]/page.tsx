@@ -16,6 +16,7 @@ import { numeroLisible } from '@/lib/format';
 import { appelIdVivant, etatLigneBorne } from '@/lib/ligne-vivante';
 import { assistantePourLaPage, entrepriseParSlug, prospectParId } from '@/lib/pages';
 import { rappelEnAttente } from '@/lib/rappels';
+import { rappelSeraAutomatique } from '@/lib/rappels-automatiques';
 import { reglagesDuPont } from '@/lib/pont';
 import { versionsDeLEntreprise } from '@/lib/versions';
 import { GestesProspect } from './gestes-prospect';
@@ -147,6 +148,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
   // Le rappel à faire : le dernier appel hors simulation a fini en rappel convenu (un appel plus récent le fait).
   const rappel = rappelEnAttente(historique);
   const retard = rappel?.rappelLe ? rappelEnRetard(rappel.rappelLe, rappel.quand, maintenant) : false;
+  const rappelAutomatique = rappel ? rappelSeraAutomatique({ ligne: historique.find((a) => a.id === rappel.appelId)?.ligne ?? 'simulation', rappelLe: rappel.rappelLe }) : false;
 
   let blocage: { texte: string; lien?: { href: string; libelle: string } } | null = null;
   if (prospect.archiveLe) {
@@ -158,7 +160,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
         ? { texte: 'Numéro d’une personne effacée à sa demande : il ne sera plus jamais composé.' }
         : raison === 'opposition-illisible'
           ? { texte: 'La liste d’opposition ne se lit plus (SEL_OPPOSITION manque ou a changé dans le .env) : aucun numéro n’est composé.' }
-          : { texte: 'Numéro invalide : corrige-le dans la fiche puis réimporte-la.', lien: { href: `${base}?import=1`, libelle: 'Importer des fiches' } };
+          : { texte: 'Numéro invalide : corrige-le dans la fiche.', lien: { href: `${base}/${prospect.id}/modifier`, libelle: 'Modifier la fiche' } };
   } else if (versions.length === 0) {
     blocage = {
       texte: toutesVersions.length > 0 ? 'Tous les scripts sont archivés : réactives-en un ou crées-en un dans Scripts.' : 'Aucun script : crées-en un dans Scripts.',
@@ -176,7 +178,10 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
           <LienTexte isole href={base} className="justify-self-start text-sm text-encre-3 hover:text-encre-2">
             Prospects
           </LienTexte>
-          <h2 className="text-lg font-semibold tracking-[-0.01em]">{prospect.nom}</h2>
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            <h2 className="text-lg font-semibold tracking-[-0.01em]">{prospect.nom}</h2>
+            <LienAction ton="discret" href={`${base}/${prospect.id}/modifier`}>Modifier la fiche</LienAction>
+          </div>
           {prospect.role || prospect.societe ? <p className="text-md text-encre-2">{[prospect.role, prospect.societe].filter(Boolean).join(', ')}</p> : null}
           {prospect.archiveLe ? (
             <p className="max-w-[68ch] pt-1 text-sm text-encre-2">
@@ -191,7 +196,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
                 <span className="text-encre">
                   {rappel.rappelLe ? (
                     <>
-                      {retard ? <span className="text-alerte">Rappel en retard</span> : 'Prochain rappel'} :{' '}
+                      {retard ? <span className="text-alerte">{rappelAutomatique ? 'Rappel automatique en attente' : 'Rappel en retard'}</span> : rappelAutomatique ? 'Rappel automatique prévu' : 'Prochain rappel'} :{' '}
                       {quandRappeler(rappel.rappelLe, rappel.quand, maintenant)}
                     </>
                   ) : (

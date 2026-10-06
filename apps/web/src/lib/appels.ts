@@ -49,7 +49,12 @@ export const PROSPECT_ARCHIVE = 'Ce prospect est archivé : il n’est plus appe
  * Tout ce qu'il faut pour appeler un prospect, vérifié au dernier moment : le numéro doit être
  * appelable à l'instant même (valide, hors de la liste d'opposition), quelle que soit la ligne.
  */
-export async function preparerAppel(entrepriseId: string, prospectId: string, versionScriptId: string): Promise<PreparationAppel> {
+export async function preparerAppel(
+  entrepriseId: string,
+  prospectId: string,
+  versionScriptId: string,
+  { situation, ouvertureScript = true }: { situation?: string; ouvertureScript?: boolean } = {},
+): Promise<PreparationAppel> {
   const [entreprise] = await db.select().from(entreprises).where(eq(entreprises.id, entrepriseId));
   const [prospect] = await db
     .select()
@@ -79,7 +84,7 @@ export async function preparerAppel(entrepriseId: string, prospectId: string, ve
     };
   }
 
-  const { variables, motsCles, premierMessage, ouverture } = await variablesPour(entreprise, prospect, version.etapes, new Date());
+  const { variables, motsCles, premierMessage, ouverture } = await variablesPour(entreprise, prospect, version.etapes, new Date(), { situation });
   return {
     ok: true,
     numero: verification.numero,
@@ -87,7 +92,7 @@ export async function preparerAppel(entrepriseId: string, prospectId: string, ve
     entrepriseId,
     motsCles,
     premierMessage,
-    ouverture,
+    ouverture: ouvertureScript ? ouverture : null,
     assistanteNom: variables.assistante_nom,
   };
 }

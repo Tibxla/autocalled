@@ -1,6 +1,7 @@
 import { cleJour, heure, quandRappeler, rappelEnRetard } from '@/components/format-appel';
 import { Cellule, CelluleEnTete, EnTeteTable, LienAction, LienLigne, LienTexte, LigneTable, TableDense, TitreSection } from '@/components/ui';
 import type { RappelAFaire } from '@/lib/rappels';
+import { rappelSeraAutomatique } from '@/lib/rappels-automatiques';
 
 /**
  * « À rappeler aujourd'hui » : les rappels convenus datés d'aujourd'hui et ceux en retard, du plus ancien au
@@ -33,6 +34,7 @@ function Quand({ r, maintenant }: { r: RappelAFaire; maintenant: Date }) {
     <span className={retard ? 'text-encre' : 'text-encre-2'}>
       {retard ? <span className="text-alerte">En retard · </span> : null}
       {duJour ? moment : quandRappeler(r.rappelLe, r.quand, maintenant)}
+      {rappelSeraAutomatique({ ligne: r.ligne ?? 'simulation', rappelLe: new Date(r.rappelLe) }) ? <span className="text-encre-3"> · automatique</span> : null}
     </span>
   );
 }

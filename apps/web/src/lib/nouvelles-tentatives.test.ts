@@ -118,7 +118,7 @@ describe('nouvelle tentative sans réponse (ligne téléphone)', () => {
     expect((await planReveil(new Date())).aRelancer).toEqual([]);
 
     await rendreDue(id, 'julie');
-    expect(await reveiller()).toEqual({ classes: 0, relancees: [id], orphelins: 0 });
+    expect(await reveiller()).toEqual({ classes: 0, relancees: [id], orphelins: 0, rappeles: [] });
     expect(pont.compositions()).toHaveLength(2);
     expect(await entree(id, 'julie')).toMatchObject({ etat: 'en-appel', tentative: 2, appelsPrecedents: [premier.appelId] });
 
@@ -300,11 +300,11 @@ describe('pause entre deux appels', () => {
 
     vi.mocked(claudeStructure).mockResolvedValue(bilan('refus'));
     await analyserAppel(julie);
-    expect(await reveiller()).toEqual({ classes: 0, relancees: [], orphelins: 0 });
+    expect(await reveiller()).toEqual({ classes: 0, relancees: [], orphelins: 0, rappeles: [] });
     expect(pont.compositions()).toHaveLength(1);
 
     await db.update(appels).set({ finLe: new Date(Date.now() - 3 * 60_000) }).where(eq(appels.id, julie));
-    expect(await reveiller()).toEqual({ classes: 0, relancees: [id], orphelins: 0 });
+    expect(await reveiller()).toEqual({ classes: 0, relancees: [id], orphelins: 0, rappeles: [] });
     expect(pont.compositions()).toHaveLength(2);
   });
 });
@@ -416,11 +416,11 @@ describe('réveil', () => {
       await tx.execute(sql`set transaction read only`);
       return planReveil(new Date(), tx);
     });
-    expect(plan).toEqual({ aClasser: [{ campagneId: id, appelId }], aRelancer: [id], orphelins: [] });
+    expect(plan).toEqual({ aClasser: [{ campagneId: id, appelId }], aRelancer: [id], orphelins: [], aRappeler: [] });
     expect(await lire(id)).toEqual(avant);
     expect(pont.compositions()).toHaveLength(0);
 
-    expect(await reveiller()).toEqual({ classes: 1, relancees: [id], orphelins: 0 });
+    expect(await reveiller()).toEqual({ classes: 1, relancees: [id], orphelins: 0, rappeles: [] });
     expect((await lire(id)).entrees).toEqual([
       { prospectId: 'julie', etat: 'a-appeler', tentative: 2, appelsPrecedents: [appelId], pasAvant: expect.any(String) },
       { prospectId: 'marc', etat: 'en-appel', appelId: expect.any(String) },
@@ -432,7 +432,7 @@ describe('réveil', () => {
     const enPause = await campagneEnBase('en-pause');
     const navigateur = await campagneEnBase('en-cours', 'navigateur');
 
-    expect(await reveiller()).toEqual({ classes: 2, relancees: [], orphelins: 0 });
+    expect(await reveiller()).toEqual({ classes: 2, relancees: [], orphelins: 0, rappeles: [] });
 
     expect(pont.compositions()).toHaveLength(0);
     expect((await lire(enPause.id)).statut).toBe('en-pause');
@@ -445,7 +445,7 @@ describe('réveil', () => {
     const [recent] = await db.insert(appels).values(entrant(new Date(Date.now() - 60_000))).returning({ id: appels.id });
 
     expect((await planReveil(new Date())).orphelins).toEqual([vieux?.id]);
-    expect(await reveiller()).toEqual({ classes: 0, relancees: [], orphelins: 1 });
+    expect(await reveiller()).toEqual({ classes: 0, relancees: [], orphelins: 1, rappeles: [] });
 
     const lus = await db.select({ id: appels.id, statut: appels.statut, erreur: appels.erreur }).from(appels);
     expect(lus.find((a) => a.id === vieux?.id)).toMatchObject({ statut: 'echec', erreur: expect.stringContaining('jamais pris') });
@@ -456,7 +456,7 @@ describe('réveil', () => {
     const { id, appelId } = await campagneEnBase('en-pause');
     await db.update(appels).set({ statut: 'traitement', issue: null, issueSysteme: null }).where(eq(appels.id, appelId));
 
-    expect(await reveiller()).toEqual({ classes: 0, relancees: [], orphelins: 0 });
+    expect(await reveiller()).toEqual({ classes: 0, relancees: [], orphelins: 0, rappeles: [] });
     expect(await entree(id, 'julie')).toEqual({ prospectId: 'julie', etat: 'en-analyse', appelId });
   });
 });
@@ -472,6 +472,6 @@ describe('Heures d’appel du réveil', () => {
   });
 
   it('hors des heures, classe sans relancer', async () => {
-    expect(await reveiller(new Date(), { relancer: false })).toEqual({ classes: 0, relancees: [], orphelins: 0 });
+    expect(await reveiller(new Date(), { relancer: false })).toEqual({ classes: 0, relancees: [], orphelins: 0, rappeles: [] });
   });
 });

@@ -89,16 +89,29 @@ class _Conversion:
 
 # Égalisation de la voix de Mina pour la ligne (02/10) : tous les appels mesurés passent en bande étroite
 # (300-3 400 Hz), et 60 % de l'énergie de la voix de synthèse était sous 300 Hz, coupée ou étouffée par le réseau.
-# On baisse les graves et on remonte la présence (+5 dB vers 3 kHz) ; les crêtes habituelles baissent de 1,2 dB, donc
-# rien ne rapproche du niveau qui sature (voir GAIN_SORTIE). False la retire.
-EGALISATION_TELEPHONE = True
+# Le profil historique baisse les graves et remonte la présence (+5 dB vers 3 kHz). Le profil doux conserve
+# le traitement des graves mais retire cette bosse, qui peut rendre une autre voix plus métallique.
+# Le choix est fixé par appel : PONT_EGALISATION, historique par défaut ; le gain anti-saturation reste inchangé.
 COURBE_EGALISATION = ((0, -16), (150, -16), (350, 0), (1500, 0), (2500, 5), (3600, 5), (4000, 0))
+COURBES_EGALISATION = {
+    "historique": COURBE_EGALISATION,
+    "douce": tuple((frequence, min(db, 0)) for frequence, db in COURBE_EGALISATION),
+}
 
 
-def filtre_egalisation(taux: int, coefficients: int = 129) -> np.ndarray:
-    """Filtre à phase linéaire (retard de 4 ms à 16 kHz) qui suit COURBE_EGALISATION, en dB par fréquence."""
+def profil_egalisation(valeur: str = "historique") -> str:
+    if valeur not in (*COURBES_EGALISATION, "aucune"):
+        raise ValueError("PONT_EGALISATION doit être historique, douce ou aucune")
+    return valeur
+
+
+def filtre_egalisation(taux: int, coefficients: int = 129, profil: str = "historique") -> np.ndarray:
+    """Filtre à phase linéaire (retard de 4 ms à 16 kHz), en dB par fréquence."""
+    profil_egalisation(profil)
+    if profil == "aucune":
+        return np.array([1.0])
     frequences = np.fft.rfftfreq(1024, 1 / taux)
-    points_f, points_db = zip(*COURBE_EGALISATION, strict=True)
+    points_f, points_db = zip(*COURBES_EGALISATION[profil], strict=True)
     gain = 10 ** (np.interp(frequences, points_f, points_db) / 20)
     reponse = np.roll(np.fft.irfft(gain, 1024), coefficients // 2)[:coefficients]
     return reponse * np.hanning(coefficients)
@@ -107,15 +120,15 @@ def filtre_egalisation(taux: int, coefficients: int = 129) -> np.ndarray:
 class _Egaliseur:
     """Le filtre appliqué en flux : la fin de chaque morceau prolonge le suivant."""
 
-    def __init__(self, taux: int):
-        self._filtre = filtre_egalisation(taux)
+    def __init__(self, taux: int, profil: str = "historique"):
+        self._filtre = filtre_egalisation(taux, profil=profil)
         self._reste = np.zeros(len(self._filtre) - 1, dtype=np.float32)
 
     def __call__(self, echantillons: np.ndarray) -> np.ndarray:
         if not len(echantillons):
             return echantillons
         suite = np.concatenate([self._reste, echantillons])
-        self._reste = suite[-(len(self._filtre) - 1) :]
+        self._reste = suite[-(len(self._filtre) - 1) :] if len(self._filtre) > 1 else suite[:0]
         return np.convolve(suite, self._filtre, mode="valid").astype(np.float32)
 
     def oublier(self) -> None:
@@ -194,7 +207,8 @@ class Niveaux:
 
 
 class Pont(AudioInterface):
-    def __init__(self, enregistrement: str, journal: Callable[..., None]):
+    def __init__(self, enregistrement: str, journal: Callable[..., None], *, egalisation: str = "historique"):
+        self.egalisation = profil_egalisation(egalisation)
         self._chemin_enregistrement = enregistrement
         self._journal = journal
         self._verrou = threading.Lock()
@@ -232,7 +246,7 @@ class Pont(AudioInterface):
     def _preparer_conversions(self) -> None:
         self._vers_elevenlabs = _Conversion(self._taux_ligne, self._taux_entree)
         self._vers_telephone = _Conversion(self._taux_sortie, self._taux_ligne)
-        self._egaliseur = _Egaliseur(self._taux_sortie) if EGALISATION_TELEPHONE else None
+        self._egaliseur = _Egaliseur(self._taux_sortie, self.egalisation) if self.egalisation != "aucune" else None
 
     def regler_formats(self, entree: str | None, sortie: str | None) -> None:
         self._taux_entree, self._taux_sortie = taux_de(entree), taux_de(sortie)
@@ -268,7 +282,12 @@ class Pont(AudioInterface):
         try:
             os.set_blocking(fd, True)
             accepter(fd)
-            self._journal("canal son établi en", "mSBC (16 kHz)" if decodeur else "CVSD (8 kHz)")
+            self._journal(
+                "canal son établi en",
+                "mSBC (16 kHz)" if decodeur else "CVSD (8 kHz)",
+                "| égalisation", self.egalisation,
+                "| gain sortie", f"{-COMPENSATION_MINA_DB:g} dB",
+            )
             while not self._arret.is_set():
                 bloc = os.read(fd, 1024)
                 if not bloc:

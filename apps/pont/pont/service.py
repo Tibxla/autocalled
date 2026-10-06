@@ -85,7 +85,7 @@ from websockets.exceptions import ConnectionClosed
 
 from .appairage import Appairage
 from .appel import Appel, Journal, ouverture_valide, premier_message_valide
-from .audio import NIVEAU_PAS_MS
+from .audio import COMPENSATION_MINA_DB, NIVEAU_PAS_MS, profil_egalisation
 from .ofono import LigneOccupee, Telephone, dans_glib, masquer
 from .plafond import Plafond
 from .reglages import Reglages
@@ -325,6 +325,7 @@ class Service:
     _relais: tuple[frozenset[str], str] | None = None  # RELAIS_ENTRANTS lue : (numéros E.164, adresse locale)
 
     def __init__(self, cles: dict[str, str], racine: Path):
+        egalisation = profil_egalisation(cles.get("PONT_EGALISATION", "historique"))
         self._cles = cles
         self._secret = cles["PONT_SECRET"]
         self._web = cles.get("WEB_URL", "http://127.0.0.1:3020")
@@ -337,6 +338,7 @@ class Service:
             self._reglages.valeurs["appelsParJour"],
         )
         self.journal = Journal()
+        self.journal(f"audio téléphone : égalisation {egalisation}, gain sortie {-COMPENSATION_MINA_DB:g} dB")
         try:
             self._relais = lire_relais_entrants(cles.get("RELAIS_ENTRANTS"))
         except ValueError as e:  # un .env mal écrit ne coupe pas la ligne : les entrants vont tous à l'application

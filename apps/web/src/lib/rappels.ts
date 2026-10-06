@@ -33,6 +33,8 @@ const FIN_JOUR = sql`((date_trunc('day', now() at time zone 'Europe/Paris') + in
 
 export interface RappelAFaire {
   appelId: string;
+  /** Ligne de l'appel où ce rappel a été convenu. */
+  ligne?: string;
   prospectId: string;
   prospect: string;
   societe: string | null;
@@ -57,6 +59,7 @@ export async function rappelsDuJour(): Promise<{ rappels: RappelAFaire[]; sansDa
     db
       .select({
         appelId: appels.id,
+        ligne: appels.ligne,
         prospectId: appels.prospectId,
         prospect: prospects.nom,
         societe: prospects.societe,

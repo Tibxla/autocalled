@@ -7,15 +7,42 @@ import { db } from '@/db';
 import { entreprises } from '@/db/schema';
 import { trouverProspect } from '@/lib/donnees';
 import * as effacement from '@/lib/effacement';
-import type { ResultatAction } from '@/lib/formulaire';
+import { type EtatFormulaire, type ResultatAction, erreursDeZod, jetonConnu } from '@/lib/formulaire';
 import { exigerOperateur } from '@/lib/garde';
 import * as prospects from '@/lib/prospects';
+import { patchFicheSchema } from '@/lib/schemas';
 
 export type { RapportImport } from '@/lib/prospects';
 export type { RapportEffacement } from '@/lib/effacement';
 
 const FORME_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const INTROUVABLE = 'Ce prospect n’existe plus : relis la page.';
+
+export async function enregistrerProspect(
+  entrepriseId: string,
+  prospectId: string,
+  _: EtatFormulaire,
+  donnees: FormData,
+): Promise<EtatFormulaire> {
+  await exigerOperateur();
+  if (!FORME_UUID.test(entrepriseId)) return { message: INTROUVABLE };
+  const connu = jetonConnu(donnees);
+  if (!connu || !Number.isFinite(Date.parse(connu))) return { message: 'Relis la fiche avant de l’enregistrer.' };
+  const saisie = patchFicheSchema.safeParse({
+    nom: donnees.get('nom'),
+    societe: donnees.get('societe'),
+    role: donnees.get('role'),
+    telephone: donnees.get('telephone'),
+    email: donnees.get('email'),
+    contexte: donnees.get('contexte'),
+  });
+  if (!saisie.success) return { erreurs: erreursDeZod(saisie.error) };
+  const r = await prospects.modifierProspect(entrepriseId, prospectId, saisie.data, { connu });
+  if (!r.ok) return 'conflit' in r ? { message: r.raison, conflit: { jeton: r.conflit.jeton } } : { message: r.raison };
+  revalidatePath('/entreprises', 'layout');
+  revalidatePath('/campagnes', 'layout');
+  return { ok: true, message: 'Fiche enregistrée.' };
+}
 
 export async function importerFiches(entrepriseId: string, _: prospects.RapportImport, donnees: FormData): Promise<prospects.RapportImport> {
   await exigerOperateur();

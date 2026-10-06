@@ -202,7 +202,7 @@ class Appel:
         dossier.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.journal = Journal(dossier / f"{nom}.log")
         self._enregistrement = str(dossier / f"{nom}.wav")
-        self._pont = Pont(self._enregistrement, self.journal)
+        self._pont = Pont(self._enregistrement, self.journal, egalisation=cles.get("PONT_EGALISATION", "historique"))
         self._verrou = threading.Lock()
         self._decroche: float | None = None
         self._session = False  # décroché : la conversation va s'ouvrir (ou l'opérateur a pris la main avant)

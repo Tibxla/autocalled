@@ -145,7 +145,10 @@ def tester_son(fichier_variables: str, fichier_son: str) -> int:
 
     numero = lire_preparation(fichier_variables)["numero"]
     boucle, telephone, journal = _boucle_et_telephone()
-    pont = Pont(str(RACINE / "data" / "pont" / "test-son-enregistrement.wav"), journal)
+    pont = Pont(
+        str(RACINE / "data" / "pont" / "test-son-enregistrement.wav"), journal,
+        egalisation=lire_cles().get("PONT_EGALISATION", "historique"),
+    )
 
     class Suivi:
         def nouvelle_connexion(self, fd, codec):
