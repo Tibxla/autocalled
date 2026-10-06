@@ -185,8 +185,8 @@
     "tts": {
       "voice_id": "JdwJ7jL68CWmQZuo7KgG",
       "model_id": "eleven_v4_turbo",
-      "stability": 0.35,
-      "similarity_boost": 0.8,
+      "stability": 0,
+      "similarity_boost": 0.65,
       "speed": 1,
       "expressive_mode": true,
       "suggested_audio_tags": [
