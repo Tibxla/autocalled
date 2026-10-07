@@ -11,6 +11,7 @@ import { creerScript } from './entreprises';
 import { importerFiches } from './prospects';
 import { activationRappelsAutomatiques, rappelSeraAutomatique, rappelerSiDu, rappelsAutomatiquesDus } from './rappels-automatiques';
 import { rappelsDuJour } from './rappels';
+import { enregistrerReglagesRappels, lireReglagesRappels } from './reglages-rappels';
 import { compteRenduReveil, planReveil, reveiller } from './reveil';
 
 avecBaseDeTest();
@@ -61,6 +62,21 @@ async function remplacerPont(configuration: Parameters<typeof fauxPont>[0]) {
 }
 
 describe('rappels convenus automatiques', () => {
+  it('respecte les jours, horaires et la pause choisis dans l’interface, même hors de 9 h–19 h', async () => {
+    const source = await rappel();
+    const lu = await lireReglagesRappels();
+    expect(await enregistrerReglagesRappels({ actif: true, jours: [2], debut: '20:00', fin: '21:00' }, lu.empreinte)).toMatchObject({ ok: true });
+    expect(await rappelerSiDu(source.id, maintenant)).toBe(false);
+    const soir = new Date('2030-04-02T18:15:00Z');
+    expect((await planReveil(soir)).aRappeler).toEqual([source.id]);
+    const actif = await lireReglagesRappels();
+    expect(await enregistrerReglagesRappels({ actif: false, jours: [2], debut: '20:00', fin: '21:00' }, actif.empreinte)).toMatchObject({ ok: true });
+    expect(await rappelerSiDu(source.id, soir)).toBe(false);
+    const pause = await lireReglagesRappels();
+    await enregistrerReglagesRappels({ actif: true, jours: [2], debut: '20:00', fin: '21:00' }, pause.empreinte);
+    expect((await reveiller(soir)).rappeles).toEqual([source.id]);
+    expect(pont.compositions()).toHaveLength(1);
+  });
   it('sans activation explicite valide, aucun appel ne part', async () => {
     const source = await rappel();
     for (const valeur of ['', 'une date', '2030-02-30T08:00:00Z', '2030-04-01']) {

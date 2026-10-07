@@ -73,7 +73,7 @@ L'agent vocal IA unique qui passe tous les appels, sous un nom choisi par l'opé
 _Avoid_ : agent, bot, IA, voicebot
 
 **Premier message** :
-La phrase que l'assistante dit quand le prospect se tait au décroché (« Allô ? » par défaut). Réglé en base avec son nom, il vaut dès l'appel suivant ; quand le prospect parle le premier, c'est le prompt qui décide de la réponse. Un appel entrant a son propre accueil, fixe, dit dès que la ligne s'ouvre : « Allô, oui bonjour, {nom de l'assistante} à l'appareil. »
+La phrase que l'assistante dit quand le prospect se tait au décroché (« Allô ? » par défaut). Réglé en base avec son nom, il vaut dès l'appel suivant ; quand le prospect parle le premier, c'est le prompt qui décide de la réponse. Un appel entrant a son propre accueil, modifiable dans Réglages, dit dès que la ligne s'ouvre : « Allô, oui bonjour, {nom de l'assistante} à l'appareil. »
 _Avoid_ : accroche, message d'accueil, first message
 
 **Configuration de l'assistante** :
@@ -131,7 +131,7 @@ Issue système où le prospect demande à être rappelé à un moment précis ; 
 _Avoid_ : relance, callback
 
 **Rappel daté** :
-Rappel convenu dont le bilan donne le jour, et l'heure ou le moment de la journée (matin, après-midi), tels que le prospect les a dits. Seule l'analyse le date, et on ne le corrige qu'en la relançant. L'accueil liste les rappels datés du jour et ceux en retard. Après activation, le réveil compose les rappels issus d'un appel téléphone à partir de leur échéance, entre 9 h et 19 h, avec la version de script d'origine ; un rappel sans date reste manuel (ADR 0020).
+Rappel convenu dont le bilan donne le jour, et l'heure ou le moment de la journée (matin, après-midi), tels que le prospect les a dits. Seule l'analyse le date, et on ne le corrige qu'en la relançant. L'accueil liste les rappels datés du jour et ceux en retard. Après activation, le réveil compose les rappels issus d'un appel téléphone à partir de leur échéance, dans les jours et horaires choisis dans Réglages (par défaut 9 h à 19 h, tous les jours), avec la version de script d'origine ; un rappel sans date reste manuel (ADR 0020 et 0021).
 _Avoid_ : rappel programmé, tâche, échéance
 
 **Bilan** :

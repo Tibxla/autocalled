@@ -202,7 +202,7 @@ Sur téléphone, la navigation passe dans une barre du bas, les filtres tiennent
 
 - Quand le prospect demande à être rappelé, l'analyse date le rappel d'après ce qu'il a dit (« jeudi matin ») ([ADR 0011](docs/adr/0011-rappel-date-par-l-analyse.md)).
 - L'accueil liste les rappels du jour et ceux en retard ; un rappel est fait dès qu'un nouvel appel part vers ce prospect, ou qu'il rappelle et parle à l'assistante.
-- Les rappels convenus et datés d'un appel téléphone partent automatiquement au réveil suivant leur échéance, entre 9 h et 19 h, avec la version du script d'origine ([ADR 0020](docs/adr/0020-les-rappels-convenus-partent-automatiquement.md)). La ligne occupée ou un plafond les fait attendre ; les rappels sans date restent manuels. Poser `RAPPELS_AUTOMATIQUES_DEPUIS` à l'instant ISO de l'activation : les anciennes échéances restent manuelles. `pnpm reveil --essai` montre les rappels dus sans composer.
+- Les rappels convenus et datés d'un appel téléphone partent automatiquement au réveil suivant leur échéance, dans les jours et horaires choisis dans Réglages (par défaut 9 h à 19 h), avec la version du script d'origine ([ADR 0020](docs/adr/0020-les-rappels-convenus-partent-automatiquement.md)). La ligne occupée ou un plafond les fait attendre ; les rappels sans date restent manuels. Activer dans Réglages, ou initialement par `RAPPELS_AUTOMATIQUES_DEPUIS` : les échéances antérieures à la première activation restent manuelles. `pnpm reveil --essai` montre les rappels dus sans composer.
 
 ### Agenda et visio
 
@@ -215,8 +215,9 @@ Sur téléphone, la navigation passe dans une barre du bas, les filtres tiennent
 
 - Identité (nom, premier message), prompt système, configuration ElevenLabs, outils, connaissances, à lire et à télécharger.
 - « Ce qu'elle voit pour parler » : le prompt résolu et les variables pour une entreprise, une version et un prospect choisis.
-- Tout ce que le serveur MCP règle sur l'assistante se règle aussi ici, par les mêmes fonctions : nom et premier message, réglages de la voix et du tour de parole, poussée vers ElevenLabs après lecture de la différence, rapatriement, historique et restauration. Seul le prompt reste à Claude Code, qui le modifie par remplacements exacts ; la page le montre et le pousse.
+- Le prompt complet se lit, se télécharge et se modifie dans l’interface, avec validation des variables et protection contre les modifications concurrentes. Les modèles de langage et de voix, la langue, les expressions, les interruptions, les relances et la durée se règlent ici aussi, avec le nom et le premier message. Poussée vers ElevenLabs après lecture de la différence complète, rapatriement, historique et restauration passent par les mêmes fonctions que le serveur MCP.
 - Le nom et le premier message valent dès l'appel suivant ; le prompt et les réglages partent chez ElevenLabs par une poussée confirmée ([ADR 0010](docs/adr/0010-configuration-de-l-assistante-par-le-mcp.md)).
+- Voix et modèles se choisissent dans les catalogues du compte ElevenLabs ; l’aperçu vocal se génère au clic, sans modifier Mina. Réglages donne accès au décroché et à l’accueil des entrants, à leur diagnostic et aux jours et horaires des rappels ([ADR 0021](docs/adr/0021-reglages-des-appels-dans-l-interface.md)).
 
 ### Serveur MCP et skill Claude Code
 

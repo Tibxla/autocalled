@@ -13,7 +13,7 @@
  * (depuis apps/web : node --env-file=../../.env --conditions=react-server --import ./scripts/resolution.ts
  * scripts/reveil-campagnes.ts [--essai])
  *
- * Hors de 9 h - 19 h (heure de Paris), il classe sans composer aucun rappel ni campagne (HEURES_D_APPEL, lib/reveil.ts).
+ * Les campagnes suivent 9 h - 19 h (heure de Paris) ; les rappels suivent les jours et horaires choisis dans Réglages.
  *
  * Le compte rendu ne contient que des comptes et des identifiants de campagnes (jamais de nom ni de numéro). Hors de
  * Next : les tâches de fond partent par `enFond`, et le pont compose avant que le script rende la main.
@@ -32,7 +32,7 @@ async function principal(): Promise<number> {
   }
   const maintenant = new Date();
   const relancer = dansLesHeuresDAppel(maintenant);
-  if (!relancer) console.log('Hors des heures d’appel (9 h - 19 h, heure de Paris) : aucun rappel ni campagne n’est lancé.');
+  if (!relancer) console.log('Hors des heures des campagnes (9 h - 19 h, heure de Paris). Les rappels suivent les horaires choisis dans Réglages.');
   if (essai) {
     // La garantie vient de Postgres, pas du code : toute écriture dans cette transaction serait refusée.
     const plan = await db.transaction(async (tx) => {
@@ -40,11 +40,11 @@ async function principal(): Promise<number> {
       return planReveil(maintenant, tx);
     });
     const relancees = relancer ? plan.aRelancer : [];
-    const rappeles = relancer ? plan.aRappeler : [];
+    const rappeles = plan.aRappeler;
     console.log(compteRenduReveil({ classes: plan.aClasser.length, relancees, orphelins: plan.orphelins.length, rappeles }, true));
     return 0;
   }
-  console.log(compteRenduReveil(await reveiller(maintenant, { relancer }), false));
+  console.log(compteRenduReveil(await reveiller(maintenant, { relancerCampagnes: relancer }), false));
   return 0;
 }
 

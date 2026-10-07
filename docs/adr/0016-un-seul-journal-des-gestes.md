@@ -8,6 +8,8 @@ Un geste de la page s'écrit au format des lignes du MCP, par la même fonction 
 
 ## Considered Options
 
+Depuis le 6 octobre 2026, l’édition intégrale du prompt dans l’interface laisse également une ligne `modifier_prompt_assistante` dans ce journal, avec l’empreinte de lecture, le nombre de caractères et le résumé des lignes changées. Les variables et les modifications concurrentes sont validées avant toute écriture.
+
 - Deux journaux, un par origine : deux purges, deux effacements, et deux endroits à lire pour savoir ce qui a changé l'assistante.
 - Une colonne `question` et une seule ligne par geste : un format de plus, une colonne de plus à neutraliser à l'effacement, et un journal que `lire_journal_mcp` et Réglages lisent autrement selon l'origine.
 - Journaliser la préparation (la question et la différence affichées) : ce n'est pas un geste, et « Annuler » ne laisse rien ; la ligne `confirmation-demandee` d'un geste de la page date donc l'accord, pas l'affichage.

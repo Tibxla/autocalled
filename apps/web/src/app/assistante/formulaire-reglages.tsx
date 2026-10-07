@@ -7,6 +7,8 @@ import { Action, Champ, Message, Saisie, Selection, ZoneTexte } from '@/componen
 import { type PatchReglages, patchReglagesSchema } from '@/lib/reglages-assistante';
 import { lireChemin } from '@/lib/vue-assistante';
 import { enregistrerReglagesAction } from './actions';
+import { ApercuVoix, ChoixCatalogue, useCatalogueAssistante } from './choix-voix';
+import type { CatalogueAssistante } from '@/lib/catalogue-assistante';
 
 /**
  * Les réglages ElevenLabs de la liste fermée, comme modifier_reglages_assistante : mêmes bornes (le schéma partagé
@@ -16,11 +18,13 @@ import { enregistrerReglagesAction } from './actions';
 
 type Genre =
   | { type: 'texte'; mono?: boolean; max: number }
+  | { type: 'catalogue'; liste: 'voix' | 'modelesVoix' | 'modelesLangage' }
   | { type: 'curseur'; min: number; max: number; pas: number }
   | { type: 'nombre'; min: number; max: number; unite: string; entier?: boolean }
   | { type: 'choix'; options: [string, string][] }
   | { type: 'case' }
-  | { type: 'liste'; max: number; longueur: number };
+  | { type: 'liste'; max: number; longueur: number }
+  | { type: 'expressions' };
 
 interface DefinitionChamp {
   cle: string;
@@ -33,18 +37,21 @@ const GROUPES: { titre: string; champs: DefinitionChamp[] }[] = [
   {
     titre: 'Modèle',
     champs: [
-      { cle: 'llm', libelle: 'Modèle de langage', aide: 'Identifiant ElevenLabs : a-z, 0-9, point, tiret, tiret bas.', genre: { type: 'texte', mono: true, max: 60 } },
+      { cle: 'langue', libelle: 'Langue de conversation', aide: 'Code de langue : fr, en… Les instructions gardent la langue de leur texte.', genre: { type: 'texte', mono: true, max: 5 } },
+      { cle: 'llm', libelle: 'Modèle de langage', aide: 'Identifiant ElevenLabs : a-z, 0-9, point, tiret, tiret bas.', genre: { type: 'catalogue', liste: 'modelesLangage' } },
       { cle: 'temperature', libelle: 'Température', aide: 'De 0 (constante) à 1 (variée).', genre: { type: 'curseur', min: 0, max: 1, pas: 0.05 } },
     ],
   },
   {
     titre: 'Voix',
     champs: [
-      { cle: 'voix.voiceId', libelle: 'Identifiant de voix', aide: '10 à 40 lettres ou chiffres, tel qu’ElevenLabs le donne.', genre: { type: 'texte', mono: true, max: 40 } },
-      { cle: 'voix.modele', libelle: 'Modèle de voix', aide: 'Un modèle eleven_…', genre: { type: 'texte', mono: true, max: 60 } },
+      { cle: 'voix.voiceId', libelle: 'Voix', aide: '10 à 40 lettres ou chiffres, tel qu’ElevenLabs le donne.', genre: { type: 'catalogue', liste: 'voix' } },
+      { cle: 'voix.modele', libelle: 'Modèle de voix', aide: 'Un modèle eleven_…', genre: { type: 'catalogue', liste: 'modelesVoix' } },
       { cle: 'voix.stabilite', libelle: 'Stabilité', aide: 'De 0 à 1.', genre: { type: 'curseur', min: 0, max: 1, pas: 0.05 } },
       { cle: 'voix.similarite', libelle: 'Similarité', aide: 'De 0 à 1.', genre: { type: 'curseur', min: 0, max: 1, pas: 0.05 } },
       { cle: 'voix.vitesse', libelle: 'Vitesse', aide: 'De 0,7 à 1,2.', genre: { type: 'curseur', min: 0.7, max: 1.2, pas: 0.01 } },
+      { cle: 'voix.expressif', libelle: 'Mode expressif', aide: 'Autorise la voix à jouer les émotions et les intonations.', genre: { type: 'case' } },
+      { cle: 'voix.expressions', libelle: 'Expressions suggérées', aide: 'Suggestions d’intonation : leur usage reste guidé par le prompt. Une liste vide ne suggère aucune expression.', genre: { type: 'expressions' } },
     ],
   },
   {
@@ -59,6 +66,8 @@ const GROUPES: { titre: string; champs: DefinitionChamp[] }[] = [
       { cle: 'tour.delaiSilenceS', libelle: 'Silence avant de reprendre la parole', aide: 'De 1 à 30 s.', genre: { type: 'nombre', min: 1, max: 30, unite: 's' } },
       { cle: 'tour.speculatif', libelle: 'Tour spéculatif', aide: 'Elle prépare sa réponse avant la fin de la phrase du prospect.', genre: { type: 'case' } },
       { cle: 'tour.motsIgnores', libelle: 'Mots qui ne l’interrompent pas', aide: 'Un par ligne, 50 au plus, 30 caractères chacun.', genre: { type: 'liste', max: 50, longueur: 30 } },
+      { cle: 'tour.languesMotsIgnores', libelle: 'Langues des mots ignorés', aide: 'Un code par ligne : fr, en…', genre: { type: 'liste', max: 20, longueur: 5 } },
+      { cle: 'tour.fusionMotsParDefaut', libelle: 'Inclure les mots ignorés par défaut', aide: 'Ajoute les acquiescements reconnus par ElevenLabs à ta liste.', genre: { type: 'case' } },
     ],
   },
   {
@@ -67,6 +76,10 @@ const GROUPES: { titre: string; champs: DefinitionChamp[] }[] = [
       { cle: 'relances.premiere', libelle: 'Première relance', aide: '40 caractères au plus.', genre: { type: 'texte', max: 40 } },
       { cle: 'relances.suivantes', libelle: 'Relances suivantes', aide: 'Une par ligne, 5 au plus, 40 caractères chacune.', genre: { type: 'liste', max: 5, longueur: 40 } },
       { cle: 'relances.delaiS', libelle: 'Après', aide: 'De 0,5 à 5 s de silence pendant qu’elle prépare sa réponse.', genre: { type: 'nombre', min: 0.5, max: 5, unite: 's' } },
+      { cle: 'relances.genererParModele', libelle: 'Générer les relances avec le modèle', aide: 'Le modèle rédige la relance selon la conversation.', genre: { type: 'case' } },
+      { cle: 'relances.aleatoires', libelle: 'Varier les relances au hasard', aide: 'Choisit parmi les relances enregistrées.', genre: { type: 'case' } },
+      { cle: 'relances.nombreMax', libelle: 'Nombre maximal de relances par réponse', aide: 'De 0 à 5.', genre: { type: 'nombre', min: 0, max: 5, unite: 'relances', entier: true } },
+      { cle: 'relances.desactiverAvantPremierMessage', libelle: 'Attendre que le prospect ait parlé', aide: 'Désactive les relances avant sa première phrase.', genre: { type: 'case' } },
     ],
   },
   {
@@ -89,6 +102,7 @@ const NOMBRE = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
 
 function enTexte(valeur: unknown, genre: Genre): string {
   if (valeur === undefined || valeur === null) return '';
+  if (genre.type === 'expressions') return JSON.stringify(Array.isArray(valeur) ? valeur : []);
   if (genre.type === 'liste') return Array.isArray(valeur) ? valeur.map(String).join('\n') : '';
   if (genre.type === 'case') return valeur === true ? 'oui' : 'non';
   // Un nombre saisi s'écrit à la française ; le curseur garde le point, que l'élément natif attend.
@@ -100,6 +114,8 @@ const enTextes = (reglages: PatchReglages) => Object.fromEntries(CHAMPS.map((c) 
 
 function enValeur(texte: string, genre: Genre): unknown {
   switch (genre.type) {
+    case 'expressions':
+      return texte ? JSON.parse(texte) : [];
     case 'liste':
       return texte
         .split('\n')
@@ -124,6 +140,7 @@ function poser(objet: Record<string, unknown>, cle: string, valeur: unknown) {
 
 export function FormulaireReglages({ reglages, empreinte }: { reglages: PatchReglages; empreinte: string }) {
   const id = useId();
+  const catalogue = useCatalogueAssistante();
   const router = useRouter();
   const formulaire = useRef<HTMLFormElement>(null);
   const [valeurs, setValeurs] = useState<Record<string, string>>(() => enTextes(reglages));
@@ -134,13 +151,15 @@ export function FormulaireReglages({ reglages, empreinte }: { reglages: PatchReg
   const [rechargement, recharger] = useTransition();
 
   // Les réglages relus changent (enregistrés ici, par Claude Code ou par un rapatriement) : la saisie suit tant
-  // qu'elle est intacte, et l'empreinte suit toujours.
+  // qu'elle est intacte. Une saisie modifiée garde son empreinte pour refuser une écriture concurrente.
   const initiales = enTextes(reglages);
   const [base, setBase] = useState({ initiales, empreinte });
   if (base.empreinte !== empreinte) {
     setBase({ initiales, empreinte });
-    setEmpreinteConnue(empreinte);
-    if (CHAMPS.every((c) => valeurs[c.cle] === base.initiales[c.cle])) setValeurs(initiales);
+    if (CHAMPS.every((c) => valeurs[c.cle] === base.initiales[c.cle])) {
+      setValeurs(initiales);
+      setEmpreinteConnue(empreinte);
+    }
   }
 
   // « 1,2 » et « 1.2 » disent la même chose : un champ n'est modifié que si sa valeur lue change.
@@ -151,7 +170,7 @@ export function FormulaireReglages({ reglages, empreinte }: { reglages: PatchReg
   for (const c of changes) poser(patch, c.cle, enValeur(valeurs[c.cle] ?? '', c.genre));
   const verification = patchReglagesSchema.safeParse(patch);
   const erreurs: Record<string, string> = {};
-  if (!verification.success) for (const i of verification.error.issues) erreurs[i.path.filter((p) => typeof p === 'string').join('.')] ??= i.message;
+  if (!verification.success) for (const i of verification.error.issues) erreurs[i.path.slice(0, i.path[0] === 'voix' && i.path[1] === 'expressions' ? 2 : undefined).filter((p) => typeof p === 'string').join('.')] ??= i.message;
 
   useRaccourci({
     touche: 'Enter',
@@ -207,6 +226,7 @@ export function FormulaireReglages({ reglages, empreinte }: { reglages: PatchReg
                 key={c.cle}
                 id={`${id}-${c.cle.replace('.', '-')}`}
                 definition={c}
+                catalogue={catalogue}
                 valeur={valeurs[c.cle] ?? ''}
                 modifie={differe(c)}
                 erreur={montrerErreurs ? erreurs[c.cle] : undefined}
@@ -215,8 +235,11 @@ export function FormulaireReglages({ reglages, empreinte }: { reglages: PatchReg
               />
             ))}
           </div>
+          {g.titre === 'Voix' ? <ApercuVoix valeurs={valeurs} desactive={envoi} /> : null}
         </fieldset>
       ))}
+
+      {catalogue?.indisponibles.length ? <Message ton="neutre">Catalogue indisponible : {catalogue.indisponibles.join(', ').toLowerCase()}. Tu peux saisir les identifiants.</Message> : null}
 
       {retour ? (
         <Message
@@ -231,6 +254,7 @@ export function FormulaireReglages({ reglages, empreinte }: { reglages: PatchReg
                   recharger(() => {
                     router.refresh();
                     setValeurs(initiales);
+                    setEmpreinteConnue(empreinte);
                     setRetour(null);
                   })
                 }
@@ -259,6 +283,7 @@ export function FormulaireReglages({ reglages, empreinte }: { reglages: PatchReg
               ton="discret"
               onClick={() => {
                 setValeurs(initiales);
+                setEmpreinteConnue(empreinte);
                 setMontrerErreurs(false);
                 setRetour(null);
               }}
@@ -275,6 +300,7 @@ export function FormulaireReglages({ reglages, empreinte }: { reglages: PatchReg
 function ChampReglage({
   id,
   definition: c,
+  catalogue,
   valeur,
   modifie,
   erreur,
@@ -283,6 +309,7 @@ function ChampReglage({
 }: {
   id: string;
   definition: DefinitionChamp;
+  catalogue: CatalogueAssistante | null;
   valeur: string;
   modifie: boolean;
   erreur: string | undefined;
@@ -291,6 +318,8 @@ function ChampReglage({
 }) {
   const g = c.genre;
   const marque = modifie ? <span className="text-sm text-encre-3">modifié</span> : null;
+
+  if (g.type === 'catalogue') return <ChoixCatalogue id={id} libelle={c.libelle} valeur={valeur} choix={catalogue?.[g.liste] ?? []} desactive={desactive} erreur={erreur} modifie={modifie} onChange={onChange} />;
 
   if (g.type === 'case') {
     return (
@@ -362,6 +391,10 @@ function ChampReglage({
     );
   }
 
+  if (g.type === 'expressions') {
+    return <ChampExpressions id={id} valeur={valeur} definition={c} erreur={erreur} desactive={desactive} modifie={modifie} onChange={onChange} />;
+  }
+
   if (g.type === 'liste') {
     return (
       <Champ libelle={c.libelle} htmlFor={id} aide={c.aide} erreur={erreur} complement={marque}>
@@ -407,5 +440,32 @@ function ChampReglage({
         className={g.mono ? 'font-mono' : ''}
       />
     </Champ>
+  );
+}
+
+function ChampExpressions({ id, valeur, definition, erreur, desactive, modifie, onChange }: {
+  id: string; valeur: string; definition: DefinitionChamp; erreur?: string; desactive: boolean; modifie: boolean; onChange: (texte: string) => void;
+}) {
+  const expressions: { tag: string; description: string }[] = valeur ? JSON.parse(valeur) : [];
+  const changer = (index: number, patch: Partial<{ tag: string; description: string }>) =>
+    onChange(JSON.stringify(expressions.map((e, i) => i === index ? { ...e, ...patch } : e)));
+  return (
+    <fieldset className="grid min-w-0 gap-3 sm:col-span-2" aria-describedby={`${id}-aide${erreur ? ` ${id}-erreur` : ''}`}>
+      <legend className="pb-1 text-sm font-medium">{definition.libelle}{modifie ? <span className="ml-2 font-normal text-encre-3">modifié</span> : null}</legend>
+      <p id={`${id}-aide`} className="text-sm text-encre-3">{definition.aide}</p>
+      {expressions.map((e, i) => (
+        <div key={i} className="grid min-w-0 gap-2 sm:grid-cols-[10rem_minmax(0,1fr)_auto] sm:items-end">
+          <Champ libelle={`Expression ${i + 1}`} htmlFor={`${id}-tag-${i}`}>
+            <Saisie id={`${id}-tag-${i}`} value={e.tag} aria-invalid={erreur ? true : undefined} placeholder="warmly" maxLength={50} disabled={desactive} onChange={(event) => changer(i, { tag: event.target.value })} className="font-mono" />
+          </Champ>
+          <Champ libelle={`Description ${i + 1}`} htmlFor={`${id}-description-${i}`}>
+            <Saisie id={`${id}-description-${i}`} value={e.description} aria-invalid={erreur ? true : undefined} maxLength={500} disabled={desactive} onChange={(event) => changer(i, { description: event.target.value })} />
+          </Champ>
+          <Action disabled={desactive} aria-label={`Retirer l’expression ${i + 1}`} onClick={() => onChange(JSON.stringify(expressions.filter((_, index) => index !== i)))}>Retirer</Action>
+        </div>
+      ))}
+      {erreur ? <p id={`${id}-erreur`} className="text-sm text-alerte">{erreur}</p> : null}
+      <Action className="justify-self-start" disabled={desactive || expressions.length >= 32} onClick={() => onChange(JSON.stringify([...expressions, { tag: '', description: '' }]))}>Ajouter une expression</Action>
+    </fieldset>
   );
 }

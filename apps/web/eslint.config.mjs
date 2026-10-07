@@ -7,7 +7,7 @@ const eslintConfig = defineConfig([
   ...nextTs,
   // La configuration ElevenLabs de l'assistante lit et écrit agent/ et parle à ElevenLabs : réservée au serveur MCP,
   // aux scripts, et côté interface à la page Assistante et à ses actions serveur (lib/edition-assistante.ts, décision
-  // de l'opérateur du 30/09/2026 : tout s'y règle, sauf le prompt). Importée par un composant client, Turbopack
+  // de l'opérateur : le prompt et les réglages s’y modifient). Importée par un composant client, Turbopack
   // embarquerait node:fs et le paquet @autocalled/agent.
   {
     files: ["src/app/**", "src/components/**"],

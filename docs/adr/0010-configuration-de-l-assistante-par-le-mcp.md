@@ -12,6 +12,12 @@ Ce que l'assistante dit au prospect ne vient pas que d'`agent/` : la fiche de l'
 
 La liste des gestes soumis à l'élicitation s'allonge : pousser la configuration de l'assistante, changer son nom ou son premier message, ajouter des prospects à une campagne téléphone en cours, supprimer une entreprise vide, effacer une personne (qui remplace la suppression d'une fiche prospect, ADR 0013). L'empreinte gardée entre la question et la réponse est désormais signée (HMAC, clé tirée au démarrage du serveur, dix minutes, usage unique).
 
+## Amendement du 6 octobre 2026 : édition dans l’interface
+
+L’opérateur demande à modifier lui-même le prompt complet et les paramètres de l’assistante. La page Assistante enregistre désormais le texte entier, sans la limite des passages remplacés par le MCP. Elle conserve la validation du prompt (20 000 caractères au plus, variables de l’application, section Règles), l’empreinte de lecture, la vérification distante et le journal des gestes. L’interface affiche la différence entière avant une poussée, y compris au-delà de 4 000 caractères ; la limite de la question MCP reste en place.
+
+La langue, le mode expressif et ses balises, les langues des interruptions, leur fusion avec les mots par défaut, ainsi que les options et le nombre de relances deviennent des réglages partagés entre l’interface et le MCP. Les outils d’intégration, les surcharges et l’authentification restent le contrat de l’application avec ElevenLabs.
+
 ## Considered Options
 
 - Le prompt en base, source de vérité : deux sources, la relecture dans git perdue, `pnpm agent` aveugle, et le test qui vérifie les variables du prompt ne voit plus rien.

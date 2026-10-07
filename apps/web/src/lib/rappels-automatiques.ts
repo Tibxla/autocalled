@@ -4,9 +4,9 @@ import { z } from 'zod';
 import { db } from '@/db';
 import { appels, prospects } from '@/db/schema';
 import { preparerAppel } from './appels';
-import { dansLesHeuresDAppel } from './heures-appel';
 import { commanderPont, disponibiliteLigne } from './pont';
 import { RAPPEL_A_FAIRE } from './rappels';
+import { defautReglagesRappels, dansLesHorairesRappels, lireReglagesRappels, type ReglagesRappels } from './reglages-rappels';
 
 type Lecteur = Pick<typeof db, 'select'>;
 /** Refus certains avant composition. Un 5xx peut arriver après une programmation dans GLib : état incertain. */
@@ -19,14 +19,15 @@ export function activationRappelsAutomatiques(): Date | null {
 }
 
 /** Indication sur la fiche : un rappel futur aussi peut être annoncé comme automatique. */
-export function rappelSeraAutomatique({ ligne, rappelLe }: { ligne: string; rappelLe: Date | null }): boolean {
-  const activation = activationRappelsAutomatiques();
+export function rappelSeraAutomatique({ ligne, rappelLe }: { ligne: string; rappelLe: Date | null }, reglage: ReglagesRappels = defautReglagesRappels()): boolean {
+  const activation = reglage.actif && reglage.depuis ? new Date(reglage.depuis) : null;
   return ligne === 'bluetooth' && activation !== null && rappelLe !== null && rappelLe.getTime() >= activation.getTime();
 }
 
 /** Rappels datés, dus depuis l'activation, encore à faire. Ne consulte pas le pont et n'écrit rien. */
 export async function rappelsAutomatiquesDus(maintenant: Date, lecteur: Lecteur = db, appelId?: string) {
-  const activation = activationRappelsAutomatiques();
+  const { valeur } = await lireReglagesRappels(lecteur);
+  const activation = valeur.actif && valeur.depuis ? new Date(valeur.depuis) : null;
   if (!activation) return [];
   return lecteur
     .select({ appelId: appels.id, entrepriseId: appels.entrepriseId, prospectId: appels.prospectId, versionScriptId: appels.versionScriptId })
@@ -50,9 +51,9 @@ export async function rappelsAutomatiquesDus(maintenant: Date, lecteur: Lecteur 
  * Le refus du pont avant composition ne solde pas le rappel : l'enregistrement provisoire est retiré.
  */
 export async function rappelerSiDu(appelSourceId: string, maintenant: Date): Promise<boolean> {
-  if (!dansLesHeuresDAppel(maintenant) || !activationRappelsAutomatiques()) return false;
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext('autocalled:rappels-automatiques'))`);
+    if (!dansLesHorairesRappels(maintenant, (await lireReglagesRappels(tx)).valeur)) return false;
     const [source] = await rappelsAutomatiquesDus(maintenant, tx, appelSourceId);
     if (!source) return false;
     if ((await disponibiliteLigne()).type !== 'libre') return false;

@@ -21,6 +21,7 @@ import {
 import { BlocRepliable, LienTelechargement, TexteAvecVariables, TexteResolu } from './blocs';
 import { ChoixApercu } from './choix-apercu';
 import { FormulaireIdentite } from './formulaire-identite';
+import { FormulairePrompt } from './formulaire-prompt';
 import { FormulaireReglages } from './formulaire-reglages';
 import { Historique } from './historique';
 import { ListeDuJournal } from '../reglages/journal-des-gestes';
@@ -33,7 +34,7 @@ const SECTION = 'grid min-w-0 scroll-mt-[calc(var(--hauteur-barre)+16px)] gap-5'
 const NOMBRE = new Intl.NumberFormat('fr-FR');
 
 /** L'ancre de chaque section où un élément se modifie (CE_QUI_EST_MODIFIABLE). */
-const SECTIONS: Record<string, string> = { Identité: 'identite', Réglages: 'reglages', Poussée: 'poussee', Historique: 'historique' };
+const SECTIONS: Record<string, string> = { Identité: 'identite', Prompt: 'prompt', Réglages: 'reglages', Poussée: 'poussee', Historique: 'historique' };
 
 type Parametres = { entreprise?: string; version?: string; prospect?: string };
 
@@ -41,8 +42,7 @@ type Parametres = { entreprise?: string; version?: string; prospect?: string };
  * L'assistante telle qu'elle est configurée, et où elle se règle : son identité (base), son prompt et sa configuration
  * ElevenLabs (fichiers de agent/), ses outils, ce qu'elle reçoit pour un appel choisi. Décision de l'opérateur du
  * 30/09/2026 : la page modifie tout ce que modifient les outils MCP de Claude Code, par les mêmes fonctions
- * (lib/edition-assistante.ts, actions de ./actions.ts), sauf le prompt, qui reste en lecture et se modifie par Claude
- * Code. L'affichage ne joint pas ElevenLabs : seules la préparation d'une poussée, la poussée et le rapatriement le font.
+ * (lib/edition-assistante.ts, actions de ./actions.ts), prompt compris. L'affichage ne joint pas ElevenLabs : seules la préparation d'une poussée, la poussée et le rapatriement le font.
  */
 export default async function PageAssistante({ searchParams }: { searchParams: Promise<Parametres> }) {
   const choix = await searchParams;
@@ -71,7 +71,7 @@ export default async function PageAssistante({ searchParams }: { searchParams: P
     <Page largeur="lecture">
       <EnTetePage
         titre="Assistante"
-        sousTitre={`Ce que ${nom} dit, reçoit et sait faire à chaque appel, et où cela se règle. Tout se modifie ici, sauf le prompt, qui passe par Claude Code.`}
+        sousTitre={`Ce que ${nom} dit, reçoit et sait faire à chaque appel, et où cela se règle. Modifie ses instructions, son modèle, sa voix et ses réglages ici.`}
       />
       <div className="grid max-w-[56rem] min-w-0 gap-12">
         <nav aria-label="Sections de la page" className="-mt-2 flex flex-wrap gap-x-[22px] gap-y-1 text-md pointer-coarse:gap-y-0">
@@ -135,10 +135,7 @@ export default async function PageAssistante({ searchParams }: { searchParams: P
             <span className="font-mono">{variablesDuPrompt.length}</span> variables :{' '}
             <span className="font-mono break-words text-encre-2">{variablesDuPrompt.join(' · ')}</span>
           </p>
-          <Message ton="neutre">
-            Le prompt se modifie par Claude Code (<span className="font-mono">modifier_prompt_assistante</span>), puis se pousse ici ou par Claude
-            Code.
-          </Message>
+          <FormulairePrompt prompt={fichiers.prompt} empreinte={edition.empreinteLocale} />
           <div className="grid justify-items-start gap-2">
             <LienTelechargement href="/assistante/telecharger/prompt">Télécharger le prompt (.md)</LienTelechargement>
             <BlocRepliable resume={`Lire le prompt (${NOMBRE.format(fichiers.prompt.length)} caractères)`}>
@@ -150,8 +147,8 @@ export default async function PageAssistante({ searchParams }: { searchParams: P
         <section id="reglages" aria-labelledby="titre-reglages" className={SECTION}>
           <TitreSection id="titre-reglages">Réglages</TitreSection>
           <p className="max-w-[62ch] text-sm text-encre-2">
-            La liste fermée des réglages ElevenLabs, écrite dans <span className="font-mono">agent/mina.config.json</span> avec les mêmes bornes
-            que Claude Code. Rien ne change pour les appels avant la poussée ; les fichiers modifiés se relisent et se commitent.
+            Les réglages de conversation ElevenLabs, enregistrés dans <span className="font-mono">agent/mina.config.json</span> avec les mêmes bornes
+            que les outils de configuration. Ils s’appliquent aux prochains appels après la poussée.
           </p>
           <FormulaireReglages reglages={edition.reglages} empreinte={edition.empreinteLocale} />
         </section>
@@ -444,7 +441,7 @@ export default async function PageAssistante({ searchParams }: { searchParams: P
         <section id="modifier" aria-labelledby="titre-modifier" className={SECTION}>
           <TitreSection id="titre-modifier">Ce qui se modifie, et par où</TitreSection>
           <p className="max-w-[62ch] text-sm text-encre-2">
-            Cette page fait ce que font les outils du serveur MCP de Claude Code, par les mêmes fonctions, sauf le prompt. Ici comme dans Claude
+            Cette page fait ce que font les outils du serveur MCP de Claude Code, par les mêmes fonctions, prompt compris. Ici comme dans Claude
             Code, ton accord est demandé avant que les prospects entendent la différence.
           </p>
           <dl className="border-t border-filet">

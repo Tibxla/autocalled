@@ -18,6 +18,8 @@ CVSD, MSBC = 1, 2
 CHEMIN_AGENT = "/autocalled/pont/audio"
 # Le numéro de l'appelant (CLIP) peut suivre la première sonnerie : passé ce délai sans lui, l'appel sonne sans réponse.
 DELAI_NUMERO_ENTRANT_MS = 2000
+DELAI_REGLAGE_AUDIO_S = 2
+DELAI_LECTURE_DBUS_S = 2
 
 
 def masquer(numero: str) -> str:
@@ -38,9 +40,12 @@ class LigneOccupee(RuntimeError):
 def dans_glib(fonction: Callable[[], Any], delai: float = 10) -> Any:
     """Exécute `fonction` dans le thread GLib et rend son résultat (ou relève son exception)."""
     fini = threading.Event()
+    expire = threading.Event()
     resultat: dict[str, Any] = {}
 
     def _faire():
+        if expire.is_set():
+            return False
         try:
             resultat["valeur"] = fonction()
         except Exception as e:  # relevée dans le thread appelant
@@ -50,6 +55,7 @@ def dans_glib(fonction: Callable[[], Any], delai: float = 10) -> Any:
 
     GLib.idle_add(_faire)
     if not fini.wait(delai):
+        expire.set()
         raise TimeoutError("la boucle D-Bus ne répond pas")
     if "erreur" in resultat:
         raise resultat["erreur"]
@@ -122,8 +128,8 @@ class Telephone:
 
     def modem(self) -> str:
         """Recalculé à chaque appel : le chemin change si le téléphone se reconnecte."""
-        manager = dbus.Interface(self._bus.get_object("org.ofono", "/"), "org.ofono.Manager")
-        for chemin, proprietes in manager.GetModems():
+        manager = dbus.Interface(self._bus.get_object("org.ofono", "/", introspect=False), "org.ofono.Manager")
+        for chemin, proprietes in manager.GetModems(signature="", timeout=DELAI_LECTURE_DBUS_S):
             if proprietes.get("Type") == "hfp" and proprietes.get("Online"):
                 return str(chemin)
         raise RuntimeError(
@@ -133,8 +139,8 @@ class Telephone:
 
     def etat(self) -> dict[str, Any]:
         """Pour l'application : le téléphone, son réseau, l'appel en cours. Depuis le thread GLib."""
-        manager = dbus.Interface(self._bus.get_object("org.ofono", "/"), "org.ofono.Manager")
-        for chemin, p in manager.GetModems():
+        manager = dbus.Interface(self._bus.get_object("org.ofono", "/", introspect=False), "org.ofono.Manager")
+        for chemin, p in manager.GetModems(signature="", timeout=DELAI_LECTURE_DBUS_S):
             if p.get("Type") != "hfp":
                 continue
             interfaces = [str(i) for i in p.get("Interfaces", [])]
@@ -145,12 +151,12 @@ class Telephone:
                 "appelEnCours": self._appel is not None or self._entrant is not None,
                 "entrantEnCours": self.entrant_en_cours(),
             }
-            objet = self._bus.get_object("org.ofono", chemin)
+            objet = self._bus.get_object("org.ofono", chemin, introspect=False)
             if "org.ofono.NetworkRegistration" in interfaces:
-                r = dbus.Interface(objet, "org.ofono.NetworkRegistration").GetProperties()
+                r = dbus.Interface(objet, "org.ofono.NetworkRegistration").GetProperties(signature="", timeout=DELAI_LECTURE_DBUS_S)
                 etat.update(operateur=str(r.get("Name", "")), signal=int(r.get("Strength", 0)))
             if "org.ofono.Handsfree" in interfaces:
-                h = dbus.Interface(objet, "org.ofono.Handsfree").GetProperties()
+                h = dbus.Interface(objet, "org.ofono.Handsfree").GetProperties(signature="", timeout=DELAI_LECTURE_DBUS_S)
                 etat["batterie"] = int(h.get("BatteryChargeLevel", 0)) * 20  # oFono : 0 à 5
             return etat
         return {
@@ -175,10 +181,10 @@ class Telephone:
 
     def enregistrer_agent_audio(self) -> None:
         self._agent = AgentAudio(self._bus, self._nouvelle_connexion)
-        audio = dbus.Interface(self._bus.get_object("org.ofono", "/"), "org.ofono.HandsfreeAudioManager")
+        audio = dbus.Interface(self._bus.get_object("org.ofono", "/", introspect=False), "org.ofono.HandsfreeAudioManager")
         # Le téléphone choisit le codec parmi ceux-ci ; la liste compte aussi à l'établissement de la liaison
         # mains-libres : un agent enregistré après coup n'obtient le mSBC que si la liaison l'avait déjà annoncé.
-        audio.Register(CHEMIN_AGENT, dbus.Array([dbus.Byte(MSBC), dbus.Byte(CVSD)], signature="y"))
+        audio.Register(CHEMIN_AGENT, dbus.Array([dbus.Byte(MSBC), dbus.Byte(CVSD)], signature="y"), signature="oay", timeout=DELAI_LECTURE_DBUS_S)
 
     def composer(self, numero: str, suivi: Suivi, echec: Callable[[str], None]) -> None:
         """Demande au téléphone de composer, sans attendre sa réponse : un téléphone dont la liaison s'est figée
@@ -193,7 +199,7 @@ class Telephone:
         self._suivi = suivi  # avant Dial : le canal son peut s'ouvrir aussitôt
         self._appel = None
         self._raison = "inconnue"
-        gestionnaire = dbus.Interface(self._bus.get_object("org.ofono", self._modem), "org.ofono.VoiceCallManager")
+        gestionnaire = dbus.Interface(self._bus.get_object("org.ofono", self._modem, introspect=False), "org.ofono.VoiceCallManager")
 
         def reponse(chemin):
             if self._suivi is suivi:
@@ -204,9 +210,12 @@ class Telephone:
                 self._suivi = None
                 echec(e.get_dbus_message() if isinstance(e, dbus.DBusException) else str(e))
 
-        gestionnaire.Dial(numero, "default", reply_handler=reponse, error_handler=erreur, timeout=15)
+        gestionnaire.Dial(numero, "default", signature="ss", reply_handler=reponse, error_handler=erreur, timeout=15)
 
-    def repondre(self, chemin: str, suivi: Suivi, echec: Callable[[str], None], generation: int | None = None) -> None:
+    def repondre(
+        self, chemin: str, suivi: Suivi, echec: Callable[[str], None], generation: int | None = None,
+        *, annule: Callable[[], bool] | None = None,
+    ) -> None:
         """Décroche l'appel entrant `chemin`, sans attendre la réponse du téléphone (comme Dial). Le canal son gardé
         pendant la décision est branché tout de suite, comme celui d'un sortant à la composition. `echec` est appelé
         si le téléphone refuse ou ne répond pas. `generation` : celle annoncée avec l'appel ; un autre appel arrivé
@@ -216,7 +225,13 @@ class Telephone:
         if not self._entrant_present(chemin, generation):
             raise RuntimeError("l'appel entrant ne sonne plus, ou a été pris sur le téléphone")
         self._modem = self.modem()
+        if annule is not None and annule():
+            self.laisser_sonner(chemin, generation)
+            raise RuntimeError("décroché annulé")
         self._couper_traitement_du_telephone()  # avant Answer, comme avant Dial
+        if annule is not None and annule():
+            self.laisser_sonner(chemin, generation)
+            raise RuntimeError("décroché annulé")
         self._suivi, self._appel, self._raison = suivi, chemin, "inconnue"
         self._evaluation = False
         canal, self._canal_en_attente = self._canal_en_attente, None
@@ -232,8 +247,8 @@ class Telephone:
                 self._suivi, self._appel = None, None
                 echec(e.get_dbus_message() if isinstance(e, dbus.DBusException) else str(e))
 
-        appel = dbus.Interface(self._bus.get_object("org.ofono", chemin), "org.ofono.VoiceCall")
-        appel.Answer(reply_handler=reponse, error_handler=erreur, timeout=15)
+        appel = dbus.Interface(self._bus.get_object("org.ofono", chemin, introspect=False), "org.ofono.VoiceCall")
+        appel.Answer(signature="", reply_handler=reponse, error_handler=erreur, timeout=15)
 
     def laisser_sonner(self, chemin: str, generation: int | None = None) -> None:
         """L'application ne décroche pas (numéro inconnu, pas de réponse) : ni Answer ni Hangup, le téléphone sonne
@@ -258,11 +273,17 @@ class Telephone:
                 return False
             try:
                 if self._appel:
-                    dbus.Interface(self._bus.get_object("org.ofono", self._appel), "org.ofono.VoiceCall").Hangup()
+                    dbus.Interface(self._bus.get_object("org.ofono", self._appel, introspect=False), "org.ofono.VoiceCall").Hangup(
+                        signature="", reply_handler=lambda: None,
+                        error_handler=lambda _: self._journal("raccrochage du téléphone non confirmé"), timeout=DELAI_REGLAGE_AUDIO_S,
+                    )
                 elif self._modem and self._suivi is not None:
                     dbus.Interface(
-                        self._bus.get_object("org.ofono", self._modem), "org.ofono.VoiceCallManager"
-                    ).HangupAll()
+                        self._bus.get_object("org.ofono", self._modem, introspect=False), "org.ofono.VoiceCallManager"
+                    ).HangupAll(
+                        signature="", reply_handler=lambda: None,
+                        error_handler=lambda _: self._journal("raccrochage du téléphone non confirmé"), timeout=DELAI_REGLAGE_AUDIO_S,
+                    )
             except dbus.DBusException:
                 pass
             return False
@@ -271,8 +292,8 @@ class Telephone:
 
     def modem_connu(self) -> str | None:
         """Le téléphone passerelle appairé, connecté ou non (pour le reconnecter à distance)."""
-        manager = dbus.Interface(self._bus.get_object("org.ofono", "/"), "org.ofono.Manager")
-        for chemin, proprietes in manager.GetModems():
+        manager = dbus.Interface(self._bus.get_object("org.ofono", "/", introspect=False), "org.ofono.Manager")
+        for chemin, proprietes in manager.GetModems(signature="", timeout=DELAI_LECTURE_DBUS_S):
             if proprietes.get("Type") == "hfp":
                 return str(chemin)
         return None
@@ -301,9 +322,38 @@ class Telephone:
         """Le téléphone traite par défaut ce qu'il reçoit du « micro » mains-libres (anti-écho, anti-bruit,
         prévus pour un micro de voiture). Sur une voix de synthèse propre, ce traitement hache ou abîme le
         son (constat du 27/09) ; le pont n'a pas d'écho acoustique à retirer. Réactivé à chaque reconnexion."""
-        hf = dbus.Interface(self._bus.get_object("org.ofono", self._modem), "org.ofono.Handsfree")
-        if hf.GetProperties().get("EchoCancelingNoiseReduction"):
-            hf.SetProperty("EchoCancelingNoiseReduction", dbus.Boolean(False))
+        modem = self._modem
+
+        def termine(confirme: bool):
+            self._journal("traitement audio du téléphone :", "ECNR désactivé" if confirme else "désactivation ECNR non confirmée")
+            self._journaliser_volumes(modem)
+
+        try:
+            hf = dbus.Interface(self._bus.get_object("org.ofono", modem, introspect=False), "org.ofono.Handsfree")
+            hf.SetProperty(
+                "EchoCancelingNoiseReduction", dbus.Boolean(False), signature="sv",
+                reply_handler=lambda: termine(True), error_handler=lambda _: termine(False),
+                timeout=DELAI_REGLAGE_AUDIO_S,
+            )
+        except dbus.DBusException:
+            termine(False)
+
+    def _journaliser_volumes(self, modem: str) -> None:
+        def reponse(proprietes):
+            try:
+                micro, ecoute = int(proprietes["MicrophoneVolume"]), int(proprietes["SpeakerVolume"])
+                self._journal(f"volumes du téléphone : micro {micro}, écoute {ecoute}, muet {bool(proprietes['Muted'])}")
+            except (KeyError, TypeError, ValueError):
+                self._journal("volumes du téléphone : réponse illisible")
+
+        try:
+            volume = dbus.Interface(self._bus.get_object("org.ofono", modem, introspect=False), "org.ofono.CallVolume")
+            volume.GetProperties(
+                reply_handler=reponse, error_handler=lambda _: self._journal("volumes du téléphone : lecture impossible"),
+                signature="", timeout=DELAI_REGLAGE_AUDIO_S,
+            )
+        except dbus.DBusException:
+            self._journal("volumes du téléphone : lecture impossible")
 
     # --- signaux ---------------------------------------------------------------------------------
 

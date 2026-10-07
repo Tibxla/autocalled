@@ -47,8 +47,8 @@ describe('lire_assistante', () => {
       premierMessage: 'Allô ?',
       modifieLe: null,
       prompt: PROMPT_DE_TEST,
-      reglages: { temperature: 0.7, voix: { voiceId: 'voixfictive0001' } },
-      lectureSeule: { langue: 'fr', firstMessage: '' },
+      reglages: { langue: 'fr', temperature: 0.7, voix: { voiceId: 'voixfictive0001' } },
+      lectureSeule: { firstMessage: '' },
       variablesDisponibles: expect.arrayContaining(['assistante_nom']),
       synchro: { distante: { versionId: 'agtvrsn_test1' }, modificationsLocalesNonPoussees: false },
     });

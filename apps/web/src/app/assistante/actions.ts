@@ -6,6 +6,7 @@ import {
   type Attendu,
   detailVersion,
   enregistrerIdentite,
+  enregistrerPromptAssistante,
   enregistrerReglagesAssistante,
   preparerIdentite,
   preparerPoussee,
@@ -18,7 +19,7 @@ import { exigerOperateur } from '@/lib/garde';
 import { patchReglagesSchema } from '@/lib/reglages-assistante';
 
 /**
- * Les gestes de la page Assistante, un par outil du serveur MCP (mcp/assistante.ts), sauf le prompt : chaque action
+ * Les gestes de la page Assistante, par les mêmes fonctions que le serveur MCP (mcp/assistante.ts) : chaque action
  * exige l'opérateur, lit son entrée avec le même schéma que l'outil, puis passe par lib/edition-assistante.ts, qui
  * appelle les mêmes fonctions que le MCP. Rien ici ne décide seul : la confirmation se fait dans la page, sur le texte
  * rédigé par le serveur.
@@ -32,6 +33,7 @@ const identiteSchema = z
   })
   .refine((s) => s.nom !== undefined || s.premierMessage !== undefined, 'Donne un nom ou un premier message.');
 const empreinteSchema = z.string().min(1).max(200);
+const promptSchema = z.string().min(500).max(20_000);
 const versionSchema = z.string().min(1).max(100);
 const attenduSchema = z.strictObject({ empreinteLocale: z.string().min(1).max(200), versionIdDistante: z.string().max(100).nullable() });
 
@@ -62,6 +64,20 @@ export async function enregistrerIdentiteAction(saisie: unknown): Promise<Result
   const e = lire(identiteSchema, saisie);
   if (!e.ok) return e;
   const r = await enregistrerIdentite(sansConnu(e.data), e.data.connu);
+  if (r.ok) revalidatePath('/assistante');
+  return r;
+}
+
+export async function enregistrerPromptAction(
+  texte: unknown,
+  empreinteConnue: unknown,
+): Promise<Resultat<{ empreinteLocale: string; lignesModifiees: number; rappel: string; avertissement?: string }>> {
+  await exigerOperateur();
+  const prompt = lire(promptSchema, texte);
+  if (!prompt.ok) return prompt;
+  const empreinte = lire(empreinteSchema, empreinteConnue);
+  if (!empreinte.ok) return empreinte;
+  const r = await enregistrerPromptAssistante(prompt.data, empreinte.data);
   if (r.ok) revalidatePath('/assistante');
   return r;
 }

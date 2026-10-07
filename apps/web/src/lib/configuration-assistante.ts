@@ -34,7 +34,7 @@ import { type PatchReglages, patchReglagesSchema, REGLAGES_MODIFIABLES } from '.
  * la page Assistante (ADR 0010). `agent/` reste la seule source : on y écrit, on relit dans git, et rien ne change pour
  * les appels avant `pousserAssistante`, que l'opérateur confirme sur une différence rédigée ici. Lit et écrit des
  * fichiers et parle à ElevenLabs : côté interface, seuls la page Assistante et ses actions serveur l'importent, par
- * lib/edition-assistante.ts (règle eslint) ; jamais un composant client. Le prompt ne s'écrit que par le MCP.
+ * lib/edition-assistante.ts (règle eslint) ; jamais un composant client.
  */
 
 /** Le dossier `agent/` de la copie où tourne le code (le serveur MCP tourne depuis apps/web). */
@@ -88,7 +88,6 @@ export interface VueConfigurationAssistante {
   reglages: PatchReglages;
   /** Ce que le MCP ne modifie pas : contrat avec le code ou garde de sécurité. */
   lectureSeule: {
-    langue: unknown;
     outils: { nom: string; type: string }[];
     surcharges: unknown;
     authentification: unknown;
@@ -137,7 +136,6 @@ export async function lireConfigurationAssistante(o: Options & { distante?: bool
     prompt: locale.prompt,
     reglages: reglagesDe(c) as PatchReglages,
     lectureSeule: {
-      langue: lireChemin(c, 'conversation_config.agent.language'),
       outils,
       surcharges: lireChemin(c, 'platform_settings.overrides'),
       authentification: lireChemin(c, 'platform_settings.auth.enable_auth'),
@@ -170,6 +168,29 @@ async function avantEcriture(
 }
 
 const RAPPEL_GIT = 'agent/ modifié : à relire (git diff agent/) et à commiter. Rien ne change pour les appels avant pousser_assistante.';
+
+/** Enregistre le texte intégral de l’éditeur avec les mêmes gardes que les remplacements du MCP. */
+export async function enregistrerPromptCompletAssistante(
+  texte: string,
+  empreinteConnue: string,
+  o: Options = {},
+): Promise<{ ok: true; empreinteLocale: string; lignesModifiees: number; rappel: string; avertissement?: string } | Refus> {
+  const validation = validerPrompt(texte, VARIABLES_DE_L_APPEL);
+  if (!validation.ok) return { ok: false, raison: `Prompt refusé, rien n’est écrit : ${validation.erreurs.join(' ')}` };
+  const avant = await avantEcriture(empreinteConnue, o);
+  if (!avant.ok) return avant;
+  const { locale } = avant;
+  if (texte === locale.prompt) return { ok: false, raison: 'Le prompt est inchangé.' };
+  await ecrireLocal(dossierDe(o), { prompt: texte });
+  const d = difference(locale, { prompt: texte, configuration: locale.configuration });
+  return {
+    ok: true,
+    empreinteLocale: empreinte(avecPrompt(locale.configuration, texte)),
+    lignesModifiees: d.texte.split('\n').filter((l) => l.startsWith('− ') || l.startsWith('+ ')).length,
+    rappel: RAPPEL_GIT,
+    ...(avant.avertissement ? { avertissement: avant.avertissement } : {}),
+  };
+}
 
 /**
  * Modifie `agent/prompt.md` par remplacements exacts (chacun doit apparaître une seule fois), tout ou rien. Le
@@ -306,8 +327,8 @@ async function consigner(config: Json, origine: OrigineVersionAssistante): Promi
 /**
  * Envoie `agent/` à ElevenLabs, après l'accord de l'opérateur sur la différence de `preparerPousseeAssistante` :
  * refus si les fichiers ou la version distante ont bougé depuis (`attendu`). Par le MCP comme par l'interface, seuls
- * le prompt et les réglages de la liste blanche partent, et une différence trop longue pour être relue passe par la
- * ligne de commande. `origine` est consignée avec la nouvelle version.
+ * le prompt et les réglages de la liste blanche partent. L’interface affiche la différence complète ; le MCP borne
+ * sa question à 4 000 caractères. `origine` est consignée avec la nouvelle version.
  */
 export async function pousserAssistante(
   o: Options & { attendu: { empreinteLocale: string; versionIdDistante: string | null }; origine: 'mcp' | 'interface' | 'cli' },
@@ -321,7 +342,7 @@ export async function pousserAssistante(
       raison: `Ces champs se poussent par \`pnpm agent push\`, après relecture du code : ${etat.horsListe.join(', ')}.`,
     };
   }
-  if (o.origine !== 'cli' && etat.tropLong) {
+  if (o.origine === 'mcp' && etat.tropLong) {
     return { ok: false, raison: `La différence dépasse ${LONGUEUR_MAX_DIFFERENCE} caractères : relis \`git diff agent/\` et pousse par \`pnpm agent push\`.` };
   }
   if (etat.attendu.empreinteLocale !== o.attendu.empreinteLocale || etat.attendu.versionIdDistante !== o.attendu.versionIdDistante) {

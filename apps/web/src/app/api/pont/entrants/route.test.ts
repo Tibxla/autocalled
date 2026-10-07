@@ -1,9 +1,11 @@
 import { eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/db';
 import { appels, prospects } from '@/db/schema';
+import * as agenda from '@/lib/agenda';
 import { creerScript } from '@/lib/entreprises';
 import { importerFiches } from '@/lib/prospects';
+import { enregistrerReglagesEntrants, lireReglagesEntrants } from '@/lib/reglages-entrants';
 import { agendaFrais, entrepriseDeTest, fiche, opposer } from '../../../../../test/fixtures';
 import { avecBaseDeTest } from '../../../../../test/outils';
 import { POST } from './route';
@@ -58,6 +60,31 @@ async function appelSortant(valeurs: Partial<typeof appels.$inferInsert> = {}) {
 }
 
 describe('appel entrant d’un prospect déjà appelé', () => {
+  it('une suspension pendant la préparation laisse sonner sans enregistrer d’appel', async () => {
+    await appelSortant();
+    const initial = await lireReglagesEntrants();
+    const relecture = vi.spyOn(agenda, 'rafraichirSiAncien').mockImplementationOnce(async () => {
+      await enregistrerReglagesEntrants({ ...initial.valeur, actif: false }, initial.empreinte);
+    });
+    try {
+      expect(await lire(await entrant({ numero: NUMERO }))).toEqual({ decrocher: false });
+      expect(await db.$count(appels)).toBe(1);
+    } finally {
+      relecture.mockRestore();
+    }
+  });
+
+  it('l’opérateur peut laisser sonner un prospect connu, puis choisir un accueil entrant distinct', async () => {
+    await appelSortant();
+    const initial = await lireReglagesEntrants();
+    expect(await enregistrerReglagesEntrants({ actif: false, accueil: initial.valeur.accueil }, initial.empreinte)).toMatchObject({ ok: true });
+    expect(await lire(await entrant({ numero: NUMERO }))).toEqual({ decrocher: false });
+    expect(await db.$count(appels)).toBe(1);
+    const desactive = await lireReglagesEntrants();
+    expect(await enregistrerReglagesEntrants({ actif: true, accueil: 'Bonjour, {{assistante_nom}} à votre écoute.' }, desactive.empreinte)).toMatchObject({ ok: true });
+    expect(await lire(await entrant({ numero: NUMERO }))).toMatchObject({ decrocher: true, premierMessage: 'Bonjour, Mina à votre écoute.' });
+  });
+
   it('décroche : appel enregistré (entrant, sans campagne, version du dernier sortant), variables et accueil composés', async () => {
     await appelSortant();
 

@@ -14,14 +14,14 @@ function secret(): string {
 /** `statut` : le code HTTP d'un refus du pont (409 : ligne occupée) ; absent s'il n'a pas répondu. */
 export type ReponsePont = { ok: true; corps: Record<string, unknown> } | { ok: false; raison: string; statut?: number };
 
-export async function commanderPont(chemin: string, corps?: unknown): Promise<ReponsePont> {
+export async function commanderPont(chemin: string, corps?: unknown, options: { delaiMs?: number } = {}): Promise<ReponsePont> {
   const base = process.env.PONT_URL ?? 'http://127.0.0.1:3021';
   try {
     const r = await fetch(`${base}${chemin}`, {
       method: corps === undefined ? 'GET' : 'POST',
       headers: { authorization: `Bearer ${secret()}`, 'content-type': 'application/json' },
       body: corps === undefined ? undefined : JSON.stringify(corps),
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(options.delaiMs ?? 15_000),
       cache: 'no-store',
     });
     const lu = (await r.json().catch(() => ({}))) as Record<string, unknown>;

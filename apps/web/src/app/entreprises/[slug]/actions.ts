@@ -76,6 +76,16 @@ export async function ajouterIssue(entrepriseId: string, _: EtatFormulaire, donn
   return { ok: true };
 }
 
+export async function renommerIssue(entrepriseId: string, issueId: string, libelle: string): Promise<ResultatAction<{ libelle: string }>> {
+  await exigerOperateur();
+  const saisie = issueSchema.shape.libelle.safeParse(libelle);
+  if (!saisie.success) return { ok: false, raison: saisie.error.issues[0]?.message ?? 'Libellé invalide.' };
+  if (!z.uuid().safeParse(entrepriseId).success || !z.uuid().safeParse(issueId).success) return { ok: false, raison: 'Cette issue n’existe plus dans cette entreprise.' };
+  if (!(await entreprise.renommerIssue(entrepriseId, issueId, saisie.data))) return { ok: false, raison: 'Cette issue n’existe plus dans cette entreprise.' };
+  revalidatePath('/entreprises', 'layout');
+  return { ok: true, libelle: saisie.data };
+}
+
 export async function basculerArchiveIssue(
   entrepriseId: string,
   issueId: string,

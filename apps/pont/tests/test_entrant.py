@@ -223,7 +223,7 @@ class CanalPendantLaDecision(unittest.TestCase):
         self.assertEqual(ordre, ["traitement coupé", "canal branché", "Answer"])
         suivi.nouvelle_connexion.assert_called_once_with(fd, CVSD)
         self.assertEqual(interface.call_args.args[1], "org.ofono.VoiceCall")
-        t._bus.get_object.assert_called_with("org.ofono", ENTRANT)
+        t._bus.get_object.assert_called_with("org.ofono", ENTRANT, introspect=False)
         kwargs = interface.return_value.Answer.call_args.kwargs
         self.assertIn("reply_handler", kwargs)  # asynchrone, comme Dial
         self.assertIn("error_handler", kwargs)
@@ -321,7 +321,7 @@ class Raccrocher(unittest.TestCase):
         with mock.patch("pont.ofono.GLib") as glib, mock.patch("pont.ofono.dbus.Interface") as interface:
             glib.idle_add.side_effect = lambda f: f()
             t.raccrocher()
-        t._bus.get_object.assert_called_once_with("org.ofono", SORTANT)
+        t._bus.get_object.assert_called_once_with("org.ofono", SORTANT, introspect=False)
         self.assertEqual(interface.call_args.args[1], "org.ofono.VoiceCall")
         interface.return_value.Hangup.assert_called_once()
         interface.return_value.HangupAll.assert_not_called()
@@ -399,7 +399,8 @@ class ModeEntrant(unittest.TestCase):
         appel, tel, lignes = appel_entrant(self.plafond)
         with mock.patch("pont.appel.GLib"):
             appel.decrocher()
-        tel.repondre.assert_called_once_with(ENTRANT, appel, appel._decroche_echoue, None)
+        tel.repondre.assert_called_once_with(ENTRANT, appel, appel._decroche_echoue, None, annule=mock.ANY)
+        self.assertFalse(tel.repondre.call_args.kwargs["annule"]())
         tel.composer.assert_not_called()
         self.assertIsNone(self.plafond.refus())  # un entrant ne compte pas
         self.assertTrue(appel._en_ligne)

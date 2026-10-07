@@ -6,6 +6,8 @@ Le minuteur existant (`autocalled-reveil.timer`, toutes les cinq minutes) prend 
 
 Les appels automatiques respectent la plage existante de 9 h à 19 h, tous les jours, et les garde-fous du pont. Ligne occupée, plafond atteint ou pont absent : le rappel attend un réveil suivant. Un prospect archivé ou un numéro en opposition n'est pas composé. Un appel sortant plus récent ou un appel entrant avec conversation solde le rappel, comme dans l'ADR 0011 ; l'éligibilité est relue juste avant la composition. Un verrou empêche deux réveils de composer le même rappel.
 
+Amendement du 07/10 (ADR 0021) : activation, pause, jours et horaires des rappels sont modifiables dans Réglages. Les valeurs existantes restent les défauts tant qu’aucun réglage n’a été enregistré. La première activation depuis l’interface fixe la borne au moment courant ; une pause conserve cette borne. Les campagnes gardent leurs propres horaires de 9 h à 19 h.
+
 L'activation est explicite : `RAPPELS_AUTOMATIQUES_DEPUIS` contient un instant ISO. Absent ou illisible, rien ne part automatiquement. Un rappel prévu avant cet instant reste manuel, ce qui évite de composer les anciens rappels échus lors de la première activation. Une fois activé, un rappel échu pendant une interruption du serveur reste dû et repart au prochain réveil autorisé.
 
 Un refus explicite du pont avant composition conserve le rappel. Si la réponse à une demande de composition est perdue et que le départ de l'appel reste incertain, on garde sa trace sans recommencer automatiquement : ne pas risquer deux appels pour le même rappel. Un rappel réellement composé est fait, que le prospect réponde ou non ; il n'ajoute pas de tentative à une campagne terminée.

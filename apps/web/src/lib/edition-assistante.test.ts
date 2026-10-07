@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/db';
-import { appels, assistante, versionsAssistante } from '@/db/schema';
+import { appels, assistante, journalMcp, versionsAssistante } from '@/db/schema';
 import { dossierAgentDeTest, type FauxClient, fauxClientAgent, PROMPT_DE_TEST } from '../../test/faux-agent';
 import { entrepriseDeTest, fiche } from '../../test/fixtures';
 import { avecBaseDeTest } from '../../test/outils';
@@ -12,6 +12,7 @@ import {
   appelEnCours,
   detailVersion,
   enregistrerIdentite,
+  enregistrerPromptAssistante,
   enregistrerReglagesAssistante,
   lireEditionAssistante,
   pourLaPage,
@@ -79,6 +80,35 @@ describe('nom et premier message', () => {
   });
 });
 
+describe('prompt système depuis la page', () => {
+  it('enregistre tout le prompt sans pousser et journalise les tailles sans recopier son contenu', async () => {
+    const { empreinteLocale } = await lireEditionAssistante(o);
+    const texte = PROMPT_DE_TEST.replace('une assistante de test', 'une assistante patiente');
+    const r = await enregistrerPromptAssistante(texte, empreinteLocale, o);
+
+    expect(r).toMatchObject({ ok: true, rappel: expect.stringContaining('avant la poussée') });
+    expect(await readFile(join(agent.dossier, 'prompt.md'), 'utf8')).toBe(texte);
+    expect(faux.modifications).toBe(0);
+    expect(await db.select({ origine: journalMcp.origine, outil: journalMcp.outil, arguments: journalMcp.arguments, resultat: journalMcp.resultat }).from(journalMcp)).toEqual([
+      { origine: 'interface', outil: 'modifier_prompt_assistante', arguments: { caracteresAvant: PROMPT_DE_TEST.length, caracteresApres: texte.length, empreinteConnue: empreinteLocale }, resultat: 'ok' },
+    ]);
+    expect(await enregistrerPromptAssistante(PROMPT_DE_TEST, empreinteLocale, o)).toEqual({
+      ok: false,
+      raison: 'agent/ a changé depuis ta lecture (autre session ou modification à la main) : recharge la page.',
+    });
+    expect(await readFile(join(agent.dossier, 'prompt.md'), 'utf8')).toBe(texte);
+  });
+
+  it('refuse les variables supprimées ou inconnues et la section Règles supprimée', async () => {
+    const { empreinteLocale } = await lireEditionAssistante(o);
+    for (const texte of [PROMPT_DE_TEST.replace('{{assistante_nom}}', 'Mina'), `${PROMPT_DE_TEST} {{inconnue}}`, PROMPT_DE_TEST.replace('# Règles', '# Autres')]) {
+      expect(await enregistrerPromptAssistante(texte, empreinteLocale, o)).toMatchObject({ ok: false, raison: expect.stringContaining('Prompt refusé') });
+    }
+    expect(await readFile(join(agent.dossier, 'prompt.md'), 'utf8')).toBe(PROMPT_DE_TEST);
+    expect(faux.modifications).toBe(0);
+  });
+});
+
 describe('réglages de la liste fermée', () => {
   it('écrit agent/ avec la garde d’empreinte, sans rien pousser, et rend la nouvelle empreinte', async () => {
     const { empreinteLocale, reglages } = await lireEditionAssistante(o);
@@ -127,6 +157,17 @@ describe('poussée', () => {
       { v: 'agtvrsn_test2', origine: 'interface' },
     ]);
     expect(await preparerPoussee(o)).toEqual({ ok: false, raison: 'Rien à pousser : agent/ est identique à la configuration ElevenLabs.' });
+  });
+
+  it('la page montre et pousse aussi une différence de prompt supérieure à 4 000 caractères', async () => {
+    const { empreinteLocale } = await lireEditionAssistante(o);
+    const texte = `${PROMPT_DE_TEST}\n${'Une instruction fictive, courte et claire. '.repeat(180)}`;
+    expect(await enregistrerPromptAssistante(texte, empreinteLocale, o)).toMatchObject({ ok: true });
+    const prep = await preparerPoussee(o);
+    expect(prep.ok && prep.difference.length).toBeGreaterThan(4000);
+    if (!prep.ok) throw new Error(prep.raison);
+    expect(await pousser(prep.attendu, o)).toMatchObject({ ok: true, versionApres: 'agtvrsn_test2' });
+    expect(JSON.stringify(faux.etat)).toContain('Une instruction fictive, courte et claire.');
   });
 
   it('ne pousse rien si agent/ a bougé depuis la différence montrée', async () => {

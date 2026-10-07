@@ -17,6 +17,7 @@ import { appelIdVivant, etatLigneBorne } from '@/lib/ligne-vivante';
 import { assistantePourLaPage, entrepriseParSlug, prospectParId } from '@/lib/pages';
 import { rappelEnAttente } from '@/lib/rappels';
 import { rappelSeraAutomatique } from '@/lib/rappels-automatiques';
+import { lireReglagesRappels } from '@/lib/reglages-rappels';
 import { reglagesDuPont } from '@/lib/pont';
 import { versionsDeLEntreprise } from '@/lib/versions';
 import { GestesProspect } from './gestes-prospect';
@@ -148,7 +149,7 @@ export default async function PageProspect({ params }: { params: Promise<{ slug:
   // Le rappel à faire : le dernier appel hors simulation a fini en rappel convenu (un appel plus récent le fait).
   const rappel = rappelEnAttente(historique);
   const retard = rappel?.rappelLe ? rappelEnRetard(rappel.rappelLe, rappel.quand, maintenant) : false;
-  const rappelAutomatique = rappel ? rappelSeraAutomatique({ ligne: historique.find((a) => a.id === rappel.appelId)?.ligne ?? 'simulation', rappelLe: rappel.rappelLe }) : false;
+  const rappelAutomatique = rappel ? rappelSeraAutomatique({ ligne: historique.find((a) => a.id === rappel.appelId)?.ligne ?? 'simulation', rappelLe: rappel.rappelLe }, (await lireReglagesRappels()).valeur) : false;
 
   let blocage: { texte: string; lien?: { href: string; libelle: string } } | null = null;
   if (prospect.archiveLe) {

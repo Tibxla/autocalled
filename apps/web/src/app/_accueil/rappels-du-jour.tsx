@@ -2,6 +2,7 @@ import { cleJour, heure, quandRappeler, rappelEnRetard } from '@/components/form
 import { Cellule, CelluleEnTete, EnTeteTable, LienAction, LienLigne, LienTexte, LigneTable, TableDense, TitreSection } from '@/components/ui';
 import type { RappelAFaire } from '@/lib/rappels';
 import { rappelSeraAutomatique } from '@/lib/rappels-automatiques';
+import { lireReglagesRappels, type ReglagesRappels } from '@/lib/reglages-rappels';
 
 /**
  * « À rappeler aujourd'hui » : les rappels convenus datés d'aujourd'hui et ceux en retard, du plus ancien au
@@ -17,7 +18,7 @@ function estEnRetard(r: RappelAFaire, maintenant: Date): boolean {
 }
 
 /** Aujourd'hui : l'heure, ou le moment de la journée. Un jour passé : le jour et le moment. Le retard se lit en brique. */
-function Quand({ r, maintenant }: { r: RappelAFaire; maintenant: Date }) {
+function Quand({ r, maintenant, reglages }: { r: RappelAFaire; maintenant: Date; reglages: ReglagesRappels }) {
   const retard = estEnRetard(r, maintenant);
   const duJour = cleJour(r.rappelLe) === cleJour(maintenant);
   const moment =
@@ -34,13 +35,14 @@ function Quand({ r, maintenant }: { r: RappelAFaire; maintenant: Date }) {
     <span className={retard ? 'text-encre' : 'text-encre-2'}>
       {retard ? <span className="text-alerte">En retard · </span> : null}
       {duJour ? moment : quandRappeler(r.rappelLe, r.quand, maintenant)}
-      {rappelSeraAutomatique({ ligne: r.ligne ?? 'simulation', rappelLe: new Date(r.rappelLe) }) ? <span className="text-encre-3"> · automatique</span> : null}
+      {rappelSeraAutomatique({ ligne: r.ligne ?? 'simulation', rappelLe: new Date(r.rappelLe) }, reglages) ? <span className="text-encre-3"> · automatique</span> : null}
     </span>
   );
 }
 
-export function RappelsDuJour({ rappels, sansDate, maintenant }: { rappels: RappelAFaire[]; sansDate: number; maintenant: string }) {
+export async function RappelsDuJour({ rappels, sansDate, maintenant }: { rappels: RappelAFaire[]; sansDate: number; maintenant: string }) {
   if (rappels.length === 0 && sansDate === 0) return null;
+  const { valeur: reglages } = await lireReglagesRappels();
   const quand = new Date(maintenant);
   const enRetard = rappels.filter((r) => estEnRetard(r, quand)).length;
   const lienSansDate =
@@ -86,7 +88,7 @@ export function RappelsDuJour({ rappels, sansDate, maintenant }: { rappels: Rapp
           {rappels.map((r) => (
             <LigneTable key={r.appelId}>
               <Cellule className="max-sm:order-2">
-                <Quand r={r} maintenant={quand} />
+                <Quand r={r} maintenant={quand} reglages={reglages} />
               </Cellule>
               <Cellule tronquee titre={r.societe ? `${r.prospect} · ${r.societe}` : r.prospect} className="max-sm:order-1 max-sm:basis-full">
                 <LienLigne href={`/entreprises/${r.entrepriseSlug}/prospects/${r.prospectId}`}>

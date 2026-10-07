@@ -127,6 +127,8 @@ describe('configuration ElevenLabs', () => {
 
   it('annonce exactement les réglages que le MCP sait écrire', () => {
     expect(REGLAGES_DE_LA_LISTE.map((r) => r.cle)).toEqual(REGLAGES_MODIFIABLES.map((r) => r.cle));
+    expect(CE_QUI_EST_MODIFIABLE.find((e) => e.element === 'Prompt système')).toMatchObject({ modifiable: true, ici: 'Prompt' });
+    expect(CE_QUI_EST_MODIFIABLE.find((e) => e.element === 'Langue')).toMatchObject({ modifiable: true, ici: 'Réglages' });
     expect(CE_QUI_EST_MODIFIABLE.filter((e) => !e.modifiable).every((e) => e.claudeCode.length === 0)).toBe(true);
   });
 });

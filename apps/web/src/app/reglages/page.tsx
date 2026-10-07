@@ -15,6 +15,9 @@ import { BoutonRelire, LienConnecterGoogle } from './boutons-agenda';
 import { JournalDesGestes, type LigneJournal } from './journal-des-gestes';
 import { MessageGoogle } from './message-google';
 import { RendezVousMina } from './rendez-vous-mina';
+import { SectionEntrants } from './section-entrants';
+import { FormulaireRappels } from './formulaire-rappels';
+import { lireReglagesRappels } from '@/lib/reglages-rappels';
 
 export const metadata: Metadata = { title: 'Réglages' };
 
@@ -104,7 +107,7 @@ async function nommer(journal: Omit<LigneJournal, 'noms'>[]): Promise<LigneJourn
 
 export default async function PageReglages({ searchParams }: { searchParams: Promise<{ google?: string }> }) {
   const { google } = await searchParams;
-  const [client, api, etat, rdvs, journal, sansReservation, assistante, configuration] = await Promise.all([
+  const [client, api, etat, rdvs, journal, sansReservation, assistante, configuration, rappels] = await Promise.all([
     clientGoogle(),
     connexion(),
     etatAgenda(),
@@ -113,6 +116,7 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
     rendezVousSansReservation(),
     assistantePourLaPage(),
     derniereVersionAssistante(),
+    lireReglagesRappels(),
   ]);
   const { nom } = assistante;
   const maintenant = new Date();
@@ -126,6 +130,8 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
       <div className="grid max-w-[48rem] gap-12">
         <nav aria-label="Sections de la page" className="-mt-2 flex flex-wrap gap-x-[22px] gap-y-1 text-md pointer-coarse:gap-y-0">
           <Ancre href="#assistante">Assistante</Ancre>
+          <Ancre href="#appels-entrants">Appels entrants</Ancre>
+          <Ancre href="#rappels">Rappels</Ancre>
           <Ancre href="#agenda">Agenda</Ancre>
           <Ancre href="#rendez-vous" compte={rdvs.length}>
             Rendez-vous
@@ -140,7 +146,7 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
           <p className="max-w-[62ch] text-sm text-encre-2">
             Son nom et son premier message valent dès l’appel suivant. Son prompt, sa voix et son tour de parole partent chez ElevenLabs par
             une poussée. Tout se règle sur la page Assistante ou par Claude Code, avec ton accord avant que quoi que ce soit change pour les
-            prospects ; le prompt, lui, se modifie par Claude Code.
+            prospects.
           </p>
           <dl className="border-t border-filet">
             <LigneDefinition intitule="Nom">{nom}</LigneDefinition>
@@ -183,15 +189,23 @@ export default async function PageReglages({ searchParams }: { searchParams: Pro
               )}
             </LigneDefinition>
           </dl>
-          {/* L'action de la section : la page Assistante (prompt, configuration, outils, ce qu'elle voit), où elle se règle, sauf le prompt. */}
+          {/* L’action de la section : la page où se modifient le prompt et les réglages de l’assistante. */}
           <div className="-mx-1.5 grid justify-items-start gap-1 pointer-coarse:mx-0">
             <LienAction href="/assistante" ton="fort" className="max-sm:h-auto max-sm:min-h-11 max-sm:py-2 max-sm:whitespace-normal">
               Voir et régler l’assistante
             </LienAction>
             <p className="px-1.5 text-sm text-encre-3 pointer-coarse:px-0">
-              Nom, premier message, voix et réglages, poussée vers ElevenLabs et historique ; le prompt s’y lit et se télécharge.
+              Prompt complet, nom, premier message, modèles, voix et réglages, poussée vers ElevenLabs et historique.
             </p>
           </div>
+        </section>
+
+        <SectionEntrants nom={nom} />
+
+        <section id="rappels" aria-labelledby="titre-rappels" className={SECTION}>
+          <TitreSection id="titre-rappels">Rappels convenus</TitreSection>
+          <p className="max-w-[62ch] text-sm text-encre-2">Les rappels datés sont composés à partir de l’heure convenue, au prochain réveil dans les jours et horaires autorisés. Le réveil passe toutes les cinq minutes ; une ligne occupée ou un plafond atteint fait attendre.</p>
+          <FormulaireRappels {...rappels} />
         </section>
 
         <section id="agenda" aria-labelledby="titre-agenda" className={SECTION}>

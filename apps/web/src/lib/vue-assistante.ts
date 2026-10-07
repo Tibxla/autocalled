@@ -391,6 +391,7 @@ export function configurationATelecharger(brute: string, configuration: Json): {
 
 /** Les réglages de la liste fermée, dans l'ordre de lib/configuration-assistante.ts (REGLAGES_MODIFIABLES). */
 export const REGLAGES_DE_LA_LISTE: readonly { cle: string; libelle: string }[] = [
+  { cle: 'langue', libelle: 'langue de conversation' },
   { cle: 'llm', libelle: 'modèle de langage' },
   { cle: 'temperature', libelle: 'température' },
   { cle: 'voix.voiceId', libelle: 'voix' },
@@ -398,13 +399,21 @@ export const REGLAGES_DE_LA_LISTE: readonly { cle: string; libelle: string }[] =
   { cle: 'voix.stabilite', libelle: 'stabilité' },
   { cle: 'voix.similarite', libelle: 'similarité' },
   { cle: 'voix.vitesse', libelle: 'vitesse' },
+  { cle: 'voix.expressif', libelle: 'mode expressif' },
+  { cle: 'voix.expressions', libelle: 'expressions suggérées' },
   { cle: 'tour.empressement', libelle: 'empressement' },
   { cle: 'tour.delaiSilenceS', libelle: 'silence avant de reprendre la parole' },
   { cle: 'tour.speculatif', libelle: 'tour spéculatif' },
   { cle: 'tour.motsIgnores', libelle: 'mots qui ne l’interrompent pas' },
+  { cle: 'tour.languesMotsIgnores', libelle: 'langues des mots ignorés' },
+  { cle: 'tour.fusionMotsParDefaut', libelle: 'mots ignorés par défaut' },
   { cle: 'relances.premiere', libelle: 'première relance' },
   { cle: 'relances.suivantes', libelle: 'relances suivantes' },
   { cle: 'relances.delaiS', libelle: 'délai des relances' },
+  { cle: 'relances.genererParModele', libelle: 'relances générées par le modèle' },
+  { cle: 'relances.aleatoires', libelle: 'relances aléatoires' },
+  { cle: 'relances.nombreMax', libelle: 'nombre maximal de relances' },
+  { cle: 'relances.desactiverAvantPremierMessage', libelle: 'relances après la première phrase du prospect' },
   { cle: 'dureeMaxS', libelle: 'durée maximale' },
   { cle: 'libelleTableauDeBord', libelle: 'libellé du tableau de bord' },
 ];
@@ -422,7 +431,7 @@ export interface ElementModifiable {
 
 /**
  * Ce qui se règle, et par où (décision de l'opérateur du 30/09/2026) : la page Assistante fait ce que font les outils
- * MCP de Claude Code (mcp/assistante.ts), par les mêmes fonctions, sauf le prompt, qui s'écrit par Claude Code. Ce qui
+ * MCP de Claude Code (mcp/assistante.ts), par les mêmes fonctions, prompt compris. Ce qui
  * change pour un prospect passe par une confirmation, ici comme dans Claude Code.
  */
 export const CE_QUI_EST_MODIFIABLE: readonly ElementModifiable[] = [
@@ -436,9 +445,9 @@ export const CE_QUI_EST_MODIFIABLE: readonly ElementModifiable[] = [
   {
     element: 'Prompt système',
     modifiable: true,
-    ici: null,
+    ici: 'Prompt',
     claudeCode: ['modifier_prompt_assistante', 'pousser_assistante'],
-    effet: 'Le prompt se modifie par Claude Code (modifier_prompt_assistante), puis se pousse ici ou par Claude Code. Il doit garder toutes les variables et la section « # Règles » ; rien ne change pour les appels avant la poussée.',
+    effet: 'Le prompt se modifie ici ou par Claude Code, puis se pousse vers ElevenLabs. Il doit garder toutes les variables et la section « # Règles » ; rien ne change pour les appels avant la poussée.',
   },
   {
     element: 'Réglages de la liste fermée',
@@ -470,10 +479,10 @@ export const CE_QUI_EST_MODIFIABLE: readonly ElementModifiable[] = [
   },
   {
     element: 'Langue',
-    modifiable: false,
-    ici: null,
-    claudeCode: [],
-    effet: 'Par le code, relu, puis pnpm agent push (ADR 0010) : le prompt, les textes de l’application et l’analyse des appels sont en français.',
+    modifiable: true,
+    ici: 'Réglages',
+    claudeCode: ['modifier_reglages_assistante', 'pousser_assistante'],
+    effet: 'Langue de conversation réglable ici ; les instructions et les scripts restent dans la langue de leur texte. Rien ne change avant la poussée.',
   },
   {
     element: 'Définitions des outils',

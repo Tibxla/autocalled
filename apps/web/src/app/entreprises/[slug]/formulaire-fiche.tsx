@@ -6,18 +6,12 @@ import { NomDeLAssistante, useNomAssistante } from '@/components/assistante';
 import { BarreActions } from '@/components/barre-actions';
 import { useRaccourci } from '@/components/clavier';
 import { ChampConnu, MessageConflit, useRechargement } from '@/components/conflit';
-import { Action, Champ, Compteur, Message, Saisie, Selection, TitreSection, ZoneTexte } from '@/components/ui';
+import { Action, Champ, Compteur, Message, Saisie, TitreSection, ZoneTexte } from '@/components/ui';
 import { useFormulaire } from '@/components/use-formulaire';
 import type { EtatFormulaire } from '@/lib/formulaire';
 import { enregistrerFiche } from './actions';
 
 const NOMS_JOURS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
-
-/** Demi-heures de 7 h à 22 h : le même pas que les créneaux proposés au téléphone. */
-const HEURES = Array.from({ length: 31 }, (_, i) => {
-  const minutes = 7 * 60 + i * 30;
-  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
-});
 
 /** Limites de lib/schemas.ts (ficheSchema), affichées par les compteurs. */
 const LIMITES = { offre: 400, cible: 400, arguments: 1200, prixConsigne: 400, interdits: 600, complements: 1500 } as const;
@@ -64,25 +58,20 @@ interface Plage {
 }
 
 function ChoixHeure({ id, name, valeur, libelle, actif, invalide, onChange }: { id?: string; name: string; valeur: string; libelle: string; actif: boolean; invalide?: boolean; onChange: (v: string) => void }) {
-  // Une heure enregistrée hors du pas de 30 minutes reste proposée telle quelle.
-  const options = HEURES.includes(valeur) ? HEURES : [...HEURES, valeur].sort();
   return (
-    <Selection
+    <Saisie
       {...(id ? { id } : {})}
+      type="time"
+      step={60}
+      required={actif}
       name={name}
       value={valeur}
       onChange={(e) => onChange(e.target.value)}
       aria-label={libelle}
       aria-invalid={invalide || undefined}
       disabled={!actif}
-      className="w-[5.5rem] font-mono"
-    >
-      {options.map((h) => (
-        <option key={h} value={h}>
-          {h}
-        </option>
-      ))}
-    </Selection>
+      className="w-[7.5rem] min-w-0 font-mono max-sm:w-[6.5rem]"
+    />
   );
 }
 
@@ -306,14 +295,8 @@ function Formulaire({ fiche, recharger, rechargement }: { fiche: Fiche; recharge
           />
         </Champ>
         <div className="grid gap-6 sm:grid-cols-3">
-          <Champ libelle="Durée" htmlFor="dureeRendezVousMinutes" erreur={e.dureeRendezVousMinutes}>
-            <Selection id="dureeRendezVousMinutes" name="dureeRendezVousMinutes" defaultValue={fiche.dureeRendezVousMinutes}>
-              {[...new Set([15, 20, 30, 45, 60, fiche.dureeRendezVousMinutes])].sort((a, b) => a - b).map((m) => (
-                <option key={m} value={m}>
-                  {m} minutes
-                </option>
-              ))}
-            </Selection>
+          <Champ libelle="Durée" htmlFor="dureeRendezVousMinutes" erreur={e.dureeRendezVousMinutes} aide="minutes · de 15 à 120">
+            <Saisie id="dureeRendezVousMinutes" name="dureeRendezVousMinutes" type="number" min={15} max={120} step={1} required defaultValue={fiche.dureeRendezVousMinutes} className="font-mono" />
           </Champ>
           <Champ libelle="Pas avant" htmlFor="delaiMinimumHeures" erreur={e.delaiMinimumHeures} aide="heures après l’appel">
             <Saisie id="delaiMinimumHeures" name="delaiMinimumHeures" type="number" min={0} max={168} defaultValue={fiche.delaiMinimumHeures} className="font-mono" />

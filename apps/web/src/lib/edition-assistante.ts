@@ -9,6 +9,7 @@ import {
   type LigneHistoriqueAssistante,
   lireConfigurationAssistante,
   modifierReglagesAssistante,
+  enregistrerPromptCompletAssistante,
   type PatchReglages,
   pousserAssistante,
   preparerPousseeAssistante,
@@ -22,11 +23,11 @@ import { journalMcpRecent } from './lecture';
 import { POUSSEE, RAPATRIEMENT, RESTAURATION } from './questions-assistante';
 
 /**
- * Ce que la page Assistante modifie (décision de l'opérateur du 30/09/2026 : tout, sauf le prompt), par les mêmes
+ * Ce que la page Assistante modifie, prompt compris, par les mêmes
  * fonctions que les outils du serveur MCP (mcp/assistante.ts), avec les mêmes validations, le même verrou et la même
  * garde de concurrence (`connu`, `empreinteConnue`, `attendu`). Deux différences voulues : l'origine consignée est
  * « interface », et une poussée est refusée pendant un appel. La confirmation se fait dans la page, sur la question et
- * la différence rédigées ici. Le prompt ne s'écrit que par Claude Code (modifier_prompt_assistante).
+ * la différence rédigées ici.
  *
  * Chaque geste d'écriture laisse sa trace au journal des gestes (ADR 0016), d'origine « interface », sous le nom de
  * l'outil du MCP qui fait la même chose et au même format : pour un geste confirmé dans la page, une ligne
@@ -75,7 +76,7 @@ async function sansException<T extends object>(travail: () => Promise<Resultat<T
 /* ------------------------------------------------------------------ journal des gestes */
 
 /** Les gestes d'écriture de la page, nommés comme l'outil du MCP qui fait la même chose. */
-export type GesteAssistante = 'modifier_assistante' | 'modifier_reglages_assistante' | 'pousser_assistante' | 'rapatrier_assistante' | 'restaurer_assistante';
+export type GesteAssistante = 'modifier_assistante' | 'modifier_prompt_assistante' | 'modifier_reglages_assistante' | 'pousser_assistante' | 'rapatrier_assistante' | 'restaurer_assistante';
 
 /** Les outils qui changent l'assistante, par le MCP ou par la page : ce que la page montre de ses derniers gestes. */
 export const GESTES_SUR_L_ASSISTANTE = [
@@ -234,6 +235,28 @@ export async function enregistrerIdentite(
   });
 }
 
+/* ------------------------------------------------------------------ prompt système */
+
+/** Le contenu reste dans agent/ ; le journal garde seulement sa taille et le résultat du geste. */
+export async function enregistrerPromptAssistante(
+  texte: string,
+  empreinteConnue: string,
+  o: OptionsAgent = {},
+): Promise<Resultat<{ empreinteLocale: string; lignesModifiees: number; rappel: string; avertissement?: string }>> {
+  return journaliser('modifier_prompt_assistante', { caracteresApres: texte.length, empreinteConnue }, async (carnet) => {
+    const avant = await lireConfigurationAssistante({ ...o, distante: false });
+    carnet.arguments = { caracteresAvant: avant.prompt.length, caracteresApres: texte.length, empreinteConnue };
+    const r = await enregistrerPromptCompletAssistante(texte, empreinteConnue, o);
+    if (!r.ok) return refus(r.raison);
+    carnet.resume = `${r.lignesModifiees} ligne${r.lignesModifiees > 1 ? 's' : ''} modifiée${r.lignesModifiees > 1 ? 's' : ''}`;
+    return {
+      ...r,
+      rappel: pourLaPage(r.rappel),
+      ...(r.avertissement ? { avertissement: pourLaPage(r.avertissement) } : {}),
+    };
+  });
+}
+
 /* ------------------------------------------------------------------ réglages de la liste fermée */
 
 const valeurDe = (objet: unknown, cle: string): unknown =>
@@ -295,7 +318,6 @@ async function lirePoussee(o: OptionsAgent): Promise<Resultat<Preparation>> {
   if (!prep.ok) return refus(prep.raison);
   if (prep.rien) return refus('Rien à pousser : agent/ est identique à la configuration ElevenLabs.');
   if (prep.horsListe.length) return refus(`Ces champs se poussent par \`pnpm agent push\`, après relecture du code : ${prep.horsListe.join(', ')}.`);
-  if (prep.tropLong) return refus('La différence dépasse 4 000 caractères : relis `git diff agent/` et pousse par `pnpm agent push`.');
   return {
     ok: true,
     question: `Pousser vers ElevenLabs la configuration de l’assistante. Elle servira dès le prochain appel${prep.campagneEnCours ? ', y compris dans la campagne en cours' : ''}.`,

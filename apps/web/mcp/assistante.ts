@@ -126,7 +126,7 @@ export function outilsDAssistante(declarer: Declarer, serveur: McpServer, agent:
     'modifier_reglages_assistante',
     {
       description:
-        'Modifie les réglages ElevenLabs de l’assistante dans agent/mina.config.json, parmi une liste fermée : llm, temperature (0 à 1), voix (voiceId, modele, stabilite, similarite, vitesse 0,7 à 1,2), tour (empressement patient/normal/eager, delaiSilenceS 1 à 30, speculatif, motsIgnores), relances de silence (premiere, suivantes, delaiS), dureeMaxS (60 à 330), libelleTableauDeBord. Les valeurs absentes restent. Rien ne change pour les appels avant pousser_assistante.',
+        'Modifie les réglages ElevenLabs de l’assistante dans agent/mina.config.json : langue, llm, temperature (0 à 1), voix (voiceId, modele, stabilite, similarite, vitesse 0,7 à 1,2, expressif, expressions avec tag et description), tour (empressement patient/normal/eager, delaiSilenceS 1 à 30, speculatif, motsIgnores, languesMotsIgnores, fusionMotsParDefaut), relances de silence (premiere, suivantes, delaiS, genererParModele, aleatoires, nombreMax 0 à 5, desactiverAvantPremierMessage), dureeMaxS (60 à 330), libelleTableauDeBord. Les valeurs absentes restent. Rien ne change pour les appels avant pousser_assistante.',
       entree: z.strictObject({
         reglages: patchReglagesSchema,
         empreinteConnue: z.string().min(1).describe('synchro.empreinteLocale rendue par lire_assistante.'),

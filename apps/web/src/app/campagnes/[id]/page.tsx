@@ -29,6 +29,7 @@ import { SectionFile, type ProspectAjoutable } from './ajout-prospects';
 import { File, type EntreeFile } from './file';
 import type { ProspectRecapitulatif } from './recapitulatif';
 import { Regie, type EtatPont, type RaisonSuspension } from './regie';
+import { SuppressionCampagne } from './suppression-campagne';
 
 export const metadata: Metadata = { title: 'Campagne' };
 
@@ -386,6 +387,8 @@ export default async function PageCampagne({
           recapitulatif={recapitulatif}
           seTermine={seTermine}
         />
+
+        {campagne.statut === 'prete' && listeAppels.length === 0 ? <SuppressionCampagne campagneId={campagne.id} entrepriseSlug={entreprise.slug} /> : null}
 
         {campagne.statut === 'terminee' ? (
           <BilanCampagne

@@ -10,6 +10,7 @@ import { entrepriseDeTest } from '../../test/fixtures';
 import { avecBaseDeTest } from '../../test/outils';
 import {
   historiqueAssistante,
+  enregistrerPromptCompletAssistante,
   lireConfigurationAssistante,
   modifierPromptAssistante,
   modifierReglagesAssistante,
@@ -103,6 +104,7 @@ describe('lireConfigurationAssistante', () => {
 
     expect(vue.prompt).toBe(PROMPT);
     expect(vue.reglages).toEqual({
+      langue: 'fr',
       llm: 'modele-test',
       temperature: 0.7,
       voix: { voiceId: 'voixfictive0001', vitesse: 1 },
@@ -110,7 +112,7 @@ describe('lireConfigurationAssistante', () => {
       relances: { premiere: 'Hmm…', delaiS: 1.2 },
       libelleTableauDeBord: 'Assistante de test',
     });
-    expect(vue.lectureSeule).toMatchObject({ langue: 'fr', outils: [{ nom: 'proposer_creneaux', type: 'client' }], authentification: true, firstMessage: '' });
+    expect(vue.lectureSeule).toMatchObject({ outils: [{ nom: 'proposer_creneaux', type: 'client' }], authentification: true, firstMessage: '' });
     expect(vue.variablesDisponibles).toEqual(VARIABLES_DE_L_APPEL);
     expect(vue.synchro).toMatchObject({
       distante: { versionId: 'agtvrsn_test1' },
@@ -172,6 +174,21 @@ describe('modifierPromptAssistante', () => {
 });
 
 describe('modifierReglagesAssistante', () => {
+  it('enregistre les expressions et les réglages avancés sans changer les outils ni pousser', async () => {
+    const r = await modifierReglagesAssistante({
+      langue: 'fr',
+      voix: { expressif: true, expressions: [{ tag: 'warmly', description: 'Un accueil chaleureux.' }] },
+      tour: { languesMotsIgnores: ['fr'], fusionMotsParDefaut: false },
+      relances: { genererParModele: false, aleatoires: false, nombreMax: 1, desactiverAvantPremierMessage: true },
+    }, await empreinte(), o);
+    expect(r).toMatchObject({ ok: true });
+    const config = JSON.parse(await readFile(join(dossier, 'mina.config.json'), 'utf8'));
+    expect(config.conversation_config.tts).toMatchObject({ expressive_mode: true, suggested_audio_tags: [{ tag: 'warmly', description: 'Un accueil chaleureux.' }] });
+    expect(config.conversation_config.turn).toMatchObject({ interruption_ignore_term_languages: ['fr'], merge_with_default_ignore_terms: false,
+      soft_timeout_config: { use_llm_generated_message: false, randomize_fillers: false, max_soft_timeouts_per_generation: 1, disable_until_first_user_message: true } });
+    expect(config.conversation_config.agent.prompt.tools).toEqual([{ type: 'client', name: 'proposer_creneaux' }]);
+    expect(client.modifications).toBe(0);
+  });
   it('écrit les réglages de la liste blanche aux bons chemins', async () => {
     const r = await modifierReglagesAssistante({ temperature: 0.5, voix: { vitesse: 1.1 }, relances: { suivantes: ['Alors…'] } }, await empreinte(), o);
 
@@ -184,9 +201,35 @@ describe('modifierReglagesAssistante', () => {
 
   it('refuse une valeur hors bornes, un champ hors liste ou un réglage vide', async () => {
     const connue = await empreinte();
-    for (const patch of [{ temperature: 2 }, { dureeMaxS: 400 }, { voix: { vitesse: 2 } }, { tour: { empressement: 'presse' } }, { first_message: 'Bonjour' }, {}]) {
+    for (const patch of [{ temperature: 2 }, { dureeMaxS: 400 }, { voix: { vitesse: 2 } }, { tour: { empressement: 'presse' } },
+      { langue: 'français' }, { voix: { expressions: [{ tag: '[warmly]', description: 'Accueil.' }] } },
+      { relances: { nombreMax: 1.5 } }, { tour: { fusionMotsParDefaut: 'oui' } }, { first_message: 'Bonjour' }, {}]) {
       expect(await modifierReglagesAssistante(patch as never, connue, o)).toMatchObject({ ok: false });
     }
+  });
+});
+
+describe('enregistrerPromptCompletAssistante', () => {
+  it('enregistre un prompt entier de plus de 4 000 caractères puis le pousse depuis l’interface', async () => {
+    const texte = PROMPT + '\n' + 'Une consigne de conversation fictive à suivre.\n'.repeat(110);
+    const r = await enregistrerPromptCompletAssistante(texte, await empreinte(), o);
+    expect(r).toMatchObject({ ok: true });
+    expect(await promptLocal()).toBe(texte);
+    expect(client.modifications).toBe(0);
+    const preparation = await preparerPousseeAssistante(o);
+    if (!preparation.ok || preparation.rien) throw new Error('préparation attendue');
+    expect(preparation.tropLong).toBe(true);
+    expect(await pousserAssistante({ ...o, attendu: preparation.attendu, origine: 'interface' })).toMatchObject({ ok: true });
+    expect(client.etat.conversation_config).toMatchObject({ agent: { prompt: { prompt: texte } } });
+  });
+
+  it('préserve les fichiers si la lecture est périmée ou si le prompt perd une variable', async () => {
+    const connue = await empreinte();
+    expect(await enregistrerPromptCompletAssistante(PROMPT.replace('{{prospect_nom}}', ''), connue, o)).toMatchObject({ ok: false });
+    expect(await promptLocal()).toBe(PROMPT);
+    await modifierReglagesAssistante({ temperature: 0.5 }, connue, o);
+    expect(await enregistrerPromptCompletAssistante(PROMPT + '\nNouvelle consigne.', connue, o)).toMatchObject({ ok: false });
+    expect(await promptLocal()).toBe(PROMPT);
   });
 });
 

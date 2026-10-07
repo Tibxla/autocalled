@@ -9,9 +9,17 @@ import { z } from 'zod';
 
 const unite = (message: string) => z.number({ error: 'Un nombre est attendu.' }).min(0, message).max(1, message);
 const courte = (max: number) => z.string({ error: 'Un texte est attendu.' }).trim().min(1, 'Un texte est attendu.').max(max, `${max} caractères au plus.`);
+const langue = z.string().regex(/^[a-z]{2}(?:-[A-Z]{2})?$/, 'Un code de langue, par exemple fr ou en.');
+const expressions = z.array(z.strictObject({ tag: courte(50).regex(/^[a-zA-Z][a-zA-Z _-]*$/, 'Une balise d’expression en anglais, sans crochets.'), description: courte(500) })).max(32, 'Trente-deux expressions au plus.');
+const caseSchema = z.boolean({ error: 'Vrai ou faux.' });
 
 /** Les bornes de chaque réglage que le MCP sait écrire. */
 export const BORNES = {
+  langue,
+  expressions,
+  case: caseSchema,
+  languesMotsIgnores: z.array(langue).max(20, 'Vingt langues au plus.'),
+  nombreRelances: z.number().int('Un entier est attendu.').min(0, 'Entre 0 et 5.').max(5, 'Entre 0 et 5.'),
   llm: z.string().regex(/^[a-z0-9._-]{1,60}$/, 'Un identifiant de modèle : 1 à 60 caractères a-z, 0-9, . _ -.'),
   temperature: unite('Entre 0 et 1.'),
   voiceId: z.string().regex(/^[A-Za-z0-9]{10,40}$/, 'Un identifiant de voix ElevenLabs : 10 à 40 lettres ou chiffres.'),
@@ -33,6 +41,7 @@ export const BORNES = {
 
 /** Les réglages ElevenLabs que le MCP sait écrire. Tout le reste se change par le code et `pnpm agent push`. */
 export const REGLAGES_MODIFIABLES: readonly { cle: string; chemin: string; schema: z.ZodType }[] = [
+  { cle: 'langue', chemin: 'conversation_config.agent.language', schema: BORNES.langue },
   { cle: 'llm', chemin: 'conversation_config.agent.prompt.llm', schema: BORNES.llm },
   { cle: 'temperature', chemin: 'conversation_config.agent.prompt.temperature', schema: BORNES.temperature },
   { cle: 'voix.voiceId', chemin: 'conversation_config.tts.voice_id', schema: BORNES.voiceId },
@@ -40,10 +49,14 @@ export const REGLAGES_MODIFIABLES: readonly { cle: string; chemin: string; schem
   { cle: 'voix.stabilite', chemin: 'conversation_config.tts.stability', schema: BORNES.stabilite },
   { cle: 'voix.similarite', chemin: 'conversation_config.tts.similarity_boost', schema: BORNES.similarite },
   { cle: 'voix.vitesse', chemin: 'conversation_config.tts.speed', schema: BORNES.vitesse },
+  { cle: 'voix.expressif', chemin: 'conversation_config.tts.expressive_mode', schema: BORNES.case },
+  { cle: 'voix.expressions', chemin: 'conversation_config.tts.suggested_audio_tags', schema: BORNES.expressions },
   { cle: 'tour.empressement', chemin: 'conversation_config.turn.turn_eagerness', schema: BORNES.empressement },
   { cle: 'tour.delaiSilenceS', chemin: 'conversation_config.turn.turn_timeout', schema: BORNES.delaiSilenceS },
   { cle: 'tour.speculatif', chemin: 'conversation_config.turn.speculative_turn', schema: BORNES.speculatif },
   { cle: 'tour.motsIgnores', chemin: 'conversation_config.turn.interruption_ignore_terms', schema: BORNES.motsIgnores },
+  { cle: 'tour.languesMotsIgnores', chemin: 'conversation_config.turn.interruption_ignore_term_languages', schema: BORNES.languesMotsIgnores },
+  { cle: 'tour.fusionMotsParDefaut', chemin: 'conversation_config.turn.merge_with_default_ignore_terms', schema: BORNES.case },
   { cle: 'relances.premiere', chemin: 'conversation_config.turn.soft_timeout_config.message', schema: BORNES.premiereRelance },
   {
     cle: 'relances.suivantes',
@@ -51,12 +64,17 @@ export const REGLAGES_MODIFIABLES: readonly { cle: string; chemin: string; schem
     schema: BORNES.relancesSuivantes,
   },
   { cle: 'relances.delaiS', chemin: 'conversation_config.turn.soft_timeout_config.timeout_seconds', schema: BORNES.delaiRelancesS },
+  { cle: 'relances.genererParModele', chemin: 'conversation_config.turn.soft_timeout_config.use_llm_generated_message', schema: BORNES.case },
+  { cle: 'relances.aleatoires', chemin: 'conversation_config.turn.soft_timeout_config.randomize_fillers', schema: BORNES.case },
+  { cle: 'relances.nombreMax', chemin: 'conversation_config.turn.soft_timeout_config.max_soft_timeouts_per_generation', schema: BORNES.nombreRelances },
+  { cle: 'relances.desactiverAvantPremierMessage', chemin: 'conversation_config.turn.soft_timeout_config.disable_until_first_user_message', schema: BORNES.case },
   { cle: 'dureeMaxS', chemin: 'conversation_config.conversation.max_duration_seconds', schema: BORNES.dureeMaxS },
   { cle: 'libelleTableauDeBord', chemin: 'name', schema: BORNES.libelle },
 ];
 
 /** Les réglages modifiables, regroupés comme ils se lisent : `{ voix: { vitesse: 1 } }`. Chaque clé est facultative. */
 export const patchReglagesSchema = z.strictObject({
+  langue: BORNES.langue.optional(),
   llm: BORNES.llm.optional(),
   temperature: BORNES.temperature.optional(),
   voix: z
@@ -66,6 +84,8 @@ export const patchReglagesSchema = z.strictObject({
       stabilite: BORNES.stabilite.optional(),
       similarite: BORNES.similarite.optional(),
       vitesse: BORNES.vitesse.optional(),
+      expressif: BORNES.case.optional(),
+      expressions: BORNES.expressions.optional(),
     })
     .optional(),
   tour: z
@@ -74,6 +94,8 @@ export const patchReglagesSchema = z.strictObject({
       delaiSilenceS: BORNES.delaiSilenceS.optional(),
       speculatif: BORNES.speculatif.optional(),
       motsIgnores: BORNES.motsIgnores.optional(),
+      languesMotsIgnores: BORNES.languesMotsIgnores.optional(),
+      fusionMotsParDefaut: BORNES.case.optional(),
     })
     .optional(),
   relances: z
@@ -81,6 +103,10 @@ export const patchReglagesSchema = z.strictObject({
       premiere: BORNES.premiereRelance.optional(),
       suivantes: BORNES.relancesSuivantes.optional(),
       delaiS: BORNES.delaiRelancesS.optional(),
+      genererParModele: BORNES.case.optional(),
+      aleatoires: BORNES.case.optional(),
+      nombreMax: BORNES.nombreRelances.optional(),
+      desactiverAvantPremierMessage: BORNES.case.optional(),
     })
     .optional(),
   dureeMaxS: BORNES.dureeMaxS.optional(),

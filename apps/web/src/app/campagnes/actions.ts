@@ -21,6 +21,7 @@ import {
   retirerProspect,
   sauterProspect,
   suspendreSiEnCours,
+  supprimerCampagnePrete,
   terminerCampagne,
 } from '@/lib/campagnes';
 import type { EtatFormulaire, ResultatAction } from '@/lib/formulaire';
@@ -29,6 +30,17 @@ import { campagneSchema } from '@/lib/schemas';
 import type { DemarrageAppel } from '../appels/actions';
 
 const uuid = z.uuid();
+
+export async function supprimerCampagne(campagneId: string, confirmee: boolean): Promise<ResultatAction> {
+  await exigerOperateur();
+  if (confirmee !== true) return { ok: false, raison: 'Confirme la suppression de la campagne.' };
+  const resultat = await supprimerCampagnePrete(campagneId);
+  if (resultat.ok) {
+    revalidatePath(`/campagnes/${campagneId}`);
+    revalidatePath('/entreprises', 'layout');
+  }
+  return resultat;
+}
 
 export async function nouvelleCampagne(entrepriseId: string, _: EtatFormulaire, donnees: FormData): Promise<EtatFormulaire> {
   await exigerOperateur();

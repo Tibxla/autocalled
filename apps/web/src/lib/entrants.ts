@@ -6,7 +6,8 @@ import { appels, entreprises, prospects, versionsScript } from '@/db/schema';
 import { rafraichirSiAncien } from './agenda';
 import { variablesPour } from './apercu';
 import { appelabiliteDe } from './appelables';
-import { ACCUEIL_ENTRANT, composerPremierMessage } from './assistante';
+import { composerPremierMessage } from './assistante';
+import { lireReglagesEntrants } from './reglages-entrants';
 
 /**
  * Appels entrants (ADR 0018) : un prospect rappelle le téléphone passerelle. Le pont demande à l'application s'il
@@ -61,6 +62,8 @@ export function situationEntrant(params: {
  * illisible ou inconnu, ou ligne déjà occupée en base : on laisse sonner, et rien n'est écrit.
  */
 export async function deciderEntrant(brut: unknown, maintenant = new Date()): Promise<DecisionEntrant> {
+  const { valeur: reglages, empreinte } = await lireReglagesEntrants();
+  if (!reglages.actif) return NE_PAS_DECROCHER;
   const numero = typeof brut === 'string' ? normaliserNumero(brut) : null;
   if (!numero) return NE_PAS_DECROCHER;
   if (!(await appelabiliteDe([numero])).get(numero)?.appelable) return NE_PAS_DECROCHER;
@@ -111,6 +114,8 @@ export async function deciderEntrant(brut: unknown, maintenant = new Date()): Pr
   const { variables, motsCles } = await variablesPour(entreprise, prospect, version.etapes, maintenant, { situation });
   // Comme avant un appel sortant : une copie d'agenda trop vieille est relue en tâche de fond, sans retarder le décroché.
   await rafraichirSiAncien();
+  // L’opérateur a pu suspendre le décroché ou changer l’accueil pendant la préparation.
+  if ((await lireReglagesEntrants()).empreinte !== empreinte) return NE_PAS_DECROCHER;
   const [appel] = await db
     .insert(appels)
     .values({
@@ -125,5 +130,5 @@ export async function deciderEntrant(brut: unknown, maintenant = new Date()): Pr
     })
     .returning({ id: appels.id });
   if (!appel) return NE_PAS_DECROCHER;
-  return { decrocher: true, appelId: appel.id, variables, motsCles, premierMessage: composerPremierMessage(ACCUEIL_ENTRANT, variables) };
+  return { decrocher: true, appelId: appel.id, variables, motsCles, premierMessage: composerPremierMessage(reglages.accueil, variables) };
 }

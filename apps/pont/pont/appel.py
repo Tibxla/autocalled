@@ -322,7 +322,10 @@ class Appel:
             return
         self.journal("appel entrant du", masquer(self._numero), ": on décroche")
         try:
-            self._telephone.repondre(self._chemin_entrant, self, self._decroche_echoue, self._generation_entrant)
+            self._telephone.repondre(
+                self._chemin_entrant, self, self._decroche_echoue, self._generation_entrant,
+                annule=lambda: self._annule,
+            )
         except Exception as e:  # l'appelant a raccroché pendant la décision, ou le téléphone n'est plus là
             self.journal("décroché impossible :", e)
             self._telephone.laisser_sonner(self._chemin_entrant, self._generation_entrant)  # le canal gardé revient au téléphone

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/db';
 import { assistante, versionsAssistante } from '@/db/schema';
-import { dossierAgentDeTest, type FauxClient, fauxClientAgent } from '../../../test/faux-agent';
+import { dossierAgentDeTest, type FauxClient, fauxClientAgent, PROMPT_DE_TEST } from '../../../test/faux-agent';
 import { avecBaseDeTest } from '../../../test/outils';
 
 /**
@@ -51,6 +51,7 @@ describe('garde', () => {
     etat.operateur = false;
 
     await expect(actions.enregistrerIdentiteAction({ nom: 'Léa', connu: null })).rejects.toThrow('réservé à l’opérateur');
+    await expect(actions.enregistrerPromptAction(PROMPT_DE_TEST, 'x')).rejects.toThrow('réservé à l’opérateur');
     await expect(actions.preparerPousseeAction()).rejects.toThrow('réservé à l’opérateur');
     await expect(actions.pousserAction({ empreinteLocale: 'x', versionIdDistante: null })).rejects.toThrow('réservé à l’opérateur');
     await expect(actions.restaurerAction('agtvrsn_test1')).rejects.toThrow('réservé à l’opérateur');
@@ -63,6 +64,8 @@ describe('garde', () => {
     expect(await actions.enregistrerIdentiteAction({ nom: 'Léa', connu: 'hier' })).toMatchObject({ ok: false });
     expect(await actions.enregistrerReglagesAction({ first_message: 'Bonjour' }, 'x')).toMatchObject({ ok: false, raison: expect.stringContaining('Réglage refusé') });
     expect(await actions.enregistrerReglagesAction({ voix: { vitesse: 2 } }, 'x')).toEqual({ ok: false, raison: 'Réglage refusé (voix.vitesse) : Entre 0,7 et 1,2.' });
+    expect(await actions.enregistrerPromptAction(42, 'x')).toMatchObject({ ok: false });
+    expect(await actions.enregistrerPromptAction('x'.repeat(20001), 'x')).toMatchObject({ ok: false });
     expect(await actions.pousserAction({ empreinteLocale: 'x' })).toMatchObject({ ok: false });
     expect(await actions.restaurerAction('x'.repeat(101))).toMatchObject({ ok: false });
     expect(faux.modifications).toBe(0);
@@ -98,6 +101,17 @@ describe('parcours de la page', () => {
     expect(faux.etat.name).toBe('Léa (test)');
     expect(etat.revalide.every((c) => c === '/assistante')).toBe(true);
     expect(etat.revalide.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('enregistre le prompt par l’action authentifiée, puis montre la différence avant de pousser', async () => {
+    const { lireFichiersAssistante } = await import('@/lib/fichiers-assistante');
+    const { empreinteLocale } = (await lireFichiersAssistante(agent.dossier)).synchro;
+    const texte = PROMPT_DE_TEST.replace('une assistante de test', 'une assistante patiente');
+    expect(await actions.enregistrerPromptAction(texte, empreinteLocale)).toMatchObject({ ok: true });
+    expect((await lireFichiersAssistante(agent.dossier)).prompt).toBe(texte);
+    expect(await actions.preparerPousseeAction()).toMatchObject({ ok: true, difference: expect.stringContaining('une assistante patiente') });
+    expect(faux.modifications).toBe(0);
+    expect(etat.revalide).toContain('/assistante');
   });
 
   it('rapatrie une modification du tableau de bord', async () => {

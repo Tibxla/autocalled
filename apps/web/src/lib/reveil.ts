@@ -5,8 +5,8 @@ import { db } from '@/db';
 import { appels, campagnes } from '@/db/schema';
 import { rafraichirSiAncien } from './agenda';
 import { classerDansSaCampagne, relancerSiDu } from './campagnes';
-import { dansLesHeuresDAppel } from './heures-appel';
 import { rappelerSiDu, rappelsAutomatiquesDus } from './rappels-automatiques';
+import { dansLesHorairesRappels, lireReglagesRappels } from './reglages-rappels';
 
 export { dansLesHeuresDAppel, HEURES_D_APPEL } from './heures-appel';
 
@@ -90,7 +90,8 @@ export async function planReveil(maintenant: Date, lecteur: Lecteur = db): Promi
     aClasser: enAnalyse.filter((e) => fini.has(e.appelId)),
     aRelancer: ouvertes.filter((c) => c.ligne === 'bluetooth' && prochaineAction(c, maintenant).type === 'appeler').map((c) => c.id),
     orphelins: orphelins.map((a) => a.id),
-    aRappeler: (await rappelsAutomatiquesDus(maintenant, lecteur)).map((a) => a.appelId),
+    aRappeler: dansLesHorairesRappels(maintenant, (await lireReglagesRappels(lecteur)).valeur)
+      ? (await rappelsAutomatiquesDus(maintenant, lecteur)).map((a) => a.appelId) : [],
   };
 }
 
@@ -100,7 +101,7 @@ export async function planReveil(maintenant: Date, lecteur: Lecteur = db): Promi
  */
 export async function reveiller(
   maintenant = new Date(),
-  { relancer = true }: { relancer?: boolean } = {},
+  { relancer = true, relancerCampagnes = true }: { relancer?: boolean; relancerCampagnes?: boolean } = {},
 ): Promise<{ classes: number; relancees: string[]; orphelins: number; rappeles: string[] }> {
   const { aClasser, orphelins } = await planReveil(maintenant);
   // Sans fin : la ligne refuserait l'archivage et l'effacement de ce prospect pour toujours. Seulement si elle n'a pas bougé.
@@ -115,12 +116,13 @@ export async function reveiller(
   // Relu après les classements : un appel ancien enfin classé peut avoir une nouvelle tentative déjà due.
   const { aRelancer, aRappeler } = await planReveil(maintenant);
   // Souvent le premier appel de la journée : les créneaux proposés viennent d'une copie de l'agenda relue juste avant.
-  const rappels = dansLesHeuresDAppel(maintenant) ? aRappeler : [];
-  if (aRelancer.length || rappels.length) await rafraichirSiAncien({ attendre: true });
+  const rappels = aRappeler;
+  const campagnesDansLesHeures = relancerCampagnes ? aRelancer : [];
+  if (campagnesDansLesHeures.length || rappels.length) await rafraichirSiAncien({ attendre: true });
   const rappeles: string[] = [];
   for (const id of rappels) if (await rappelerSiDu(id, maintenant)) rappeles.push(id);
   const relancees: string[] = [];
-  for (const id of aRelancer) if (await relancerSiDu(id, maintenant)) relancees.push(id);
+  for (const id of campagnesDansLesHeures) if (await relancerSiDu(id, maintenant)) relancees.push(id);
   return { classes: aClasser.length, relancees, orphelins: orphelins.length, rappeles };
 }
 

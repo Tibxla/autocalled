@@ -145,6 +145,12 @@
     background: var(--fond);
   }
 
+  select option,
+  select optgroup {
+    background-color: var(--surface);
+    color: var(--encre);
+  }
+
   ::selection {
     background: var(--souligne);
     color: var(--encre);

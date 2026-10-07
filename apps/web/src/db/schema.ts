@@ -310,6 +310,13 @@ export const assistante = pgTable(
  */
 export type OrigineVersionAssistante = 'mcp' | 'interface' | 'cli' | 'distante';
 
+/** Réglages locaux des appels, relus au décroché et à chaque réveil. */
+export const reglagesAutomatisation = pgTable('reglages_automatisation', {
+  cle: text().primaryKey(),
+  valeur: jsonb().$type<Record<string, unknown>>().notNull(),
+  modifieLe: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+
 /**
  * Instantanés de la configuration ElevenLabs de l'assistante (champs gérés par `agent/`), consignés à chaque poussée
  * ou rapatriement par le MCP ou l'interface. `appels.version_agent` y renvoie : on sait avec quel prompt un appel a été passé.

@@ -8,6 +8,7 @@ import { appels, issuesPersonnalisees } from '@/db/schema';
 import { entrepriseParSlug } from '@/lib/pages';
 import { basculerArchiveIssue } from '../actions';
 import { AjoutPrecision } from './formulaire-issue';
+import { RenommageIssue } from './renommage-issue';
 
 export const metadata: Metadata = { title: 'Issues' };
 
@@ -76,6 +77,7 @@ export default async function PageIssues({ params }: { params: Promise<{ slug: s
                           {p.libelle}
                           {p.archivee ? <span className="text-sm"> · archivée</span> : null}
                         </span>
+                        <RenommageIssue entrepriseId={entreprise.id} issueId={p.id} libelle={p.libelle} />
                         <BoutonArchive archivee={p.archivee} nom={p.libelle} action={basculerArchiveIssue.bind(null, entreprise.id, p.id, !p.archivee)} />
                       </li>
                     ))}

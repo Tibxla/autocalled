@@ -15,6 +15,7 @@ export interface Difference {
 /** Libellés des réglages que l'opérateur règle le plus souvent ; les autres chemins s'affichent tels quels. */
 const LIBELLES: Record<string, string> = {
   name: 'libellé du tableau de bord',
+  'conversation_config.agent.language': 'langue',
   'conversation_config.agent.prompt.llm': 'modèle de langage',
   'conversation_config.agent.prompt.temperature': 'température',
   'conversation_config.tts.voice_id': 'voix',
@@ -22,13 +23,21 @@ const LIBELLES: Record<string, string> = {
   'conversation_config.tts.stability': 'stabilité de la voix',
   'conversation_config.tts.similarity_boost': 'similarité de la voix',
   'conversation_config.tts.speed': 'vitesse de la voix',
+  'conversation_config.tts.expressive_mode': 'expressions vocales',
+  'conversation_config.tts.suggested_audio_tags': 'expressions suggérées',
   'conversation_config.turn.turn_eagerness': 'empressement du tour de parole',
   'conversation_config.turn.turn_timeout': 'délai de silence avant relance (s)',
   'conversation_config.turn.speculative_turn': 'tour spéculatif',
   'conversation_config.turn.interruption_ignore_terms': 'mots qui n’interrompent pas',
+  'conversation_config.turn.interruption_ignore_term_languages': 'langues des mots qui n’interrompent pas',
+  'conversation_config.turn.merge_with_default_ignore_terms': 'ajouter les mots par défaut',
   'conversation_config.turn.soft_timeout_config.message': 'première relance de silence',
   'conversation_config.turn.soft_timeout_config.additional_soft_timeout_messages': 'relances de silence suivantes',
   'conversation_config.turn.soft_timeout_config.timeout_seconds': 'délai des relances de silence (s)',
+  'conversation_config.turn.soft_timeout_config.use_llm_generated_message': 'relances rédigées par le modèle',
+  'conversation_config.turn.soft_timeout_config.randomize_fillers': 'relances aléatoires',
+  'conversation_config.turn.soft_timeout_config.max_soft_timeouts_per_generation': 'nombre maximal de relances',
+  'conversation_config.turn.soft_timeout_config.disable_until_first_user_message': 'attendre la première parole du prospect avant les relances',
   'conversation_config.conversation.max_duration_seconds': 'durée maximale d’un appel (s)',
 };
 
