@@ -61,6 +61,12 @@ export interface ContexteAppel {
 
 const ou = (texte: string, sinon: string) => texte.trim() || sinon;
 
+// Une fiche sans nom de personne ne doit pas laisser de trou dans la phrase : on nomme alors l'établissement.
+function situationSortante(p: { nom: string; societe?: string | null }): string {
+  const qui = p.nom.trim() || p.societe?.trim();
+  return qui ? `Tu as appelé ${qui}, qui ne t'attendait pas.` : `Tu as appelé un établissement qui ne t'attendait pas.`;
+}
+
 /**
  * Les variables qu'un script ou une objection peut citer (« Bonjour, ici {{assistante_nom}} ») : l'application les
  * remplace elle-même, car ElevenLabs ne relit pas les accolades à l'intérieur de la valeur d'une variable.
@@ -124,7 +130,7 @@ export function variablesDeLAppel(c: ContexteAppel): VariablesDeLAppel {
     entreprise_complements: c.entreprise.complements.trim(),
     prospect_contexte: ou(c.prospect.contexte, 'Rien de plus.'),
     prospect_email: c.prospect.email ?? 'inconnu, à demander',
-    situation_appel: c.situation?.trim() || `Tu as appelé ${c.prospect.nom}, qui ne t'attendait pas.`,
+    situation_appel: c.situation?.trim() || situationSortante(c.prospect),
     historique_appels: historique || 'Aucun échange précédent.',
     script_etapes: etapes || '1. Obtenir un premier rendez-vous.',
     objections: objections || 'Aucune objection préparée : applique la méthode CRAC.',

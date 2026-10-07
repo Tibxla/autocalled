@@ -128,6 +128,15 @@ describe('variablesDeLAppel', () => {
     expect(variablesDeLAppel(contexte).situation_appel).toBe('Tu as appelé Julie Martin, qui ne t\'attendait pas.');
   });
 
+  it('nomme l’établissement appelé quand la fiche n’a pas de nom de personne', () => {
+    const sansNom = { ...contexte, prospect: { ...contexte.prospect, nom: '  ' } };
+
+    expect(variablesDeLAppel(sansNom).situation_appel).toBe('Tu as appelé Gîte des Aravis, qui ne t\'attendait pas.');
+    expect(variablesDeLAppel({ ...sansNom, prospect: { ...sansNom.prospect, societe: null } }).situation_appel).toBe(
+      'Tu as appelé un établissement qui ne t\'attendait pas.',
+    );
+  });
+
   it('transmet la situation composée par l’application, celle d’un prospect qui rappelle', () => {
     const situation = 'C’est Julie Martin qui te rappelle sur ton numéro : tu l’avais appelée hier, sans réponse.';
 
