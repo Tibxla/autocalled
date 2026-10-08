@@ -227,6 +227,19 @@ export function PanneauTelephone({
     <div className="grid gap-5">
       {issue}
       <DetailTelephone telephone={telephone} />
+      {/* Le nom du réseau n'est lu qu'à la connexion (un passage aux appels Wi-Fi ne s'y voit pas) : le relire, c'est
+          refaire la liaison. Hors appel seulement, comme toute reconnexion. */}
+      {telephone.appelEnCours || !telephone.adresse ? null : (
+        <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+          <ActionReconnecter
+            ton="discret"
+            reconnecter={gestes.reconnecter}
+            libelle="Mettre à jour les infos du téléphone"
+            libelleEnCours="Mise à jour…"
+            aide="Relit le réseau, le signal et la batterie en refaisant la liaison Bluetooth : une douzaine de secondes, sans toucher au téléphone."
+          />
+        </div>
+      )}
       {telephone.connecte && telephone.batterie !== undefined && palier(telephone.batterie) <= 1 ? (
         <Message ton="alerte">Batterie faible : branche le téléphone passerelle avant une campagne.</Message>
       ) : null}
@@ -277,7 +290,7 @@ export function DetailTelephone({ telephone }: { telephone: EtatTelephone }) {
             {operateur ? operateur : <span className="text-encre-3">opérateur inconnu</span>}
             <span className="block text-sm text-encre-3">
               {wifi ? 'Appels WiFi : il appelle par le Wi-Fi, pas par le réseau mobile. ' : ''}
-              Nom lu à la connexion du téléphone.
+              Nom lu à la connexion du téléphone : « Mettre à jour les infos » le relit.
             </span>
           </LigneDefinition>
           <LigneDefinition intitule="Signal">
@@ -360,11 +373,15 @@ export function useReconnexion(reconnecter: GestesTelephone['reconnecter'] = rec
 export function ActionReconnecter({
   reconnecter,
   ton = 'normal',
+  libelle = 'Reconnecter le téléphone',
+  libelleEnCours = 'Reconnexion…',
   aide,
   suite,
   apres,
 }: {
   reconnecter?: GestesTelephone['reconnecter'];
+  libelle?: string;
+  libelleEnCours?: string;
   ton?: 'fort' | 'normal' | 'discret';
   aide?: string;
   /** Les actions voisines, sur la même rangée, avant l'aide et l'erreur. */
@@ -379,12 +396,12 @@ export function ActionReconnecter({
       <Action
         ton={ton}
         enCours={enCours}
-        libelleEnCours="Reconnexion…"
+        libelleEnCours={libelleEnCours}
         disabled={enCours}
         onClick={lancer}
         aria-describedby={aide ? idAide : undefined}
       >
-        Reconnecter le téléphone
+        {libelle}
       </Action>
       {suite}
       {aide ? (

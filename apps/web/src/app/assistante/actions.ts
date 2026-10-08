@@ -6,13 +6,13 @@ import {
   type Attendu,
   detailVersion,
   enregistrerIdentite,
-  enregistrerPromptAssistante,
+  enregistrerEtAppliquerPrompt,
   enregistrerEtAppliquerReglages,
   preparerIdentite,
   preparerPoussee,
-  pousser,
-  rapatrier,
-  restaurer,
+  pousserEtCommiter,
+  rapatrierEtCommiter,
+  restaurerEtAppliquer,
   type Resultat,
 } from '@/lib/edition-assistante';
 import { exigerOperateur } from '@/lib/garde';
@@ -71,13 +71,13 @@ export async function enregistrerIdentiteAction(saisie: unknown): Promise<Result
 export async function enregistrerPromptAction(
   texte: unknown,
   empreinteConnue: unknown,
-): Promise<Resultat<{ empreinteLocale: string; lignesModifiees: number; rappel: string; avertissement?: string }>> {
+): Promise<Awaited<ReturnType<typeof enregistrerEtAppliquerPrompt>>> {
   await exigerOperateur();
   const prompt = lire(promptSchema, texte);
   if (!prompt.ok) return prompt;
   const empreinte = lire(empreinteSchema, empreinteConnue);
   if (!empreinte.ok) return empreinte;
-  const r = await enregistrerPromptAssistante(prompt.data, empreinte.data);
+  const r = await enregistrerEtAppliquerPrompt(prompt.data, empreinte.data);
   if (r.ok) revalidatePath('/assistante');
   return r;
 }
@@ -95,7 +95,7 @@ export async function enregistrerReglagesAction(
     const probleme = patch.error.issues[0];
     return { ok: false, raison: `Réglage refusé (${probleme?.path.join('.') || 'saisie'}) : ${probleme?.message ?? 'valeur invalide'}` };
   }
-  // Enregistré, poussé, puis commité dans la foulée (ADR 0009, amendement du 08/10).
+  // Enregistré, poussé, puis commité dans la foulée (ADR 0010, amendement du 08/10).
   const r = await enregistrerEtAppliquerReglages(patch.data, empreinte.data);
   if (r.ok) revalidatePath('/assistante');
   return r;
@@ -107,18 +107,18 @@ export async function preparerPousseeAction(): Promise<Resultat<{ question: stri
   return preparerPoussee();
 }
 
-export async function pousserAction(attendu: unknown): Promise<Resultat<{ versionAvant: string | null; versionApres: string | null; rappel: string }>> {
+export async function pousserAction(attendu: unknown): Promise<Awaited<ReturnType<typeof pousserEtCommiter>>> {
   await exigerOperateur();
   const a = lire(attenduSchema, attendu);
   if (!a.ok) return a;
-  const r = await pousser(a.data);
+  const r = await pousserEtCommiter(a.data);
   revalidatePath('/assistante');
   return r;
 }
 
-export async function rapatrierAction(): Promise<Resultat<{ versionId: string | null; rappel: string }>> {
+export async function rapatrierAction(): Promise<Awaited<ReturnType<typeof rapatrierEtCommiter>>> {
   await exigerOperateur();
-  const r = await rapatrier();
+  const r = await rapatrierEtCommiter();
   if (r.ok) revalidatePath('/assistante');
   return r;
 }
@@ -131,11 +131,11 @@ export async function detailVersionAction(versionId: unknown): Promise<Resultat<
   return detailVersion(v.data);
 }
 
-export async function restaurerAction(versionId: unknown): Promise<Resultat<{ empreinteLocale: string; rappel: string }>> {
+export async function restaurerAction(versionId: unknown): Promise<Awaited<ReturnType<typeof restaurerEtAppliquer>>> {
   await exigerOperateur();
   const v = lire(versionSchema, versionId);
   if (!v.ok) return v;
-  const r = await restaurer(v.data);
+  const r = await restaurerEtAppliquer(v.data);
   if (r.ok) revalidatePath('/assistante');
   return r;
 }

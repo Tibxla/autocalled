@@ -13,7 +13,7 @@ export const RAPATRIEMENT = {
 export const RESTAURATION = {
   question: 'Restaurer cette version dans agent/ ?',
   explication:
-    'Les fichiers de agent/ reprennent le prompt et les réglages de cette version. Rien ne change pour les appels avant la poussée. Refusé s’il reste des modifications non poussées.',
+    'Les fichiers de agent/ reprennent le prompt et les réglages de cette version, puis partent aussitôt chez ElevenLabs : ils servent dès le prochain appel. Refusé s’il reste des modifications non poussées.',
   identique: 'Les fichiers sont déjà identiques à cette version.',
   difference: 'De cette version vers les fichiers actuels (ce que la restauration défait) :',
 } as const;

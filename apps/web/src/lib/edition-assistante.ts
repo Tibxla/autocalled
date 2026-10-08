@@ -392,6 +392,27 @@ async function pousserApresEnregistrement(quoi: string, o: OptionsAgent): Promis
   });
 }
 
+/** Commite `agent/` après un geste de la page ; un refus (index verrouillé par une autre session) est dit, jamais levé. */
+async function commiterAgent(message: string, o: OptionsAvecCommit): Promise<Resultat> {
+  try {
+    await (o.commiter ?? commiterParGit)(o.dossier ?? dossierAgent(), message);
+    return { ok: true };
+  } catch (erreur) {
+    return { ok: false, raison: messageDe(erreur) };
+  }
+}
+
+export type OptionsAvecCommit = OptionsAgent & { commiter?: CommiterAgent };
+export type Application = { poussee: PousseeAuto; commit: Resultat | null };
+
+/** Pousse ce qui vient d'être écrit dans `agent/`, puis le commite si la poussée est partie. */
+async function appliquer(quoi: string, o: OptionsAvecCommit): Promise<Application> {
+  const poussee = await pousserApresEnregistrement(quoi, o);
+  if (!poussee.ok) return { poussee, commit: null };
+  const commit = await commiterAgent(`agent: ${quoi}, depuis la page Assistante (${poussee.versionAvant ?? '?'} → ${poussee.versionApres ?? '?'})`, o);
+  return { poussee, commit };
+}
+
 /**
  * « Enregistrer » sur la page : écrit `agent/` comme modifier_reglages_assistante, pousse aussitôt vers ElevenLabs,
  * puis commite `agent/`. L'enregistrement tient même si la poussée ou le commit échouent : chacun dit sa raison, et la
@@ -400,22 +421,51 @@ async function pousserApresEnregistrement(quoi: string, o: OptionsAgent): Promis
 export async function enregistrerEtAppliquerReglages(
   patch: PatchReglages,
   empreinteConnue: string,
-  o: OptionsAgent & { commiter?: CommiterAgent } = {},
-): Promise<Resultat<{ empreinteLocale: string; champs: string[]; poussee: PousseeAuto; commit: Resultat | null }>> {
+  o: OptionsAvecCommit = {},
+): Promise<Resultat<{ empreinteLocale: string; champs: string[] } & Application>> {
   const enregistre = await enregistrerReglagesAssistante(patch, empreinteConnue, o);
   if (!enregistre.ok) return enregistre;
-  const poussee = await pousserApresEnregistrement(enregistre.champs.join(', '), o);
-  let commit: Resultat | null = null;
-  if (poussee.ok) {
-    const message = `agent: ${enregistre.champs.join(', ')}, depuis la page Assistante (${poussee.versionAvant ?? '?'} → ${poussee.versionApres ?? '?'})`;
-    try {
-      await (o.commiter ?? commiterParGit)(o.dossier ?? dossierAgent(), message);
-      commit = { ok: true };
-    } catch (erreur) {
-      commit = { ok: false, raison: messageDe(erreur) };
-    }
-  }
-  return { ok: true, empreinteLocale: enregistre.empreinteLocale, champs: enregistre.champs, poussee, commit };
+  return { ok: true, empreinteLocale: enregistre.empreinteLocale, champs: enregistre.champs, ...(await appliquer(enregistre.champs.join(', '), o)) };
+}
+
+/**
+ * Le prompt, de même : écrit s'il reste valide (variables exactement celles de l'application, section Règles), donc
+ * jamais un prompt qui empêcherait ElevenLabs d'ouvrir une conversation ; puis poussé et commité.
+ */
+export async function enregistrerEtAppliquerPrompt(
+  texte: string,
+  empreinteConnue: string,
+  o: OptionsAvecCommit = {},
+): Promise<Resultat<{ empreinteLocale: string; lignesModifiees: number } & Application>> {
+  const enregistre = await enregistrerPromptAssistante(texte, empreinteConnue, o);
+  if (!enregistre.ok) return enregistre;
+  return { ok: true, empreinteLocale: enregistre.empreinteLocale, lignesModifiees: enregistre.lignesModifiees, ...(await appliquer('prompt', o)) };
+}
+
+/** Une version de l'historique remise dans `agent/` (sous confirmation, comme restaurer_assistante), puis poussée et commitée. */
+export async function restaurerEtAppliquer(versionId: string, o: OptionsAvecCommit = {}): Promise<Resultat<{ empreinteLocale: string } & Application>> {
+  const r = await restaurer(versionId, o);
+  if (!r.ok) return r;
+  return { ok: true, empreinteLocale: r.empreinteLocale, ...(await appliquer(`version ${versionId} restaurée`, o)) };
+}
+
+/** La poussée confirmée de la section Poussée, suivie du commit de `agent/` (le verrou a changé). */
+export async function pousserEtCommiter(
+  attendu: Attendu,
+  o: OptionsAvecCommit = {},
+): Promise<Resultat<{ versionAvant: string | null; versionApres: string | null; commit: Resultat }>> {
+  const r = await pousser(attendu, o);
+  if (!r.ok) return r;
+  const commit = await commiterAgent(`agent: poussée depuis la page Assistante (${r.versionAvant ?? '?'} → ${r.versionApres ?? '?'})`, o);
+  return { ok: true, versionAvant: r.versionAvant, versionApres: r.versionApres, commit };
+}
+
+/** Le rapatriement, suivi du commit de `agent/` réécrit d'après ElevenLabs. */
+export async function rapatrierEtCommiter(o: OptionsAvecCommit = {}): Promise<Resultat<{ versionId: string | null; commit: Resultat }>> {
+  const r = await rapatrier(o);
+  if (!r.ok) return r;
+  const commit = await commiterAgent(`agent: rapatrié d’ElevenLabs depuis la page Assistante (${r.versionId ?? '?'})`, o);
+  return { ok: true, versionId: r.versionId, commit };
 }
 
 /** Réécrit `agent/` d'après ElevenLabs, comme rapatrier_assistante : refusé s'il reste des modifications non poussées. */

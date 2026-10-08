@@ -41,7 +41,7 @@ Aucun test n'appelle ElevenLabs, `claude -p` ni le vrai pont. Une fonctionnalit�
 ## L'assistante (`agent/`)
 
 - `agent/prompt.md` et `agent/mina.config.json` sont la source : on les modifie, on relit la différence de `pnpm agent push`, puis on commite le verrou mis à jour.
-- Exception : « Enregistrer et appliquer » sur les réglages de la page Assistante pousse et commite `agent/` d'un geste (ADR 0010, amendement du 08/10). Le prompt et le MCP gardent leurs deux gestes.
+- Exception : ce que la page Assistante écrit dans `agent/` (prompt, réglages, restauration) part chez ElevenLabs et se commite d'un geste (ADR 0010, amendement du 08/10). Le MCP garde ses deux gestes.
 - `push` n'envoie que les champs listés dans `CHAMPS_GERES` (`packages/agent/src/configuration.ts`) : un nouveau réglage ElevenLabs s'ajoute là d'abord, sinon il est perdu en silence.
 - Le prompt ne cite une variable (`{{…}}`) que si l'interface l'envoie déjà en production : sinon ElevenLabs refuse d'ouvrir la conversation.
 - ElevenLabs peut rediriger un modèle déprécié sans le dire : le modèle réel se lit dans `producing_llm` des conversations.

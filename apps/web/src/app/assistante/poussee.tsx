@@ -6,6 +6,7 @@ import { Confirmation, useConfirmation } from '@/components/confirmation';
 import { Action, Message } from '@/components/ui';
 import { POUSSEE, RAPATRIEMENT } from '@/lib/questions-assistante';
 import { preparerPousseeAction, pousserAction, rapatrierAction } from './actions';
+import { texteCommit } from './application';
 import { BlocDifference } from './blocs';
 
 /**
@@ -57,7 +58,7 @@ export function Poussee() {
       }
       confirmationPoussee.fermer();
       setPreparation(null);
-      setRetour({ ton: 'neutre', texte: `Poussé : version ${r.versionAvant ?? '?'} → ${r.versionApres ?? '?'}. Elle sert dès le prochain appel. ${r.rappel}` });
+      setRetour({ ton: 'neutre', texte: `Poussé : version ${r.versionAvant ?? '?'} → ${r.versionApres ?? '?'}. Elle sert dès le prochain appel. ${texteCommit(r.commit)}` });
       router.refresh();
     });
 
@@ -69,7 +70,7 @@ export function Poussee() {
         return;
       }
       confirmationRapatriement.fermer();
-      setRetour({ ton: 'neutre', texte: `Rapatrié : agent/ porte la version ${r.versionId ?? '?'}. ${r.rappel}` });
+      setRetour({ ton: 'neutre', texte: `Rapatrié : agent/ porte la version ${r.versionId ?? '?'}. ${texteCommit(r.commit)}` });
       router.refresh();
     });
 

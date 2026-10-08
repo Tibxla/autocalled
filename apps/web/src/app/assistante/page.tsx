@@ -126,8 +126,8 @@ export default async function PageAssistante({ searchParams }: { searchParams: P
         <section id="prompt" aria-labelledby="titre-prompt" className={SECTION}>
           <TitreSection id="titre-prompt">Prompt système</TitreSection>
           <p className="max-w-[62ch] text-sm text-encre-2">
-            <span className="font-mono">agent/prompt.md</span>, <span className="font-mono">{NOMBRE.format(fichiers.prompt.length)}</span> caractères. Il part
-            chez ElevenLabs par une poussée ; au début de chaque appel, ElevenLabs y remplace les{' '}
+            <span className="font-mono">agent/prompt.md</span>, <span className="font-mono">{NOMBRE.format(fichiers.prompt.length)}</span> caractères.
+            « Enregistrer et appliquer » l’envoie aussitôt chez ElevenLabs ; au début de chaque appel, ElevenLabs y remplace les{' '}
             <span className="rounded-[2px] bg-filet-2 px-0.5 font-mono text-[0.9em] text-encre">{'{{variables}}'}</span> par les valeurs que l’application
             lui transmet (voir Ce qu’elle voit).
           </p>
@@ -156,8 +156,8 @@ export default async function PageAssistante({ searchParams }: { searchParams: P
         <section id="poussee" aria-labelledby="titre-poussee" className={SECTION}>
           <TitreSection id="titre-poussee">Poussée vers ElevenLabs</TitreSection>
           <p className="max-w-[62ch] text-sm text-encre-2">
-            La poussée envoie le prompt et les réglages de agent/ : ils servent dès le prochain appel. Tu confirmes sur la différence rédigée par
-            le serveur ; rien ne part pendant un appel.
+            Les enregistrements de cette page partent seuls. La poussée reprend ce qui n’est pas parti : un enregistrement fait pendant un appel,
+            une modification de Claude Code. Tu confirmes sur la différence rédigée par le serveur ; rien ne part pendant un appel.
           </p>
           <dl className="border-t border-filet">
             <LigneDefinition intitule="Fichiers de agent/">

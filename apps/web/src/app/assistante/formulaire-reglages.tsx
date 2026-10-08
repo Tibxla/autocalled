@@ -8,6 +8,7 @@ import { Action, Champ, Message, Saisie, Selection, ZoneTexte } from '@/componen
 import { type PatchReglages, patchReglagesSchema } from '@/lib/reglages-assistante';
 import { lireChemin } from '@/lib/vue-assistante';
 import { enregistrerReglagesAction } from './actions';
+import { texteApplication } from './application';
 import { ApercuVoix, ChoixCatalogue, useCatalogueAssistante } from './choix-voix';
 import type { CatalogueAssistante } from '@/lib/catalogue-assistante';
 
@@ -212,14 +213,7 @@ export function FormulaireReglages({ reglages, empreinte }: { reglages: PatchReg
       }
       setEmpreinteConnue(r.empreinteLocale);
       setMontrerErreurs(false);
-      const champs = r.champs.map((c) => LIBELLES.get(c) ?? c).join(', ');
-      if (!r.poussee.ok) {
-        setRetour({ ton: 'alerte', texte: `Enregistré dans agent/ : ${champs}. Pas encore appliqué aux appels : ${r.poussee.raison} La section Poussée le reprend.` });
-      } else {
-        const campagne = r.poussee.campagneEnCours ? ', campagne en cours comprise' : '';
-        const commit = r.commit?.ok ? 'Commité dans git.' : `Pas commité dans git (${r.commit?.raison ?? 'raison inconnue'}) : à faire à la main.`;
-        setRetour({ ton: 'neutre', texte: `Enregistré et appliqué : ${champs}. Sert dès le prochain appel${campagne}. ${commit}` });
-      }
+      setRetour(texteApplication(`Enregistré : ${r.champs.map((c) => LIBELLES.get(c) ?? c).join(', ')}`, r));
       router.refresh();
     });
   };

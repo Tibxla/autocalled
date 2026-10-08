@@ -5,6 +5,7 @@ import { useId, useRef, useState, useTransition, type FormEvent } from 'react';
 import { useRaccourci } from '@/components/clavier';
 import { Action, Champ, Message, ZoneTexte } from '@/components/ui';
 import { enregistrerPromptAction } from './actions';
+import { texteApplication } from './application';
 
 export function FormulairePrompt({ prompt, empreinte }: { prompt: string; empreinte: string }) {
   const id = useId();
@@ -29,7 +30,7 @@ export function FormulairePrompt({ prompt, empreinte }: { prompt: string; emprei
   const perime = empreinteConnue !== empreinte;
 
   useRaccourci({
-    touche: 'Enter', ctrl: true, dansChamp: true, libelle: 'Enregistrer le prompt', actif: modifie && !envoi,
+    touche: 'Enter', ctrl: true, dansChamp: true, libelle: 'Enregistrer et appliquer le prompt', actif: modifie && !envoi,
     action: () => {
       if (!formulaire.current?.contains(document.activeElement)) return false;
       formulaire.current.requestSubmit();
@@ -47,7 +48,7 @@ export function FormulairePrompt({ prompt, empreinte }: { prompt: string; emprei
         return;
       }
       setEmpreinteConnue(r.empreinteLocale);
-      setRetour({ ton: 'neutre', texte: `Prompt enregistré. ${r.rappel}${r.avertissement ? ` ${r.avertissement}` : ''}` });
+      setRetour(texteApplication('Prompt enregistré', r));
       router.refresh();
     });
   };
@@ -75,7 +76,7 @@ export function FormulairePrompt({ prompt, empreinte }: { prompt: string; emprei
         </Message>
       ) : perime && modifie ? <Message ton="alerte">La configuration a changé depuis ta lecture. Ta saisie est conservée ; recharge le prompt avant d’enregistrer.</Message> : null}
       <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 pointer-coarse:mx-0">
-        <Action type="submit" ton="fort" touche="Ctrl Entrée" disabled={!modifie || envoi} enCours={envoi} libelleEnCours="Enregistrement…">Enregistrer le prompt</Action>
+        <Action type="submit" ton="fort" touche="Ctrl Entrée" disabled={!modifie || envoi} enCours={envoi} libelleEnCours="Application…">Enregistrer et appliquer</Action>
         {modifie ? <Action ton="discret" disabled={envoi} onClick={revenir}>Revenir au prompt enregistré</Action> : null}
         <a href="#poussee" className="px-1.5 py-1 text-sm underline underline-offset-4">Appliquer aux prochains appels</a>
       </div>

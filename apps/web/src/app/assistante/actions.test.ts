@@ -82,7 +82,7 @@ describe('garde', () => {
 });
 
 describe('parcours de la page', () => {
-  it('nom, réglages appliqués d’un geste (poussée consignée « interface », commit), puis retour arrière à pousser', async () => {
+  it('nom, réglages appliqués d’un geste (poussée consignée « interface », commit), puis retour arrière appliqué aussi', async () => {
     const question = await actions.preparerIdentiteAction({ nom: 'Léa', connu: null });
     expect(question).toMatchObject({ ok: true, lignes: expect.arrayContaining(['Changer le nom de l’assistante : « Mina » → « Léa ».']) });
     expect(await actions.enregistrerIdentiteAction({ nom: 'Léa', connu: null })).toMatchObject({ ok: true });
@@ -104,26 +104,38 @@ describe('parcours de la page', () => {
     ]);
 
     expect(await actions.detailVersionAction('agtvrsn_test1')).toMatchObject({ ok: true, difference: expect.stringContaining('Léa (test)') });
-    expect(await actions.restaurerAction('agtvrsn_test1')).toMatchObject({ ok: true, rappel: expect.stringContaining('pousse-la') });
-    expect(faux.etat.name).toBe('Léa (test)');
+    // La restauration part aussi d'un geste : ElevenLabs reprend l'ancien libellé, et agent/ est commité.
+    expect(await actions.restaurerAction('agtvrsn_test1')).toMatchObject({ ok: true, poussee: { ok: true, versionApres: 'agtvrsn_test3' }, commit: { ok: true } });
+    expect(faux.etat.name).toBe('Assistante de test');
+    expect(etat.git.at(-1)?.args).toContain('agent: version agtvrsn_test1 restaurée, depuis la page Assistante (agtvrsn_test2 → agtvrsn_test3)');
     expect(etat.revalide.every((c) => c === '/assistante')).toBe(true);
     expect(etat.revalide.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('enregistre le prompt par l’action authentifiée, puis montre la différence avant de pousser', async () => {
+  it('enregistre le prompt par l’action authentifiée, le pousse et commite agent/', async () => {
     const { lireFichiersAssistante } = await import('@/lib/fichiers-assistante');
     const { empreinteLocale } = (await lireFichiersAssistante(agent.dossier)).synchro;
     const texte = PROMPT_DE_TEST.replace('une assistante de test', 'une assistante patiente');
-    expect(await actions.enregistrerPromptAction(texte, empreinteLocale)).toMatchObject({ ok: true });
+    expect(await actions.enregistrerPromptAction(texte, empreinteLocale)).toMatchObject({ ok: true, poussee: { ok: true }, commit: { ok: true } });
     expect((await lireFichiersAssistante(agent.dossier)).prompt).toBe(texte);
-    expect(await actions.preparerPousseeAction()).toMatchObject({ ok: true, difference: expect.stringContaining('une assistante patiente') });
-    expect(faux.modifications).toBe(0);
+    expect(JSON.stringify(faux.etat)).toContain('une assistante patiente');
+    expect(etat.git.at(-1)?.args).toContain('agent: prompt, depuis la page Assistante (agtvrsn_test1 → agtvrsn_test2)');
     expect(etat.revalide).toContain('/assistante');
+  });
+
+  it('un prompt invalide n’est ni écrit ni poussé', async () => {
+    const { lireFichiersAssistante } = await import('@/lib/fichiers-assistante');
+    const { empreinteLocale } = (await lireFichiersAssistante(agent.dossier)).synchro;
+    const texte = `${PROMPT_DE_TEST}\nTu salues {{variable_inconnue}}.`;
+    expect(await actions.enregistrerPromptAction(texte, empreinteLocale)).toMatchObject({ ok: false, raison: expect.stringContaining('Prompt refusé') });
+    expect(faux.modifications).toBe(0);
+    expect(etat.git).toEqual([]);
   });
 
   it('rapatrie une modification du tableau de bord', async () => {
     faux.etat = { ...faux.etat, version_id: 'agtvrsn_tableau' };
-    expect(await actions.rapatrierAction()).toMatchObject({ ok: true, versionId: 'agtvrsn_tableau' });
+    expect(await actions.rapatrierAction()).toMatchObject({ ok: true, versionId: 'agtvrsn_tableau', commit: { ok: true } });
+    expect(etat.git.at(-1)?.args).toContain('agent: rapatrié d’ElevenLabs depuis la page Assistante (agtvrsn_tableau)');
     expect(await db.select({ origine: versionsAssistante.origine }).from(versionsAssistante)).toEqual([{ origine: 'distante' }]);
   });
 });

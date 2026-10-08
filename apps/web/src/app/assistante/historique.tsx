@@ -8,12 +8,13 @@ import { Action, Message } from '@/components/ui';
 import { RESTAURATION } from '@/lib/questions-assistante';
 import { ORIGINE_VERSION } from '@/lib/vue-assistante';
 import { detailVersionAction, restaurerAction } from './actions';
+import { texteApplication } from './application';
 import { BlocDifference } from './blocs';
 
 /**
  * Les configurations consignées, comme historique_assistante, et le retour arrière, comme restaurer_assistante :
  * « Restaurer » lit d'abord ce qui sépare la version des fichiers, puis demande confirmation. La version restaurée
- * ne sert aux appels qu'après une poussée : la page le rappelle.
+ * part aussitôt chez ElevenLabs et `agent/` est commité (ADR 0010, amendement du 08/10).
  */
 
 export interface LigneVersion {
@@ -63,7 +64,7 @@ export function Historique({ versions }: { versions: LigneVersion[] }) {
       const versionId = detail.versionId;
       confirmation.fermer();
       setDetail(null);
-      setRetour({ versionId, ton: 'neutre', texte: `${r.rappel} La poussée se fait plus haut, section Poussée.` });
+      setRetour({ versionId, ...texteApplication(`Version ${versionId} restaurée`, r) });
       router.refresh();
     });
 

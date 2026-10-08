@@ -18,6 +18,7 @@ import {
   lireEditionAssistante,
   pourLaPage,
   pousser,
+  pousserEtCommiter,
   preparerIdentite,
   preparerPoussee,
   rapatrier,
@@ -282,6 +283,16 @@ describe('réglages enregistrés et appliqués depuis la page', () => {
 
     expect(r).toMatchObject({ ok: true, poussee: { ok: true }, commit: { ok: false, raison: 'fatal: Unable to create index.lock: File exists.' } });
     expect(faux.modifications).toBe(1);
+  });
+
+  it('la poussée confirmée de la section Poussée commite aussi agent/ (le verrou a changé)', async () => {
+    const { empreinteLocale } = await lireEditionAssistante(o);
+    await enregistrerReglagesAssistante({ temperature: 0.5 }, empreinteLocale, o);
+    const prep = await preparerPoussee(o);
+    if (!prep.ok) throw new Error(prep.raison);
+
+    expect(await pousserEtCommiter(prep.attendu, { ...o, commiter })).toMatchObject({ ok: true, versionApres: 'agtvrsn_test2', commit: { ok: true } });
+    expect(commits).toEqual([{ dossier: agent.dossier, message: 'agent: poussée depuis la page Assistante (agtvrsn_test1 → agtvrsn_test2)' }]);
   });
 
   it('un enregistrement refusé ne pousse rien', async () => {
