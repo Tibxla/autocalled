@@ -1,7 +1,8 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useId, useRef, useState, useTransition, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, useTransition, type FormEvent } from 'react';
+import { BarreActions } from '@/components/barre-actions';
 import { useRaccourci } from '@/components/clavier';
 import { Action, Champ, Message, Saisie, Selection, ZoneTexte } from '@/components/ui';
 import { type PatchReglages, patchReglagesSchema } from '@/lib/reglages-assistante';
@@ -172,6 +173,15 @@ export function FormulaireReglages({ reglages, empreinte }: { reglages: PatchReg
   const erreurs: Record<string, string> = {};
   if (!verification.success) for (const i of verification.error.issues) erreurs[i.path.slice(0, i.path[0] === 'voix' && i.path[1] === 'expressions' ? 2 : undefined).filter((p) => typeof p === 'string').join('.')] ??= i.message;
 
+  // Une saisie non enregistrée se perd en quittant la page : le navigateur demande d'abord.
+  const nonEnregistre = changes.length > 0 && !envoi;
+  useEffect(() => {
+    if (!nonEnregistre) return;
+    const retenir = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener('beforeunload', retenir);
+    return () => window.removeEventListener('beforeunload', retenir);
+  }, [nonEnregistre]);
+
   useRaccourci({
     touche: 'Enter',
     ctrl: true,
@@ -241,58 +251,62 @@ export function FormulaireReglages({ reglages, empreinte }: { reglages: PatchReg
 
       {catalogue?.indisponibles.length ? <Message ton="neutre">Catalogue indisponible : {catalogue.indisponibles.join(', ').toLowerCase()}. Tu peux saisir les identifiants.</Message> : null}
 
-      {retour ? (
-        <Message
-          ton={retour.ton}
-          action={
-            retour.perime ? (
-              <Action
-                ton="normal"
-                enCours={rechargement}
-                libelleEnCours="Rechargement…"
-                onClick={() =>
-                  recharger(() => {
-                    router.refresh();
-                    setValeurs(initiales);
-                    setEmpreinteConnue(empreinte);
-                    setRetour(null);
-                  })
-                }
-              >
-                Recharger
-              </Action>
-            ) : undefined
-          }
-        >
-          {retour.texte}
-        </Message>
-      ) : null}
-
-      <div className="grid gap-2">
-        <p className="text-sm text-encre-3" aria-live="polite">
-          {changes.length
-            ? `${changes.length} réglage${changes.length > 1 ? 's' : ''} modifié${changes.length > 1 ? 's' : ''} : ${changes.map((c) => c.libelle.toLowerCase()).join(', ')}.`
-            : 'Aucun réglage modifié.'}
-        </p>
-        <div className="-mx-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 pointer-coarse:mx-0">
-          <Action type="submit" ton="fort" touche="Ctrl Entrée" disabled={changes.length === 0 || envoi} enCours={envoi} libelleEnCours="Enregistrement…">
-            Enregistrer dans agent/
-          </Action>
-          {changes.length && !envoi ? (
-            <Action
-              ton="discret"
-              onClick={() => {
-                setValeurs(initiales);
-                setEmpreinteConnue(empreinte);
-                setMontrerErreurs(false);
-                setRetour(null);
-              }}
+      {/* Le formulaire est long (la voix est en haut, la dernière rangée 2 000 px plus bas) : l'enregistrement reste
+          à l'écran tant qu'on le parcourt. */}
+      <BarreActions
+        statut={
+          changes.length ? (
+            `${changes.length} réglage${changes.length > 1 ? 's' : ''} modifié${changes.length > 1 ? 's' : ''} : ${changes.map((c) => c.libelle.toLowerCase()).join(', ')}`
+          ) : (
+            <span className="text-encre-3">Aucun réglage modifié</span>
+          )
+        }
+        messages={
+          retour ? (
+            <Message
+              ton={retour.ton}
+              action={
+                retour.perime ? (
+                  <Action
+                    ton="normal"
+                    enCours={rechargement}
+                    libelleEnCours="Rechargement…"
+                    onClick={() =>
+                      recharger(() => {
+                        router.refresh();
+                        setValeurs(initiales);
+                        setEmpreinteConnue(empreinte);
+                        setRetour(null);
+                      })
+                    }
+                  >
+                    Recharger
+                  </Action>
+                ) : undefined
+              }
             >
-              Revenir aux réglages de agent/
-            </Action>
-          ) : null}
-        </div>
-      </div>
+              {retour.texte}
+            </Message>
+          ) : null
+        }
+      >
+        <Action type="submit" ton="fort" touche="Ctrl Entrée" disabled={changes.length === 0 || envoi} enCours={envoi} libelleEnCours="Enregistrement…" className="-ml-1.5">
+          Enregistrer dans agent/
+        </Action>
+        {changes.length && !envoi ? (
+          <Action
+            ton="discret"
+            onClick={() => {
+              setValeurs(initiales);
+              setEmpreinteConnue(empreinte);
+              setMontrerErreurs(false);
+              setRetour(null);
+            }}
+          >
+            Revenir aux réglages de agent/
+          </Action>
+        ) : null}
+      </BarreActions>
     </form>
   );
 }
