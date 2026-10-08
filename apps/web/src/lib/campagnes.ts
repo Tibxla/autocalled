@@ -309,6 +309,8 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
   // Ligne occupée (un autre appel, ou un prospect qui rappelle) : rien ne part, aucun prospect n'est consommé ; la fin
   // de cet appel ou le réveil reprendront.
   if (ligne.type === 'occupee') return;
+  // Signal trop faible : de même, la campagne reste en cours et le réveil la relance quand il remonte.
+  if (ligne.type === 'signal-faible') return;
   // Plafond atteint ou pont absent : pause, sans consommer le prospect suivant.
   if (ligne.type !== 'libre') {
     await suspendreSiEnCours(campagneId);

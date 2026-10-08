@@ -7,7 +7,7 @@ import { fauxPont } from '../../test/faux-pont';
 import { agendaFrais, entrepriseDeTest, fiche } from '../../test/fixtures';
 import { avecBaseDeTest } from '../../test/outils';
 import { analyserAppel } from './appels';
-import { appelerSuivantTelephone, clore, demarrerCampagne, derouleSimulation, enregistrerCampagne, sauterProspect, terminerCampagne } from './campagnes';
+import { appelerSuivantTelephone, clore, demarrerCampagne, derouleSimulation, enregistrerCampagne, relancerSiDu, sauterProspect, terminerCampagne } from './campagnes';
 import { claudeStructure } from './claude';
 import { creerScript } from './entreprises';
 import { archiverProspect, filesTelephoneEnCours, importerFiches } from './prospects';
@@ -222,6 +222,31 @@ describe('nouvelle tentative décidée par le bilan (répondeur, filtre d’appe
     ]);
     expect(c.statut).toBe('terminee');
     expect(pont.compositions()).toHaveLength(2);
+  });
+});
+
+describe('signal faible', () => {
+  it('à 20 % ou moins : rien ne part et la campagne reste en cours ; revenu à 40 %, la relance du réveil compose', async () => {
+    await pont.fermer();
+    const etatPont: Record<string, unknown> = { signal: 20 };
+    pont = await fauxPont({ etat: etatPont });
+
+    const id = await campagneTelephone(['julie']);
+
+    expect(pont.compositions()).toHaveLength(0);
+    expect(await db.$count(appels)).toBe(0);
+    expect(await lire(id)).toMatchObject({ statut: 'en-cours', entrees: [{ prospectId: 'julie', etat: 'a-appeler' }] });
+
+    etatPont.signal = 40;
+    expect(await relancerSiDu(id)).toBe(true);
+    expect(pont.compositions()).toHaveLength(1);
+  });
+
+  it('téléphone déconnecté ou signal inconnu : le signal ne retient rien', async () => {
+    await pont.fermer();
+    pont = await fauxPont({ etat: { signal: 0, connecte: false } });
+    const { disponibiliteLigne } = await import('./pont');
+    expect((await disponibiliteLigne()).type).toBe('libre');
   });
 });
 

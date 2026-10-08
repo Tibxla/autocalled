@@ -32,6 +32,7 @@ describe('état de la ligne pour la barre du haut', () => {
       entrant: false,
       decrocheLe: null,
       plafond: null,
+      signalFaible: false,
       campagne: { id: c.id, entreprise: 'Gîte fictif en-pause', statut: 'en-pause', traites: 3, total: 10 },
     });
   });
@@ -44,6 +45,21 @@ describe('état de la ligne pour la barre du haut', () => {
       expect(etat).toMatchObject({ pont: true, connecte: true, appelEnCours: false, plafond: { jusqua }, campagne: null });
     } finally {
       await pont.fermer();
+    }
+  });
+
+  it('signal à une barre : la barre le dit ; inconnu, rien', async () => {
+    const pont = await fauxPont({ etat: { signal: 20 } });
+    try {
+      expect(await etatPourLaBarre()).toMatchObject({ signalFaible: true, plafond: null });
+    } finally {
+      await pont.fermer();
+    }
+    const muet = await fauxPont();
+    try {
+      expect(await etatPourLaBarre()).toMatchObject({ signalFaible: false });
+    } finally {
+      await muet.fermer();
     }
   });
 

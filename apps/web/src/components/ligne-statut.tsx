@@ -36,6 +36,16 @@ export function affichageLigne(e: EtatLigneClient): AffichageLigne {
           lien: { href: '/telephone', aria: `Plafond d’appels atteint${prochain.replace(' · ', ', ')} : ${VERS_TELEPHONE}` },
         };
       }
+      if (e.signalFaible) {
+        return {
+          trait: 'pointille',
+          couleurTrait: 'stroke-trait',
+          couleurTexte: 'text-alerte',
+          libelle: 'Signal faible · campagnes en attente',
+          court: 'Signal',
+          lien: { href: '/telephone', aria: `Signal du téléphone trop faible, les campagnes attendent qu’il remonte : ${VERS_TELEPHONE}` },
+        };
+      }
       return {
         trait: 'pointille',
         couleurTrait: 'stroke-trait',

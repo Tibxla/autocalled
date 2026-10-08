@@ -35,3 +35,7 @@ Rien ne relançait une campagne en dehors de la fin d'un appel. Un minuteur syst
 - Comptes de campagne : un appel en analyse compte parmi les prospects traités, et à part (`enAnalyse`) ; les tentatives à venir sont comptées parmi les prospects à appeler, et à part (`aRetenter`).
 - Un prospect archivé pendant l'analyse de son appel peut revenir en file par le classement ; à son tour, il n'est pas appelé et l'entrée devient « non appelable », un libellé inexact.
 - Une entrée dont l'appel reste bloqué en traitement n'est pas débloquée par le réveil : `relancer_analyse` la classe. Une réanalyse, même lancée depuis Claude Code, peut ainsi faire repartir une campagne téléphone.
+
+## Amendement du 08/10 : signal faible
+
+À la demande de l'opérateur, une campagne téléphone (et un rappel convenu automatique) ne compose pas quand le téléphone passerelle annonce un signal de 20 % ou moins (une barre sur cinq) : comme pour une ligne occupée, rien ne part, aucun prospect n'est consommé, la campagne reste en cours, et le réveil la relance dès que le signal remonte (deux barres), dans les cinq minutes. Un signal inconnu ou un téléphone déconnecté ne retient rien à ce titre. Un appel lancé à la main part quand même. La barre du haut affiche « Signal faible · campagnes en attente ».

@@ -2,7 +2,7 @@ import 'server-only';
 import { desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { campagnes, entreprises } from '@/db/schema';
-import { commanderPont } from './pont';
+import { commanderPont, signalFaible } from './pont';
 
 /**
  * Ce que la barre du haut sait de la ligne, relu toutes les 3 s par chaque onglet ouvert (GET /ligne/etat) :
@@ -30,6 +30,8 @@ export type EtatBarre = {
   decrocheLe: number | null;
   /** Plafond atteint : `jusqua` est l'heure du prochain appel possible (ms), null si le pont ne la donne pas. */
   plafond: { jusqua: number | null } | null;
+  /** Le téléphone annonce un signal trop faible : les campagnes attendent qu'il remonte (lib/pont.ts). */
+  signalFaible: boolean;
   campagne: CampagneBarre | null;
 };
 
@@ -58,7 +60,7 @@ export async function campagneOuverte(): Promise<CampagneBarre | null> {
 
 export async function etatPourLaBarre(): Promise<EtatBarre> {
   const [pont, campagne] = await Promise.all([commanderPont('/etat'), campagneOuverte()]);
-  if (!pont.ok) return { pont: false, connecte: false, appelEnCours: false, appelId: null, entrant: false, decrocheLe: null, plafond: null, campagne };
+  if (!pont.ok) return { pont: false, connecte: false, appelEnCours: false, appelId: null, entrant: false, decrocheLe: null, plafond: null, signalFaible: false, campagne };
   const c = pont.corps;
   const appelEnCours = Boolean(c.appelEnCours);
   const appelId = typeof c.appelId === 'string' ? c.appelId : null;
@@ -71,6 +73,7 @@ export async function etatPourLaBarre(): Promise<EtatBarre> {
     entrant: c.sens === 'entrant' || (appelId === null && Boolean(c.entrantEnCours)),
     decrocheLe: appelEnCours ? nombre(c.decrocheLe) : null,
     plafond: typeof c.plafond === 'string' ? { jusqua: nombre(c.plafondJusqua) } : null,
+    signalFaible: signalFaible(c),
     campagne,
   };
 }

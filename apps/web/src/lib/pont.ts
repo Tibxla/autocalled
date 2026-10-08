@@ -41,11 +41,25 @@ export async function reglagesDuPont(): Promise<ReglagesLigne | null> {
 }
 
 /**
+ * Signal du téléphone passerelle (en %, par paliers de 20 : 0 à 5 barres) à partir duquel les campagnes attendent. À une
+ * barre, la voix se hache et les appels décrochés se perdent ; elles reprennent seules dès deux barres (relance du réveil).
+ */
+export const SEUIL_SIGNAL_FAIBLE = 20;
+
+export const SIGNAL_FAIBLE = 'Signal du téléphone trop faible : les campagnes attendent qu’il remonte.';
+
+/** Vrai si le téléphone, connecté, annonce un signal au seuil ou dessous ; faux si le signal est inconnu. */
+export function signalFaible(etat: Record<string, unknown>): boolean {
+  return Boolean(etat.connecte) && typeof etat.signal === 'number' && etat.signal <= SEUIL_SIGNAL_FAIBLE;
+}
+
+/**
  * Ce que la ligne téléphone permet à cet instant, d'après le pont : `absente` (le pont ne répond pas), `occupee` (un
- * appel en ligne, sortant ou entrant, même s'il sonne encore), `plafond` (plafond d'appels atteint), sinon `libre`.
+ * appel en ligne, sortant ou entrant, même s'il sonne encore), `plafond` (plafond d'appels atteint), `signal-faible`
+ * (les appels automatiques attendent ; un appel lancé à la main part quand même), sinon `libre`.
  */
 export type DisponibiliteLigne =
-  | { type: 'absente' | 'plafond'; raison: string }
+  | { type: 'absente' | 'plafond' | 'signal-faible'; raison: string }
   /** `plafond` : la raison si le plafond est atteint en plus, sinon null. */
   | { type: 'occupee'; raison: string; plafond: string | null }
   | { type: 'libre' };
@@ -56,7 +70,8 @@ export async function disponibiliteLigne(): Promise<DisponibiliteLigne> {
   const c = etat.corps;
   const plafond = typeof c.plafond === 'string' ? c.plafond : null;
   if (c.appelEnCours || c.entrantEnCours || typeof c.appelId === 'string') return { type: 'occupee', raison: APPEL_DEJA_EN_LIGNE, plafond };
-  return plafond ? { type: 'plafond', raison: plafond } : { type: 'libre' };
+  if (plafond) return { type: 'plafond', raison: plafond };
+  return signalFaible(c) ? { type: 'signal-faible', raison: SIGNAL_FAIBLE } : { type: 'libre' };
 }
 
 /** La raison si le plafond d'appels du pont est atteint (ou si le pont ne répond pas, ou, avec `ligneLibre`, si un appel est en ligne), sinon null. */
@@ -64,7 +79,7 @@ export async function refusDuPont({ ligneLibre = false }: { ligneLibre?: boolean
   const ligne = await disponibiliteLigne();
   // Un appel isolé ne part pas sur une ligne occupée : refusé avant d'être enregistré, il ne laisse pas de « Non composé ».
   if (ligne.type === 'occupee') return ligneLibre ? ligne.raison : ligne.plafond;
-  return ligne.type === 'libre' ? null : ligne.raison;
+  return ligne.type === 'libre' || ligne.type === 'signal-faible' ? null : ligne.raison;
 }
 
 export const APPEL_DEJA_EN_LIGNE = 'Un appel est déjà en ligne sur le téléphone.';
