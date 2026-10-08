@@ -9,12 +9,20 @@ import { avecBaseDeTest } from '../../../test/outils';
  * valeurs par défaut de `.env` (ici un faux ElevenLabs et un `agent/` jetable, jamais le vrai).
  */
 
-const etat = vi.hoisted(() => ({ operateur: true, faux: null as unknown, revalide: [] as string[] }));
+const etat = vi.hoisted(() => ({ operateur: true, faux: null as unknown, revalide: [] as string[], git: [] as { args: string[]; cwd: string }[] }));
 
 vi.mock('@/lib/garde', () => ({
   exigerOperateur: async () => {
     if (!etat.operateur) throw new Error('accès réservé à l’opérateur');
     return 'operateur@example.com';
+  },
+}));
+// Le commit qui suit « Enregistrer et appliquer » : noté, jamais lancé (le dossier jetable n'est pas un dépôt).
+vi.mock('node:child_process', async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  execFile: (commande: string, args: string[], options: { cwd: string }, fin: (e: Error | null, sortie: string, erreur: string) => void) => {
+    etat.git.push({ args: [commande, ...args], cwd: options.cwd });
+    fin(null, '', '');
   },
 }));
 vi.mock('next/cache', () => ({ revalidatePath: (chemin: string) => void etat.revalide.push(chemin) }));
@@ -36,6 +44,7 @@ beforeEach(async () => {
   etat.faux = faux;
   etat.operateur = true;
   etat.revalide = [];
+  etat.git = [];
   agent = await dossierAgentDeTest(faux);
   vi.stubEnv('DOSSIER_AGENT', agent.dossier);
   vi.stubEnv('ELEVENLABS_API_KEY', 'cle-factice');
@@ -73,7 +82,7 @@ describe('garde', () => {
 });
 
 describe('parcours de la page', () => {
-  it('nom, réglages, différence, poussée consignée « interface », puis retour arrière à pousser', async () => {
+  it('nom, réglages appliqués d’un geste (poussée consignée « interface », commit), puis retour arrière à pousser', async () => {
     const question = await actions.preparerIdentiteAction({ nom: 'Léa', connu: null });
     expect(question).toMatchObject({ ok: true, lignes: expect.arrayContaining(['Changer le nom de l’assistante : « Mina » → « Léa ».']) });
     expect(await actions.enregistrerIdentiteAction({ nom: 'Léa', connu: null })).toMatchObject({ ok: true });
@@ -81,16 +90,14 @@ describe('parcours de la page', () => {
 
     const { lireFichiersAssistante } = await import('@/lib/fichiers-assistante');
     const { empreinteLocale } = (await lireFichiersAssistante(agent.dossier)).synchro;
+    // « Enregistrer et appliquer » : écrit agent/, pousse et commite agent/ seul, sans autre geste.
     const reglages = await actions.enregistrerReglagesAction({ libelleTableauDeBord: 'Léa (test)' }, empreinteLocale);
-    expect(reglages).toMatchObject({ ok: true, champs: ['libelleTableauDeBord'] });
-
-    const prep = await actions.preparerPousseeAction();
-    expect(prep).toMatchObject({ ok: true, difference: 'Réglages :\n  libellé du tableau de bord : « Assistante de test » → « Léa (test) »' });
-    if (!prep.ok) throw new Error(prep.raison);
-    expect(faux.modifications).toBe(0);
-
-    expect(await actions.pousserAction(prep.attendu)).toMatchObject({ ok: true, versionApres: 'agtvrsn_test2' });
+    expect(reglages).toMatchObject({ ok: true, champs: ['libelleTableauDeBord'], poussee: { ok: true, versionApres: 'agtvrsn_test2' }, commit: { ok: true } });
     expect(faux.modifications).toBe(1);
+    expect(etat.git).toEqual([
+      { args: ['git', 'commit', '-q', '-m', 'agent: libelleTableauDeBord, depuis la page Assistante (agtvrsn_test1 → agtvrsn_test2)', '--', '.'], cwd: agent.dossier },
+    ]);
+    expect(await actions.preparerPousseeAction()).toMatchObject({ ok: false, raison: expect.stringContaining('Rien à pousser') });
     expect(await db.select({ origine: versionsAssistante.origine }).from(versionsAssistante).orderBy(versionsAssistante.versionId)).toEqual([
       { origine: 'cli' },
       { origine: 'interface' },
@@ -100,7 +107,7 @@ describe('parcours de la page', () => {
     expect(await actions.restaurerAction('agtvrsn_test1')).toMatchObject({ ok: true, rappel: expect.stringContaining('pousse-la') });
     expect(faux.etat.name).toBe('Léa (test)');
     expect(etat.revalide.every((c) => c === '/assistante')).toBe(true);
-    expect(etat.revalide.length).toBeGreaterThanOrEqual(4);
+    expect(etat.revalide.length).toBeGreaterThanOrEqual(3);
   });
 
   it('enregistre le prompt par l’action authentifiée, puis montre la différence avant de pousser', async () => {

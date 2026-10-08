@@ -7,7 +7,7 @@ import {
   detailVersion,
   enregistrerIdentite,
   enregistrerPromptAssistante,
-  enregistrerReglagesAssistante,
+  enregistrerEtAppliquerReglages,
   preparerIdentite,
   preparerPoussee,
   pousser,
@@ -85,7 +85,7 @@ export async function enregistrerPromptAction(
 export async function enregistrerReglagesAction(
   reglages: unknown,
   empreinteConnue: unknown,
-): Promise<Resultat<{ empreinteLocale: string; champs: string[]; rappel: string; avertissement?: string }>> {
+): Promise<Awaited<ReturnType<typeof enregistrerEtAppliquerReglages>>> {
   await exigerOperateur();
   const empreinte = lire(empreinteSchema, empreinteConnue);
   if (!empreinte.ok) return empreinte;
@@ -95,7 +95,8 @@ export async function enregistrerReglagesAction(
     const probleme = patch.error.issues[0];
     return { ok: false, raison: `Réglage refusé (${probleme?.path.join('.') || 'saisie'}) : ${probleme?.message ?? 'valeur invalide'}` };
   }
-  const r = await enregistrerReglagesAssistante(patch.data, empreinte.data);
+  // Enregistré, poussé, puis commité dans la foulée (ADR 0009, amendement du 08/10).
+  const r = await enregistrerEtAppliquerReglages(patch.data, empreinte.data);
   if (r.ok) revalidatePath('/assistante');
   return r;
 }

@@ -148,7 +148,7 @@ export default async function PageAssistante({ searchParams }: { searchParams: P
           <TitreSection id="titre-reglages">Réglages</TitreSection>
           <p className="max-w-[62ch] text-sm text-encre-2">
             Les réglages de conversation ElevenLabs, enregistrés dans <span className="font-mono">agent/mina.config.json</span> avec les mêmes bornes
-            que les outils de configuration. Ils s’appliquent aux prochains appels après la poussée.
+            que les outils de configuration. « Enregistrer et appliquer » les pousse vers ElevenLabs et les commite aussitôt : ils servent dès le prochain appel.
           </p>
           <FormulaireReglages reglages={edition.reglages} empreinte={edition.empreinteLocale} />
         </section>

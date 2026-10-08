@@ -36,3 +36,9 @@ La langue, le mode expressif et ses balises, les langues des interruptions, leur
 - `pnpm agent push` montre le diff et demande confirmation : une écriture glissée dans `agent/` ne part plus à l'aveugle.
 - Une version poussée puis remplacée par la ligne de commande seule n'est consignée que dans git.
 - Une exception dans un outil ne renvoie plus son texte au modèle (ni message Postgres, ni chemin) : le détail va au journal MCP, avec l'accord de l'opérateur s'il avait été donné avant.
+
+## Amendement du 08/10 : la page applique ses réglages d'un geste
+
+À la demande de l'opérateur, « Enregistrer et appliquer » sur la page Assistante écrit `agent/mina.config.json`, pousse aussitôt vers ElevenLabs puis commite `agent/` (et lui seul : `git commit -- .` depuis ce dossier, les autres modifications de la copie restent hors du commit). Le clic vaut accord : le journal des gestes garde en question acceptée les réglages enregistrés et la différence partie. Les refus de la poussée confirmée restent (appel en cours, champ hors de la liste, configuration modifiée ailleurs) : l'enregistrement tient, la page dit pourquoi rien n'est parti, et la section Poussée reprend. Un commit refusé (index verrouillé par une autre session) ne défait ni l'un ni l'autre. Une campagne en cours reçoit les nouveaux réglages dès l'appel suivant, et la page le dit.
+
+Le prompt garde ses deux gestes : un prompt qui cite une variable que l'application n'envoie pas empêche ElevenLabs d'ouvrir les conversations, et le réveil compose de vrais appels dans les cinq minutes. Le MCP aussi : il ne lance toujours pas git et pousse sur une différence rédigée par le serveur.

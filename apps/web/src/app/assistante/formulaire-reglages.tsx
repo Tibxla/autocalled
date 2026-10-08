@@ -14,7 +14,7 @@ import type { CatalogueAssistante } from '@/lib/catalogue-assistante';
 /**
  * Les réglages ElevenLabs de la liste fermée, comme modifier_reglages_assistante : mêmes bornes (le schéma partagé
  * prévient avant l'envoi, le serveur reste seul juge), seules les valeurs changées partent, et l'empreinte lue
- * refuse d'écrire par-dessus agent/ modifié ailleurs. Rien ne change pour les appels avant la poussée.
+ * refuse d'écrire par-dessus agent/ modifié ailleurs. « Enregistrer et appliquer » pousse puis commite aussitôt (lib/edition-assistante.ts).
  */
 
 type Genre =
@@ -186,7 +186,7 @@ export function FormulaireReglages({ reglages, empreinte }: { reglages: PatchReg
     touche: 'Enter',
     ctrl: true,
     dansChamp: true,
-    libelle: 'Enregistrer les réglages dans agent/',
+    libelle: 'Enregistrer et appliquer les réglages',
     actif: changes.length > 0 && !envoi,
     action: () => {
       if (!formulaire.current?.contains(document.activeElement)) return false;
@@ -212,10 +212,14 @@ export function FormulaireReglages({ reglages, empreinte }: { reglages: PatchReg
       }
       setEmpreinteConnue(r.empreinteLocale);
       setMontrerErreurs(false);
-      setRetour({
-        ton: 'neutre',
-        texte: `Enregistré dans agent/ : ${r.champs.map((c) => LIBELLES.get(c) ?? c).join(', ')}. ${r.rappel}${r.avertissement ? ` ${r.avertissement}` : ''}`,
-      });
+      const champs = r.champs.map((c) => LIBELLES.get(c) ?? c).join(', ');
+      if (!r.poussee.ok) {
+        setRetour({ ton: 'alerte', texte: `Enregistré dans agent/ : ${champs}. Pas encore appliqué aux appels : ${r.poussee.raison} La section Poussée le reprend.` });
+      } else {
+        const campagne = r.poussee.campagneEnCours ? ', campagne en cours comprise' : '';
+        const commit = r.commit?.ok ? 'Commité dans git.' : `Pas commité dans git (${r.commit?.raison ?? 'raison inconnue'}) : à faire à la main.`;
+        setRetour({ ton: 'neutre', texte: `Enregistré et appliqué : ${champs}. Sert dès le prochain appel${campagne}. ${commit}` });
+      }
       router.refresh();
     });
   };
@@ -290,8 +294,8 @@ export function FormulaireReglages({ reglages, empreinte }: { reglages: PatchReg
           ) : null
         }
       >
-        <Action type="submit" ton="fort" touche="Ctrl Entrée" disabled={changes.length === 0 || envoi} enCours={envoi} libelleEnCours="Enregistrement…" className="-ml-1.5">
-          Enregistrer dans agent/
+        <Action type="submit" ton="fort" touche="Ctrl Entrée" disabled={changes.length === 0 || envoi} enCours={envoi} libelleEnCours="Application…" className="-ml-1.5">
+          Enregistrer et appliquer
         </Action>
         {changes.length && !envoi ? (
           <Action
@@ -303,7 +307,7 @@ export function FormulaireReglages({ reglages, empreinte }: { reglages: PatchReg
               setRetour(null);
             }}
           >
-            Revenir aux réglages de agent/
+            Annuler
           </Action>
         ) : null}
       </BarreActions>

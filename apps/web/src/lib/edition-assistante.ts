@@ -1,4 +1,5 @@
 import 'server-only';
+import { execFile } from 'node:child_process';
 import type { ClientAgent } from '@autocalled/agent';
 import { and, eq, gt, ne } from 'drizzle-orm';
 import { db } from '@/db';
@@ -8,6 +9,7 @@ import {
   historiqueAssistante,
   type LigneHistoriqueAssistante,
   lireConfigurationAssistante,
+  dossierAgent,
   modifierReglagesAssistante,
   enregistrerPromptCompletAssistante,
   type PatchReglages,
@@ -355,6 +357,65 @@ export async function pousser(
     carnet.resume = `version ${r.versionAvant ?? '?'} → ${r.versionApres ?? '?'}`;
     return { ok: true, versionAvant: r.versionAvant, versionApres: r.versionApres, rappel: pourLaPage(r.rappel) };
   });
+}
+
+/* ------------------------------------------------------------------ enregistrer et appliquer (page seulement) */
+
+/** Commite les fichiers de `agent/` seuls : les autres modifications de la copie restent hors du commit. */
+export type CommiterAgent = (dossier: string, message: string) => Promise<void>;
+
+const commiterParGit: CommiterAgent = (dossier, message) =>
+  new Promise((resoudre, rejeter) => {
+    execFile('git', ['commit', '-q', '-m', message, '--', '.'], { cwd: dossier, timeout: 15_000 }, (erreur, _sortie, sortieErreur) => {
+      if (erreur) rejeter(new Error(sortieErreur.trim().split('\n')[0] || erreur.message));
+      else resoudre();
+    });
+  });
+
+type PousseeAuto = Resultat<{ versionAvant: string | null; versionApres: string | null; campagneEnCours: boolean }>;
+
+/**
+ * La poussée qui suit « Enregistrer » sur la page (ADR 0009, amendement du 08/10) : mêmes refus que la poussée
+ * confirmée (appel en cours, champ hors liste, configuration modifiée ailleurs). Le journal garde, en question
+ * acceptée, ce que l'opérateur a vu (les réglages enregistrés) et la différence partie chez ElevenLabs.
+ */
+async function pousserApresEnregistrement(quoi: string, o: OptionsAgent): Promise<PousseeAuto> {
+  return journaliser('pousser_assistante', { automatique: true }, async (carnet) => {
+    const prep = await lirePoussee(o);
+    if (!prep.ok) return prep;
+    const question = `Poussée automatique après « Enregistrer » sur la page Assistante (${quoi}).\n\n${POUSSEE.difference}\n${prep.difference}`;
+    if (!(await carnet.confirmer(question))) return refus(JOURNAL_INDISPONIBLE);
+    const r = await pousserAssistante({ ...o, attendu: prep.attendu, origine: 'interface' });
+    if (!r.ok) return refus(r.raison);
+    carnet.resume = `version ${r.versionAvant ?? '?'} → ${r.versionApres ?? '?'}`;
+    return { ok: true, versionAvant: r.versionAvant, versionApres: r.versionApres, campagneEnCours: prep.campagneEnCours };
+  });
+}
+
+/**
+ * « Enregistrer » sur la page : écrit `agent/` comme modifier_reglages_assistante, pousse aussitôt vers ElevenLabs,
+ * puis commite `agent/`. L'enregistrement tient même si la poussée ou le commit échouent : chacun dit sa raison, et la
+ * section Poussée reste là pour reprendre. Le MCP, lui, garde ses deux gestes séparés.
+ */
+export async function enregistrerEtAppliquerReglages(
+  patch: PatchReglages,
+  empreinteConnue: string,
+  o: OptionsAgent & { commiter?: CommiterAgent } = {},
+): Promise<Resultat<{ empreinteLocale: string; champs: string[]; poussee: PousseeAuto; commit: Resultat | null }>> {
+  const enregistre = await enregistrerReglagesAssistante(patch, empreinteConnue, o);
+  if (!enregistre.ok) return enregistre;
+  const poussee = await pousserApresEnregistrement(enregistre.champs.join(', '), o);
+  let commit: Resultat | null = null;
+  if (poussee.ok) {
+    const message = `agent: ${enregistre.champs.join(', ')}, depuis la page Assistante (${poussee.versionAvant ?? '?'} → ${poussee.versionApres ?? '?'})`;
+    try {
+      await (o.commiter ?? commiterParGit)(o.dossier ?? dossierAgent(), message);
+      commit = { ok: true };
+    } catch (erreur) {
+      commit = { ok: false, raison: messageDe(erreur) };
+    }
+  }
+  return { ok: true, empreinteLocale: enregistre.empreinteLocale, champs: enregistre.champs, poussee, commit };
 }
 
 /** Réécrit `agent/` d'après ElevenLabs, comme rapatrier_assistante : refusé s'il reste des modifications non poussées. */

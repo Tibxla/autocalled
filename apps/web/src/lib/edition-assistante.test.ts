@@ -11,6 +11,7 @@ import { lireAssistante } from './assistante';
 import {
   appelEnCours,
   detailVersion,
+  enregistrerEtAppliquerReglages,
   enregistrerIdentite,
   enregistrerPromptAssistante,
   enregistrerReglagesAssistante,
@@ -220,6 +221,75 @@ describe('poussée', () => {
     expect(await pousser(prep.attendu, o)).toEqual({ ok: false, raison: 'Échec : ElevenLabs 500' });
     faux.panne = true;
     expect(await preparerPoussee(o)).toMatchObject({ ok: false, raison: expect.stringContaining('réseau coupé') });
+  });
+});
+
+describe('réglages enregistrés et appliqués depuis la page', () => {
+  let commits: { dossier: string; message: string }[];
+  const commiter = async (dossier: string, message: string) => {
+    commits.push({ dossier, message });
+  };
+  beforeEach(() => {
+    commits = [];
+  });
+
+  it('écrit agent/, pousse aussitôt, garde au journal ce qui est parti, puis commite agent/ seul', async () => {
+    const { empreinteLocale } = await lireEditionAssistante(o);
+
+    const r = await enregistrerEtAppliquerReglages({ temperature: 0.5 }, empreinteLocale, { ...o, commiter });
+
+    expect(r).toMatchObject({
+      ok: true,
+      champs: ['temperature'],
+      poussee: { ok: true, versionAvant: 'agtvrsn_test1', versionApres: 'agtvrsn_test2', campagneEnCours: false },
+      commit: { ok: true },
+    });
+    expect(faux.modifications).toBe(1);
+    expect(await preparerPoussee(o)).toMatchObject({ ok: false, raison: expect.stringContaining('Rien à pousser') });
+    expect(commits).toEqual([{ dossier: agent.dossier, message: 'agent: temperature, depuis la page Assistante (agtvrsn_test1 → agtvrsn_test2)' }]);
+    const lignes = await db.select().from(journalMcp).where(eq(journalMcp.outil, 'pousser_assistante')).orderBy(journalMcp.le);
+    expect(lignes.map((l) => l.resultat)).toEqual(['confirmation-demandee', 'ok']);
+    expect(lignes[0]?.message).toContain('Poussée automatique après « Enregistrer » sur la page Assistante');
+    expect(lignes[0]?.message).toContain('température : 0,7 → 0,5');
+  });
+
+  it('pendant un appel : enregistre, ne pousse pas, ne commite pas, et dit pourquoi', async () => {
+    const e = await entrepriseDeTest();
+    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01')]);
+    const script = await creerScript(e.id, 'Découverte');
+    await db
+      .insert(appels)
+      .values({ entrepriseId: e.id, prospectId: 'julie', versionScriptId: script.versionScriptId, ligne: 'bluetooth', numero: '+33639980001', statut: 'en-cours' });
+    const { empreinteLocale } = await lireEditionAssistante(o);
+
+    const r = await enregistrerEtAppliquerReglages({ temperature: 0.5 }, empreinteLocale, { ...o, commiter });
+
+    expect(r).toMatchObject({ ok: true, poussee: { ok: false, raison: expect.stringContaining('Un appel est en cours') }, commit: null });
+    expect((await config()).conversation_config.agent.prompt.temperature).toBe(0.5);
+    expect(faux.modifications).toBe(0);
+    expect(commits).toEqual([]);
+  });
+
+  it('un commit refusé (index verrouillé par une autre session) ne défait ni l’enregistrement ni la poussée', async () => {
+    const { empreinteLocale } = await lireEditionAssistante(o);
+
+    const r = await enregistrerEtAppliquerReglages({ temperature: 0.5 }, empreinteLocale, {
+      ...o,
+      commiter: async () => {
+        throw new Error('fatal: Unable to create index.lock: File exists.');
+      },
+    });
+
+    expect(r).toMatchObject({ ok: true, poussee: { ok: true }, commit: { ok: false, raison: 'fatal: Unable to create index.lock: File exists.' } });
+    expect(faux.modifications).toBe(1);
+  });
+
+  it('un enregistrement refusé ne pousse rien', async () => {
+    const r = await enregistrerEtAppliquerReglages({ temperature: 0.5 }, 'empreinte-perimee', { ...o, commiter });
+
+    expect(r).toMatchObject({ ok: false });
+    expect(faux.modifications).toBe(0);
+    expect(commits).toEqual([]);
   });
 });
 

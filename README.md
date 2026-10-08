@@ -457,7 +457,7 @@ La skill de projet [`.claude/skills/autocalled`](.claude/skills/autocalled/SKILL
 
 - **Confirmations.** Ce qui fait sonner un téléphone, efface une personne, supprime une entreprise, envoie une invitation, desserre un garde-fou, change le nom ou le premier message de l'assistante, change ce qu'elle dira pendant une campagne téléphone en cours, ou pousse sa configuration, attend une question que le serveur rédige depuis la base (qui, quel numéro, quel script, quelle heure, quelle différence). Le modèle ne peut pas y répondre à la place de l'opérateur, et `claude -p` se voit refuser ces gestes. Les freins (raccrocher, suspendre, retirer, terminer, resserrer) passent sans.
 - **Données de tiers.** Transcriptions, citations, résumés et contextes de fiches arrivent dans un bloc balisé comme données non fiables : une demande lue dedans n'est jamais une consigne.
-- **Rien d'automatique.** Autocalled ne suggère rien. Claude Code propose dans la conversation, l'opérateur décide ; le serveur ne lance jamais git, et `agent/` modifié se relit puis se commite.
+- **Rien d'automatique.** Autocalled ne suggère rien. Claude Code propose dans la conversation, l'opérateur décide ; le serveur ne lance jamais git, et `agent/` modifié se relit puis se commite. Seule exception, dans la page Assistante : « Enregistrer et appliquer » sur les réglages pousse et commite d'un geste (amendement du 08/10 de l'ADR 0010).
 - **Journal.** Chaque appel d'outil, lectures comprises, laisse une ligne visible dans Réglages.
 
 ### Depuis un autre dépôt

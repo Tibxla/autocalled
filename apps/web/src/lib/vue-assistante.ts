@@ -454,7 +454,7 @@ export const CE_QUI_EST_MODIFIABLE: readonly ElementModifiable[] = [
     modifiable: true,
     ici: 'Réglages',
     claudeCode: ['modifier_reglages_assistante', 'pousser_assistante'],
-    effet: `Écrit agent/mina.config.json : ${REGLAGES_DE_LA_LISTE.map((r) => r.libelle).join(', ')}. Rien ne change avant la poussée.`,
+    effet: `Écrit agent/mina.config.json : ${REGLAGES_DE_LA_LISTE.map((r) => r.libelle).join(', ')}. Depuis la page : poussé et commité aussitôt ; par Claude Code : rien ne change avant la poussée.`,
   },
   {
     element: 'Poussée vers ElevenLabs',
