@@ -379,6 +379,8 @@ class EnregistrementPrete(unittest.TestCase):
     def terminer_avec(self, appel):
         del appel._terminer
         appel._session_ouverte = False
+        appel._verrou = threading.Lock()
+        appel._fin_lancee_appel = False
         appel._pont = mock.Mock(premier_son_de_mina=None, fin_accueil=None)
         appel._codec = None
         appel._decroche = None

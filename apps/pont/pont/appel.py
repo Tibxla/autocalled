@@ -21,6 +21,9 @@ from .ofono import LigneOccupee, Telephone, dans_glib, masquer
 from .plafond import Plafond
 
 SILENCE_AU_DECROCHE_S = 2.0  # sans voix du prospect passé ce délai, l'assistante ouvre par son premier message
+# Un standard qui prend la ligne puis fait sonner (23/10 : 46 s) : tant que la sonnerie revient, on attend la voix,
+# dans cette limite ; ensuite l'ouverture reprend comme sans sonnerie.
+ATTENTE_SONNERIE_MAX_S = 60.0
 PREMIER_MESSAGE_PAR_DEFAUT = "Allô ?"
 # Au-delà, ce n'est plus une phrase d'ouverture : on reprend « Allô ? ». Un service qui emprunte la ligne (ADR 0019)
 # peut ouvrir en lisant toute sa demande, d'où la marge (03/10).
@@ -159,6 +162,34 @@ class ConversationPont(Conversation):
         super()._handle_message(message, ws)
 
 
+
+def attendre_voix(
+    pont: Pont,
+    en_ligne: Callable[[], bool],
+    journal: Callable[..., None],
+    *,
+    horloge: Callable[[], float] = time.monotonic,
+    attendre: Callable[[float], bool] | None = None,
+) -> bool:
+    """Vrai si le prospect parle dans les SILENCE_AU_DECROCHE_S après le décroché, ou plus tard tant qu'une sonnerie
+    revient ou qu'une tonalité est en train de sonner (ATTENTE_SONNERIE_MAX_S au plus) ; faux sur un silence, ou si
+    l'appel a pris fin."""
+    attendre = attendre or pont.prospect_parle.wait
+    debut = horloge()
+    annonce = False
+    while not attendre(0.1):
+        if not en_ligne():
+            return False
+        ecoule = horloge() - debut
+        if (pont.sonnerie_recente() or pont.tonalite_en_cours()) and ecoule < ATTENTE_SONNERIE_MAX_S:
+            if not annonce:
+                journal("sonnerie après le décroché : on attend la voix du prospect")
+                annonce = True
+            continue
+        if ecoule >= SILENCE_AU_DECROCHE_S:
+            return False
+    return True
+
 class Appel:
     """Un appel sortant (`lancer`) ou entrant (`decrocher`). L'entrant ne compte pas au plafond, qui ne limite que les
     compositions, et n'est jamais recomposé : une panne (décroché refusé, canal son absent) termine l'appel."""
@@ -207,6 +238,7 @@ class Appel:
         self._decroche: float | None = None
         self._session = False  # décroché : la conversation va s'ouvrir (ou l'opérateur a pris la main avant)
         self._session_ouverte = False  # start_session a vraiment été appelé
+        self._fin_lancee_appel = False  # _terminer a commencé : plus aucune session ne s'ouvre
         self._fin_session = False
         self._prise_en_main: float | None = None
         self._en_ligne = False
@@ -499,7 +531,7 @@ class Appel:
             self._pont.oublier_accueil()
             self._conversation.config.conversation_config_override["agent"] = {"first_message": self._premier_message}
             self._ouverture_prise = "premier message"
-        elif self._pont.prospect_parle.wait(SILENCE_AU_DECROCHE_S):
+        elif attendre_voix(self._pont, lambda: self._en_ligne, self.journal):
             court = self._ouverture is not None and self._pont.accueil_fini.wait(
                 ACCUEIL_COURT_MAX_S + TRAMES_FIN_ACCUEIL * 0.02
             )
@@ -518,6 +550,10 @@ class Appel:
         with self._verrou:
             if self._prise_en_main is not None:
                 return  # l'opérateur a pris la main avant que Mina ne parle
+            if self._fin_lancee_appel or (not self.entrant and not self._en_ligne):
+                # Raccroché pendant l'attente (la sonnerie d'un standard peut la prolonger) : pas de session hors appel.
+                self.journal("appel terminé avant l'ouverture : pas de conversation")
+                return
             self._session_ouverte = True
         self._conversation.start_session()
 
@@ -569,7 +605,10 @@ class Appel:
 
     def _terminer(self, raison: str) -> None:
         conversation_id = None
-        if self._session_ouverte:
+        with self._verrou:  # face à _ouvrir_conversation : la session s'ouvre avant ce point, ou plus du tout
+            self._fin_lancee_appel = True
+            ouverte = self._session_ouverte
+        if ouverte:
             if not self._fin_session:
                 self._conversation.end_session()
             conversation_id = self._conversation.wait_for_session_end()

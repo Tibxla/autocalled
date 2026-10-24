@@ -384,6 +384,8 @@ def appel_entrant(plafond: Plafond | None = None) -> tuple[Appel, mock.Mock, lis
     appel._termine = threading.Event()
     appel._terminer = mock.Mock()
     appel._rappels = mock.Mock()
+    appel._verrou = threading.Lock()
+    appel._fin_lancee_appel = False
     return appel, telephone_, lignes
 
 

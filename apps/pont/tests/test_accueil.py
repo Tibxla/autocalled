@@ -13,14 +13,22 @@ TAUX = 16000
 BLOC = 120  # une trame mSBC : 7,5 ms
 
 
+def voix(n: int) -> np.ndarray:
+    """Un son voisé vers −20 dBFS : fondamentale à 180 Hz et ses harmoniques jusqu'à 3,4 kHz. Pas une note pure, qui
+    serait prise pour une sonnerie."""
+    t = np.arange(n) / TAUX
+    x = sum(np.sin(2 * np.pi * 180 * k * t) / k for k in range(1, 19))
+    return 3000 * x / np.sqrt((x**2).mean())
+
+
 def son(*morceaux: tuple[str, float]) -> np.ndarray:
-    """("voix" | "silence", secondes)… : une voix à 440 Hz vers −20 dBFS, un silence de décroché (bruit faible)."""
+    """("voix" | "silence", secondes)… : une voix vers −20 dBFS, un silence de décroché (bruit faible)."""
     rng = np.random.default_rng(0)
     parties = []
     for nature, s in morceaux:
         n = int(TAUX * s)
         if nature == "voix":
-            parties.append(3000 * np.sin(np.arange(n) * 2 * np.pi * 440 / TAUX))
+            parties.append(voix(n))
         else:
             parties.append(rng.normal(0, 150, n))
     return np.concatenate(parties).astype("<i2")

@@ -33,6 +33,18 @@ SEUIL_VOIX, TRAMES_VOIX = 600, 3
 # Fin de l'accueil du prospect (« Hôtel du Parc, bonjour ») : 500 ms sous le seuil après sa voix.
 TRAMES_FIN_ACCUEIL = 25
 ATTENTE_MAX_S = 5  # son du prospect gardé en attendant l'ouverture de la conversation
+# Un standard peut prendre la ligne puis jouer lui-même la tonalité de retour d'appel (constat du 23/10 : 46 s de
+# sonnerie après « active »). Chaque trame est jugée sur les 100 dernières ms (20 ms ne séparent pas 440 Hz de ses
+# voisins ; dès 60 ms, la tonalité est reconnue avant que TRAMES_VOIX ne la prenne pour une voix) : si ce son est fort et que son énergie tient presque toute entre 400 et 480 Hz (440, 425 et 450 Hz, les
+# tonalités européennes), c'est une tonalité, jamais une voix. 0,2 s de tonalité d'affilée reconnaît la sonnerie, que
+# chaque trame tonale entretient ensuite ; elle est oubliée SONNERIE_RECENTE_S après la dernière (les silences entre
+# deux salves font 3,5 s).
+FENETRE_TONALITE = 5  # trames de 20 ms
+BANDE_TONALITE_HZ = (400, 480)
+PART_TONALITE = 0.9
+TRAMES_SONNERIE = 10  # 0,2 s : une salve tronquée au décroché suffit ; au pire, un bip retarde le « Allô ? » de 5 s
+SONNERIE_RECENTE_S = 5.0
+TONALITE_EN_COURS_S = 0.2  # une tonalité pas encore reconnue retient l'ouverture tant qu'elle sonne
 # La voix d'ElevenLabs arrive vers −13 dBFS, crêtes à pleine échelle. Le téléphone traite ce qui vient du
 # « micro » mains-libres en l'attendant bien plus faible : à ce niveau, il compresse et la voix sonne saturée.
 # Échelle d'écoute du 27/09 en mSBC : −19,5 dBFS sature, −29,5 et −39,5 sont nets. On vise environ −31 dBFS.
@@ -239,6 +251,10 @@ class Pont(AudioInterface):
         self._trames_accueil = 0  # depuis le début de la voix
         self._trames_silence = 0  # d'affilée, depuis la dernière trame de voix
         self._tampon_voix = bytearray()
+        self._dernieres_trames: deque[np.ndarray] = deque(maxlen=FENETRE_TONALITE)
+        self._trames_tonales = 0  # d'affilée
+        self._derniere_trame_tonale: float | None = None
+        self._derniere_tonalite: float | None = None  # heure (monotonic) de la dernière tonalité d'une sonnerie reconnue
         self.niveaux = Niveaux(self._taux_ligne)
         self._niveaux_actifs = True  # une erreur de relevé les coupe pour le reste de l'appel, jamais la boucle
         self._preparer_conversions()
@@ -457,8 +473,26 @@ class Pont(AudioInterface):
         if converti:  # un rééchantillonneur garde quelques échantillons au démarrage
             self._envoi(converti)
 
+    def _tonale(self, fenetre: np.ndarray) -> bool:
+        """L'énergie de la fenêtre tient presque toute dans la bande de la tonalité de retour d'appel."""
+        spectre = np.abs(np.fft.rfft(fenetre * np.hanning(len(fenetre)))) ** 2
+        frequences = np.fft.rfftfreq(len(fenetre), 1 / self._taux_ligne)
+        bas, haut = BANDE_TONALITE_HZ
+        return spectre[(frequences >= bas) & (frequences <= haut)].sum() > PART_TONALITE * spectre.sum()
+
+    def tonalite_en_cours(self) -> bool:
+        """Une tonalité sonne en ce moment, reconnue comme sonnerie ou pas encore (salve tronquée, départ tardif)."""
+        derniere = self._derniere_trame_tonale
+        return derniere is not None and time.monotonic() - derniere < TONALITE_EN_COURS_S
+
+    def sonnerie_recente(self) -> bool:
+        """Une sonnerie a été reconnue, et sa dernière tonalité date de moins de SONNERIE_RECENTE_S."""
+        derniere = self._derniere_tonalite
+        return derniere is not None and time.monotonic() - derniere < SONNERIE_RECENTE_S
+
     def _detecter_voix(self, pcm: bytes) -> None:
-        """Début de la voix du prospect au décroché (`prospect_parle`), puis fin de son accueil (`accueil_fini`)."""
+        """Début de la voix du prospect au décroché (`prospect_parle`), puis fin de son accueil (`accueil_fini`).
+        Chaque trame de 20 ms est jugée à son arrivée, sur les 100 dernières ms : une tonalité n'est jamais une voix."""
         if self.accueil_fini.is_set():
             return
         self._tampon_voix += pcm
@@ -466,21 +500,35 @@ class Pont(AudioInterface):
         while len(self._tampon_voix) >= octets:
             x = np.frombuffer(bytes(self._tampon_voix[:octets]), dtype="<i2").astype(np.float32)
             del self._tampon_voix[:octets]
-            fort = np.sqrt((x**2).mean()) > SEUIL_VOIX
-            if not self.prospect_parle.is_set():
-                self._trames_voix = self._trames_voix + 1 if fort else 0
-                if self._trames_voix >= TRAMES_VOIX:
-                    self._trames_accueil = self._trames_voix
-                    self.prospect_parle.set()
-                continue
-            self._trames_accueil += 1
-            self._trames_silence = 0 if fort else self._trames_silence + 1
-            if self._trames_silence >= TRAMES_FIN_ACCUEIL:
-                self.duree_accueil_s = (self._trames_accueil - self._trames_silence) * 0.02
-                self.fin_accueil = time.monotonic() - self._trames_silence * 0.02
-                self.accueil_fini.set()
-                self._tampon_voix.clear()
+            self._dernieres_trames.append(x)
+            # Le niveau se juge sur la trame : le silence qui précède dilue la fenêtre, pas la concentration spectrale.
+            forte = np.sqrt((x**2).mean()) > SEUIL_VOIX
+            tonale = forte and len(self._dernieres_trames) >= TRAMES_VOIX and self._tonale(np.concatenate(self._dernieres_trames))
+            if tonale:
+                self._derniere_trame_tonale = time.monotonic()
+            self._trames_tonales = self._trames_tonales + 1 if tonale else 0
+            if self._trames_tonales >= TRAMES_SONNERIE or (tonale and self._derniere_tonalite is not None):
+                self._derniere_tonalite = time.monotonic()
+            if self._trame(forte and not tonale):
                 return
+
+    def _trame(self, fort: bool) -> bool:
+        """Une trame de 20 ms ; vrai à la fin de l'accueil."""
+        if not self.prospect_parle.is_set():
+            self._trames_voix = self._trames_voix + 1 if fort else 0
+            if self._trames_voix >= TRAMES_VOIX:
+                self._trames_accueil = self._trames_voix
+                self.prospect_parle.set()
+            return False
+        self._trames_accueil += 1
+        self._trames_silence = 0 if fort else self._trames_silence + 1
+        if self._trames_silence < TRAMES_FIN_ACCUEIL:
+            return False
+        self.duree_accueil_s = (self._trames_accueil - self._trames_silence) * 0.02
+        self.fin_accueil = time.monotonic() - self._trames_silence * 0.02
+        self.accueil_fini.set()
+        self._tampon_voix.clear()
+        return True
 
     def oublier_accueil(self) -> None:
         """Le son gardé avant l'ouverture est jeté au lieu d'être envoyé à ElevenLabs."""
