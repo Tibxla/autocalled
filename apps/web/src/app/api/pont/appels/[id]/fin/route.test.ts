@@ -56,12 +56,21 @@ describe('fin d’un appel téléphone', () => {
     expect((await listerAppels({ issue: 'non-abouti' }, 10)).map((l) => l.appel.id)).toEqual([appel.id]);
   });
 
-  it('téléphone qui n’a pas composé : échec avec sa raison, sans issue', async () => {
+  it.each(['composition impossible', 'canal son absent'])('sans conversation, %s : non abouti avec sa raison', async (raison) => {
     const appel = await appelTelephone();
-    await fin(appel.id, { raison: 'composition impossible', conversationId: null });
+    await fin(appel.id, { raison, conversationId: null });
+    const [lu] = await db.select().from(appels).where(eq(appels.id, appel.id));
+    expect(lu).toMatchObject({ statut: 'termine', issue: 'non-abouti', issueSysteme: 'non-abouti' });
+    expect(lu?.finLe).toBeInstanceOf(Date);
+    expect(lu?.erreur).toMatch(/téléphone passerelle/i);
+  });
+
+  it('recomposition refusée au plafond : échec sans nouvelle tentative', async () => {
+    const appel = await appelTelephone();
+    await fin(appel.id, { raison: 'plafond atteint', conversationId: null });
     const [lu] = await db.select().from(appels).where(eq(appels.id, appel.id));
     expect(lu).toMatchObject({ statut: 'echec', issue: null, issueSysteme: null });
-    expect(lu?.erreur).toMatch(/n’a pas composé/);
+    expect(lu?.erreur).toMatch(/Plafond/);
   });
 
   it('refuse une requête sans le secret du pont', async () => {
@@ -74,7 +83,7 @@ describe('fin d’un appel téléphone', () => {
 });
 
 describe('fin d’un appel de campagne', () => {
-  it('sans conversation : nouvelle tentative prévue pour ce prospect, le suivant est composé après la pause', async () => {
+  it.each(['pas de réponse', 'composition impossible', 'canal son absent'])('sans conversation, %s : nouvelle tentative prévue, le suivant est composé après la pause', async (raison) => {
     const e = await entrepriseDeTest();
     await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01'), fiche('marc', 'Marc Fictif', '06 39 98 00 02')]);
     const { versionScriptId } = await creerScript(e.id, 'Découverte');
@@ -87,7 +96,7 @@ describe('fin d’un appel de campagne', () => {
       const [premier] = await db.select({ id: appels.id }).from(appels);
       if (!premier) throw new Error('appel non composé');
 
-      await fin(premier.id, { raison: 'pas de réponse', conversationId: null });
+      await fin(premier.id, { raison, conversationId: null });
       await Promise.all(taches.splice(0));
 
       const [c] = await db.select().from(campagnes).where(eq(campagnes.id, id));

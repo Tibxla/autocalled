@@ -35,7 +35,10 @@ export async function POST(requete: Request, { params }: { params: Promise<{ id:
         : fin.raison === 'plafond atteint'
           ? 'Plafond d’appels atteint avant la recomposition : l’appel n’est pas reparti (chaque composition compte).'
           : 'Le téléphone passerelle n’a pas composé, même après reconnexion : vérifie qu’il est allumé et à portée (page Téléphone).';
-    await db.update(appels).set({ finLe: new Date(), statut: 'echec', erreur }).where(eq(appels.id, id));
+    const issue = fin.raison === 'plafond atteint'
+      ? { statut: 'echec' as const }
+      : { statut: 'termine' as const, issue: 'non-abouti', issueSysteme: 'non-abouti' as const };
+    await db.update(appels).set({ finLe: new Date(), ...issue, erreur }).where(eq(appels.id, id));
   } else {
     // Pas de bilan, mais une issue système : les lectures (listes, filtres, analyse) comptent l'appel. Un appel entrant
     // que le téléphone n'a pas pu décrocher (« décroché impossible ») finit ici aussi : aucune conversation.

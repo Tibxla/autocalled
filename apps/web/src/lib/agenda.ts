@@ -57,7 +57,9 @@ async function lireParMcp(debut: Date, fin: Date): Promise<Intervalle[]> {
     },
     prompt: `Appelle list_calendars, puis appelle UNE seule fois suggest_time avec tous les identifiants de calendriers en attendeeEmails, startTime ${iso(debut)}, endTime ${iso(fin)}, durationMinutes 15, timeZone Europe/Paris, preferences { startHour 07:00, endHour 22:00, pageSize 250 }. Recopie chaque plage libre renvoyée (startTime, endTime) sans rien modifier.`,
   })) as { libres: { debut: string; fin: string }[] };
-  const libres = r.libres.map((l) => ({ debut: new Date(l.debut), fin: new Date(l.fin) })).filter((l) => !Number.isNaN(l.debut.getTime()));
+  const libres = r.libres.map((l) => ({ debut: new Date(l.debut), fin: new Date(l.fin) }))
+    .filter((l) => l.debut < l.fin && l.debut < fin && l.fin > debut);
+  if (libres.length === 0) throw new Error('Le connecteur Google Agenda n’a renvoyé aucune plage libre : lecture non fiable.');
   return occupationsDepuisLibres(libres, { debut, fin });
 }
 
@@ -118,6 +120,9 @@ async function occupations(): Promise<{ occupees: Intervalle[]; fenetreFin: Date
     etat = await etatAgenda();
   }
   if (!etat?.occupations) return null;
+  const unique = etat.occupations.length === 1 ? etat.occupations[0] : null;
+  if (unique && new Date(unique.debut) <= etat.fenetreDebut && new Date(unique.fin) >= etat.fenetreFin) return null;
+  if (etat.erreur && Date.now() - etat.synchroniseLe.getTime() > 2 * 3600_000) return null;
   // Un rendez-vous dont l'événement Google a échoué reste pris : le prospect, lui, l'a noté.
   const nosRendezVous = await db.select({ debut: rendezVous.debut, fin: rendezVous.fin }).from(rendezVous);
   return {

@@ -609,9 +609,13 @@ class Appel:
             self._fin_lancee_appel = True
             ouverte = self._session_ouverte
         if ouverte:
-            if not self._fin_session:
-                self._conversation.end_session()
-            conversation_id = self._conversation.wait_for_session_end()
+            try:
+                if not self._fin_session:
+                    self._conversation.end_session()
+                conversation_id = self._conversation.wait_for_session_end()
+            except Exception as e:
+                # start_session peut encore attendre l'URL signée : la fin doit quand même rejoindre l'application.
+                self.journal("fin de session impossible :", e)
         self._pont.fermer()
         if self._canal_absent:
             raison = "canal son absent"

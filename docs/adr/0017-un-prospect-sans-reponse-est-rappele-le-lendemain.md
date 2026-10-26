@@ -39,3 +39,7 @@ Rien ne relançait une campagne en dehors de la fin d'un appel. Un minuteur syst
 ## Amendement du 08/10 : signal faible
 
 À la demande de l'opérateur, une campagne téléphone (et un rappel convenu automatique) ne compose pas quand le téléphone passerelle annonce un signal de 20 % ou moins (une barre sur cinq) : comme pour une ligne occupée, rien ne part, aucun prospect n'est consommé, la campagne reste en cours, et le réveil la relance dès que le signal remonte (deux barres), dans les cinq minutes. Un signal inconnu ou un téléphone déconnecté ne retient rien à ce titre. Un appel lancé à la main part quand même. La barre du haut affiche « Signal faible · campagnes en attente ».
+
+## Amendement du 26/10 : panne Bluetooth sans conversation
+
+Un canal son absent ou une composition impossible après reconnexion termine l'appel sans conversation en « Non abouti », avec la raison technique conservée : la campagne prévoit la nouvelle tentative habituelle. Une recomposition refusée au plafond reste un échec sans nouvelle tentative. Une conversation déjà connue garde le chemin normal du bilan.

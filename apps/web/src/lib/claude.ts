@@ -52,7 +52,8 @@ export async function claudeStructure(options: {
     LANG: 'fr_FR.UTF-8',
     CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
   };
-  if (process.env.CLAUDE_CODE_OAUTH_TOKEN) env.CLAUDE_CODE_OAUTH_TOKEN = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  // Les connecteurs claude.ai demandent la session connectée du HOME, pas le jeton de setup-token.
+  if (!options.outilsMcp && process.env.CLAUDE_CODE_OAUTH_TOKEN) env.CLAUDE_CODE_OAUTH_TOKEN = process.env.CLAUDE_CODE_OAUTH_TOKEN;
 
   try {
     return await new Promise((resoudre, rejeter) => {

@@ -1,13 +1,17 @@
 import { eq } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
 import { db } from '@/db';
-import { appels, entreprises, prospects, rendezVous } from '@/db/schema';
+import { appels, disponibilites, entreprises, prospects, rendezVous } from '@/db/schema';
 import { agendaFrais, entrepriseDeTest, fiche } from '../../test/fixtures';
 import { avecBaseDeTest } from '../../test/outils';
-import { lienMeet, proposerPourAppel, reserverPourAppel } from './agenda';
+import { etatAgenda, lienMeet, proposerPourAppel, reserverPourAppel, synchroniserAgenda } from './agenda';
+import { claudeStructure } from './claude';
 import type * as ModuleClaude from './claude';
 import { creerScript } from './entreprises';
 import { importerFiches } from './prospects';
+
+vi.mock('./claude', () => ({ claudeStructure: vi.fn() }));
+vi.mock('./google', () => ({ accesGoogle: async () => null }));
 
 avecBaseDeTest();
 
@@ -27,6 +31,54 @@ async function appelAvecCreneau(ligne: 'bluetooth' | 'navigateur', email: string
 }
 
 const rendezVousDe = async (appelId: string) => (await db.select().from(rendezVous).where(eq(rendezVous.appelId, appelId)))[0];
+
+describe('synchroniserAgenda : lecture du connecteur', () => {
+  it.each([
+    { libres: [] },
+    { libres: [{ debut: 'invalide', fin: 'invalide' }] },
+    { libres: [{ debut: '2000-01-01T10:00:00Z', fin: '2000-01-01T11:00:00Z' }] },
+  ])('sans plage libre dans la fenêtre ($libres) : garde la copie et note l’erreur', async ({ libres }) => {
+    await agendaFrais();
+    const avant = await etatAgenda();
+    vi.mocked(claudeStructure).mockResolvedValueOnce({ libres });
+    await synchroniserAgenda();
+    expect(await etatAgenda()).toEqual({ ...avant, erreur: expect.stringMatching(/aucune plage libre/i) });
+  });
+
+  it('une lecture valide remplace la copie et efface l’erreur', async () => {
+    await agendaFrais();
+    await db.update(disponibilites).set({ erreur: 'Lecture précédente échouée' });
+    const debut = new Date(Date.now() + 3600_000).toISOString();
+    const fin = new Date(Date.now() + 7200_000).toISOString();
+    vi.mocked(claudeStructure).mockResolvedValueOnce({ libres: [{ debut, fin }] });
+    await synchroniserAgenda();
+    expect(await etatAgenda()).toMatchObject({ erreur: null, source: 'mcp', occupations: [
+      { debut: expect.any(String), fin: debut },
+      { debut: fin, fin: expect.any(String) },
+    ] });
+  });
+});
+
+describe('proposerPourAppel : copie douteuse', () => {
+  it('une occupation unique couvrant toute la fenêtre rend l’agenda indisponible, même frais', async () => {
+    const { appelId } = await appelAvecCreneau('bluetooth');
+    const etat = (await etatAgenda())!;
+    await db.update(disponibilites).set({ occupations: [{ debut: etat.fenetreDebut.toISOString(), fin: etat.fenetreFin.toISOString() }] });
+    expect(await proposerPourAppel(appelId)).toMatch(/agenda n'est pas disponible/);
+  });
+
+  it.each([
+    { heures: 3, erreur: 'Connecteur absent', indisponible: true },
+    { heures: 1, erreur: 'Connecteur absent', indisponible: false },
+    { heures: 3, erreur: null, indisponible: false },
+  ])('copie de $heures h, erreur=$erreur : indisponible=$indisponible', async ({ heures, erreur, indisponible }) => {
+    const { appelId } = await appelAvecCreneau('bluetooth');
+    await db.update(disponibilites).set({ synchroniseLe: new Date(Date.now() - heures * 3600_000), erreur });
+    const resultat = await proposerPourAppel(appelId);
+    if (indisponible) expect(resultat).toMatch(/agenda n'est pas disponible/);
+    else expect(resultat).toHaveProperty('creneaux');
+  });
+});
 
 describe('reserverPourAppel : adresse relue', () => {
   it('une adresse « confirmée » d’emblée, sans relecture, est renvoyée à l’épellation', async () => {
