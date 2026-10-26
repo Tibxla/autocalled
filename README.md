@@ -359,7 +359,7 @@ Le dépôt se clone où tu veux : les installateurs écrivent son chemin, et cel
 | `ORIGINE_APP` | Adresse exacte servie par `tailscale serve` ; tout autre nom d'hôte est refusé, et la prise de main n'accepte que cette origine |
 | `ELEVENLABS_API_KEY`, `ELEVENLABS_AGENT_ID` | Clé ElevenLabs et identifiant de l'agent (donné par `pnpm agent create`) |
 | `POSTGRES_PASSWORD`, `DATABASE_URL` | Mot de passe du Postgres de `compose.yaml` et adresse de la base |
-| `CLAUDE_CODE_OAUTH_TOKEN` | Jeton longue durée de `claude setup-token`, pour l'analyseur ; l'agenda utilise la session Claude connectée dans le même `HOME` |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Jeton longue durée de `claude setup-token`, pour l'analyseur et l'agenda (l'agenda attend les connecteurs claude.ai : `MCP_CONNECTION_NONBLOCKING=false`) |
 | `AGENDA_CALENDRIER` | Calendrier où l'assistante crée les rendez-vous ; les invitations partent au nom de son propriétaire |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Facultatifs : API Google directe (client « application Web », redirection vers `ORIGINE_APP/google/retour`) |
 | `CLE_CHIFFREMENT` | 32 octets en hexadécimal (`openssl rand -hex 32`), chiffre le jeton Google en base |

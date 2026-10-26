@@ -52,8 +52,10 @@ export async function claudeStructure(options: {
     LANG: 'fr_FR.UTF-8',
     CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
   };
-  // Les connecteurs claude.ai demandent la session connectée du HOME, pas le jeton de setup-token.
-  if (!options.outilsMcp && process.env.CLAUDE_CODE_OAUTH_TOKEN) env.CLAUDE_CODE_OAUTH_TOKEN = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  if (process.env.CLAUDE_CODE_OAUTH_TOKEN) env.CLAUDE_CODE_OAUTH_TOKEN = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  // En `-p`, les connecteurs claude.ai se branchent en tâche de fond : sans attente, le modèle démarre parfois avant
+  // eux, ne voit aucun outil d'agenda et rend une liste vide (26/10).
+  if (options.outilsMcp?.length) env.MCP_CONNECTION_NONBLOCKING = 'false';
 
   try {
     return await new Promise((resoudre, rejeter) => {
