@@ -36,6 +36,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await pont.fermer();
 });
 
@@ -250,7 +251,7 @@ describe('signal faible', () => {
   });
 });
 
-describe('ligne téléphone occupée', () => {
+describe('disponibilité de la ligne téléphone', () => {
   it.each([
     ['un appel en ligne', { appelEnCours: true }],
     ['un prospect qui rappelle', { entrantEnCours: true }],
@@ -290,24 +291,94 @@ describe('ligne téléphone occupée', () => {
     expect((await lire(id)).statut).toBe('en-cours');
   });
 
-  it('pont injoignable (503) : l’appel échoue et la campagne se met en pause, comme avant', async () => {
+  it.each(['503', 'réseau'])('/etat en échec (%s) : attente sans rien consommer, puis une composition au réveil', async (panne) => {
+    const journal = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const requete = vi.spyOn(globalThis, 'fetch');
+    if (panne === '503') requete.mockResolvedValueOnce(Response.json({ erreur: 'Pont indisponible.' }, { status: 503 }));
+    else requete.mockRejectedValueOnce(new TypeError('Erreur réseau fictive.'));
+
+    const id = await campagneTelephone();
+
+    expect(pont.compositions()).toHaveLength(0);
+    expect(await db.$count(appels)).toBe(0);
+    expect(await lire(id)).toMatchObject({
+      statut: 'en-cours',
+      entrees: [{ prospectId: 'julie', etat: 'a-appeler' }, { prospectId: 'marc', etat: 'a-appeler' }],
+    });
+    expect((await planReveil(new Date())).aRelancer).toEqual([id]);
+    expect(journal).toHaveBeenCalledWith(expect.any(String), { campagneId: id, phase: 'etat', raison: 'absente' });
+
+    requete.mockRestore();
+    expect((await reveiller()).relancees).toEqual([id]);
+    expect(pont.compositions()).toHaveLength(1);
+    expect(await db.$count(appels)).toBe(1);
+    expect(await entree(id, 'julie')).toMatchObject({ etat: 'en-appel' });
+  });
+
+  it.each(['503', 'réseau'])('/appels en échec (%s) : composition défaite, même tentative due, puis une composition au réveil', async (panne) => {
+    const journal = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const id = await campagneTelephone(['julie', 'marc']);
+    const premier = await appelEnLigne(id);
+    await db.update(appels).set({ statut: 'termine', issueSysteme: 'non-abouti', finLe: new Date() }).where(eq(appels.id, premier));
+    await clore(id, premier);
+    await rendreDue(id, 'julie');
+    const fetchReel = globalThis.fetch;
+    const requete = vi.spyOn(globalThis, 'fetch').mockImplementation((url, options) => {
+      if (String(url).endsWith('/appels')) {
+        if (panne === '503') return Promise.resolve(Response.json({ erreur: 'Refus fictif.' }, { status: 503 }));
+        return Promise.reject(new TypeError('Erreur réseau fictive.'));
+      }
+      return fetchReel(url, options);
+    });
+
+    await appelerSuivantTelephone(id);
+
+    expect(await lire(id)).toMatchObject({
+      statut: 'en-cours',
+      entrees: [
+        { prospectId: 'julie', etat: 'a-appeler', tentative: 2, appelsPrecedents: [premier] },
+        { prospectId: 'marc', etat: 'a-appeler' },
+      ],
+    });
+    expect(await db.$count(appels)).toBe(1);
+    expect(await db.$count(appels, eq(appels.statut, 'echec'))).toBe(0);
+    expect((await planReveil(new Date())).aRelancer).toEqual([id]);
+    expect(journal).toHaveBeenCalledWith(expect.any(String), { campagneId: id, phase: 'appels', raison: panne === '503' ? 'telephone-absent' : 'pont-injoignable' });
+
+    requete.mockRestore();
+    const compositionsAvant = pont.compositions().length;
+    expect((await reveiller()).relancees).toEqual([id]);
+    expect(pont.compositions()).toHaveLength(compositionsAvant + 1);
+    expect(await db.$count(appels)).toBe(2);
+    expect(await entree(id, 'julie')).toMatchObject({ etat: 'en-appel', tentative: 2, appelsPrecedents: [premier] });
+  });
+
+  it('erreur inattendue (500) : l’appel échoue et la campagne se met en pause, comme avant', async () => {
+    const journal = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await pont.fermer();
-    pont = await fauxPont({ refusAppels: { statut: 503, erreur: 'Composition impossible : téléphone absent.' } });
+    pont = await fauxPont({ refusAppels: { statut: 500, erreur: 'Erreur fictive inattendue.' } });
 
     const id = await campagneTelephone();
 
     expect(await lire(id)).toMatchObject({ statut: 'en-pause', entrees: [{ etat: 'appelee' }, { etat: 'a-appeler' }] });
     expect(await db.select({ statut: appels.statut }).from(appels)).toEqual([{ statut: 'echec' }]);
+    expect(journal).toHaveBeenCalledWith(expect.any(String), { campagneId: id, phase: 'appels', raison: 'echec-composition', statut: 500 });
   });
 
   it('plafond atteint : la campagne se met en pause, comme avant', async () => {
+    const journal = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await pont.fermer();
     pont = await fauxPont({ plafond: 'Plafond fictif atteint.' });
 
     const id = await campagneTelephone(['julie']);
 
     expect(pont.compositions()).toHaveLength(0);
-    expect((await lire(id)).statut).toBe('en-pause');
+    expect(await db.$count(appels)).toBe(0);
+    expect(await lire(id)).toMatchObject({ statut: 'en-pause', entrees: [{ prospectId: 'julie', etat: 'a-appeler' }] });
+    expect(journal).toHaveBeenCalledWith(expect.any(String), { campagneId: id, phase: 'etat', raison: 'plafond' });
+    expect((await planReveil(new Date())).aRelancer).toEqual([]);
+    expect((await reveiller()).relancees).toEqual([]);
+    expect(pont.compositions()).toHaveLength(0);
   });
 });
 

@@ -311,8 +311,13 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
   if (ligne.type === 'occupee') return;
   // Signal trop faible : de même, la campagne reste en cours et le réveil la relance quand il remonte.
   if (ligne.type === 'signal-faible') return;
-  // Plafond atteint ou pont absent : pause, sans consommer le prospect suivant.
-  if (ligne.type !== 'libre') {
+  if (ligne.type === 'absente') {
+    console.warn('[campagne] attente du téléphone', { campagneId, phase: 'etat', raison: ligne.type });
+    return;
+  }
+  // Plafond atteint : pause, sans consommer le prospect suivant.
+  if (ligne.type === 'plafond') {
+    console.warn('[campagne] pause automatique', { campagneId, phase: 'etat', raison: ligne.type });
     await suspendreSiEnCours(campagneId);
     return;
   }
@@ -375,14 +380,21 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
     ...(suivant.ouverture ? { ouverture: suivant.ouverture } : {}),
   });
   if (reponse.ok) return;
-  // Ligne prise entre la lecture de son état et la composition (un prospect qui rappelle, une autre campagne) : rien
-  // n'est parti. L'appel s'efface, le prospect garde sa place et sa tentative, la campagne reste en cours ; la fin de
-  // l'autre appel ou le réveil la reprendront.
-  if (reponse.statut === 409 && (await annulerComposition(campagneId, suivant.appelId))) return;
-  // Pont injoignable ou téléphone absent : l'appel échoue et la campagne se met en pause, plutôt que de
-  // vider toute la file en échecs.
+  // Ligne prise (409), téléphone absent (503) ou pont injoignable (sans statut) : on défait la composition comme
+  // pour une ligne occupée. Le prospect garde sa place et sa tentative ; le réveil reprendra quand la ligne revient.
+  const telephoneAbsent = reponse.statut === 503 || reponse.statut === undefined;
+  if ((reponse.statut === 409 || telephoneAbsent) && (await annulerComposition(campagneId, suivant.appelId))) {
+    if (telephoneAbsent) {
+      console.warn('[campagne] attente du téléphone', {
+        campagneId, phase: 'appels', raison: reponse.statut === 503 ? 'telephone-absent' : 'pont-injoignable',
+      });
+    }
+    return;
+  }
+  // Un échec inattendu conserve l'appel en échec et met la campagne en pause.
   await db.update(appels).set({ statut: 'echec', erreur: reponse.raison, finLe: new Date() }).where(eq(appels.id, suivant.appelId));
   await clore(campagneId, suivant.appelId);
+  console.warn('[campagne] pause automatique', { campagneId, phase: 'appels', raison: 'echec-composition', statut: reponse.statut });
   await suspendreSiEnCours(campagneId);
 }
 
