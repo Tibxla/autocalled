@@ -277,6 +277,17 @@ describe('disponibilité de la ligne téléphone', () => {
     expect(await lire(id)).toMatchObject({ statut: 'en-cours', entrees: [{ prospectId: 'julie', etat: 'a-appeler' }] });
   });
 
+  it('plafond atteint entre la lecture de la ligne et la composition (429) : l’appel s’efface, pas de pause', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await pont.fermer();
+    pont = await fauxPont({ refusAppels: { statut: 429, erreur: 'Plafond fictif atteint.' } });
+
+    const id = await campagneTelephone(['julie']);
+
+    expect(await db.$count(appels)).toBe(0);
+    expect(await lire(id)).toMatchObject({ statut: 'en-cours', entrees: [{ prospectId: 'julie', etat: 'a-appeler' }] });
+  });
+
   it('une nouvelle tentative refusée en 409 garde son numéro et ses appels passés', async () => {
     const id = await campagneTelephone(['julie']);
     const premier = await finSansReponse(id);
@@ -365,7 +376,7 @@ describe('disponibilité de la ligne téléphone', () => {
     expect(journal).toHaveBeenCalledWith(expect.any(String), { campagneId: id, phase: 'appels', raison: 'echec-composition', statut: 500 });
   });
 
-  it('plafond atteint : la campagne se met en pause, comme avant', async () => {
+  it('plafond atteint : la campagne attend sans rien consommer, puis le réveil compose quand il se libère', async () => {
     const journal = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await pont.fermer();
     pont = await fauxPont({ plafond: 'Plafond fictif atteint.' });
@@ -374,11 +385,18 @@ describe('disponibilité de la ligne téléphone', () => {
 
     expect(pont.compositions()).toHaveLength(0);
     expect(await db.$count(appels)).toBe(0);
-    expect(await lire(id)).toMatchObject({ statut: 'en-pause', entrees: [{ prospectId: 'julie', etat: 'a-appeler' }] });
+    expect(await lire(id)).toMatchObject({ statut: 'en-cours', entrees: [{ prospectId: 'julie', etat: 'a-appeler' }] });
     expect(journal).toHaveBeenCalledWith(expect.any(String), { campagneId: id, phase: 'etat', raison: 'plafond' });
-    expect((await planReveil(new Date())).aRelancer).toEqual([]);
-    expect((await reveiller()).relancees).toEqual([]);
+    expect((await planReveil(new Date())).aRelancer).toEqual([id]);
+    await reveiller();
     expect(pont.compositions()).toHaveLength(0);
+    expect((await lire(id)).statut).toBe('en-cours');
+
+    await pont.fermer();
+    pont = await fauxPont();
+    expect((await reveiller()).relancees).toEqual([id]);
+    expect(pont.compositions()).toHaveLength(1);
+    expect(await entree(id, 'julie')).toMatchObject({ etat: 'en-appel' });
   });
 });
 

@@ -315,10 +315,10 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
     console.warn('[campagne] attente du téléphone', { campagneId, phase: 'etat', raison: ligne.type });
     return;
   }
-  // Plafond atteint : pause, sans consommer le prospect suivant.
+  // Plafond atteint : rien ne part, aucun prospect n'est consommé ; la campagne reste en cours et le réveil la reprend
+  // quand l'heure (ou le jour) se libère. Le plafond lui-même ne change pas.
   if (ligne.type === 'plafond') {
-    console.warn('[campagne] pause automatique', { campagneId, phase: 'etat', raison: ligne.type });
-    await suspendreSiEnCours(campagneId);
+    console.warn('[campagne] attente du plafond', { campagneId, phase: 'etat', raison: ligne.type });
     return;
   }
   const suivant = await avecCampagne<{
@@ -382,13 +382,16 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
   if (reponse.ok) return;
   // Ligne prise (409), téléphone absent (503) ou pont injoignable (sans statut) : on défait la composition comme
   // pour une ligne occupée. Le prospect garde sa place et sa tentative ; le réveil reprendra quand la ligne revient.
+  // Plafond atteint entre la lecture de l'état et la composition (429) : même attente.
   const telephoneAbsent = reponse.statut === 503 || reponse.statut === undefined;
-  if ((reponse.statut === 409 || telephoneAbsent) && (await annulerComposition(campagneId, suivant.appelId))) {
+  const plafond = reponse.statut === 429;
+  if ((reponse.statut === 409 || telephoneAbsent || plafond) && (await annulerComposition(campagneId, suivant.appelId))) {
     if (telephoneAbsent) {
       console.warn('[campagne] attente du téléphone', {
         campagneId, phase: 'appels', raison: reponse.statut === 503 ? 'telephone-absent' : 'pont-injoignable',
       });
     }
+    if (plafond) console.warn('[campagne] attente du plafond', { campagneId, phase: 'appels', raison: 'plafond' });
     return;
   }
   // Un échec inattendu conserve l'appel en échec et met la campagne en pause.
