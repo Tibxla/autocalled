@@ -368,17 +368,13 @@ class Service:
         self._boucle.run()
 
     def _annoncer_msbc(self) -> None:
-        """Un téléphone connecté avant le démarrage du pont a établi sa liaison sans le mSBC : on le
-        reconnecte une fois, agent audio enregistré, pour que le mSBC soit annoncé."""
+        """Annonce le mSBC au téléphone appairé, même s'il était hors ligne au démarrage."""
         try:
-            modem = dans_glib(self._telephone.modem)
-        except Exception:
-            return  # pas de téléphone : il annoncera le mSBC en se connectant
-        self.journal("téléphone déjà connecté : reconnexion pour annoncer le mSBC")
-        try:
-            self._telephone.reconnecter(modem)
+            modem = dans_glib(self._telephone.modem_connu)
         except Exception as e:
-            self.journal("reconnexion impossible :", e)
+            self.journal("téléphone indisponible au démarrage :", e)
+            modem = None
+        self._telephone.reconnecter_avec_attente(modem)
 
     # --- opérations ------------------------------------------------------------------------------
 
@@ -551,7 +547,7 @@ class Service:
         if not modem:
             return 404, {"erreur": "Aucun téléphone appairé."}
         self.journal("reconnexion du téléphone demandée depuis l'application")
-        threading.Thread(target=self._telephone.reconnecter, args=(modem,), daemon=True).start()
+        threading.Thread(target=self._telephone.reconnecter_avec_attente, args=(modem,), daemon=True).start()
         return 202, {"ok": True}
 
     def appairage(self, action: str, corps: dict[str, Any]) -> tuple[int, dict[str, Any]]:

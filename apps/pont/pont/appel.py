@@ -511,6 +511,7 @@ class Appel:
         except Exception as e:
             self.journal("relance impossible :", e)
             self._terminer("composition impossible")
+            self._telephone.reconnecter_avec_attente(apres_echec=True)
 
     def _duree_max(self) -> bool:
         if self._en_ligne and self._prise_en_main is None:

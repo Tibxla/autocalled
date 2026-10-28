@@ -113,6 +113,7 @@ class Telephone:
         self._appel: str | None = None
         self._suivi: Suivi | None = None
         self._raison = "inconnue"
+        self._reconnexion = threading.Lock()
         self.sur_entrant = None
         bus.add_signal_receiver(
             self._propriete, "PropertyChanged", "org.ofono.VoiceCall", "org.ofono", path_keyword="chemin"
@@ -134,7 +135,7 @@ class Telephone:
                 return str(chemin)
         raise RuntimeError(
             "aucun téléphone passerelle en ligne : est-il connecté en Bluetooth ? (le pont le reconnecte "
-            "pendant une dizaine de secondes après son démarrage)"
+            "automatiquement tant qu'il reste appairé)"
         )
 
     def etat(self) -> dict[str, Any]:
@@ -296,7 +297,55 @@ class Telephone:
         for chemin, proprietes in manager.GetModems(signature="", timeout=DELAI_LECTURE_DBUS_S):
             if proprietes.get("Type") == "hfp":
                 return str(chemin)
+        # oFono peut retirer le modem ; BlueZ garde le téléphone appairé.
+        objets = dbus.Interface(self._bus.get_object("org.bluez", "/", introspect=False), "org.freedesktop.DBus.ObjectManager")
+        for chemin, interfaces in objets.GetManagedObjects(timeout=DELAI_LECTURE_DBUS_S).items():
+            appareil = interfaces.get("org.bluez.Device1", {})
+            if appareil.get("Paired") and "0000111f-0000-1000-8000-00805f9b34fb" in appareil.get("UUIDs", []):
+                return "/hfp" + str(chemin)
         return None
+
+    def reconnecter_avec_attente(self, modem: str | None = None, *, apres_echec: bool = False) -> None:
+        """Hors GLib : une seule récupération, sans recomposer l'appel abandonné."""
+        if not self._reconnexion.acquire(blocking=False):
+            return
+        delais = (0, 5, 15, 30, 60)
+        tentative = 1 if apres_echec else 0
+        try:
+            while True:
+                delai = delais[tentative] if tentative < len(delais) else 120
+                if delai:
+                    time.sleep(delai)
+                try:
+                    if not dans_glib(self.libre):
+                        tentative += 1
+                        continue
+                    if tentative:
+                        try:
+                            dans_glib(self.modem)
+                            return  # le téléphone est revenu tout seul
+                        except RuntimeError:
+                            pass
+                    if tentative or modem is None:
+                        modem = dans_glib(self.modem_connu)
+                    if not modem:
+                        return  # plus de téléphone appairé
+                    self.reconnecter(modem)
+                    limite = time.monotonic() + 12
+                    while True:
+                        try:
+                            dans_glib(self.modem)
+                            self._journal("téléphone reconnecté")
+                            return
+                        except RuntimeError:
+                            if time.monotonic() >= limite:
+                                raise
+                            time.sleep(1)
+                except Exception as e:
+                    self._journal("reconnexion impossible :", e)
+                tentative += 1
+        finally:
+            self._reconnexion.release()
 
     def reconnecter(self, modem: str | None = None) -> None:
         """Déconnecte puis reconnecte le téléphone (liaison figée, canal son bloqué, ou liaison établie sans le
@@ -306,8 +355,9 @@ class Telephone:
             return
         appareil = modem.removeprefix("/hfp")  # /hfp/org/bluez/hci1/dev_… → /org/bluez/hci1/dev_…
         bus = dbus.SystemBus(private=True)
+        bus.set_exit_on_disconnect(False)  # close() ne doit jamais provoquer _exit(1)
         try:
-            d = dbus.Interface(bus.get_object("org.bluez", appareil), "org.bluez.Device1")
+            d = dbus.Interface(bus.get_object("org.bluez", appareil, introspect=False), "org.bluez.Device1")
             try:
                 d.Disconnect()
             except dbus.DBusException:

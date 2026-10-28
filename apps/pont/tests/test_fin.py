@@ -51,6 +51,26 @@ class FinApresPanne(unittest.TestCase):
         self.assertTrue(self.appel.fini())
         self.poster.assert_called_once_with("fin", {"raison": "prospect", "conversationId": None, "codec": None})
 
+    def test_refus_avant_conversation_envoie_la_fin_avant_les_reessais(self):
+        appel = self.appel
+        appel._en_ligne = True
+        appel._tentatives = 1
+        self.telephone.reconnecter.side_effect = RuntimeError("br-connection-refused")
+        ordre = []
+        self.poster.side_effect = lambda *args: ordre.append("fin")
+        self.telephone.reconnecter_avec_attente.side_effect = lambda **kwargs: ordre.append("reconnexion")
+        appel._verifier_canal()
+        with mock.patch("pont.appel.threading.Thread", side_effect=lambda target, **_: mock.Mock(start=target)), \
+                mock.patch.object(appel, "lancer") as composer:
+            appel.termine("téléphone déconnecté")
+        self.assertEqual(ordre, ["fin", "reconnexion"])
+        self.assertTrue(appel.fini())
+        self.poster.assert_called_once_with("fin", {"raison": "composition impossible", "conversationId": None, "codec": None})
+        self.telephone.reconnecter_avec_attente.assert_called_once_with(apres_echec=True)
+        self.conversation.end_session.assert_not_called()
+        self.conversation.wait_for_session_end.assert_not_called()
+        composer.assert_not_called()
+
     def test_conversation_terminee_identifiant_transmis(self):
         self.appel._session_ouverte = True
         self.conversation.wait_for_session_end.return_value = "conv-fictive"

@@ -104,6 +104,7 @@ Ces composants sont désormais en production (vérification du 06/10 ci-dessus).
 
 ## Pièges connus
 
+- Pont Bluetooth, correctif préparé le 2026-10-28, non déployé : la fermeture du bus D-Bus privé ne provoque plus de sortie native du processus ; une reconnexion refusée clôt d'abord l'appel en « composition impossible », puis récupère la ligne sans recomposer cet appel. La récupération réessaie après 5, 15, 30 et 60 secondes, puis toutes les deux minutes, également au démarrage si le téléphone appairé est hors ligne.
 - Les imports du domaine sont en `.ts` : Turbopack ne remappe pas `.js`.
 - `next build` qui plante en « TurbopackInternalError … parse was canceled » sur `/page` alors que `next build --webpack` passe : cache Turbopack corrompu. `rm -rf apps/web/.next/cache/turbopack`, puis relancer `scripts/installer-services.sh` (constat du 02/10).
 - En simulation, ElevenLabs invente la réponse des outils client ; les transcriptions simulées en voix v3 contiennent des mots coupés. Ce n'est pas le comportement des vrais appels.
