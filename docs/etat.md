@@ -1,6 +1,6 @@
 # État du projet
 
-29/10 — **non déployé** : session ElevenLabs refusée ou sans confirmation sous 5 s après l'accueil : raccrochage immédiat, tentative silencieuse conservée due et campagne en pause ; assistante indisponible pendant 30 min (ou jusqu'à une ouverture réussie), compositions refusées en 424 et entrants laissés sonner. Téléphone absent et plafond gardent leur attente habituelle.
+Session ElevenLabs refusée, correctif déployé le 29/10 à 19h09 : session ElevenLabs refusée ou sans confirmation sous 5 s après l'accueil : raccrochage immédiat, tentative silencieuse conservée due et campagne en pause ; assistante indisponible pendant 30 min (ou jusqu'à une ouverture réussie), compositions refusées en 424 et entrants laissés sonner. Téléphone absent et plafond gardent leur attente habituelle.
 
 Point de reprise pour la prochaine session de travail. À tenir à jour à chaque étape.
 
@@ -108,7 +108,7 @@ Ces composants sont désormais en production (vérification du 06/10 ci-dessus).
 
 ## Pièges connus
 
-- Pont Bluetooth, correctif préparé le 2026-10-28, non déployé : la fermeture du bus D-Bus privé ne provoque plus de sortie native du processus ; une reconnexion refusée clôt d'abord l'appel en « composition impossible », puis récupère la ligne sans recomposer cet appel. La récupération réessaie après 5, 15, 30 et 60 secondes, puis toutes les deux minutes, également au démarrage si le téléphone appairé est hors ligne.
+- Pont Bluetooth, correctif déployé le 2026-10-28 à 12h10 : la fermeture du bus D-Bus privé ne provoque plus de sortie native du processus ; une reconnexion refusée clôt d'abord l'appel en « composition impossible », puis récupère la ligne sans recomposer cet appel. La récupération réessaie après 5, 15, 30 et 60 secondes, puis toutes les deux minutes, également au démarrage si le téléphone appairé est hors ligne.
 - Les imports du domaine sont en `.ts` : Turbopack ne remappe pas `.js`.
 - `next build` qui plante en « TurbopackInternalError … parse was canceled » sur `/page` alors que `next build --webpack` passe : cache Turbopack corrompu. `rm -rf apps/web/.next/cache/turbopack`, puis relancer `scripts/installer-services.sh` (constat du 02/10).
 - En simulation, ElevenLabs invente la réponse des outils client ; les transcriptions simulées en voix v3 contiennent des mots coupés. Ce n'est pas le comportement des vrais appels.
