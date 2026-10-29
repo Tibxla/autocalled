@@ -1,5 +1,7 @@
 # État du projet
 
+29/10 — **non déployé** : session ElevenLabs refusée ou sans confirmation sous 5 s après l'accueil : raccrochage immédiat, tentative silencieuse conservée due et campagne en pause ; assistante indisponible pendant 30 min (ou jusqu'à une ouverture réussie), compositions refusées en 424 et entrants laissés sonner. Téléphone absent et plafond gardent leur attente habituelle.
+
 Point de reprise pour la prochaine session de travail. À tenir à jour à chaque étape.
 
 Perte du téléphone, correctif déployé le 28/10 : pont injoignable ou `/etat` en échec, refus 503 ou erreur réseau sur `/appels` laissent la campagne en cours et sa tentative due, sans appel en échec ; le réveil reprend au retour de la ligne. Plafond d'appels atteint (déployé le 28/10 vers 17h30) : même attente au lieu d'une pause, à `/etat` comme en 429 sur `/appels` ; le réveil reprend quand l'heure ou le jour se libère, la limite elle-même ne change pas.

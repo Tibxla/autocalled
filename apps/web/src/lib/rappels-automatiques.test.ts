@@ -1,6 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/db';
+import { POST as finirAppel } from '@/app/api/pont/appels/[id]/fin/route';
 import { appels, campagnes, prospects } from '@/db/schema';
 import { fauxPont } from '../../test/faux-pont';
 import { agendaFrais, entrepriseDeTest, fiche, opposer } from '../../test/fixtures';
@@ -62,6 +63,36 @@ async function remplacerPont(configuration: Parameters<typeof fauxPont>[0]) {
 }
 
 describe('rappels convenus automatiques', () => {
+  it('assistante indisponible : le rappel reste dû et le réveil ne compose rien', async () => {
+    const source = await rappel();
+    await remplacerPont({ etat: { assistanteIndisponible: { raison: 'quota_exceeded', quota: true } } });
+    expect(await rappelerSiDu(source.id, maintenant)).toBe(false);
+    expect((await reveiller(maintenant)).rappeles).toEqual([]);
+    expect((await rappelsAutomatiquesDus(maintenant)).map((a) => a.appelId)).toEqual([source.id]);
+    expect(pont.compositions()).toHaveLength(0);
+  });
+
+  it('quota apparu à la composition (424) : le rappel reste dû sans départ incertain', async () => {
+    const source = await rappel();
+    await remplacerPont({ refusAppels: { statut: 424, erreur: 'Assistante indisponible : quota_exceeded.' } });
+    expect(await rappelerSiDu(source.id, maintenant)).toBe(false);
+    expect((await rappelsAutomatiquesDus(maintenant)).map((a) => a.appelId)).toEqual([source.id]);
+    expect(await db.$count(appels)).toBe(1);
+  });
+
+  it('un rappel composé mais resté silencieux ne solde pas le rappel convenu', async () => {
+    const source = await rappel();
+    expect(await rappelerSiDu(source.id, maintenant)).toBe(true);
+    const { appelId } = pont.compositions()[0]!.corps as { appelId: string };
+    const reponse = await finirAppel(new Request('http://exemple.test/fin', {
+      method: 'POST', headers: { authorization: 'Bearer secret-de-test' },
+      body: JSON.stringify({ raison: 'assistante indisponible', conversationId: null, sansParole: true }),
+    }), { params: Promise.resolve({ id: appelId }) });
+    expect(reponse.status).toBe(200);
+    expect((await rappelsAutomatiquesDus(maintenant)).map((a) => a.appelId)).toEqual([source.id]);
+    expect(await db.$count(appels)).toBe(1);
+  });
+
   it('respecte les jours, horaires et la pause choisis dans l’interface, même hors de 9 h–19 h', async () => {
     const source = await rappel();
     const lu = await lireReglagesRappels();

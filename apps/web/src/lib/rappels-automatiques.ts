@@ -10,7 +10,7 @@ import { defautReglagesRappels, dansLesHorairesRappels, lireReglagesRappels, typ
 
 type Lecteur = Pick<typeof db, 'select'>;
 /** Refus certains avant composition. Un 5xx peut arriver après une programmation dans GLib : état incertain. */
-const REFUS_AVANT_COMPOSITION = new Set([400, 401, 403, 404, 409, 429]);
+const REFUS_AVANT_COMPOSITION = new Set([400, 401, 403, 404, 409, 424, 429]);
 
 /** Une activation explicite : les anciens rappels en retard restent manuels. Absente ou invalide, aucun départ. */
 export function activationRappelsAutomatiques(): Date | null {

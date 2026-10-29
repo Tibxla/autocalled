@@ -83,6 +83,33 @@ describe('fin d’un appel téléphone', () => {
 });
 
 describe('fin d’un appel de campagne', () => {
+  it.each([null, 'conversation-fictive-sans-parole'])('assistante refusée, conversation %s : même tentative due, pause immédiate et aucun suivant', async (conversationId) => {
+    const journal = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const e = await entrepriseDeTest();
+    await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01'), fiche('marc', 'Marc Fictif', '06 39 98 00 02')]);
+    const { versionScriptId } = await creerScript(e.id, 'Découverte');
+    await agendaFrais();
+    const pont = await fauxPont({ reglages: { pauseEntreAppelsS: 0 } });
+    try {
+      const id = await enregistrerCampagne(e.id, { versionScriptId, ligne: 'bluetooth', prospects: ['julie', 'marc'] });
+      await demarrerCampagne(id);
+      await appelerSuivantTelephone(id);
+      const [premier] = await db.select({ id: appels.id }).from(appels);
+      if (!premier) throw new Error('appel non composé');
+      expect((await fin(premier.id, { raison: 'assistante indisponible', conversationId, sansParole: true,
+        assistanteIndisponible: { raison: 'quota_exceeded', quota: true } })).status).toBe(200);
+      await Promise.all(taches.splice(0));
+      const [c] = await db.select().from(campagnes).where(eq(campagnes.id, id));
+      expect(c).toMatchObject({ statut: 'en-pause', entrees: [{ prospectId: 'julie', etat: 'a-appeler' }, { prospectId: 'marc', etat: 'a-appeler' }] });
+      expect(await db.$count(appels)).toBe(0);
+      expect(pont.compositions()).toHaveLength(1);
+      expect(journal).toHaveBeenCalledWith('[campagne] pause automatique', { campagneId: id, phase: 'fin', raison: 'assistante-indisponible' });
+    } finally {
+      journal.mockRestore();
+      await pont.fermer();
+    }
+  });
+
   it.each(['pas de réponse', 'composition impossible', 'canal son absent'])('sans conversation, %s : nouvelle tentative prévue, le suivant est composé après la pause', async (raison) => {
     const e = await entrepriseDeTest();
     await importerFiches(e.id, [fiche('julie', 'Julie Fictive', '06 39 98 00 01'), fiche('marc', 'Marc Fictif', '06 39 98 00 02')]);

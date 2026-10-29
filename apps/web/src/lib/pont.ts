@@ -59,7 +59,7 @@ export function signalFaible(etat: Record<string, unknown>): boolean {
  * (les appels automatiques attendent ; un appel lancé à la main part quand même), sinon `libre`.
  */
 export type DisponibiliteLigne =
-  | { type: 'absente' | 'plafond' | 'signal-faible'; raison: string }
+  | { type: 'absente' | 'plafond' | 'signal-faible' | 'assistante-indisponible'; raison: string }
   /** `plafond` : la raison si le plafond est atteint en plus, sinon null. */
   | { type: 'occupee'; raison: string; plafond: string | null }
   | { type: 'libre' };
@@ -68,6 +68,10 @@ export async function disponibiliteLigne(): Promise<DisponibiliteLigne> {
   const etat = await commanderPont('/etat');
   if (!etat.ok) return { type: 'absente', raison: etat.raison };
   const c = etat.corps;
+  if (c.assistanteIndisponible) {
+    const refus = c.assistanteIndisponible as { raison?: unknown };
+    return { type: 'assistante-indisponible', raison: typeof refus.raison === 'string' ? refus.raison : 'Assistante ElevenLabs indisponible.' };
+  }
   const plafond = typeof c.plafond === 'string' ? c.plafond : null;
   if (c.appelEnCours || c.entrantEnCours || typeof c.appelId === 'string') return { type: 'occupee', raison: APPEL_DEJA_EN_LIGNE, plafond };
   if (plafond) return { type: 'plafond', raison: plafond };

@@ -306,6 +306,10 @@ export async function pauseEntreAppelsMs(): Promise<number> {
  */
 export async function appelerSuivantTelephone(campagneId: string): Promise<void> {
   const ligne = await disponibiliteLigne();
+  if (ligne.type === 'assistante-indisponible') {
+    await suspendrePourAssistanteIndisponible(campagneId, 'etat');
+    return;
+  }
   // Ligne occupée (un autre appel, ou un prospect qui rappelle) : rien ne part, aucun prospect n'est consommé ; la fin
   // de cet appel ou le réveil reprendront.
   if (ligne.type === 'occupee') return;
@@ -380,6 +384,12 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
     ...(suivant.ouverture ? { ouverture: suivant.ouverture } : {}),
   });
   if (reponse.ok) return;
+  // 424 : dépendance ElevenLabs refusée, distincte du téléphone absent (503) et du plafond (429).
+  if (reponse.statut === 424) {
+    await suspendrePourAssistanteIndisponible(campagneId, 'appels');
+    await annulerComposition(campagneId, suivant.appelId);
+    return;
+  }
   // Ligne prise (409), téléphone absent (503) ou pont injoignable (sans statut) : on défait la composition comme
   // pour une ligne occupée. Le prospect garde sa place et sa tentative ; le réveil reprendra quand la ligne revient.
   // Plafond atteint entre la lecture de l'état et la composition (429) : même attente.
@@ -402,7 +412,7 @@ export async function appelerSuivantTelephone(campagneId: string): Promise<void>
 }
 
 /** Défait le début d'un appel que le pont n'a pas composé. Faux si l'entrée a bougé entre-temps (rien n'est alors défait). */
-async function annulerComposition(campagneId: string, appelId: string): Promise<boolean> {
+export async function annulerComposition(campagneId: string, appelId: string): Promise<boolean> {
   try {
     await avecCampagne(campagneId, async (c, tx) => {
       const campagne = annulerDebut(c, appelId);
@@ -482,6 +492,11 @@ export async function suspendreSiEnCours(campagneId: string): Promise<void> {
   } catch (erreur) {
     if (!(erreur instanceof TransitionInvalide)) throw erreur;
   }
+}
+
+export async function suspendrePourAssistanteIndisponible(campagneId: string, phase: 'etat' | 'appels' | 'fin'): Promise<void> {
+  await suspendreSiEnCours(campagneId);
+  console.warn('[campagne] pause automatique', { campagneId, phase, raison: 'assistante-indisponible' });
 }
 
 /**

@@ -252,6 +252,33 @@ describe('signal faible', () => {
 });
 
 describe('disponibilité de la ligne téléphone', () => {
+  it('assistante indisponible dans /etat : pause, même tentative, aucun départ au réveil', async () => {
+    const journal = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await pont.fermer();
+    pont = await fauxPont({ etat: { assistanteIndisponible: { raison: 'quota_exceeded', quota: true } } });
+    const id = await campagneTelephone(['julie']);
+    expect(await lire(id)).toMatchObject({ statut: 'en-pause', entrees: [{ etat: 'a-appeler' }] });
+    expect(await db.$count(appels)).toBe(0);
+    expect(journal).toHaveBeenCalledWith('[campagne] pause automatique', { campagneId: id, phase: 'etat', raison: 'assistante-indisponible' });
+    await reveiller();
+    expect(pont.compositions()).toHaveLength(0);
+  });
+
+  it('quota apparu après /etat (424) : composition défaite, tentative et historique conservés, pause', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const id = await campagneTelephone(['julie']);
+    const premier = await finSansReponse(id);
+    await rendreDue(id, 'julie');
+    await pont.fermer();
+    pont = await fauxPont({ refusAppels: { statut: 424, erreur: 'Assistante indisponible : quota_exceeded.' } });
+    await appelerSuivantTelephone(id);
+    expect(await entree(id, 'julie')).toMatchObject({ etat: 'a-appeler', tentative: 2, appelsPrecedents: [premier.appelId] });
+    expect(await db.$count(appels)).toBe(1);
+    expect((await lire(id)).statut).toBe('en-pause');
+    await reveiller();
+    expect(pont.compositions()).toHaveLength(1);
+  });
+
   it.each([
     ['un appel en ligne', { appelEnCours: true }],
     ['un prospect qui rappelle', { entrantEnCours: true }],

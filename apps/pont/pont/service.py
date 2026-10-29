@@ -5,11 +5,13 @@ présente le même secret à l'application quand il la rappelle (`$WEB_URL/api/p
 
     GET  /etat                        le téléphone passerelle, l'appel en cours (décroché) et son sens, le plafond ;
                                       `appelEnCours` et `entrantEnCours` sont vrais dès qu'un appel entrant sonne
+                                      `assistanteIndisponible` : null ou {raison, quota}, frein de 30 min après refus
     POST /appels                      {appelId, numero, variables, motsCles, premierMessage?, ouverture?} : compose ;
                                       premierMessage est la phrase dite si le prospect se tait au décroché (« Allô ? »
                                       sans elle), ouverture celle dite juste après un accueil court (sans elle, le
                                       modèle ouvre)
                                       ; 409 tant qu'un appel est en cours, entrant compris (même s'il sonne sans réponse)
+                                      ; 424 si l'assistante est indisponible (distinct du 503 téléphone absent)
                                       Ligne prêtée à un autre service local, champs facultatifs (absents : Mina,
                                       rappels à l'application, plafond compté) :
                                         agentId     l'agent ElevenLabs de cet appel, à la place d'ELEVENLABS_AGENT_ID ;
@@ -86,6 +88,7 @@ from websockets.exceptions import ConnectionClosed
 from .appairage import Appairage
 from .appel import Appel, Journal, ouverture_valide, premier_message_valide
 from .audio import COMPENSATION_MINA_DB, NIVEAU_PAS_MS, profil_egalisation
+from .disponibilite import AssistanteIndisponible, DisponibiliteAssistante
 from .ofono import LigneOccupee, Telephone, dans_glib, masquer
 from .plafond import Plafond
 from .reglages import Reglages
@@ -323,10 +326,12 @@ def preparer_dossier(dossier: Path) -> None:
 class Service:
     # Valeur par défaut au niveau de la classe : les tests construisent l'objet sans son constructeur.
     _relais: tuple[frozenset[str], str] | None = None  # RELAIS_ENTRANTS lue : (numéros E.164, adresse locale)
+    _assistante: DisponibiliteAssistante | None = None
 
     def __init__(self, cles: dict[str, str], racine: Path):
         egalisation = profil_egalisation(cles.get("PONT_EGALISATION", "historique"))
         self._cles = cles
+        self._assistante = DisponibiliteAssistante()
         self._secret = cles["PONT_SECRET"]
         self._web = cles.get("WEB_URL", "http://127.0.0.1:3020")
         self._dossier = racine / "data" / "pont"
@@ -389,6 +394,7 @@ class Service:
             # .get : l'appel peut être oublié entre les deux lectures (fin d'appel), sans faire tomber /etat.
             "decrocheLe": decroche_le(self._appels.get(en_cours)) if en_cours else None,
             "reglages": self._reglages.valeurs,
+            "assistanteIndisponible": self._assistante.etat() if self._assistante else None,
         }
 
     def regler(self, corps: dict[str, Any]) -> tuple[int, dict[str, Any]]:
@@ -411,6 +417,9 @@ class Service:
         except ValueError as e:
             return 400, {"erreur": str(e)}
         with self._verrou:
+            if self._assistante and (refus := self._assistante.etat()):
+                return 424, {"erreur": "Assistante ElevenLabs indisponible : " + refus["raison"],
+                             "assistanteIndisponible": refus}
             if not self._telephone.libre():
                 if self._telephone.entrant_en_cours():
                     return 409, {"erreur": "Un appel entrant est en cours sur le téléphone."}
@@ -433,12 +442,16 @@ class Service:
                 ouverture=ouverture_valide(corps.get("ouverture")),
                 agent_id=options["agentId"],
                 garder_enregistrement=options["rappels"] is None,  # ligne prêtée : son effacé après la fin
+                disponibilite_assistante=self._assistante,
             )
             rappels.journal = appel.journal
             # Suivi avant la composition : si la boucle D-Bus tarde, l'appel reste raccrochable et visible dans /etat.
             self._appels[appel_id] = appel
             try:
                 dans_glib(appel.lancer)
+            except AssistanteIndisponible as e:
+                self._appels.pop(appel_id, None)
+                return 424, {"erreur": str(e), "assistanteIndisponible": e.refus}
             except LigneOccupee as e:
                 # Un prospect rappelle depuis la lecture de `libre()` : rien n'est composé ni compté au plafond.
                 self._appels.pop(appel_id, None)
@@ -466,6 +479,10 @@ class Service:
         """Décroche un appel entrant si l'application reconnaît un prospect, sinon le laisse sonner. Sous le verrou des
         compositions : un `POST /appels` simultané attend la décision (et reçoit 409 tant que l'entrant est là)."""
         with self._verrou:
+            if self._assistante and self._assistante.etat():
+                self.journal("appel entrant : assistante indisponible, il sonne sans réponse")
+                self._laisser_sonner(chemin, generation)
+                return
             # Un appel précédent qui n'a pas fini son bilan occupe encore l'application : on ne crée pas de ligne
             # `appels` qu'on ne pourrait pas tenir.
             if self._telephone.en_appel() or any(not a.fini() for a in list(self._appels.values())):
@@ -491,6 +508,7 @@ class Service:
                     rappels,
                     decision["premierMessage"],
                     entrant=chemin,  # hors plafond : il ne compte que les compositions
+                    disponibilite_assistante=self._assistante,
                     generation=generation,
                     agent_id=decision["agentId"],
                     garder_enregistrement=decision["rappels"] is None,

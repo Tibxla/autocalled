@@ -17,6 +17,7 @@ from elevenlabs.conversational_ai.conversation import ClientTools, Conversation,
 from gi.repository import GLib
 
 from .audio import TRAMES_FIN_ACCUEIL, Pont, temps_de_reponse
+from .disponibilite import AssistanteIndisponible, DisponibiliteAssistante
 from .ofono import LigneOccupee, Telephone, dans_glib, masquer
 from .plafond import Plafond
 
@@ -39,6 +40,7 @@ DELAI_CANAL_SON_S = 10.0
 DELAI_CANAL_APRES_DECROCHE_S = 3.0
 DUREE_MAX_S = 6 * 60  # au-delà du plafond de l'agent (300 s) : filet si la fin de session se perd
 DUREE_MAX_OPERATEUR_S = 60 * 60  # après une prise de main, l'opérateur parle aussi longtemps qu'il veut
+DELAI_SESSION_S = 5.0  # après l'accueil : confirmation ElevenLabs, URL signée et connexion comprises
 ETAPE_MAX = 10  # le plus grand nombre d'étapes d'un script (MAX_ETAPES, apps/web/src/lib/schemas.ts)
 
 
@@ -129,13 +131,53 @@ class Journal:
 class ConversationPont(Conversation):
     """Récupère l'URL signée pendant la sonnerie, et lit les formats audio que le SDK ignore."""
 
-    def __init__(self, *args, pont: Pont, journal: Journal, ouverte: Callable[[str], None], **kwargs):
+    def __init__(self, *args, pont: Pont, journal: Journal, ouverte: Callable[[str], None],
+                 refusee: Callable[[str, bool], None] | None = None, **kwargs):
         super().__init__(*args, **kwargs)
         self._pont = pont
         self._journal = journal
         self._ouverte = ouverte
+        self._refusee = refusee or (lambda raison, quota: None)
+        self._confirmee = False
+        self._refus_signale = False
+        self._verrou_arret = threading.Lock()
+        self._arret_demarre = False
         self._url: str | None = None
         self._url_prete = threading.Event()
+
+    def _signaler_refus(self, raison: str) -> None:
+        if self._refus_signale:
+            return
+        self._refus_signale = True
+        self._refusee(raison, "quota_exceeded" in raison.lower())
+
+    def _run(self, ws_url: str):
+        # Le SDK ne rappelle personne si connect/send lève ; recv, lui, absorbe l'exception puis appelle end_session.
+        if self._should_stop.is_set():
+            return  # URL signée revenue après le raccrochage ou le délai d'ouverture
+        try:
+            super()._run(ws_url)
+        except Exception as e:
+            if not self._should_stop.is_set():
+                self._signaler_refus(str(e))
+        finally:
+            if not self._confirmee and not self._should_stop.is_set():
+                self._signaler_refus("session fermée avant confirmation d'ouverture")
+
+    def end_session(self):
+        with self._verrou_arret:
+            if self._arret_demarre:
+                return
+            self._arret_demarre = True
+        ws = self._ws
+        code = getattr(ws, "close_code", None)
+        raison = getattr(ws, "close_reason", None)
+        if isinstance(raison, str) and (code == 3000 or "quota_exceeded" in raison):
+            self._signaler_refus(f"websocket {code} : {raison}")
+        elif not self._confirmee and not self._should_stop.is_set():
+            self._signaler_refus("session fermée avant confirmation d'ouverture")
+        self._should_stop.set()  # avant le nettoyage SDK : une URL signée tardive ne doit plus ouvrir de websocket
+        super().end_session()
 
     def precharger_url(self) -> None:
         def _charger():
@@ -158,7 +200,8 @@ class ConversationPont(Conversation):
             entree, sortie = ev.get("user_input_audio_format"), ev.get("agent_output_audio_format")
             self._journal("conversation ouverte | entrée", entree, "| sortie", sortie)
             self._pont.regler_formats(entree, sortie)
-            threading.Thread(target=self._ouverte, args=(ev.get("conversation_id"),), daemon=True).start()
+            self._confirmee = True
+            self._ouverte(ev.get("conversation_id"))
         super()._handle_message(message, ws)
 
 
@@ -200,6 +243,10 @@ class Appel:
     _fin_lancee = False
     _VERROU_FIN = threading.Lock()
     _garder_enregistrement = True  # False pour un appel prêté (ADR 0007) : son .wav est effacé une fois la fin envoyée
+    _conversation_confirmee = False
+    _conversation_id: str | None = None
+    _erreur_session: dict[str, Any] | None = None
+    _disponibilite_assistante: DisponibiliteAssistante | None = None
 
     def __init__(
         self,
@@ -218,8 +265,10 @@ class Appel:
         generation: int | None = None,
         agent_id: str | None = None,
         garder_enregistrement: bool = True,
+        disponibilite_assistante: DisponibiliteAssistante | None = None,
     ):
         self._telephone = telephone
+        self._disponibilite_assistante = disponibilite_assistante
         self._garder_enregistrement = garder_enregistrement
         self._chemin_entrant = entrant
         self._generation_entrant = generation
@@ -276,7 +325,8 @@ class Appel:
             callback_end_session=self._fin_de_session,
             pont=self._pont,
             journal=self.journal,
-            ouverte=rappels.conversation_ouverte,
+            ouverte=self._conversation_ouverte,
+            refusee=self._session_refusee,
         )
 
     # --- suivi en direct -------------------------------------------------------------------------
@@ -316,6 +366,10 @@ class Appel:
         canal son manque à chaque appel ne doit pas passer deux fois plus d'appels que le plafond affiché."""
         if self.entrant:
             raise RuntimeError("un appel entrant ne se compose pas")  # ce serait rappeler l'appelant
+        if self._erreur_session:
+            raise AssistanteIndisponible(self._erreur_session)
+        if self._disponibilite_assistante and (refus := self._disponibilite_assistante.etat()):
+            raise AssistanteIndisponible(refus)  # y compris une recomposition interne après reconnexion
         if self._annule:
             self.journal("composition annulée : le service a déjà répondu que l'appel n'était pas parti")
             with self._nouveau:
@@ -351,6 +405,12 @@ class Appel:
             # Le service a abandonné (boucle D-Bus trop lente) et la fin est déjà partie : l'appel sonne, sans réponse,
             # et le canal gardé revient au téléphone.
             self._telephone.laisser_sonner(self._chemin_entrant, self._generation_entrant)
+            return
+        if self._disponibilite_assistante and (refus := self._disponibilite_assistante.etat()):
+            self.journal("appel entrant : assistante indisponible, il sonne sans réponse")
+            self._erreur_session = refus
+            self._telephone.laisser_sonner(self._chemin_entrant, self._generation_entrant)
+            self._finir_une_fois("assistante indisponible")
             return
         self.journal("appel entrant du", masquer(self._numero), ": on décroche")
         try:
@@ -442,7 +502,7 @@ class Appel:
         if self.entrant:
             self._finir_une_fois(raison)
             return
-        threading.Thread(target=self._terminer, args=(raison,), daemon=True).start()
+        self._finir_une_fois(raison)
 
     # --- déroulé ---------------------------------------------------------------------------------
 
@@ -556,7 +616,42 @@ class Appel:
                 self.journal("appel terminé avant l'ouverture : pas de conversation")
                 return
             self._session_ouverte = True
-        self._conversation.start_session()
+        minuteur = threading.Timer(DELAI_SESSION_S, self._session_non_ouverte)
+        minuteur.daemon = True
+        minuteur.start()
+        try:
+            self._conversation.start_session()
+        except Exception as e:
+            self._session_refusee(str(e), "quota_exceeded" in str(e).lower())
+
+    def _session_non_ouverte(self) -> None:
+        self._session_refusee(f"aucune confirmation d'ouverture après {DELAI_SESSION_S:g} s", False)
+
+    def _conversation_ouverte(self, conversation_id: str) -> None:
+        with self._verrou:
+            if self._fin_lancee_appel or self._erreur_session:
+                return
+            self._conversation_confirmee = True
+            self._conversation_id = conversation_id
+            if self._disponibilite_assistante:
+                self._disponibilite_assistante.retablir()
+        threading.Thread(target=self._rappels.conversation_ouverte, args=(conversation_id,), daemon=True).start()
+
+    def _session_refusee(self, raison: str, quota: bool) -> None:
+        with self._verrou:
+            if (self._erreur_session or self._fin_lancee_appel or self._prise_en_main is not None
+                    or (self._conversation_confirmee and not quota)):
+                return
+            self._erreur_session = {"raison": raison, "quota": quota}
+            self._relance = False
+        self.journal("session ElevenLabs refusée :", "crédits épuisés ;" if quota else "", raison)
+        if self._disponibilite_assistante:
+            self._disponibilite_assistante.refuser(raison, quota)
+        # Le raccrochage part avant tout arrêt/attente SDK ; la fin ne dépend pas du retour du signal D-Bus.
+        try:
+            self._telephone.raccrocher(self)
+        finally:
+            self._finir_une_fois("assistante indisponible")
 
     def _tour(self, role: str, texte: str) -> None:
         # Le texte part dans le fil de l'appel, pas au journal : celui-ci finit aussi dans journald, et la parole du
@@ -589,6 +684,8 @@ class Appel:
             if self._fin_session:  # le SDK peut signaler la fin deux fois
                 return
             self._fin_session = True
+        if self._erreur_session:
+            return
         if not self._en_ligne or self._prise_en_main is not None:
             return  # fin voulue par la prise de main : l'appel continue avec l'opérateur
 
@@ -604,16 +701,26 @@ class Appel:
 
         threading.Thread(target=_raccrocher_apres_vidage, daemon=True).start()
 
+    def _arreter_session(self) -> None:
+        try:
+            self._conversation.end_session()
+        except Exception as e:
+            self.journal("fin de session impossible :", e)
+
     def _terminer(self, raison: str) -> None:
-        conversation_id = None
+        conversation_id = self._conversation_id
         with self._verrou:  # face à _ouvrir_conversation : la session s'ouvre avant ce point, ou plus du tout
             self._fin_lancee_appel = True
             ouverte = self._session_ouverte
-        if ouverte:
+        if ouverte and self._erreur_session:
+            # ClientTools.stop() et l'attente du thread SDK peuvent bloquer : la fin doit partir sans eux.
+            threading.Thread(target=self._arreter_session, daemon=True).start()
+        elif ouverte:
             try:
                 if not self._fin_session:
                     self._conversation.end_session()
-                conversation_id = self._conversation.wait_for_session_end()
+                if not self._erreur_session:
+                    conversation_id = self._conversation.wait_for_session_end()
             except Exception as e:
                 # start_session peut encore attendre l'URL signée : la fin doit quand même rejoindre l'application.
                 self.journal("fin de session impossible :", e)
@@ -625,6 +732,9 @@ class Appel:
             "conversationId": conversation_id,
             "codec": {1: "CVSD", 2: "mSBC"}.get(self._codec or 0),
         }
+        if self._erreur_session:
+            bilan.update({"raison": "assistante indisponible", "assistanteIndisponible": self._erreur_session,
+                          "sansParole": self._pont.premier_son_de_mina is None})
         if self.entrant:
             bilan["sens"] = "entrant"
         if self._decroche and self._pont.premier_son_de_mina:
