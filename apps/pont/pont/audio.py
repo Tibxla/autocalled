@@ -47,8 +47,9 @@ SONNERIE_RECENTE_S = 5.0
 TONALITE_EN_COURS_S = 0.2  # une tonalité pas encore reconnue retient l'ouverture tant qu'elle sonne
 # La voix d'ElevenLabs arrive vers −13 dBFS, crêtes à pleine échelle. Le téléphone traite ce qui vient du
 # « micro » mains-libres en l'attendant bien plus faible : à ce niveau, il compresse et la voix sonne saturée.
-# Échelle d'écoute du 27/09 en mSBC : −19,5 dBFS sature, −29,5 et −39,5 sont nets. On vise environ −31 dBFS.
-GAIN_SORTIE = 10 ** (-18 / 20)
+# Échelle d'écoute du 27/09 en mSBC : −19,5 dBFS sature, −29,5 et −39,5 sont nets. On visait environ −31 dBFS ;
+# le 29/10, 25 conversations sur 101 se plaignaient d'une voix trop basse : +5 dB, vers −26 dBFS, à valider à l'écoute.
+GAIN_SORTIE = 10 ** (-13 / 20)
 PRISE_TAMPON_MS = 120  # avance accumulée avant de lire la voix de l'opérateur
 # Le contrôle automatique du volume de Chrome amène le micro vers −19 dBFS, le niveau qui saturait avec Mina :
 # même traitement, vers −30 dBFS. À recaler avec la mesure « voix opérateur » du relevé.

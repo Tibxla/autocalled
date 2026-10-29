@@ -46,7 +46,7 @@ class Egalisation(unittest.TestCase):
 
     def test_pas_de_saturation_numerique_meme_sur_signal_pleine_echelle(self):
         # La norme L1 borne chaque échantillon filtré, même pour un signal plus extrême qu'une voix.
-        self.assertAlmostEqual(20 * np.log10(GAIN_SORTIE), -18)
+        self.assertAlmostEqual(20 * np.log10(GAIN_SORTIE), -13)
         for profil in ("historique", "douce", "aucune"):
             with self.subTest(profil=profil):
                 self.assertLess(np.abs(filtre_egalisation(TAUX, profil=profil)).sum() * GAIN_SORTIE, 1)
