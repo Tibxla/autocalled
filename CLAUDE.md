@@ -24,7 +24,7 @@ Une assistante vocale ElevenLabs (Mina par défaut) appelle des prospects pour d
 - Rien des vrais appels ni des vrais prospects : ni transcription, ni réplique, ni nom, numéro, e-mail ou entreprise réels, même en exemple dans un prompt, un test, une doc ou un message de commit. Numéros fictifs dans les tests : `+33639980001` et suivants.
 - Aucun nom ni lien vers un dépôt privé ou un service personnel : un service qui emprunte la ligne s'appelle « un service local ».
 - Secrets dans `.env` seulement (`.env.example` documente chaque variable avec une valeur fictive).
-- Avant chaque push : relire `git diff origin/demo..demo` à la recherche de numéros, noms et identifiants réels.
+- **Pousser `demo` juste après chaque commit** (`git push origin demo`), après avoir relu `git diff origin/demo..demo` à la recherche de numéros, noms et identifiants réels. `main` ne se pousse que sur demande.
 
 ## Commandes
 
